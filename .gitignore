@@ -1,2 +1,5 @@
-venv/
-docs/*.md
+.venv/
+.env
+__pycache__/
+*.pyc
+logs/*.log
