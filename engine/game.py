@@ -8,11 +8,13 @@ from engine.actions import Action
 from engine.logging_utils import DebugLogger
 from engine.rules import RuleEngine
 from engine.cards import Card
+from engine.cards import BIG_JOKER_RANK, SMALL_JOKER_RANK
 from engine.state import GameState, PlayerState, TableConstraint
 
 
 _RANKS: tuple[str, ...] = ("2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A")
 _SUITS: tuple[str, ...] = ("S", "H", "C", "D")
+_JOKERS: tuple[str, str] = (SMALL_JOKER_RANK, BIG_JOKER_RANK)
 
 
 def _action_to_dict(action: Action) -> dict[str, object]:
@@ -66,6 +68,8 @@ def build_initial_state(seed: int | None = None) -> GameState:
         for suit in _SUITS:
             for rank in _RANKS:
                 deck.append(Card(rank=rank, suit=suit))
+        for joker_rank in _JOKERS:
+            deck.append(Card(rank=joker_rank))
     rng.shuffle(deck)
 
     players: list[PlayerState] = []

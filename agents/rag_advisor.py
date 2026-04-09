@@ -6,12 +6,16 @@ from rag.retriever import KnowledgeRetriever
 
 
 _OUT_OF_SCOPE_KEYWORDS = (
-    "顺子",
-    "连对",
+    "钢板",
     "飞机",
-    "三带二",
     "同花顺",
     "王炸",
+    "天王炸",
+    "逢人配",
+    "进贡",
+    "还贡",
+    "升级",
+    "胜负",
 )
 
 

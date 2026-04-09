@@ -9,6 +9,7 @@ from dataclasses import replace
 from typing import Protocol
 
 from .actions import Action, ActionType
+from .cards import BIG_JOKER_RANK, SMALL_JOKER_RANK
 from .cards import Card
 from .patterns import Pattern, PatternType, detect_pattern
 from .state import GameState, TableConstraint
@@ -28,14 +29,126 @@ _RANK_STRENGTH: dict[str, int] = {
     "Q": 12,
     "K": 13,
     "A": 14,
+    SMALL_JOKER_RANK: 15,
+    BIG_JOKER_RANK: 16,
 }
+
+_SEQUENCE_RANKS: tuple[str, ...] = ("3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A")
+_SEQUENCE_INDEX: dict[str, int] = {rank: idx for idx, rank in enumerate(_SEQUENCE_RANKS)}
+
+
+def _pattern_length(action: Action) -> int:
+    return len(action.cards)
+
+
+def _top_rank_strength_for_sequence(action: Action) -> int:
+    if not action.cards:
+        return -1
+    unique = sorted({card.rank for card in action.cards}, key=lambda r: _SEQUENCE_INDEX.get(r, -1))
+    if not unique:
+        return -1
+    return _RANK_STRENGTH.get(unique[-1], -1)
+
+
+def _triple_core_strength(action: Action) -> int:
+    if not action.cards:
+        return -1
+    counts = Counter(card.rank for card in action.cards)
+    triple_rank = next((rank for rank, cnt in counts.items() if cnt == 3), None)
+    if triple_rank is None:
+        return -1
+    return _RANK_STRENGTH.get(triple_rank, -1)
+
+
+def _cards_by_rank(hand_cards: tuple[Card, ...]) -> dict[str, list[Card]]:
+    grouped: dict[str, list[Card]] = {}
+    for card in hand_cards:
+        grouped.setdefault(card.rank, []).append(card)
+    return grouped
+
+
+def _generate_straight_actions(player_id: int, hand_cards: tuple[Card, ...]) -> tuple[Action, ...]:
+    grouped = _cards_by_rank(hand_cards)
+    available = [rank for rank in _SEQUENCE_RANKS if grouped.get(rank)]
+    actions: list[Action] = []
+
+    for start in range(len(_SEQUENCE_RANKS)):
+        for end in range(start + 5, len(_SEQUENCE_RANKS) + 1):
+            seq = _SEQUENCE_RANKS[start:end]
+            if not all(rank in available for rank in seq):
+                continue
+            cards = tuple(grouped[rank][0] for rank in seq)
+            actions.append(
+                Action(
+                    player_id=player_id,
+                    action_type=ActionType.PLAY,
+                    cards=cards,
+                    declared_pattern=PatternType.STRAIGHT,
+                )
+            )
+    return tuple(actions)
+
+
+def _generate_pair_straight_actions(player_id: int, hand_cards: tuple[Card, ...]) -> tuple[Action, ...]:
+    grouped = _cards_by_rank(hand_cards)
+    available = [rank for rank in _SEQUENCE_RANKS if len(grouped.get(rank, [])) >= 2]
+    actions: list[Action] = []
+
+    for start in range(len(_SEQUENCE_RANKS)):
+        for end in range(start + 3, len(_SEQUENCE_RANKS) + 1):
+            seq = _SEQUENCE_RANKS[start:end]
+            if not all(rank in available for rank in seq):
+                continue
+            cards_list: list[Card] = []
+            for rank in seq:
+                cards_list.extend(grouped[rank][:2])
+            actions.append(
+                Action(
+                    player_id=player_id,
+                    action_type=ActionType.PLAY,
+                    cards=tuple(cards_list),
+                    declared_pattern=PatternType.PAIR_STRAIGHT,
+                )
+            )
+    return tuple(actions)
+
+
+def _generate_triple_with_pair_actions(player_id: int, hand_cards: tuple[Card, ...]) -> tuple[Action, ...]:
+    grouped = _cards_by_rank(hand_cards)
+    triple_ranks = [rank for rank, cards in grouped.items() if len(cards) >= 3]
+    pair_ranks = [rank for rank, cards in grouped.items() if len(cards) >= 2]
+
+    actions: list[Action] = []
+    for triple_rank in triple_ranks:
+        for pair_rank in pair_ranks:
+            if triple_rank == pair_rank:
+                continue
+            cards = tuple(grouped[triple_rank][:3] + grouped[pair_rank][:2])
+            actions.append(
+                Action(
+                    player_id=player_id,
+                    action_type=ActionType.PLAY,
+                    cards=cards,
+                    declared_pattern=PatternType.TRIPLE_WITH_PAIR,
+                )
+            )
+    return tuple(actions)
 
 
 def _action_strength(action: Action) -> int:
     if action.action_type != ActionType.PLAY or not action.cards:
         return -1
-    # Step 3 subset uses identical-rank sets for pair/triple/bomb.
-    return _RANK_STRENGTH.get(action.cards[0].rank, -1)
+    pattern = action.declared_pattern
+    if pattern in {PatternType.SINGLE, PatternType.PAIR, PatternType.TRIPLE, PatternType.BOMB}:
+        # For identical-rank groups this card rank is representative.
+        return _RANK_STRENGTH.get(action.cards[0].rank, -1)
+    if pattern == PatternType.STRAIGHT:
+        return _top_rank_strength_for_sequence(action)
+    if pattern == PatternType.PAIR_STRAIGHT:
+        return _top_rank_strength_for_sequence(action)
+    if pattern == PatternType.TRIPLE_WITH_PAIR:
+        return _triple_core_strength(action)
+    return -1
 
 
 def _supported_play_patterns() -> set[PatternType]:
@@ -43,6 +156,9 @@ def _supported_play_patterns() -> set[PatternType]:
         PatternType.SINGLE,
         PatternType.PAIR,
         PatternType.TRIPLE,
+        PatternType.STRAIGHT,
+        PatternType.PAIR_STRAIGHT,
+        PatternType.TRIPLE_WITH_PAIR,
         PatternType.BOMB,
     }
 
@@ -101,6 +217,27 @@ def _build_supported_play_actions(player_id: int, hand_cards: tuple[Card, ...]) 
             seen.add(key)
             candidates.append(action)
 
+    for action in _generate_straight_actions(player_id, hand_cards):
+        key = _action_dedupe_key(action)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(action)
+
+    for action in _generate_pair_straight_actions(player_id, hand_cards):
+        key = _action_dedupe_key(action)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(action)
+
+    for action in _generate_triple_with_pair_actions(player_id, hand_cards):
+        key = _action_dedupe_key(action)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(action)
+
     return tuple(candidates)
 
 
@@ -113,6 +250,9 @@ def _filter_follow_actions(
         PatternType.SINGLE,
         PatternType.PAIR,
         PatternType.TRIPLE,
+        PatternType.STRAIGHT,
+        PatternType.PAIR_STRAIGHT,
+        PatternType.TRIPLE_WITH_PAIR,
         PatternType.BOMB,
     }:
         return ()
@@ -125,8 +265,26 @@ def _filter_follow_actions(
         if action_pattern is None:
             continue
 
-        if table_pattern in {PatternType.SINGLE, PatternType.PAIR, PatternType.TRIPLE}:
+        if table_pattern in {
+            PatternType.SINGLE,
+            PatternType.PAIR,
+            PatternType.TRIPLE,
+            PatternType.TRIPLE_WITH_PAIR,
+        }:
             if action_pattern == table_pattern and _action_strength(action) > table_strength:
+                filtered.append(action)
+                continue
+            if action_pattern == PatternType.BOMB:
+                filtered.append(action)
+                continue
+
+        if table_pattern in {PatternType.STRAIGHT, PatternType.PAIR_STRAIGHT}:
+            legal_same_type = (
+                action_pattern == table_pattern
+                and _pattern_length(action) == _pattern_length(table_action)
+                and _action_strength(action) > table_strength
+            )
+            if legal_same_type:
                 filtered.append(action)
                 continue
             if action_pattern == PatternType.BOMB:
@@ -219,8 +377,24 @@ class BaseRuleEngine:
         table_strength = _action_strength(table_action)
         action_strength = _action_strength(action)
 
-        if table_pattern in {PatternType.SINGLE, PatternType.PAIR, PatternType.TRIPLE}:
+        if table_pattern in {
+            PatternType.SINGLE,
+            PatternType.PAIR,
+            PatternType.TRIPLE,
+            PatternType.TRIPLE_WITH_PAIR,
+        }:
             legal_same_type = action.declared_pattern == table_pattern and action_strength > table_strength
+            legal_bomb = action.declared_pattern == PatternType.BOMB
+            if not (legal_same_type or legal_bomb):
+                raise ValueError("play action cannot beat current table action")
+            return
+
+        if table_pattern in {PatternType.STRAIGHT, PatternType.PAIR_STRAIGHT}:
+            legal_same_type = (
+                action.declared_pattern == table_pattern
+                and len(action.cards) == len(table_action.cards)
+                and action_strength > table_strength
+            )
             legal_bomb = action.declared_pattern == PatternType.BOMB
             if not (legal_same_type or legal_bomb):
                 raise ValueError("play action cannot beat current table action")

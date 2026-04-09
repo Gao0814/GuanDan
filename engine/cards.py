@@ -6,6 +6,10 @@ This module intentionally keeps card representation minimal for Step 1.
 from dataclasses import dataclass
 
 
+SMALL_JOKER_RANK = "SJ"
+BIG_JOKER_RANK = "BJ"
+
+
 @dataclass(frozen=True, slots=True)
 class Card:
     """A single card entity.
