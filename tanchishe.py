@@ -1,37 +1,4 @@
- import pygame
- import random
- from enum import Enum
-
- # 初始化pygame
- pygame.in
- # 定义颜色
- BLACK = (0, 0, 0)
- WHITE = (255, 255, 255)
- RED = (213, 50, 80)
- GREEN = (0, 255, 0)
- BLUE = (50, 153, 213)
-
- # 游戏设置
- WINDOW_WIDTH = 600
- WINDOW_HEIGHT = 400
- BLOCK_SIZE = 20
- SPEED = 10
-
- class Direction(Enum):
-     UP = 1
-     DOWN = 2
-     LEFT = 3
-     RIGHT = 4
-
- class SnakeGame:
-     def __init__(self):
-         self.display = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-         pygame.display.set_caption('贪吃蛇游戏')
-         self.clock = pygame.time.Clock()
-         self.reset()
-
-     def reset(self):
-         self.direction = Direction.RIGHT
+ 
          self.head = [WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2]
          self.snake = [
              self.head,
