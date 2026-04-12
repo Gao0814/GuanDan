@@ -3,8 +3,7 @@
  from enum import Enum
 
  # 初始化pygame
- pygame.init()
-
+ pygame.in
  # 定义颜色
  BLACK = (0, 0, 0)
  WHITE = (255, 255, 255)
