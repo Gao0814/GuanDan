@@ -1,6 +1,6 @@
-"""AI agents package for GuanDan phase-1 skeleton."""
+"""Agent package exports for the single-game mainline."""
 
-from .base import AgentContext, BaseAgent
+from .base import BaseAgent
 from .rule_based_ai import RuleBasedAIAgent
 
-__all__ = ["AgentContext", "BaseAgent", "RuleBasedAIAgent"]
+__all__ = ["BaseAgent", "RuleBasedAIAgent"]

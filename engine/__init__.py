@@ -1,17 +1,23 @@
-"""Engine package for GuanDan phase-1 skeleton."""
+"""Engine package exports for the single-game mainline."""
 
-from .actions import Action, ActionType
-from .cards import Card
+from .actions import Action, ActionType, WildcardInfo
+from .cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card
+from .game import GuanDanGame
 from .patterns import Pattern, PatternType
-from .state import GameState, PlayerState, TableConstraint
+from .state import GameState, HistoryEntry, PlayerState, TableConstraint
 
 __all__ = [
     "Action",
     "ActionType",
+    "BIG_JOKER_RANK",
+    "SMALL_JOKER_RANK",
+    "WildcardInfo",
     "Card",
+    "GuanDanGame",
     "Pattern",
     "PatternType",
     "GameState",
+    "HistoryEntry",
     "PlayerState",
     "TableConstraint",
 ]
