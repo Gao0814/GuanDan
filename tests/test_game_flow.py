@@ -1,289 +1,485 @@
-"""Step-5 integration tests for four-AI auto-play game flow."""
-
+import io
+from contextlib import redirect_stdout
 import unittest
+from unittest.mock import patch
 
 from agents.rule_based_ai import RuleBasedAIAgent
+from cli import run_4ai_debug
 from engine.actions import Action, ActionType
-from engine.cards import BIG_JOKER_RANK, SMALL_JOKER_RANK
-from engine.game import FourAIGameRunner, build_initial_state
-from engine.logging_utils import DebugLogger
+from engine.cards import BIG_JOKER_RANK, Card
+from engine.game import GuanDanGame
 from engine.patterns import PatternType
-from engine.rules import BaseRuleEngine
 
 
-def _build_runner(max_steps: int = 5000) -> tuple[FourAIGameRunner, DebugLogger]:
-    logger = DebugLogger()
-    runner = FourAIGameRunner(
-        rule_engine=BaseRuleEngine(),
-        agents=tuple(RuleBasedAIAgent(player_id=i, name=f"ai-{i}") for i in range(4)),
-        debug_logger=logger,
-        max_steps=max_steps,
+def _card(token: str) -> Card:
+    if token in {"SJ", "BJ"}:
+        return Card(rank=token)
+    if token[-1] in {"S", "H", "C", "D"}:
+        return Card(rank=token[:-1], suit=token[-1])
+    return Card(rank=token)
+
+
+def _hands(mapping: dict[int, tuple[str, ...]]) -> dict[int, tuple[Card, ...]]:
+    return {
+        player_id: tuple(_card(token) for token in tokens)
+        for player_id, tokens in mapping.items()
+    }
+
+
+def _action_id_by_pattern(game: GuanDanGame, pattern: str, declared: tuple[str, ...]) -> int:
+    for action in game.legal_actions():
+        if action["declared_pattern"] != pattern:
+            continue
+        if tuple(action["declared_cards"]) == declared:
+            return int(action["action_id"])
+    raise AssertionError(f"action not found: {pattern} {declared}")
+
+
+def _pass_id(game: GuanDanGame) -> int:
+    for action in game.legal_actions():
+        if action["declared_pattern"] == "pass":
+            return int(action["action_id"])
+    raise AssertionError("pass action not found")
+
+
+def _table_action(
+    player_id: int,
+    pattern: PatternType,
+    declared_tokens: tuple[str, ...],
+    carrier_tokens: tuple[str, ...] | None = None,
+) -> Action:
+    actual_tokens = carrier_tokens or declared_tokens
+    return Action(
+        player_id=player_id,
+        action_type=ActionType.PLAY,
+        declared_pattern=pattern,
+        declared_cards=tuple(_card(token) for token in declared_tokens),
+        carrier_cards=tuple(_card(token) for token in actual_tokens),
+        display_text="preset-table-action",
     )
-    return runner, logger
-
-
-def _build_runner_with_agents(
-    agents: tuple[RuleBasedAIAgent, RuleBasedAIAgent, RuleBasedAIAgent, RuleBasedAIAgent],
-    max_steps: int = 5000,
-) -> tuple[FourAIGameRunner, DebugLogger]:
-    logger = DebugLogger()
-    runner = FourAIGameRunner(
-        rule_engine=BaseRuleEngine(),
-        agents=agents,
-        debug_logger=logger,
-        max_steps=max_steps,
-    )
-    return runner, logger
 
 
 class TestGameFlow(unittest.TestCase):
-    def test_u11_initial_deal_total_cards_108_and_each_player_27(self) -> None:
-        state = build_initial_state(seed=23)
+    def test_reset_observe_legal_actions_and_step_follow_the_contract(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands=_hands(
+                {
+                    1: ("3S", "3H", "5S"),
+                    2: ("6S",),
+                    3: ("7S",),
+                    4: ("8S",),
+                }
+            ),
+        )
+        game.reset()
 
-        hand_sizes = [len(player.hand_cards) for player in state.players]
+        observation = game.observe()
+        self.assertEqual(
+            set(observation.keys()),
+            {"my_info", "current_round", "other_players", "history", "legal_actions"},
+        )
+        self.assertEqual(observation["my_info"]["remaining_single_card_count"], 1)
+        self.assertEqual(observation["current_round"]["current_level_rank"], "2")
+
+        legal_actions = game.legal_actions()
+        self.assertGreaterEqual(len(legal_actions), 2)
+        self.assertTrue(
+            {
+                "action_id",
+                "declared_pattern",
+                "declared_cards",
+                "carrier_cards",
+                "wildcard_count",
+                "wildcard_info",
+                "display_text",
+            }.issubset(legal_actions[0].keys())
+        )
+
+        agent = RuleBasedAIAgent(player_id=1)
+        chosen_action_id = agent.select_action(observation, legal_actions)
+        self.assertIn(chosen_action_id, {action["action_id"] for action in legal_actions})
+
+        result = game.step(chosen_action_id)
+        self.assertIn("state_diff", result)
+        self.assertIn("round_ended", result)
+        self.assertIn("game_over", result)
+        self.assertIn("winner", result)
+
+        with self.assertRaises(ValueError):
+            game.step(99999)
+
+    def test_public_legal_actions_preserve_multiple_declarations_for_same_carrier_cards(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands=_hands(
+                {
+                    1: ("2H", "7S", "7C", "8S", "8C"),
+                    2: ("3S",),
+                    3: ("4S",),
+                    4: ("5S",),
+                }
+            ),
+        )
+        game.reset()
+
+        legal_actions = game.legal_actions()
+        triple_with_pair_actions = [
+            action
+            for action in legal_actions
+            if action["declared_pattern"] == "triple_with_pair"
+        ]
+
+        self.assertTrue(triple_with_pair_actions)
+        for action in triple_with_pair_actions:
+            self.assertEqual(
+                set(action.keys()),
+                {
+                    "action_id",
+                    "declared_pattern",
+                    "declared_cards",
+                    "carrier_cards",
+                    "wildcard_count",
+                    "wildcard_info",
+                    "display_text",
+                },
+            )
+
+        signatures = {
+            (
+                tuple(action["declared_cards"]),
+                tuple(action["carrier_cards"]),
+                int(action["wildcard_count"]),
+            )
+            for action in triple_with_pair_actions
+        }
+        self.assertIn(
+            (("7", "7", "7", "8", "8"), ("7S", "7C", "8S", "8C", "2H"), 1),
+            signatures,
+        )
+        self.assertIn(
+            (("8", "8", "8", "7", "7"), ("7S", "7C", "8S", "8C", "2H"), 1),
+            signatures,
+        )
+
+    def test_legal_actions_are_stable_and_use_non_positional_action_ids(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands=_hands(
+                {
+                    1: ("2H", "7S", "7C", "8S", "8C"),
+                    2: ("3S",),
+                    3: ("4S",),
+                    4: ("5S",),
+                }
+            ),
+        )
+        game.reset()
+
+        first = game.legal_actions()
+        second = game.legal_actions()
+
+        first_signatures = [
+            (
+                int(action["action_id"]),
+                action["declared_pattern"],
+                tuple(action["declared_cards"]),
+                tuple(action["carrier_cards"]),
+            )
+            for action in first
+        ]
+        second_signatures = [
+            (
+                int(action["action_id"]),
+                action["declared_pattern"],
+                tuple(action["declared_cards"]),
+                tuple(action["carrier_cards"]),
+            )
+            for action in second
+        ]
+
+        self.assertEqual(first_signatures, second_signatures)
+        self.assertTrue(
+            any(int(action["action_id"]) != index for index, action in enumerate(first)),
+        )
+
+        first_multi_decl_ids = {
+            tuple(action["declared_cards"]): int(action["action_id"])
+            for action in first
+            if action["declared_pattern"] == "triple_with_pair"
+        }
+        second_multi_decl_ids = {
+            tuple(action["declared_cards"]): int(action["action_id"])
+            for action in second
+            if action["declared_pattern"] == "triple_with_pair"
+        }
+        self.assertEqual(first_multi_decl_ids, second_multi_decl_ids)
+        self.assertNotEqual(
+            first_multi_decl_ids[("7", "7", "7", "8", "8")],
+            first_multi_decl_ids[("8", "8", "8", "7", "7")],
+        )
+
+    def test_step_uses_the_same_action_mapping_after_repeated_legal_action_generation(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            starting_player_id=1,
+            preset_table_action=_table_action(
+                2,
+                PatternType.TRIPLE_WITH_PAIR,
+                ("7", "7", "7", "9", "9"),
+                ("7S", "7H", "7D", "9S", "9H"),
+            ),
+            preset_hands=_hands(
+                {
+                    1: ("2H", "7S", "7C", "8S", "8C"),
+                    2: ("3S",),
+                    3: ("4S",),
+                    4: ("5S",),
+                }
+            ),
+        )
+        game.reset()
+
+        first_actions = game.legal_actions()
+        chosen_action = next(
+            action
+            for action in first_actions
+            if action["declared_pattern"] == "triple_with_pair"
+            and tuple(action["declared_cards"]) == ("8", "8", "8", "7", "7")
+        )
+        chosen_action_id = int(chosen_action["action_id"])
+
+        game.observe()
+        game.legal_actions()
+        result = game.step(chosen_action_id)
+
+        self.assertEqual(result["chosen_action"]["action_id"], chosen_action_id)
+        self.assertEqual(result["chosen_action"]["declared_cards"], ["8", "8", "8", "7", "7"])
+        self.assertEqual(result["chosen_action"]["carrier_cards"], ["7S", "7C", "8S", "8C", "2H"])
+
+    def test_reset_without_preset_hands_deals_108_cards_and_27_each(self) -> None:
+        game = GuanDanGame(seed=7, current_level_rank="2")
+        game.reset()
+
+        hand_sizes = [len(player.hand_cards) for player in game._state.players]
         self.assertEqual(sum(hand_sizes), 108)
         self.assertEqual(hand_sizes, [27, 27, 27, 27])
 
-    def test_u11_initial_deal_contains_all_four_jokers(self) -> None:
-        state = build_initial_state(seed=31)
+    def test_preset_hands_reject_empty_player_hands(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands=_hands(
+                {
+                    1: ("3S",),
+                    2: (),
+                    3: ("4S",),
+                    4: ("5S",),
+                }
+            ),
+        )
 
-        all_ranks = [card.rank for player in state.players for card in player.hand_cards]
-        self.assertEqual(all_ranks.count(SMALL_JOKER_RANK), 2)
-        self.assertEqual(all_ranks.count(BIG_JOKER_RANK), 2)
+        with self.assertRaisesRegex(ValueError, "preset_hands"):
+            game.reset()
 
-    def test_i1_four_ai_full_game_finishes(self) -> None:
-        runner, logger = _build_runner(max_steps=12000)
-        final_state = runner.run_one_game(build_initial_state(seed=7))
+    def test_preset_hands_reject_missing_player_entries(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands=_hands(
+                {
+                    1: ("3S",),
+                    2: ("4S",),
+                    3: ("5S",),
+                }
+            ),
+        )
 
-        self.assertTrue(final_state.is_finished)
-        self.assertIsNotNone(final_state.winner_player_id)
-        self.assertGreater(len(logger.events), 0)
+        with self.assertRaisesRegex(ValueError, "preset_hands"):
+            game.reset()
 
-    def test_i2_multi_game_stability_no_dead_loop(self) -> None:
-        for seed in (1, 2, 3):
-            runner, _ = _build_runner(max_steps=12000)
-            final_state = runner.run_one_game(build_initial_state(seed=seed))
-            self.assertTrue(final_state.is_finished)
-            self.assertLessEqual(final_state.step_no, 12000)
+    def test_catch_wind_gives_next_lead_to_finished_players_teammate(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands=_hands(
+                {
+                    1: (BIG_JOKER_RANK,),
+                    2: ("3S",),
+                    3: ("4S",),
+                    4: ("5S",),
+                }
+            ),
+        )
+        game.reset()
 
-    def test_i2_multi_game_illegal_action_rate_zero(self) -> None:
-        for seed in range(1, 11):
-            runner, logger = _build_runner(max_steps=12000)
-            _ = runner.run_one_game(build_initial_state(seed=seed))
+        game.step(_action_id_by_pattern(game, "single", (BIG_JOKER_RANK,)))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        result = game.step(_pass_id(game))
 
-            step_events = [event for event in logger.events if event.event_type == "step"]
-            self.assertGreater(len(step_events), 0)
+        self.assertTrue(result["round_ended"])
+        self.assertFalse(result["game_over"])
+        self.assertEqual(game.observe()["current_round"]["current_player_id"], 3)
+        self.assertEqual(game.observe()["history"]["finish_order"], [1])
 
-            # chosen_action must always come from legal_actions.
-            for event in step_events:
-                payload = event.payload
-                self.assertIn(payload.get("chosen_action"), payload.get("legal_actions", []))
+    def test_finished_players_leave_rotation_after_catch_wind(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands=_hands(
+                {
+                    1: (BIG_JOKER_RANK,),
+                    2: ("3S",),
+                    3: ("4S", "6S"),
+                    4: ("5S",),
+                }
+            ),
+        )
+        game.reset()
 
-    def test_i4_multi_game_stability_with_new_patterns_and_jokers(self) -> None:
-        for seed in range(20, 30):
-            runner, logger = _build_runner(max_steps=12000)
-            final_state = runner.run_one_game(build_initial_state(seed=seed))
+        game.step(_action_id_by_pattern(game, "single", (BIG_JOKER_RANK,)))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        game.step(_action_id_by_pattern(game, "single", ("4",)))
 
-            self.assertTrue(final_state.is_finished)
-            self.assertIsNotNone(final_state.winner_player_id)
-            self.assertLessEqual(final_state.step_no, 12000)
-            self.assertGreater(len(logger.events), 0)
+        self.assertEqual(game._state.current_player_id, 4)
+        self.assertEqual(game._state.table_constraint.pending_player_ids, (4, 2))
+        self.assertNotIn(1, game._state.table_constraint.pending_player_ids)
 
-    def test_i5_api_not_enabled_mainline_still_stable(self) -> None:
-        class CountingAdvisor:
-            def __init__(self) -> None:
-                self.calls = 0
+    def test_follow_context_uses_declared_cards_for_comparison_and_carrier_cards_for_discard(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            starting_player_id=1,
+            preset_table_action=_table_action(
+                2,
+                PatternType.TRIPLE_WITH_PAIR,
+                ("7", "7", "7", "9", "9"),
+                ("7S", "7H", "7D", "9S", "9H"),
+            ),
+            preset_hands=_hands(
+                {
+                    1: ("2H", "7S", "7C", "8S", "8C"),
+                    2: ("3S",),
+                    3: ("4S",),
+                    4: ("5S",),
+                }
+            ),
+        )
+        game.reset()
 
-            def suggest_action(self, state, legal_actions, context):
-                self.calls += 1
-                return legal_actions[-1] if legal_actions else None
-
-        advisors = [CountingAdvisor() for _ in range(4)]
-        agents = tuple(
-            RuleBasedAIAgent(
-                player_id=i,
-                name=f"ai-{i}",
-                deepseek_enabled=False,
-                deepseek_action_advisor=advisors[i],
+        legal_actions = game.legal_actions()
+        signatures = {
+            (
+                action["declared_pattern"],
+                tuple(action["declared_cards"]),
+                tuple(action["carrier_cards"]),
             )
-            for i in range(4)
-        )
-        runner, logger = _build_runner_with_agents(agents=agents, max_steps=12000)
-
-        final_state = runner.run_one_game(build_initial_state(seed=202))
-        self.assertTrue(final_state.is_finished)
-        self.assertIsNotNone(final_state.winner_player_id)
-        self.assertGreater(len(logger.events), 0)
-
-        # API disabled: should remain on local heuristic chain and never call advisor.
-        self.assertTrue(all(advisor.calls == 0 for advisor in advisors))
-        for agent in agents:
-            self.assertIsNotNone(agent.last_decision_record)
-            assert agent.last_decision_record is not None
-            model_meta = agent.last_decision_record.metadata.get("model")
-            self.assertIsInstance(model_meta, dict)
-            assert isinstance(model_meta, dict)
-            self.assertEqual(model_meta.get("status"), "disabled")
-
-    def test_r8_api_failure_fallback_still_finishes_and_illegal_rate_zero(self) -> None:
-        class FailingAdvisor:
-            def __init__(self, mode: str) -> None:
-                self.mode = mode
-
-            def suggest_action(self, state, legal_actions, context):
-                if self.mode == "timeout":
-                    raise TimeoutError("simulated timeout")
-                if self.mode == "error":
-                    raise RuntimeError("simulated api error")
-                if self.mode == "empty":
-                    return None
-                raise ValueError("unsupported mode")
-
-        for mode in ("timeout", "error", "empty"):
-            with self.subTest(mode=mode):
-                agents = tuple(
-                    RuleBasedAIAgent(
-                        player_id=i,
-                        name=f"ai-{i}",
-                        deepseek_enabled=True,
-                        deepseek_action_advisor=FailingAdvisor(mode=mode),
-                    )
-                    for i in range(4)
-                )
-                runner, logger = _build_runner_with_agents(agents=agents, max_steps=12000)
-                final_state = runner.run_one_game(build_initial_state(seed=300 + len(mode)))
-
-                self.assertTrue(final_state.is_finished)
-                self.assertIsNotNone(final_state.winner_player_id)
-
-                step_events = [event for event in logger.events if event.event_type == "step"]
-                self.assertGreater(len(step_events), 0)
-                for event in step_events:
-                    payload = event.payload
-                    self.assertIn(payload.get("chosen_action"), payload.get("legal_actions", []))
-
-                for agent in agents:
-                    self.assertIsNotNone(agent.last_decision_record)
-                    assert agent.last_decision_record is not None
-                    model_meta = agent.last_decision_record.metadata.get("model")
-                    self.assertIsInstance(model_meta, dict)
-                    assert isinstance(model_meta, dict)
-                    if mode in {"timeout", "error"}:
-                        self.assertEqual(model_meta.get("status"), "fallback_error")
-                    else:
-                        self.assertEqual(model_meta.get("status"), "empty_response_fallback")
-
-    def test_r1_legal_actions_are_state_machine_acceptable_through_game(self) -> None:
-        runner, _ = _build_runner(max_steps=12000)
-        state = build_initial_state(seed=41)
-
-        while not state.is_finished:
-            legal_actions = runner.rule_engine.generate_legal_actions(state)
-            self.assertGreater(len(legal_actions), 0)
-            for action in legal_actions:
-                runner.rule_engine.validate_action(state, action)
-            state, _ = runner.step(state)
-
-    def test_r2_illegal_action_rejected_without_state_pollution(self) -> None:
-        engine = BaseRuleEngine()
-        state = build_initial_state(seed=99)
-        player = state.get_player(state.current_player_id)
-
-        # Force an illegal action by declaring wrong pattern for a single card.
-        illegal_action = Action(
-            player_id=state.current_player_id,
-            action_type=ActionType.PLAY,
-            cards=(player.hand_cards[0],),
-            declared_pattern=PatternType.PAIR,
-        )
-
-        before_hands = tuple(tuple(p.hand_cards) for p in state.players)
-        before_step = state.step_no
-
-        with self.assertRaises(ValueError):
-            engine.apply_action(state, illegal_action)
-
-        after_hands = tuple(tuple(p.hand_cards) for p in state.players)
-        self.assertEqual(before_hands, after_hands)
-        self.assertEqual(before_step, state.step_no)
-
-    def test_r4_logs_are_sufficient_for_step_replay_checks(self) -> None:
-        runner, logger = _build_runner(max_steps=12000)
-        _ = runner.run_one_game(build_initial_state(seed=17))
-
-        step_events = [event for event in logger.events if event.event_type == "step"]
-        self.assertGreater(len(step_events), 0)
-
-        for event in step_events:
-            payload = event.payload
-            self.assertIn("legal_actions", payload)
-            self.assertIn("chosen_action", payload)
-            self.assertIn("state_before", payload)
-            self.assertIn("state_after", payload)
-            self.assertIn("all_hands", payload)
-            self.assertIn("all_hands_after", payload)
-            self.assertTrue(len(payload["legal_actions"]) > 0)
-
-    def test_i4_state_consistency_no_pollution_in_logged_snapshots(self) -> None:
-        runner, logger = _build_runner(max_steps=12000)
-        _ = runner.run_one_game(build_initial_state(seed=29))
-
-        for event in logger.events:
-            if event.event_type != "step":
-                continue
-            payload = event.payload
-            all_hands = payload["all_hands"]
-            all_hands_after = payload["all_hands_after"]
-            chosen = payload["chosen_action"]
-
-            before_counts = {pid: len(cards) for pid, cards in all_hands.items()}
-            after_counts = {pid: len(cards) for pid, cards in all_hands_after.items()}
-
-            current_player = chosen["player_id"]
-            action_type = chosen["action_type"]
-            played_cards_count = len(chosen.get("cards", []))
-
-            if action_type == "pass":
-                self.assertEqual(before_counts, after_counts)
-            else:
-                for pid in before_counts:
-                    if pid == current_player:
-                        self.assertEqual(
-                            after_counts[pid],
-                            before_counts[pid] - played_cards_count,
-                        )
-                    else:
-                        self.assertEqual(after_counts[pid], before_counts[pid])
-
-    def test_i3_debug_output_contains_required_fields(self) -> None:
-        runner, logger = _build_runner(max_steps=12000)
-        _ = runner.run_one_game(build_initial_state(seed=11))
-
-        self.assertGreater(len(logger.events), 0)
-        payload = logger.events[0].payload
-
-        required_fields = {
-            "step_id",
-            "current_player_id",
-            "all_hands",
-            "table_constraint",
-            "legal_actions",
-            "chosen_action",
-            "decision_basis",
-            "state_before",
-            "state_after",
-            "remaining_hand_counts",
-            "round_ended",
-            "game_over",
-            "winner",
+            for action in legal_actions
         }
-        self.assertTrue(required_fields.issubset(payload.keys()))
+        self.assertIn(
+            ("triple_with_pair", ("8", "8", "8", "7", "7"), ("7S", "7C", "8S", "8C", "2H")),
+            signatures,
+        )
+        self.assertNotIn(
+            ("triple_with_pair", ("7", "7", "7", "8", "8"), ("7S", "7C", "8S", "8C", "2H")),
+            signatures,
+        )
 
-        before = payload["state_before"]
-        after = payload["state_after"]
-        for snapshot in (before, after):
-            self.assertIn("current_player_id", snapshot)
-            self.assertIn("table_constraint", snapshot)
-            self.assertIn("remaining_hand_counts", snapshot)
-            self.assertIn("recent_success_player", snapshot)
-            self.assertIn("phase", snapshot)
+        chosen_action_id = _action_id_by_pattern(game, "triple_with_pair", ("8", "8", "8", "7", "7"))
+        result = game.step(chosen_action_id)
+
+        self.assertEqual(result["chosen_action"]["declared_cards"], ["8", "8", "8", "7", "7"])
+        self.assertEqual(result["chosen_action"]["carrier_cards"], ["7S", "7C", "8S", "8C", "2H"])
+        self.assertEqual(game.observe()["history"]["actions"][-1]["declared_cards"], ["8", "8", "8", "7", "7"])
+        self.assertEqual(game._state.get_player(1).hand_cards, ())
+
+    def test_third_finish_ends_the_game_and_assigns_last_place(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            starting_player_id=4,
+            preset_hands=_hands(
+                {
+                    1: ("3S",),
+                    2: ("4S",),
+                    3: ("5S",),
+                    4: (BIG_JOKER_RANK,),
+                }
+            ),
+        )
+        game.reset()
+
+        game.step(_action_id_by_pattern(game, "single", (BIG_JOKER_RANK,)))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        game.step(_action_id_by_pattern(game, "single", ("4",)))
+        result = game.step(_action_id_by_pattern(game, "single", ("5",)))
+
+        self.assertTrue(result["game_over"])
+        self.assertEqual(result["winner"], "team_24")
+        self.assertEqual(game.observe()["history"]["finish_order"], [4, 2, 3, 1])
+        self.assertIsNone(game._state.table_constraint.leading_action)
+        self.assertEqual(game._state.table_constraint.pending_player_ids, ())
+        self.assertIsNone(game.observe()["current_round"]["table_action"])
+
+    def test_draw_is_declared_when_head_players_teammate_is_last(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands=_hands(
+                {
+                    1: (BIG_JOKER_RANK,),
+                    2: ("9S",),
+                    3: ("3S", "4S"),
+                    4: ("10S",),
+                }
+            ),
+        )
+        game.reset()
+
+        game.step(_action_id_by_pattern(game, "single", (BIG_JOKER_RANK,)))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        game.step(_action_id_by_pattern(game, "single", ("3",)))
+        game.step(_action_id_by_pattern(game, "single", ("10",)))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        result = game.step(_action_id_by_pattern(game, "single", ("9",)))
+
+        self.assertTrue(result["game_over"])
+        self.assertEqual(result["winner"], "draw")
+        self.assertEqual(game.observe()["history"]["finish_order"], [1, 4, 2, 3])
+
+    def test_cli_debug_output_contains_replay_fields(self) -> None:
+        buffer = io.StringIO()
+        with patch(
+            "sys.argv",
+            ["run_4ai_debug.py", "--seed", "7", "--max-steps", "12000", "--current-level-rank", "2"],
+        ):
+            with redirect_stdout(buffer):
+                exit_code = run_4ai_debug.main()
+
+        output = buffer.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("发牌完成：", output)
+        self.assertIn("玩家1手牌：【", output)
+        self.assertIn("====第1轮====", output)
+        self.assertRegex(output, r"玩家[1-4]出牌：")
+        self.assertIn("pass", output)
+        self.assertRegex(output, r"玩家1剩余手牌：【.*】")
+        self.assertIn("====游戏结束====", output)
+        self.assertRegex(output, r"头游：玩家[1-4]")
+        self.assertRegex(output, r"二游：玩家[1-4]")
+        self.assertRegex(output, r"三游：玩家[1-4]")
+        self.assertRegex(output, r"末游：玩家[1-4]")
+        self.assertRegex(output, r"(队伍1（玩家1，玩家3）获胜|队伍2（玩家2，玩家4）获胜|本局平局)")
+        self.assertNotIn("current_player=", output)
+        self.assertNotIn("constraint=", output)
+        self.assertNotIn("legal_actions=", output)
+        self.assertNotIn("chosen_action=", output)
+        self.assertNotIn("state_diff=", output)
+        self.assertNotIn("round_ended=", output)
+        self.assertNotIn("game_over=", output)
+        self.assertNotIn("winner=", output)
+
+
+if __name__ == "__main__":
+    unittest.main()

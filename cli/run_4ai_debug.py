@@ -1,449 +1,211 @@
-"""Four-AI debug runner entrypoint skeleton for phase-1."""
+"""Run a human-readable four-AI debug game on the single-game mainline."""
 
 from argparse import ArgumentParser
-import json
 from pathlib import Path
 import sys
 
 
-# Support both "python -m cli.run_4ai_debug" and direct script execution.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from agents.rule_based_ai import RuleBasedAIAgent
-from engine.game import FourAIGameRunner, build_initial_state
-from engine.logging_utils import DebugLogger
-from engine.rules import BaseRuleEngine
+from engine.cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card, card_sort_key, card_to_token
+from engine.game import GuanDanGame
 
 
-_SUIT_CN = {
+_SUIT_SYMBOLS: dict[str, str] = {
     "S": "♠",
+    "H": "♥",
     "C": "♣",
     "D": "♦",
-    "H": "♥",
 }
-
-_RANK_ORDER = {
-    "2": 0,
-    "3": 1,
-    "4": 2,
-    "5": 3,
-    "6": 4,
-    "7": 5,
-    "8": 6,
-    "9": 7,
-    "10": 8,
-    "J": 9,
-    "Q": 10,
-    "K": 11,
-    "A": 12,
-    "SJ": 13,
-    "BJ": 14,
-}
-
-_SUIT_ORDER = {
-    "S": 0,
-    "C": 1,
-    "D": 2,
-    "H": 3,
-}
-
-_PATTERN_CN = {
+_PATTERN_LABELS: dict[str, str] = {
     "single": "单张",
-    "pair": "对子",
+    "pair": "对",
     "triple": "三张",
-    "bomb": "炸弹",
+    "triple_with_pair": "三带二",
     "straight": "顺子",
     "pair_straight": "连对",
-    "triple_with_pair": "三带二",
-    "pass": "过牌",
-    "unknown": "未知",
+    "steel_plate": "钢板",
+    "straight_flush": "同花顺",
+    "joker_bomb": "天王炸",
 }
+_TEAM_WINNER_TEXT: dict[str, str] = {
+    "team_13": "队伍1（玩家1，玩家3）获胜",
+    "team_24": "队伍2（玩家2，玩家4）获胜",
+    "draw": "本局平局",
+}
+_FINISH_LABELS: tuple[str, ...] = ("头游", "二游", "三游", "末游")
 
 
-def _player_label(player_id: object) -> str:
-    if isinstance(player_id, int):
-        return f"玩家{player_id + 1}"
-    return "玩家?"
+def _ensure_utf8_stdio() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
 
 
-def _card_to_cn(token: object) -> str:
-    if not isinstance(token, str) or not token:
-        return str(token)
-    if token == "SJ":
+def _token_to_card(token: str) -> Card:
+    if token in {SMALL_JOKER_RANK, BIG_JOKER_RANK}:
+        return Card(rank=token)
+    if token and token[-1] in _SUIT_SYMBOLS:
+        return Card(rank=token[:-1], suit=token[-1])
+    return Card(rank=token)
+
+
+def _card_token_to_cn(token: str) -> str:
+    card = _token_to_card(token)
+    if card.rank == SMALL_JOKER_RANK:
         return "小王"
-    if token == "BJ":
+    if card.rank == BIG_JOKER_RANK:
         return "大王"
-    suit = token[-1]
-    rank = token[:-1]
-    if suit in _SUIT_CN and rank:
-        return f"{_SUIT_CN[suit]}{rank}"
-    return token
+    if card.suit is None:
+        return card.rank
+    return f"{_SUIT_SYMBOLS[card.suit]}{card.rank}"
 
 
-def _card_sort_key(token: object) -> tuple[int, int, str]:
-    if not isinstance(token, str) or not token:
-        return (999, 999, str(token))
-    if token in _RANK_ORDER:
-        return (_RANK_ORDER[token], 999, token)
-    suit = token[-1]
-    rank = token[:-1]
-    rank_idx = _RANK_ORDER.get(rank, 999)
-    suit_idx = _SUIT_ORDER.get(suit, 999)
-    return (rank_idx, suit_idx, token)
+def _cards_to_cn(tokens: list[str]) -> str:
+    if not tokens:
+        return "【】"
+    return "【" + "、".join(_card_token_to_cn(token) for token in tokens) + "】"
 
 
-def _cards_to_cn(cards: object) -> str:
-    if not isinstance(cards, list):
-        return "[]"
-    sorted_cards = sorted(cards, key=_card_sort_key)
-    converted = [_card_to_cn(card) for card in sorted_cards]
-    return f"[{ '，'.join(converted) }]"
+def _format_hand_cards_cn(tokens: list[str]) -> str:
+    ordered_tokens = sorted(tokens, key=lambda token: card_sort_key(_token_to_card(token)))
+    return _cards_to_cn(ordered_tokens)
 
 
-def _format_play_cn(action: dict[str, object]) -> str:
-    action_type = action.get("action_type")
-    if action_type == "pass":
-        return "过牌"
-    cards = action.get("cards", [])
-    if not isinstance(cards, list):
-        cards = []
-    cards_cn = "，".join(_card_to_cn(card) for card in cards)
-    pattern = action.get("declared_pattern")
-    pattern_cn = _PATTERN_CN.get(str(pattern), str(pattern) if pattern is not None else "未知")
-    return f"{cards_cn}({pattern_cn})"
-
-
-def _format_action(action: dict[str, object]) -> str:
-    cards = action.get("cards", [])
-    cards_text = " ".join(str(card) for card in cards) if cards else "-"
-    return (
-        f"player={action.get('player_id')} type={action.get('action_type')} "
-        f"pattern={action.get('declared_pattern')} cards=[{cards_text}]"
-    )
-
-
-def _format_constraint(constraint: object) -> str:
-    if not isinstance(constraint, dict):
-        return "未知约束"
-    required = constraint.get("required_pattern")
-    required_cn = _PATTERN_CN.get(str(required), str(required) if required is not None else "无")
-    min_hint = constraint.get("min_strength_hint")
-    leading = constraint.get("leading_action")
-    leading_text = "无"
-    if isinstance(leading, dict):
-        leading_text = _format_play_cn(leading)
-    if required is None and leading is None:
-        return "自由出牌"
-    hint_text = f"（点数 > {min_hint}）" if min_hint is not None else ""
-    return f"当前需压：{required_cn}{hint_text}；基准动作：{leading_text}"
-
-
-def _format_remaining_counts(counts: object) -> str:
-    if not isinstance(counts, dict):
-        return "-"
-    items: list[str] = []
-    for player_id in sorted((k for k in counts.keys() if isinstance(k, int))):
-        items.append(f"{_player_label(player_id)}={counts[player_id]}")
-    return " ".join(items)
-
-
-def _bool_cn(flag: object) -> str:
-    return "是" if flag is True else "否"
-
-
-def _phase_cn(phase: object) -> str:
-    if phase == "lead":
-        return "领出"
-    if phase == "follow":
-        return "跟牌"
-    return str(phase)
-
-
-def _player_value_cn(player_id: object) -> str:
-    if isinstance(player_id, int):
-        return _player_label(player_id)
-    if player_id is None:
-        return "无"
-    return str(player_id)
-
-
-def _format_legal_actions(legal_actions: object) -> str:
-    if not isinstance(legal_actions, list):
-        return "  - 无"
-
-    grouped: dict[str, list[str]] = {}
-    for action in legal_actions:
-        if not isinstance(action, dict):
-            continue
-        key = str(action.get("declared_pattern") or action.get("action_type") or "unknown")
-        key_cn = _PATTERN_CN.get(key, key)
-        grouped.setdefault(key_cn, []).append(_format_play_cn(action))
-
-    if not grouped:
-        return "  - 无"
-
-    max_groups = 6
-    max_items_per_group = 3
-    lines: list[str] = []
-    group_items = list(grouped.items())
-    group_items.sort(key=lambda item: (item[0] != "过牌", item[0]))
-
-    for index, (group_name, actions) in enumerate(group_items):
-        if index >= max_groups:
-            lines.append(f"  - 其余{len(group_items) - max_groups}种牌型省略")
-            break
-        shown = actions[:max_items_per_group]
-        omitted = len(actions) - len(shown)
-        suffix = f"；其余{omitted}项省略" if omitted > 0 else ""
-        lines.append(
-            f"  - {group_name}({len(actions)}项)："
-            f"{'；'.join(shown)}{suffix}"
-        )
-    return "\n".join(lines)
-
-
-def _format_state_diff(state_before: object, state_after: object) -> str:
-    if not isinstance(state_before, dict) or not isinstance(state_after, dict):
-        return "无"
-
+def _compact_declared_cards_cn(tokens: list[str]) -> str:
     parts: list[str] = []
-    before_player = state_before.get("current_player_id")
-    after_player = state_after.get("current_player_id")
-    if before_player != after_player:
-        parts.append(
-            f"当前玩家：{_player_value_cn(before_player)} -> {_player_value_cn(after_player)}"
-        )
-
-    before_phase = state_before.get("phase")
-    after_phase = state_after.get("phase")
-    if before_phase != after_phase:
-        parts.append(f"阶段：{_phase_cn(before_phase)} -> {_phase_cn(after_phase)}")
-
-    before_recent = state_before.get("recent_success_player")
-    after_recent = state_after.get("recent_success_player")
-    if before_recent != after_recent:
-        parts.append(
-            f"最近成功出牌者：{_player_value_cn(before_recent)} -> {_player_value_cn(after_recent)}"
-        )
-
-    before_round = state_before.get("round_no")
-    after_round = state_after.get("round_no")
-    if before_round != after_round:
-        parts.append(f"轮次：第{before_round}轮 -> 第{after_round}轮")
-
-    before_constraint = state_before.get("table_constraint")
-    after_constraint = state_after.get("table_constraint")
-    if before_constraint != after_constraint:
-        parts.append(
-            "约束变化："
-            f"{_format_constraint(before_constraint)}"
-            f"->{_format_constraint(after_constraint)}"
-        )
-
-    before_counts = state_before.get("remaining_hand_counts")
-    after_counts = state_after.get("remaining_hand_counts")
-    if isinstance(before_counts, dict) and isinstance(after_counts, dict):
-        changed_count_parts: list[str] = []
-        for player_id in sorted(
-            set(k for k in before_counts.keys() if isinstance(k, int))
-            | set(k for k in after_counts.keys() if isinstance(k, int))
-        ):
-            if before_counts.get(player_id) != after_counts.get(player_id):
-                changed_count_parts.append(
-                    f"{_player_label(player_id)}:{before_counts.get(player_id)}->{after_counts.get(player_id)}"
-                )
-        if changed_count_parts:
-            parts.append("手牌数量变化：" + "，".join(changed_count_parts))
-
-    return "；".join(parts) if parts else "无关键变化"
+    for token in tokens:
+        card = _token_to_card(token)
+        if card.rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK}:
+            parts.append(_card_token_to_cn(token))
+        elif card.suit is not None:
+            parts.append(_card_token_to_cn(token))
+        else:
+            parts.append(card.rank)
+    return "".join(parts)
 
 
-def _get_round_no(payload: dict[str, object]) -> object:
-    state_before = payload.get("state_before", {})
-    if isinstance(state_before, dict):
-        return state_before.get("round_no")
-    return None
+def _pattern_label_cn(action: dict[str, object]) -> str:
+    declared_pattern = str(action.get("declared_pattern"))
+    declared_cards = [str(token) for token in action.get("declared_cards", [])]
+
+    if declared_pattern == "pair":
+        main_rank = declared_cards[0] if declared_cards else ""
+        return f"对{_card_token_to_cn(main_rank)}"
+    if declared_pattern == "bomb":
+        return f"{len(declared_cards)}炸"
+    return _PATTERN_LABELS.get(declared_pattern, declared_pattern)
 
 
-def _format_step_human(payload: dict[str, object]) -> str:
-    chosen_action = payload.get("chosen_action")
-    if not isinstance(chosen_action, dict):
+def _wildcard_suffix_cn(action: dict[str, object]) -> str:
+    wildcard_count = int(action.get("wildcard_count", 0))
+    wildcard_info = list(action.get("wildcard_info", []))
+    if wildcard_count != 1 or not wildcard_info:
         return ""
 
-    player_id = chosen_action.get("player_id")
-    player_name = _player_label(player_id)
-    return f"{player_name}出牌：{_format_play_cn(chosen_action)}"
+    declared_cards = [str(token) for token in action.get("declared_cards", [])]
+    declared_text = _compact_declared_cards_cn(declared_cards)
+    declared_as = str(wildcard_info[0]["declared_as"])
+    declared_as_text = _card_token_to_cn(declared_as)
+    return f"（声明：{declared_text}，逢人配当{declared_as_text}）"
 
 
-def _print_all_hands_human(all_hands: object, suffix: str = "手牌") -> None:
-    if not isinstance(all_hands, dict):
-        return
+def _format_action_cn(action: dict[str, object]) -> str:
+    declared_pattern = str(action.get("declared_pattern"))
+    if declared_pattern == "pass":
+        return "pass"
 
-    sorted_player_ids: list[int] = []
-    for player_id in all_hands.keys():
-        if isinstance(player_id, int):
-            sorted_player_ids.append(player_id)
-    sorted_player_ids.sort()
-
-    for player_id in sorted_player_ids:
-        cards = all_hands.get(player_id, [])
-        print(f"{_player_label(player_id)}{suffix}：{_cards_to_cn(cards)}")
+    carrier_cards = [str(token) for token in action.get("carrier_cards", [])]
+    return f"{_pattern_label_cn(action)}{_cards_to_cn(carrier_cards)}{_wildcard_suffix_cn(action)}"
 
 
-def _print_events_human(events: list[object], verbose_debug: bool = False) -> None:
-    last_round = None
-    should_print_initial_hands = True
-    pending_play_lines: list[str] = []
-    pending_hands_after: object = None
+def _finish_suffix_cn(result: dict[str, object]) -> str:
+    state_diff = dict(result.get("state_diff", {}))
+    player_id = int(state_diff.get("current_player_before", 0))
+    finish_order_before = [int(item) for item in state_diff.get("finish_order_before", [])]
+    finish_order_after = [int(item) for item in state_diff.get("finish_order_after", [])]
 
-    for event in events:
-        event_type = getattr(event, "event_type", None)
-        payload = getattr(event, "payload", None)
-        if event_type != "step" or not isinstance(payload, dict):
-            continue
+    if player_id not in finish_order_after or player_id in finish_order_before:
+        return ""
 
-        if should_print_initial_hands:
-            print("\n发牌完成")
-            _print_all_hands_human(payload.get("all_hands", {}))
-            should_print_initial_hands = False
+    rank_index = finish_order_after.index(player_id)
+    return f"（玩家{player_id}{_FINISH_LABELS[rank_index]}）"
 
-        round_no = _get_round_no(payload)
-        if round_no != last_round:
-            print(f"\n======第{round_no}轮======")
-            last_round = round_no
 
-        step_id = payload.get("step_id")
-        current_player = payload.get("current_player_id")
-        legal_actions = payload.get("legal_actions", [])
-        chosen_action = payload.get("chosen_action", {})
-        table_constraint = payload.get("table_constraint")
-        state_before = payload.get("state_before")
-        state_after = payload.get("state_after")
-        remaining_counts = payload.get("remaining_hand_counts")
-        round_ended = payload.get("round_ended")
-        game_over = payload.get("game_over")
-        winner = payload.get("winner")
+def _print_initial_hands(game: GuanDanGame) -> None:
+    print("发牌完成：")
+    for player in game._state.players:  # noqa: SLF001 - debug CLI needs full-information replay
+        hand_tokens = [card_to_token(card) for card in player.hand_cards]
+        print(f"玩家{player.player_id}手牌：{_format_hand_cards_cn(hand_tokens)}")
 
-        if verbose_debug:
-            print(f"当前步数：{step_id}")
-            print(f"当前玩家：{_player_label(current_player)}")
-            print(f"当前约束：{_format_constraint(table_constraint)}")
-            legal_count = len(legal_actions) if isinstance(legal_actions, list) else 0
-            print(f"可选动作（共{legal_count}项，按牌型分组）：")
-            print(_format_legal_actions(legal_actions))
-            if isinstance(chosen_action, dict):
-                print(f"已选动作：{_format_play_cn(chosen_action)}")
-            else:
-                print("已选动作：无")
-            print(f"状态变化：{_format_state_diff(state_before, state_after)}")
-            print(f"剩余手牌数：{_format_remaining_counts(remaining_counts)}")
 
-            winner_text = _player_label(winner) if isinstance(winner, int) else "无"
-            print(f"本轮是否结束：{_bool_cn(round_ended)}")
-            print(f"对局是否结束：{_bool_cn(game_over)}")
-            print(f"胜者：{winner_text}")
+def _print_remaining_hands(game: GuanDanGame) -> None:
+    for player in game._state.players:  # noqa: SLF001 - debug CLI needs full-information replay
+        hand_tokens = [card_to_token(card) for card in player.hand_cards]
+        print(f"玩家{player.player_id}剩余手牌：{_format_hand_cards_cn(hand_tokens)}")
 
-        step_line = _format_step_human(payload)
-        if step_line:
-            pending_play_lines.append(step_line)
-        pending_hands_after = payload.get("all_hands_after", {})
 
-        if round_ended:
-            for line in pending_play_lines:
-                print(line)
-            _print_all_hands_human(pending_hands_after, suffix="剩余手牌")
-            pending_play_lines = []
+def _print_final_summary(game: GuanDanGame) -> None:
+    finish_order = game._state.finish_order  # noqa: SLF001 - debug CLI needs final ranks
+    winner = game._state.winner  # noqa: SLF001 - debug CLI needs final outcome
 
-        state_after = payload.get("state_after", {})
-        next_player_id = None
-        if isinstance(state_after, dict):
-            next_player_id = state_after.get("current_player_id")
-        if round_ended and isinstance(next_player_id, int):
-            print(f"\n本轮结束，下轮首出：{_player_label(next_player_id)}（本轮最大）")
+    print("====游戏结束====")
+    for label, player_id in zip(_FINISH_LABELS, finish_order):
+        print(f"{label}：玩家{player_id}")
+    print(_TEAM_WINNER_TEXT[winner])
 
-    if pending_play_lines:
-        for line in pending_play_lines:
-            print(line)
-        if pending_hands_after is not None:
-            _print_all_hands_human(pending_hands_after, suffix="剩余手牌")
+
+def _print_human_replay(
+    game: GuanDanGame,
+    agents: tuple[object, object, object, object],
+    *,
+    max_steps: int,
+) -> int:
+    game.reset()
+    _print_initial_hands(game)
+    print(f"====第{game._state.round_no}轮====")  # noqa: SLF001 - debug CLI needs round truth
+
+    while not game._state.is_finished:  # noqa: SLF001 - debug CLI needs full replay
+        if game._state.step_no >= max_steps:  # noqa: SLF001 - debug CLI needs full replay
+            raise RuntimeError("game did not finish within max_steps")
+
+        observation = game.observe()
+        legal_actions = game.legal_actions()
+        current_player = int(observation["current_round"]["current_player_id"])
+        chosen_action_id = agents[current_player - 1].select_action(observation, legal_actions)
+        result = game.step(chosen_action_id)
+
+        print(f"玩家{current_player}出牌：{_format_action_cn(result['chosen_action'])}{_finish_suffix_cn(result)}")
+
+        if result["round_ended"]:
+            print()
+            _print_remaining_hands(game)
+            if not result["game_over"]:
+                print(f"====第{game._state.round_no}轮====")  # noqa: SLF001 - debug CLI needs round truth
+
+    print()
+    _print_final_summary(game)
+    return 0
 
 
 def build_parser() -> ArgumentParser:
-    parser = ArgumentParser(description="Run 4-AI GuanDan debug session (skeleton).")
+    parser = ArgumentParser(description="Run a four-AI GuanDan debug session.")
     parser.add_argument("--seed", type=int, default=None, help="Optional RNG seed.")
-    parser.add_argument(
-        "--max-steps",
-        type=int,
-        default=12000,
-        help="Max step guard for one game (default: 12000).",
-    )
-    parser.add_argument(
-        "--summary-only",
-        action="store_true",
-        help="Only print final summary without per-step debug events.",
-    )
-    parser.add_argument(
-        "--json-lines",
-        action="store_true",
-        help="Print per-step debug events as JSON lines.",
-    )
-    parser.add_argument(
-        "--verbose-debug",
-        action="store_true",
-        help="Show verbose per-step debug details in human-readable mode.",
-    )
+    parser.add_argument("--max-steps", type=int, default=12000, help="Safety cap for one game.")
+    parser.add_argument("--current-level-rank", type=str, default="2", help="Current level rank for this game.")
     return parser
 
 
 def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
-
-    rule_engine = BaseRuleEngine()
-    agents = tuple(RuleBasedAIAgent(player_id=i, name=f"ai-{i}") for i in range(4))
-    logger = DebugLogger()
-    runner = FourAIGameRunner(
-        rule_engine=rule_engine,
-        agents=agents,
-        debug_logger=logger,
-        max_steps=args.max_steps,
-    )
-
-    try:
-        final_state = runner.run_one_game(build_initial_state(seed=args.seed))
-    except Exception as exc:
-        if not args.summary_only:
-            if args.json_lines:
-                for event in logger.events:
-                    if event.event_type == "step":
-                        print(json.dumps(event.payload, ensure_ascii=False))
-            else:
-                _print_events_human(logger.events, verbose_debug=args.verbose_debug)
-        print(f"run_error={type(exc).__name__}: {exc}")
-        if isinstance(exc, RuntimeError) and "max_steps" in str(exc):
-            suggested = max(args.max_steps * 2, 12000)
-            print(f"建议：使用更大的步数上限重试，例如 --max-steps {suggested}")
-        return 1
-
-    if not args.summary_only:
-        if args.json_lines:
-            for event in logger.events:
-                if event.event_type == "step":
-                    print(json.dumps(event.payload, ensure_ascii=False))
-        else:
-            _print_events_human(logger.events, verbose_debug=args.verbose_debug)
-
-    winner_text = (
-        f"玩家{final_state.winner_player_id + 1}"
-        if final_state.winner_player_id is not None
-        else "无"
-    )
-    print(
-        f"\n对局结束：胜者={winner_text} 步数={final_state.step_no} 轮次={final_state.round_no}"
-    )
-    return 0
+    _ensure_utf8_stdio()
+    args = build_parser().parse_args()
+    game = GuanDanGame(seed=args.seed, current_level_rank=args.current_level_rank)
+    agents = tuple(RuleBasedAIAgent(player_id=player_id) for player_id in (1, 2, 3, 4))
+    return _print_human_replay(game, agents, max_steps=args.max_steps)
 
 
 if __name__ == "__main__":
