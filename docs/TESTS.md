@@ -31,7 +31,8 @@ python -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tes
 ### 2.1 牌型与规则
 
 - 王类白名单与非法王类组合
-- 顺子 / 连对 / 钢板 / 同花顺边界
+- 顺子允许窗口：`A2345`、`23456`、`10JQKA`；禁止 `JQKA2`
+- 同花顺必须满足顺子边界且同花
 - 三带二严格 `3 + 2`
 - 逢人配只能参与非王类牌型，且一手最多 1 张
 - 合法动作必须是显式展开后的 canonical action
@@ -50,10 +51,24 @@ python -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tes
 
 - `reset()` 能正确初始化单局
 - `observe()` 返回固定 5 个信息块
+- `observe()` 可预留或返回手牌强度评分字段，字段存在且语义稳定
+- `observe()` 可提供记牌相关公开结构，如已出牌统计、历史出牌摘要或弱推断信息
 - `legal_actions()` 返回稳定、可审计的动作列表
 - `step(action_id)` 只接受当前合法动作 ID，并正确推进状态
 
-### 2.4 CLI 中文人工审核输出
+### 2.4 理牌与剪枝
+
+- 首出自由出牌时，剪枝视图可以过滤炸弹 / 同花顺 / 天王炸等高价值动作，但 canonical 集合仍应完整存在
+- 跟牌场景下，剪枝视图必须保留必要的压制动作与 `pass`
+- 剪枝后的动作列表必须仍可追溯到原始合法动作，不得改变动作语义
+
+### 2.5 RAG 与 pass 跳过
+
+- 当剪枝后仅剩 `pass` 时，本地决策应直接结束，不应依赖 RAG 再触发模型调用
+- RAG 检索可返回空或被跳过，但不能影响 `pass` 的本地选择
+- 仅剩 `pass` 的场景应能稳定复盘且不产生额外超时等待
+
+### 2.6 CLI 中文人工审核输出
 
 `cli/run_4ai_debug.py` 的默认输出契约为中文人工审核视图，而不是旧的字段式调试打印。
 
@@ -85,6 +100,8 @@ python -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tes
 - 复杂贡还 / 抗贡比赛制
 - RAG / DeepSeek 主链接入
 - 训练链路、强化学习、自博弈、MCTS
+- 手牌评分数值校准与更细粒度的计牌策略
+- 更复杂的 RAG 检索排序与知识融合
 
 ## 4. 验收标准
 

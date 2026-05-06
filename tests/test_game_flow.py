@@ -420,6 +420,72 @@ class TestGameFlow(unittest.TestCase):
         self.assertEqual(game._state.table_constraint.pending_player_ids, ())
         self.assertIsNone(game.observe()["current_round"]["table_action"])
 
+    def test_step_raises_after_game_over(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            starting_player_id=4,
+            preset_hands=_hands(
+                {
+                    1: ("3S",),
+                    2: ("4S",),
+                    3: ("5S",),
+                    4: (BIG_JOKER_RANK,),
+                }
+            ),
+        )
+        game.reset()
+
+        game.step(_action_id_by_pattern(game, "single", (BIG_JOKER_RANK,)))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        game.step(_action_id_by_pattern(game, "single", ("4",)))
+        result = game.step(_action_id_by_pattern(game, "single", ("5",)))
+
+        self.assertTrue(result["game_over"])
+        with self.assertRaisesRegex(ValueError, "already over"):
+            game.step(123456)
+
+    def test_catch_wind_ignores_finished_players(self) -> None:
+        """接风判断只按仍未出完牌玩家集合；已出完牌玩家不得出现在 pending 中。"""
+
+        game = GuanDanGame(
+            current_level_rank="2",
+            starting_player_id=4,
+            preset_hands=_hands(
+                {
+                    1: (BIG_JOKER_RANK,),
+                    2: ("2S", "4S"),
+                    3: ("5S",),
+                    4: ("9S", "9H"),
+                }
+            ),
+        )
+        game.reset()
+
+        # 第 1 轮：玩家 4 出完对子 9 后，其他人只能 pass，接风到其队友玩家 2。
+        game.step(_action_id_by_pattern(game, "pair", ("9", "9")))
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        result = game.step(_pass_id(game))
+        self.assertTrue(result["round_ended"])
+        self.assertEqual(game.observe()["history"]["finish_order"], [4])
+        self.assertEqual(game.observe()["current_round"]["current_player_id"], 2)
+
+        # 第 2 轮：玩家 2 出单张 2；玩家 3 不能压只能 pass；玩家 1 用大王压并出完。
+        game.step(_action_id_by_pattern(game, "single", ("2",)))
+        game.step(_pass_id(game))
+        game.step(_action_id_by_pattern(game, "single", (BIG_JOKER_RANK,)))
+
+        # 玩家 4 已出完牌，不得参与后续 pending。
+        self.assertNotIn(4, game._state.table_constraint.pending_player_ids)
+
+        # 其余仍在局中的玩家依次 pass，接风到玩家 1 的队友玩家 3。
+        game.step(_pass_id(game))
+        end_round = game.step(_pass_id(game))
+        self.assertTrue(end_round["round_ended"])
+        self.assertEqual(game.observe()["current_round"]["current_player_id"], 3)
+
     def test_draw_is_declared_when_head_players_teammate_is_last(self) -> None:
         game = GuanDanGame(
             current_level_rank="2",

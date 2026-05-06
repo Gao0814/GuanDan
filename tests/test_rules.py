@@ -1,7 +1,9 @@
 import unittest
+from collections import Counter
 
 from engine.actions import Action, ActionType
 from engine.cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card
+from engine.game import GuanDanGame
 from engine.patterns import PatternType
 from engine.rules import BaseRuleEngine
 from engine.state import GameState, PlayerState, TableConstraint
@@ -52,6 +54,13 @@ def _state(
         current_level_rank=current_level_rank,
         table_constraint=TableConstraint(leading_action=table_action),
     )
+
+
+def _pass_id(game: GuanDanGame) -> int:
+    for action in game.legal_actions():
+        if action["declared_pattern"] == "pass":
+            return int(action["action_id"])
+    raise AssertionError("pass action not found")
 
 
 class TestRules(unittest.TestCase):
@@ -139,6 +148,68 @@ class TestRules(unittest.TestCase):
         self.assertTrue(self.rules.can_beat(stronger, weaker, current_level_rank="2"))
         self.assertFalse(self.rules.can_beat(equal, weaker, current_level_rank="2"))
 
+    def test_bomb_comparison_same_length_uses_rank(self) -> None:
+        bomb5_k = _action(2, PatternType.BOMB, ("K", "K", "K", "K", "K"))
+        bomb5_a = _action(1, PatternType.BOMB, ("A", "A", "A", "A", "A"))
+
+        self.assertTrue(self.rules.can_beat(bomb5_a, bomb5_k, current_level_rank="2"))
+        self.assertFalse(self.rules.can_beat(bomb5_k, bomb5_a, current_level_rank="2"))
+
+    def test_round_end_resets_table_constraint_to_free(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            starting_player_id=3,
+            preset_table_action=_action(
+                2,
+                PatternType.SINGLE,
+                (BIG_JOKER_RANK,),
+                (BIG_JOKER_RANK,),
+            ),
+            preset_hands={
+                1: _cards("3S"),
+                2: _cards("6S"),
+                3: _cards("4S"),
+                4: _cards("5S"),
+            },
+        )
+        game.reset()
+
+        self.assertNotEqual(game.observe()["current_round"]["constraint"], "free")
+
+        game.step(_pass_id(game))
+        game.step(_pass_id(game))
+        result = game.step(_pass_id(game))
+
+        self.assertTrue(result["round_ended"])
+        observation = game.observe()
+        self.assertEqual(observation["current_round"]["constraint"], "free")
+        self.assertIsNone(observation["current_round"]["table_action"])
+        self.assertEqual(observation["current_round"]["current_player_id"], 2)
+
+    def test_generated_actions_carrier_cards_are_payable_from_hand(self) -> None:
+        state = _state(
+            hand_tokens=(
+                "2H",  # wildcard (current_level_rank is 2)
+                "2S",
+                "9S",
+                "9H",
+                "10C",
+                "JD",
+            ),
+            current_level_rank="2",
+        )
+
+        actions = self.rules.generate_legal_actions(state)
+        hand_counter = Counter((card.rank, card.suit) for card in state.get_player(1).hand_cards)
+
+        for action in actions:
+            if action.action_type != ActionType.PLAY:
+                continue
+            carrier_counter = Counter((card.rank, card.suit) for card in action.carrier_cards)
+            with self.subTest(action=action):
+                for key, count in carrier_counter.items():
+                    self.assertLessEqual(count, hand_counter.get(key, 0))
+
     def test_cross_type_hierarchy_is_fixed(self) -> None:
         bomb4 = _action(2, PatternType.BOMB, ("9", "9", "9", "9"), ("9S", "9H", "9C", "9D"))
         bomb5 = _action(
@@ -223,6 +294,46 @@ class TestRules(unittest.TestCase):
             ("play", "triple_with_pair", ("7", "7", "7", "8", "8"), ("7S", "7C", "8S", "8C", "2H")),
             signatures,
         )
+
+    def test_follow_constraint_allows_wildcard_bomb_cross_type_suppression(self) -> None:
+        """Regression: wildcard bombs must appear when following a non-bomb pattern."""
+        table_action = _action(
+            2,
+            PatternType.TRIPLE_WITH_PAIR,
+            ("9", "9", "9", "10", "10"),
+            ("9S", "9H", "9C", "10S", "10C"),
+        )
+        # Hand: 3 natural fives + 3 natural eights + 1 wildcard + fillers
+        state = _state(
+            hand_tokens=(
+                "5S", "5C", "5D",  # 3 fives → wildcard 4-bomb-5
+                "8S", "8C", "8D",  # 3 eights → wildcard 4-bomb-8
+                "2H",  # wildcard (红桃级牌, current_level_rank=2)
+                # filler cards to make 27
+                "3S", "4S", "6S", "7S", "9S", "10S", "JS", "QS", "KS", "AS",
+                "3C", "4C", "6C", "7C", "9C", "10C", "JC", "QC", "KC", "AC",
+            ),
+            table_action=table_action,
+            current_level_rank="2",
+        )
+
+        actions = self.rules.generate_legal_actions(state)
+        bomb_actions = [a for a in actions if a.declared_pattern == PatternType.BOMB]
+        bomb_signatures = {
+            (
+                tuple(c.rank for c in a.declared_cards),
+                a.wildcard_count,
+            )
+            for a in bomb_actions
+        }
+
+        # Both wildcard bombs must be present
+        self.assertIn((("5", "5", "5", "5"), 1), bomb_signatures)
+        self.assertIn((("8", "8", "8", "8"), 1), bomb_signatures)
+
+        # Pass must always be present
+        pass_actions = [a for a in actions if a.action_type == ActionType.PASS]
+        self.assertEqual(len(pass_actions), 1)
 
 
 if __name__ == "__main__":

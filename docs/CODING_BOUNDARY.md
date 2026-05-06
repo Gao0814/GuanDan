@@ -62,6 +62,8 @@ project/
 │   ├── __init__.py
 │   ├── base.py
 │   ├── rule_based_ai.py
+│   ├── deepseek_ai.py
+│   ├── deepseek_client.py
 │   ├── rag_advisor.py
 │   └── decision_trace.py
 │
@@ -76,7 +78,6 @@ project/
 │
 ├── cli/
 │   ├── __init__.py
-│   ├── run_4ai_debug.py
 │   └── run_4ai_debug.py
 │
 ├── tests/
@@ -127,6 +128,8 @@ project/
 - `engine/logging_utils.py`
 - `agents/base.py`
 - `agents/rule_based_ai.py`
+- `agents/deepseek_ai.py`
+- `agents/deepseek_client.py`
 - `agents/rag_advisor.py`
 - `cli/run_4ai_debug.py`
 - `tests/test_patterns.py`

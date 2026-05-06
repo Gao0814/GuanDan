@@ -6,16 +6,14 @@ from rag.retriever import KnowledgeRetriever
 
 
 _OUT_OF_SCOPE_KEYWORDS = (
-    "钢板",
-    "飞机",
-    "同花顺",
-    "王炸",
-    "天王炸",
-    "逢人配",
+    # Not part of the single-game mainline.
     "进贡",
     "还贡",
     "升级",
-    "胜负",
+    "多局",
+    "比赛",
+    # Unsupported pattern in current engine scope.
+    "飞机",
 )
 
 

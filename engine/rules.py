@@ -13,6 +13,7 @@ from .state import GameState
 _NON_JOKER_RANKS: tuple[str, ...] = ("3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2")
 _STRAIGHT_WINDOWS: tuple[tuple[str, ...], ...] = (
     ("A", "2", "3", "4", "5"),
+    ("2", "3", "4", "5", "6"),
     ("3", "4", "5", "6", "7"),
     ("4", "5", "6", "7", "8"),
     ("5", "6", "7", "8", "9"),
@@ -251,6 +252,18 @@ def _pick_cards(cards: list[Card], count: int) -> tuple[Card, ...]:
     return tuple(sorted(cards[:count], key=card_sort_key))
 
 
+def _card_key(card: Card) -> tuple[str, str | None]:
+    return (card.rank, card.suit)
+
+
+def _carrier_is_payable(action: Action, hand_cards: tuple[Card, ...]) -> bool:
+    if action.action_type != ActionType.PLAY:
+        return True
+    hand_counter = Counter(_card_key(card) for card in hand_cards)
+    carrier_counter = Counter(_card_key(card) for card in action.carrier_cards)
+    return all(count <= hand_counter.get(key, 0) for key, count in carrier_counter.items())
+
+
 class BaseRuleEngine:
     def detect_pattern(self, cards: tuple[Card, ...]) -> Pattern:
         return detect_pattern(cards)
@@ -464,7 +477,8 @@ class BaseRuleEngine:
         for triple_rank, triple_cards in non_wild_by_rank.items():
             if triple_rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} or len(triple_cards) < 2:
                 continue
-            for pair_rank, pair_cards in all_by_rank.items():
+            # When wildcard is used to complete the triple, the pair must not consume any wildcard card.
+            for pair_rank, pair_cards in non_wild_by_rank.items():
                 if pair_rank == triple_rank or len(pair_cards) < 2:
                     continue
                 actions.append(
@@ -483,7 +497,8 @@ class BaseRuleEngine:
                     )
                 )
 
-        for triple_rank, triple_cards in all_by_rank.items():
+        for triple_rank, triple_cards in non_wild_by_rank.items():
+            # When wildcard is used to complete the pair, the triple must not consume any wildcard card.
             if triple_rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} or len(triple_cards) < 3:
                 continue
             for pair_rank, pair_cards in non_wild_by_rank.items():
@@ -718,6 +733,13 @@ class BaseRuleEngine:
             if detect_pattern(action.declared_cards).type != action.declared_pattern:
                 continue
             deduped[_action_dedupe_key(action)] = action
+
+        # Safety: never expose actions that cannot be executed from the real hand.
+        deduped = {
+            key: action
+            for key, action in deduped.items()
+            if _carrier_is_payable(action, player.hand_cards)
+        }
 
         leading_action = state.table_constraint.leading_action
         if leading_action is None:

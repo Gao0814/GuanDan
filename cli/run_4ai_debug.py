@@ -171,7 +171,8 @@ def _print_human_replay(
 
     while not game._state.is_finished:  # noqa: SLF001 - debug CLI needs full replay
         if game._state.step_no >= max_steps:  # noqa: SLF001 - debug CLI needs full replay
-            raise RuntimeError("game did not finish within max_steps")
+            print(f"\n[警告] 游戏在 max_steps={max_steps} 限制内未结束，终止运行。")
+            return 0
 
         observation = game.observe()
         legal_actions = game.legal_actions()
@@ -197,6 +198,19 @@ def build_parser() -> ArgumentParser:
     parser.add_argument("--seed", type=int, default=None, help="Optional RNG seed.")
     parser.add_argument("--max-steps", type=int, default=12000, help="Safety cap for one game.")
     parser.add_argument("--current-level-rank", type=str, default="2", help="Current level rank for this game.")
+    parser.add_argument(
+        "--agent",
+        type=str,
+        default="rule",
+        choices=("rule", "deepseek"),
+        help="Agent type for all 4 players (default: rule).",
+    )
+    parser.add_argument(
+        "--show-thinking",
+        action="store_true",
+        default=False,
+        help="Show player 1 DeepSeek thinking process (only effective with --agent deepseek).",
+    )
     return parser
 
 
@@ -204,7 +218,41 @@ def main() -> int:
     _ensure_utf8_stdio()
     args = build_parser().parse_args()
     game = GuanDanGame(seed=args.seed, current_level_rank=args.current_level_rank)
-    agents = tuple(RuleBasedAIAgent(player_id=player_id) for player_id in (1, 2, 3, 4))
+
+    if args.agent == "deepseek":
+        from config import AppConfig
+        from agents.deepseek_ai import DeepSeekAIAgent
+        from agents.deepseek_client import DeepSeekClient
+        from agents.rag_advisor import RAGAdvisor
+        from rag.kb_loader import KnowledgeBaseLoader
+        from rag.retriever import KnowledgeRetriever
+
+        config = AppConfig.from_env()
+        if not config.deepseek_api_key:
+            print("DEEPSEEK_API_KEY is required for --agent deepseek", file=sys.stderr)
+            return 2
+
+        client = DeepSeekClient(
+            api_key=config.deepseek_api_key,
+            base_url=config.deepseek_base_url,
+            model=config.deepseek_model,
+            timeout_seconds=config.deepseek_timeout,
+            max_retries=config.deepseek_max_retries,
+        )
+        loader = KnowledgeBaseLoader((PROJECT_ROOT / "rag").resolve())
+        retriever = KnowledgeRetriever(loader.load_all_documents())
+        rag_advisor = RAGAdvisor(retriever)
+        agents = tuple(
+            DeepSeekAIAgent(
+                player_id=player_id,
+                client=client,
+                rag_advisor=rag_advisor,
+                verbose=(player_id == 1 and args.show_thinking),
+            )
+            for player_id in (1, 2, 3, 4)
+        )
+    else:
+        agents = tuple(RuleBasedAIAgent(player_id=player_id) for player_id in (1, 2, 3, 4))
     return _print_human_replay(game, agents, max_steps=args.max_steps)
 
 

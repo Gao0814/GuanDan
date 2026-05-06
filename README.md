@@ -64,6 +64,32 @@ d:/VsCodeProject/GuanDan/.venv/Scripts/python.exe -m cli.run_4ai_debug --seed 7 
 
 默认不展开 `legal_actions`，只打印实际执行动作；若动作使用逢人配，会同时显示真实承载牌与声明说明。
 
+## CLI 调试命令
+
+运行本地 4 AI 自动对局，用于调试引擎规则和 AI 决策：
+
+```bash
+# 默认规则 AI 对局（随机发牌）
+python -m cli.run_4ai_debug
+
+# 固定发牌种子、限制最大步数（适合复现问题）
+python -m cli.run_4ai_debug --seed 42 --max-steps 5000
+
+# 使用 DeepSeek API 接入（需先配置 .env 文件）
+python -m cli.run_4ai_debug --agent deepseek --seed 7 --max-steps 10
+
+# 显示 DeepSeek 玩家 1 的思考过程
+python -m cli.run_4ai_debug --agent deepseek --show-thinking --seed 7 --max-steps 10
+
+# 静默模式，不输出思考过程（默认行为）
+python -m cli.run_4ai_debug --agent deepseek --seed 7
+
+# 设置级牌（默认 2）
+python -m cli.run_4ai_debug --agent deepseek --seed 7 --current-level-rank 5
+```
+
+说明：`--agent` 可选 `rule`（默认）或 `deepseek`；`--seed` 固定发牌顺序；`--max-steps` 防止死循环；`--show-thinking` 仅在 `--agent deepseek` 时有效，控制是否输出玩家 1 的五段式思考过程（手牌摘要、局面、其他玩家、合法动作摘要、模型推理与选择），对其他模式无影响。DeepSeek 接入需在 `.env` 中配置 `DEEPSEEK_API_KEY`。
+
 ## 旧链路处理
 
 旧比赛层、旧 RAG / DeepSeek 试验链路、旧评测与旧 CLI 已归档到 `archive_legacy/`，不再属于当前主链。

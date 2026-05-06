@@ -51,9 +51,13 @@ class TestPatterns(unittest.TestCase):
             with self.subTest(cards=cards):
                 self.assertEqual(detect_pattern(cards).type, PatternType.UNKNOWN)
 
-    def test_straight_boundaries_allow_a2345_and_10jqka_only(self) -> None:
+    def test_straight_boundaries_allow_a2345_23456_and_10jqka(self) -> None:
         self.assertEqual(
             detect_pattern(_cards("AS", "2H", "3C", "4D", "5S")).type,
+            PatternType.STRAIGHT,
+        )
+        self.assertEqual(
+            detect_pattern(_cards("2S", "3H", "4C", "5D", "6S")).type,
             PatternType.STRAIGHT,
         )
         self.assertEqual(
@@ -87,6 +91,15 @@ class TestPatterns(unittest.TestCase):
         self.assertEqual(
             detect_pattern(_cards("AH", "2H", "3H", "4H", "5H")).type,
             PatternType.STRAIGHT_FLUSH,
+        )
+        self.assertEqual(
+            detect_pattern(_cards("2H", "3H", "4H", "5H", "6H")).type,
+            PatternType.STRAIGHT_FLUSH,
+        )
+        # 反例：不满足同花时，不应被识别为同花顺。
+        self.assertEqual(
+            detect_pattern(_cards("2H", "3H", "4H", "5H", "6S")).type,
+            PatternType.STRAIGHT,
         )
         self.assertEqual(
             detect_pattern(_cards("10H", "JH", "QH", "KH", "AH")).type,

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from engine.actions import Action
+PublicAction = dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -11,8 +11,10 @@ class DecisionRecord:
 
     step_no: int
     player_id: int
-    legal_actions: tuple[Action, ...]
-    selected_action: Action
+    observation: dict[str, object]
+    legal_actions: tuple[PublicAction, ...]
+    selected_action_id: int
+    selected_action: PublicAction | None = None
     rule_references: tuple[str, ...] = ()
     experience_references: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
