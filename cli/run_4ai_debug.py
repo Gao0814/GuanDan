@@ -1,6 +1,7 @@
 """Run a human-readable four-AI debug game on the single-game mainline."""
 
 from argparse import ArgumentParser
+from dataclasses import replace
 from pathlib import Path
 import sys
 
@@ -9,7 +10,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from agents.hand_evaluator import evaluate_hand
 from agents.rule_based_ai import RuleBasedAIAgent
+from config import AppConfig
 from engine.cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card, card_sort_key, card_to_token
 from engine.game import GuanDanGame
 
@@ -76,6 +79,21 @@ def _format_hand_cards_cn(tokens: list[str]) -> str:
     return _cards_to_cn(ordered_tokens)
 
 
+def _build_player_observation(game: GuanDanGame, player_id: int) -> tuple[dict[str, object], list[dict[str, object]]]:
+    state = game._state  # noqa: SLF001 - debug CLI needs full-information replay
+    if state is None:
+        raise RuntimeError("game has not been reset")
+
+    temp_state = replace(state, current_player_id=player_id)
+    game._state = temp_state  # noqa: SLF001 - debug CLI needs full-information replay
+    try:
+        observation = game.observe()
+        legal_actions = game.legal_actions()
+    finally:
+        game._state = state  # noqa: SLF001 - debug CLI needs full-information replay
+    return observation, legal_actions
+
+
 def _compact_declared_cards_cn(tokens: list[str]) -> str:
     parts: list[str] = []
     for token in tokens:
@@ -136,11 +154,24 @@ def _finish_suffix_cn(result: dict[str, object]) -> str:
     return f"（玩家{player_id}{_FINISH_LABELS[rank_index]}）"
 
 
-def _print_initial_hands(game: GuanDanGame) -> None:
+def _print_initial_hands(game: GuanDanGame, *, hand_evaluation_enabled: bool) -> None:
     print("发牌完成：")
-    for player in game._state.players:  # noqa: SLF001 - debug CLI needs full-information replay
-        hand_tokens = [card_to_token(card) for card in player.hand_cards]
+    state = game._state  # noqa: SLF001 - debug CLI needs full-information replay
+    if state is None:
+        raise RuntimeError("game has not been reset")
+
+    for player in state.players:
+        observation, legal_actions = _build_player_observation(game, player.player_id)
+        hand_tokens = [str(token) for token in observation["my_info"]["hand_cards"]]
         print(f"玩家{player.player_id}手牌：{_format_hand_cards_cn(hand_tokens)}")
+        if hand_evaluation_enabled:
+            evaluation = evaluate_hand(observation, legal_actions)
+            score = int(evaluation.get("total_score", 0))
+            label = str(evaluation.get("label", ""))
+            comment = str(evaluation.get("comment", ""))
+            print(f"评分：{score}（{label}）{comment}")
+        else:
+            print("评分：未启用")
 
 
 def _print_remaining_hands(game: GuanDanGame) -> None:
@@ -164,9 +195,10 @@ def _print_human_replay(
     agents: tuple[object, object, object, object],
     *,
     max_steps: int,
+    hand_evaluation_enabled: bool = False,
 ) -> int:
     game.reset()
-    _print_initial_hands(game)
+    _print_initial_hands(game, hand_evaluation_enabled=hand_evaluation_enabled)
     print(f"====第{game._state.round_no}轮====")  # noqa: SLF001 - debug CLI needs round truth
 
     while not game._state.is_finished:  # noqa: SLF001 - debug CLI needs full replay
@@ -177,10 +209,13 @@ def _print_human_replay(
         observation = game.observe()
         legal_actions = game.legal_actions()
         current_player = int(observation["current_round"]["current_player_id"])
-        chosen_action_id = agents[current_player - 1].select_action(observation, legal_actions)
+        agent = agents[current_player - 1]
+        chosen_action_id = agent.select_action(observation, legal_actions)
         result = game.step(chosen_action_id)
 
-        print(f"玩家{current_player}出牌：{_format_action_cn(result['chosen_action'])}{_finish_suffix_cn(result)}")
+        decision_source = getattr(agent, "last_decision_source", None)
+        local_prefix = "（本地）" if decision_source == "local" else ""
+        print(f"玩家{current_player}出牌：{local_prefix}{_format_action_cn(result['chosen_action'])}{_finish_suffix_cn(result)}")
 
         if result["round_ended"]:
             print()
@@ -217,17 +252,16 @@ def build_parser() -> ArgumentParser:
 def main() -> int:
     _ensure_utf8_stdio()
     args = build_parser().parse_args()
+    config = AppConfig.from_env()
     game = GuanDanGame(seed=args.seed, current_level_rank=args.current_level_rank)
 
     if args.agent == "deepseek":
-        from config import AppConfig
         from agents.deepseek_ai import DeepSeekAIAgent
         from agents.deepseek_client import DeepSeekClient
         from agents.rag_advisor import RAGAdvisor
         from rag.kb_loader import KnowledgeBaseLoader
         from rag.retriever import KnowledgeRetriever
 
-        config = AppConfig.from_env()
         if not config.deepseek_api_key:
             print("DEEPSEEK_API_KEY is required for --agent deepseek", file=sys.stderr)
             return 2
@@ -248,12 +282,18 @@ def main() -> int:
                 client=client,
                 rag_advisor=rag_advisor,
                 verbose=(player_id == 1 and args.show_thinking),
+                hand_evaluation_enabled=config.hand_evaluation_enabled,
             )
             for player_id in (1, 2, 3, 4)
         )
     else:
         agents = tuple(RuleBasedAIAgent(player_id=player_id) for player_id in (1, 2, 3, 4))
-    return _print_human_replay(game, agents, max_steps=args.max_steps)
+    return _print_human_replay(
+        game,
+        agents,
+        max_steps=args.max_steps,
+        hand_evaluation_enabled=config.hand_evaluation_enabled,
+    )
 
 
 if __name__ == "__main__":

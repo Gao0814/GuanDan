@@ -3,7 +3,7 @@
 from dataclasses import replace
 import random
 
-from .actions import Action, ActionType, stable_action_id
+from .actions import Action, ActionType, public_action_id
 from .cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card, build_double_deck, card_to_token, sort_cards
 from .logging_utils import DebugLogger
 from .rules import BaseRuleEngine
@@ -160,8 +160,8 @@ class GuanDanGame:
 
         ordered_actions: list[tuple[int, Action]] = []
         action_map: dict[int, Action] = {}
-        for action in self._rules.generate_legal_actions(state):
-            action_id = stable_action_id(action)
+        for index, action in enumerate(self._rules.generate_legal_actions(state)):
+            action_id = public_action_id(index)
             existing = action_map.get(action_id)
             if existing is not None and existing != action:
                 raise RuntimeError("action_id collision detected for legal actions")

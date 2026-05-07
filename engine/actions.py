@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from enum import Enum
-import hashlib
 
 from .cards import Card
 from .patterns import PatternType
@@ -44,25 +43,7 @@ class Action:
         )
 
 
-def _card_identity(card: Card) -> tuple[str, str | None]:
-    return (card.rank, card.suit)
-
-
-def stable_action_id(action: Action) -> int:
-    identity = (
-        action.player_id,
-        action.action_type.value,
-        action.declared_pattern.value if action.declared_pattern is not None else None,
-        tuple(_card_identity(card) for card in action.declared_cards),
-        tuple(_card_identity(card) for card in action.carrier_cards),
-        action.wildcard_count,
-        tuple(
-            (
-                _card_identity(item.carrier_card),
-                _card_identity(item.declared_as),
-            )
-            for item in action.wildcard_info
-        ),
-    )
-    digest = hashlib.blake2b(repr(identity).encode("utf-8"), digest_size=8).digest()
-    return int.from_bytes(digest, byteorder="big", signed=False)
+def public_action_id(index: int) -> int:
+    if index < 0:
+        raise ValueError("action index must be non-negative")
+    return index + 1

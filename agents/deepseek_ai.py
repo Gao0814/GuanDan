@@ -9,11 +9,13 @@ Boundary guarantees (Step D):
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 
+from config import AppConfig
 from agents.base import BaseAgent, require_legal_action_id
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
+from agents.hand_evaluator import evaluate_hand
 from agents.rag_advisor import RAGAdvisor, RAGEvidence
 from agents.rule_based_ai import RuleBasedAIAgent
 
@@ -363,6 +365,12 @@ class DeepSeekAIAgent(BaseAgent):
     rag_advisor: RAGAdvisor | None = None
     rag_top_k: int = 1
     verbose: bool = False
+    hand_evaluation_enabled: bool | None = None
+    last_decision_source: str | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.hand_evaluation_enabled is None:
+            self.hand_evaluation_enabled = AppConfig.from_env().hand_evaluation_enabled
 
     def select_action(
         self,
@@ -378,12 +386,48 @@ class DeepSeekAIAgent(BaseAgent):
         player_id = _coerce_int(my_info.get("player_id"), default=self.player_id)
         is_primary = player_id == 1
         verbose = bool(self.verbose and is_primary)
+        hand_evaluation = evaluate_hand(observation, legal_actions) if self.hand_evaluation_enabled else None
+        self.last_decision_source = "model"
 
         # Prune for display (same logic the client uses for the model)
         current_round = dict(observation.get("current_round", {}))
         display_constraint = str(current_round.get("constraint", "free"))
         step_no = _coerce_int(current_round.get("step_no"), default=0)
-        pruned = DeepSeekClient._prune_legal_actions(legal_actions, display_constraint)
+        hand_count = _coerce_int(my_info.get("hand_count"), default=0)
+        pruned = DeepSeekClient._prune_legal_actions(
+            legal_actions,
+            display_constraint,
+            step_no=step_no,
+            hand_count=hand_count,
+        )
+
+        # --- local shortcuts (no API call, no verbose output) ---
+        if display_constraint == "free" and step_no == 0:
+            analysis = self._analyze_opening_hand(observation, legal_actions)
+            opening_pruned = self._prune_opening_actions(pruned, legal_actions)
+            chosen = self._select_best_opening_action(analysis, opening_pruned, hand_evaluation)
+            chosen = require_legal_action_id(int(chosen), legal_actions)
+            self.last_decision_source = "local"
+            return chosen
+
+        if hand_count > 0:
+            for action in pruned:
+                if len(list(action.get("carrier_cards", []))) != hand_count:
+                    continue
+
+                chosen = _coerce_int(action.get("action_id"), default=-1)
+                chosen = require_legal_action_id(chosen, legal_actions)
+                self.last_decision_source = "local"
+                return chosen
+
+        if len(pruned) == 1 and (
+            str(pruned[0].get("declared_pattern")) == "pass"
+            or str(pruned[0].get("display_text", "")).lower() == "pass"
+        ):
+            chosen = _coerce_int(pruned[0].get("action_id"), default=-1)
+            chosen = require_legal_action_id(chosen, legal_actions)
+            self.last_decision_source = "local"
+            return chosen
 
         # --- pre-request verbose output (player 1 only) ---
         if verbose:
@@ -424,9 +468,15 @@ class DeepSeekAIAgent(BaseAgent):
                     player_parts.append(f"玩家{pid}({relation})余{hand_cnt}张")
             print(f"[DeepSeek 思考] 其他玩家：{'，'.join(player_parts)}", flush=True)
 
-            counts_line, examples_line = _summarize_legal_actions(pruned)
-            print(f"[DeepSeek 思考] {counts_line}", flush=True)
-            print(f"[DeepSeek 思考] 动作示例：{examples_line}", flush=True)
+            summary_lines = DeepSeekClient._grouped_legal_actions_summary(
+                pruned,
+                display_constraint,
+                step_no,
+                hand_count,
+                str(current_round.get("current_level_rank", "")),
+            )
+            for line in summary_lines:
+                print(f"[DeepSeek 思考] {line}", flush=True)
             print(
                 f"[DeepSeek 思考] 传入模型：{len(pruned)} 个动作"
                 f"（原始 {len(legal_actions)} 个已剪枝）",
@@ -452,65 +502,6 @@ class DeepSeekAIAgent(BaseAgent):
                 observation, pruned, rag_context,
             )
 
-        # --- pass-only shortcut (no API call) ---
-        if len(pruned) == 1 and (
-            str(pruned[0].get("declared_pattern")) == "pass"
-            or str(pruned[0].get("display_text", "")).lower() == "pass"
-        ):
-            chosen = _coerce_int(pruned[0].get("action_id"), default=-1)
-            chosen = require_legal_action_id(chosen, legal_actions)
-
-            if verbose:
-                print("[DeepSeek 思考] 合法动作仅剩 pass，跳过模型推理", flush=True)
-                print("[DeepSeek 思考] 玩家1 模型选择：pass", flush=True)
-                print("[DeepSeek 思考] 本次上下文长度：约 0 tokens（仅剩 pass，未调用 API）", flush=True)
-
-            return chosen
-
-        # --- opening local intercept (no API call) ---
-        if display_constraint == "free" and step_no == 0:
-            analysis = self._analyze_opening_hand(observation, legal_actions)
-            opening_pruned = self._prune_opening_actions(pruned, legal_actions)
-            chosen = self._select_best_opening_action(analysis, opening_pruned)
-            chosen = require_legal_action_id(int(chosen), legal_actions)
-
-            if verbose:
-                point_distribution = analysis.get("point_distribution", {})
-                if not isinstance(point_distribution, dict):
-                    point_distribution = {}
-
-                wildcard_text = analysis.get("wildcard_text", "")
-                long_combo_text = analysis.get("long_combo_text", "")
-                single_count = analysis.get("single_count", 0)
-                hand_type = analysis.get("hand_type", "")
-
-                dist_parts: list[str] = []
-                for rank in _OPENING_RANK_ORDER:
-                    count = point_distribution.get(rank)
-                    if isinstance(count, int) and count > 0:
-                        dist_parts.append(f"{rank}×{count}")
-                dist_summary = " ".join(dist_parts) if dist_parts else "（无）"
-
-                print(
-                    "[DeepSeek 思考] 手牌分析："
-                    f"点数分布：{dist_summary}；"
-                    f"{wildcard_text}；"
-                    f"长套可选：{long_combo_text}；"
-                    f"散牌{single_count}张；"
-                    f"手牌类型：{hand_type}",
-                    flush=True,
-                )
-
-                infer_text = self._infer_opponents(observation, point_distribution)
-                print(f"[DeepSeek 思考] 对手推测：{infer_text}", flush=True)
-
-                action = _action_by_id(legal_actions, chosen)
-                opening_display = self._opening_action_display_cn(action) if action is not None else "(unknown)"
-                print(f"[DeepSeek 思考] 开局使用公式化出牌：{opening_display}", flush=True)
-                print("[DeepSeek 思考] 本次上下文长度：约 0 tokens（开局本地决策，未调用 API）", flush=True)
-
-            return chosen
-
         if verbose:
             user_message = DeepSeekClient._build_structured_prompt(
                 my_info=my_info,
@@ -519,6 +510,7 @@ class DeepSeekAIAgent(BaseAgent):
                 history=history,
                 legal_actions=pruned,
                 rag_context=rag_context,
+                hand_evaluation=hand_evaluation,
             )
             payload = {
                 "model": self.client._model,
@@ -549,6 +541,7 @@ class DeepSeekAIAgent(BaseAgent):
                 observation=observation,
                 legal_actions=legal_actions,
                 rag_context=rag_context,
+                hand_evaluation=hand_evaluation,
                 verbose=False,  # agent handles all printing
                 debug_prefix=f"[DeepSeek] 玩家{player_id}",
             )
@@ -800,9 +793,11 @@ class DeepSeekAIAgent(BaseAgent):
     def _select_best_opening_action(
         analysis: dict[str, object],
         pruned_actions: list[dict[str, object]],
+        hand_evaluation: dict[str, object] | None = None,
     ) -> int:
         hand_type = str(analysis.get("hand_type", ""))
         wildcard_token = str(analysis.get("wildcard_token", ""))
+        label = str(hand_evaluation.get("label", "")) if isinstance(hand_evaluation, dict) else ""
 
         def is_wildcard_carrier(action: dict[str, object]) -> bool:
             if not wildcard_token:
@@ -845,8 +840,8 @@ class DeepSeekAIAgent(BaseAgent):
                     return a
             return ordered[0]
 
-        # --- tidy hand: prefer long combos ---
-        if hand_type == "整齐型":
+        # --- strong / tidy hand: prefer long combos ---
+        if label in {"极强", "较强"} or hand_type == "整齐型":
             for pattern in ("steel_plate",):
                 chosen = best_of(pattern)
                 if chosen is not None:
@@ -868,7 +863,36 @@ class DeepSeekAIAgent(BaseAgent):
             if single_choice is not None:
                 return int(single_choice.get("action_id"))
 
-        # --- messy hand: play smallest single (exclude wildcard) ---
+        # --- medium hand: keep the existing long-combo-first heuristic ---
+        if label == "中等":
+            for pattern in ("steel_plate",):
+                chosen = best_of(pattern)
+                if chosen is not None:
+                    return int(chosen.get("action_id"))
+
+            chosen = best_of("straight", prefer_10jqka=True)
+            if chosen is not None:
+                return int(chosen.get("action_id"))
+
+            chosen = best_of("pair_straight")
+            if chosen is not None:
+                return int(chosen.get("action_id"))
+
+            chosen = best_of("triple_with_pair")
+            if chosen is not None:
+                return int(chosen.get("action_id"))
+
+            single_choice = smallest_single_excluding_wildcard()
+            if single_choice is not None:
+                return int(single_choice.get("action_id"))
+
+        # --- weak hand: play the smallest non-wildcard single ---
+        if label in {"偏弱", "极弱"}:
+            single_choice = smallest_single_excluding_wildcard()
+            if single_choice is not None:
+                return int(single_choice.get("action_id"))
+
+        # --- messy hand or fallback: play smallest single (exclude wildcard) ---
         single_choice = smallest_single_excluding_wildcard()
         if single_choice is not None:
             return int(single_choice.get("action_id"))

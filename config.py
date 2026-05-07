@@ -22,6 +22,7 @@ class AppConfig:
     deepseek_base_url: str
     deepseek_model: str
     deepseek_enabled: bool
+    hand_evaluation_enabled: bool
     deepseek_timeout: float
     deepseek_max_retries: int
     debug: bool
@@ -35,6 +36,7 @@ class AppConfig:
             deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
             deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
             deepseek_enabled=_parse_bool(os.getenv("DEEPSEEK_ENABLED"), default=False),
+            hand_evaluation_enabled=_parse_bool(os.getenv("HAND_EVALUATION_ENABLED"), default=False),
             deepseek_timeout=float(os.getenv("DEEPSEEK_TIMEOUT", "30")),
             deepseek_max_retries=int(os.getenv("DEEPSEEK_MAX_RETRIES", "1")),
             debug=_parse_bool(os.getenv("DEBUG"), default=True),

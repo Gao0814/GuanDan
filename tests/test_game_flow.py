@@ -162,7 +162,7 @@ class TestGameFlow(unittest.TestCase):
             signatures,
         )
 
-    def test_legal_actions_are_stable_and_use_non_positional_action_ids(self) -> None:
+    def test_legal_actions_are_stable_and_use_sequential_action_ids(self) -> None:
         game = GuanDanGame(
             current_level_rank="2",
             preset_hands=_hands(
@@ -199,9 +199,7 @@ class TestGameFlow(unittest.TestCase):
         ]
 
         self.assertEqual(first_signatures, second_signatures)
-        self.assertTrue(
-            any(int(action["action_id"]) != index for index, action in enumerate(first)),
-        )
+        self.assertEqual([int(action["action_id"]) for action in first], list(range(1, len(first) + 1)))
 
         first_multi_decl_ids = {
             tuple(action["declared_cards"]): int(action["action_id"])
@@ -217,6 +215,32 @@ class TestGameFlow(unittest.TestCase):
         self.assertNotEqual(
             first_multi_decl_ids[("7", "7", "7", "8", "8")],
             first_multi_decl_ids[("8", "8", "8", "7", "7")],
+        )
+
+    def test_legal_actions_use_stable_one_based_ids_for_repeated_generation(self) -> None:
+        game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands=_hands(
+                {
+                    1: ("2H", "7S", "7C", "8S", "8C"),
+                    2: ("3S",),
+                    3: ("4S",),
+                    4: ("5S",),
+                }
+            ),
+        )
+        game.reset()
+
+        first = game.legal_actions()
+        second = game.legal_actions()
+
+        self.assertEqual(
+            [int(action["action_id"]) for action in first],
+            [int(action["action_id"]) for action in second],
+        )
+        self.assertEqual(
+            [int(action["action_id"]) for action in first],
+            list(range(1, len(first) + 1)),
         )
 
     def test_step_uses_the_same_action_mapping_after_repeated_legal_action_generation(self) -> None:

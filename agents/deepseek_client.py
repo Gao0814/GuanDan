@@ -47,27 +47,33 @@ def _rank_of(token: str) -> str:
     return token
 
 
-def _simplify_hand_token(token: str, level_rank: str) -> str:
-    """Display a card token with suits stripped, except wildcards marked."""
+def _card_for_ai(token: str, current_level_rank: str, is_flush_context: bool) -> str:
+    """Convert a card token into the compact AI-facing display form."""
     if token == "SJ":
         return "小王"
     if token == "BJ":
         return "大王"
+
     rank = token[:-1] if len(token) >= 2 and token[-1] in _SUIT_DISPLAY else token
     suit = token[-1] if len(token) >= 2 and token[-1] in _SUIT_DISPLAY else None
-    if suit == "H" and rank == level_rank:
-        return f"♥{rank}(逢)"
+
+    if suit == "H" and rank == current_level_rank:
+        return f"♥{rank}(逢人配)"
+    if is_flush_context and suit is not None:
+        return f"{_SUIT_DISPLAY[suit]}{rank}"
     return rank
 
 
-def _card_display(token: str) -> str:
-    if token == "SJ":
-        return "小王"
-    if token == "BJ":
-        return "大王"
-    if len(token) >= 2 and token[-1] in _SUIT_DISPLAY:
-        return f"{_SUIT_DISPLAY[token[-1]]}{token[:-1]}"
-    return token
+def _cards_for_ai(
+    tokens: list[str],
+    current_level_rank: str,
+    *,
+    is_flush_context: bool = False,
+    separator: str = "",
+) -> str:
+    return separator.join(
+        _card_for_ai(token, current_level_rank, is_flush_context) for token in tokens
+    )
 
 
 @dataclass(slots=True)
@@ -202,79 +208,264 @@ class DeepSeekClient:
         return _RANK_ORDER.get(_rank_of(declared[0]), 0)
 
     @staticmethod
+    def _phase_from_round(step_no: int, hand_count: int | None) -> str:
+        if step_no == 0:
+            return "opening"
+        if hand_count is not None and hand_count < 10:
+            return "endgame"
+        return "midgame"
+
+    @staticmethod
+    def _tactic_group(pattern: str) -> str:
+        if pattern in {"steel_plate", "straight", "pair_straight", "triple_with_pair", "triple"}:
+            return "run"
+        if pattern in {"bomb", "straight_flush", "joker_bomb"}:
+            return "pressure"
+        return "transition"
+
+    @staticmethod
+    def _rank_range_text(ranks: list[str]) -> str:
+        if not ranks:
+            return ""
+        unique = sorted(set(ranks), key=lambda rank: _RANK_ORDER.get(rank, 0))
+        if not unique:
+            return ""
+        if len(unique) == 1:
+            return unique[0]
+        return f"{unique[0]}~{unique[-1]}"
+
+    @staticmethod
+    def _rank_repeat_text(rank: str, count: int) -> str:
+        if not rank or count <= 0:
+            return ""
+        if rank in {"10", "J", "Q", "K", "A", "2"}:
+            return rank * count
+        return f"{rank}×{count}"
+
+    @staticmethod
+    def _action_brief_cn(action: dict[str, object]) -> str:
+        pattern = str(action.get("declared_pattern", ""))
+        if pattern == "pass":
+            return "pass"
+
+        declared = [str(token) for token in action.get("declared_cards", [])]
+        ranks = [_rank_of(token) for token in declared]
+
+        if pattern == "single":
+            return f"单{ranks[0]}" if ranks else "单"
+        if pattern == "pair":
+            return f"对{ranks[0]}" if ranks else "对"
+        if pattern == "triple":
+            return f"三{ranks[0]}" if ranks else "三"
+        if pattern == "triple_with_pair":
+            counts = Counter(ranks)
+            triple_rank = next((rank for rank, count in sorted(counts.items(), key=lambda item: _RANK_ORDER.get(item[0], 0), reverse=True) if count == 3), "")
+            pair_rank = next((rank for rank, count in sorted(counts.items(), key=lambda item: _RANK_ORDER.get(item[0], 0), reverse=True) if count == 2), "")
+            if triple_rank and pair_rank:
+                return f"三带二({DeepSeekClient._rank_repeat_text(triple_rank, 3)}+{DeepSeekClient._rank_repeat_text(pair_rank, 2)})"
+            return "三带二"
+        if pattern in {"straight", "pair_straight", "steel_plate", "straight_flush"}:
+            label = {
+                "straight": "顺子",
+                "pair_straight": "连对",
+                "steel_plate": "钢板",
+                "straight_flush": "同花顺",
+            }.get(pattern, pattern)
+            range_text = DeepSeekClient._rank_range_text(ranks)
+            return f"{label}({range_text})" if range_text else label
+        if pattern == "bomb":
+            main_rank = _rank_of(declared[0]) if declared else ""
+            return f"{len(declared)}炸{main_rank}"
+        if pattern == "joker_bomb":
+            return "天王炸"
+        return pattern
+
+    @staticmethod
+    def _action_summary_entry(action: dict[str, object], current_level_rank: str) -> str:
+        action_id = DeepSeekClient._coerce_int(action.get("action_id"), default=-1)
+        brief = DeepSeekClient._compact_action_text(
+            action,
+            current_level_rank,
+            str(action.get("declared_pattern", "")) == "straight_flush",
+        )
+        return f"#{action_id} {brief}" if action_id >= 0 else brief
+
+    @staticmethod
+    def _unique_actions_by_brief(actions: list[dict[str, object]]) -> list[dict[str, object]]:
+        unique: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for action in actions:
+            brief = DeepSeekClient._action_brief_cn(action)
+            if brief in seen:
+                continue
+            seen.add(brief)
+            unique.append(action)
+        return unique
+
+    @staticmethod
+    def _select_transition_actions(
+        actions: list[dict[str, object]],
+        constraint: str,
+    ) -> list[dict[str, object]]:
+        singles = sorted(
+            [a for a in actions if str(a.get("declared_pattern", "")) == "single"],
+            key=DeepSeekClient._action_sort_key,
+        )
+        pairs = sorted(
+            [a for a in actions if str(a.get("declared_pattern", "")) == "pair"],
+            key=DeepSeekClient._action_sort_key,
+        )
+        passes = [a for a in actions if str(a.get("declared_pattern", "")) == "pass"]
+
+        chosen: list[dict[str, object]] = []
+
+        def add_candidate(action: dict[str, object]) -> None:
+            brief = DeepSeekClient._action_brief_cn(action)
+            if brief in {DeepSeekClient._action_brief_cn(item) for item in chosen}:
+                return
+            chosen.append(action)
+
+        if singles:
+            add_candidate(singles[0])
+            if len(singles) > 1:
+                add_candidate(singles[-1])
+        elif pairs:
+            add_candidate(pairs[0])
+            if len(pairs) > 1:
+                add_candidate(pairs[-1])
+
+        if constraint != "free" and passes:
+            add_candidate(passes[0])
+
+        if not singles and pairs and len(chosen) < 3:
+            for action in pairs:
+                add_candidate(action)
+                if len(chosen) >= 3:
+                    break
+
+        return chosen[:3]
+
+    @staticmethod
+    def _grouped_legal_actions_summary(
+        legal_actions: list[dict[str, object]],
+        constraint: str,
+        step_no: int,
+        hand_count: int | None,
+        current_level_rank: str,
+    ) -> list[str]:
+        phase = DeepSeekClient._phase_from_round(step_no, hand_count)
+
+        buckets: dict[str, list[dict[str, object]]] = {"run": [], "pressure": [], "transition": []}
+        for action in legal_actions:
+            pattern = str(action.get("declared_pattern", ""))
+            tactic = DeepSeekClient._tactic_group(pattern)
+            buckets.setdefault(tactic, []).append(action)
+
+        for actions in buckets.values():
+            actions.sort(
+                key=lambda a: (
+                    DeepSeekClient._action_sort_key(a),
+                    DeepSeekClient._coerce_int(a.get("action_id"), default=0),
+                )
+            )
+
+        transition_actions = DeepSeekClient._select_transition_actions(buckets.get("transition", []), constraint)
+        if phase == "opening":
+            ordered_groups = [
+                ("跑牌", buckets.get("run", [])),
+                ("压制", buckets.get("pressure", [])),
+                ("过渡", transition_actions),
+            ]
+        elif phase == "endgame":
+            ordered_groups = [
+                ("压制", buckets.get("pressure", [])),
+                ("跑牌", buckets.get("run", [])),
+                ("过渡", transition_actions),
+            ]
+        else:
+            ordered_groups = [
+                ("跑牌", buckets.get("run", [])),
+                ("过渡", transition_actions),
+                ("压制", buckets.get("pressure", [])),
+            ]
+
+        lines: list[str] = [f"共 {len(legal_actions)} 个动作（已按战术剪枝）"]
+        for label, actions in ordered_groups:
+            unique_actions = DeepSeekClient._unique_actions_by_brief(actions)
+            if not unique_actions:
+                continue
+            items = [DeepSeekClient._action_summary_entry(action, current_level_rank) for action in unique_actions]
+            lines.append(f"{label}：{'、'.join(items)}")
+
+        return lines
+
+    @staticmethod
     def _prune_legal_actions(
         legal_actions: list[dict[str, object]],
         constraint: str,
+        step_no: int = 0,
+        hand_count: int | None = None,
     ) -> list[dict[str, object]]:
         """Prune redundant actions to reduce context size for the model.
 
-        Always keeps all bombs / straight_flush / joker_bomb / steel_plate /
-        straight / pair_straight. Limits triple_with_pair/pair to 3, single to 2.
-        Pass is only kept under follow constraints.
+        Preserves all run / pressure actions and keeps a tactical transition subset.
+        The order is phase-aware so the prompt can emphasize opening, middle, or
+        endgame priorities without changing legality.
         """
-        groups: dict[str, list[dict[str, object]]] = {}
-        for a in legal_actions:
-            pattern = str(a.get("declared_pattern", ""))
-            groups.setdefault(pattern, []).append(a)
-
+        phase = DeepSeekClient._phase_from_round(step_no, hand_count)
         kept: list[dict[str, object]] = []
 
-        keep_all = ("bomb", "straight_flush", "joker_bomb", "steel_plate",
-                     "straight", "pair_straight")
-        for p in keep_all:
-            kept.extend(groups.get(p, []))
-
-        # Triple with pair: keep at most 3 (max, min, mid)
-        twp = sorted(groups.get("triple_with_pair", []),
-                     key=DeepSeekClient._action_sort_key)
-        if len(twp) > 3:
-            kept.extend([twp[-1], twp[0], twp[len(twp) // 2]])
+        group_order: list[list[str]]
+        if phase == "opening":
+            group_order = [
+                ["steel_plate", "straight", "pair_straight", "triple_with_pair", "triple"],
+                ["bomb", "straight_flush", "joker_bomb"],
+                ["single", "pair", "pass"],
+            ]
+        elif phase == "endgame":
+            group_order = [
+                ["bomb", "straight_flush", "joker_bomb"],
+                ["steel_plate", "straight", "pair_straight", "triple_with_pair", "triple"],
+                ["single", "pair", "pass"],
+            ]
         else:
-            kept.extend(twp)
+            group_order = [
+                ["steel_plate", "straight", "pair_straight", "triple_with_pair", "triple"],
+                ["single", "pair", "pass"],
+                ["bomb", "straight_flush", "joker_bomb"],
+            ]
 
-        # Triple: keep at most 2 (max, min)
-        triples = sorted(groups.get("triple", []),
-                         key=DeepSeekClient._action_sort_key)
-        if len(triples) > 2:
-            kept.extend([triples[-1], triples[0]])
-        else:
-            kept.extend(triples)
+        def add_unique(action: dict[str, object]) -> None:
+            brief = DeepSeekClient._action_brief_cn(action)
+            if brief in {DeepSeekClient._action_brief_cn(item) for item in kept}:
+                return
+            kept.append(action)
 
-        # Pair: keep at most 3 (max, min, mid)
-        pairs = sorted(groups.get("pair", []),
-                       key=DeepSeekClient._action_sort_key)
-        if len(pairs) > 3:
-            kept.extend([pairs[-1], pairs[0], pairs[len(pairs) // 2]])
-        else:
-            kept.extend(pairs)
+        for patterns in group_order:
+            if patterns == ["single", "pair", "pass"]:
+                transition_actions = [
+                    action for action in legal_actions
+                    if str(action.get("declared_pattern", "")) in set(patterns)
+                ]
+                for action in DeepSeekClient._select_transition_actions(transition_actions, constraint):
+                    add_unique(action)
+                continue
 
-        # Single: keep at most 2 (max, min)
-        singles = sorted(groups.get("single", []),
-                         key=DeepSeekClient._action_sort_key)
-        if len(singles) > 2:
-            kept.extend([singles[-1], singles[0]])
-        else:
-            kept.extend(singles)
+            pattern_set = set(patterns)
+            actions = [
+                action for action in legal_actions
+                if str(action.get("declared_pattern", "")) in pattern_set
+            ]
+            actions.sort(
+                key=lambda a: (
+                    DeepSeekClient._action_sort_key(a),
+                    DeepSeekClient._coerce_int(a.get("action_id"), default=0),
+                )
+            )
+            for action in DeepSeekClient._unique_actions_by_brief(actions):
+                add_unique(action)
 
-        # Pass: only under follow constraint
-        if constraint != "free":
-            kept.extend(groups.get("pass", []))
-
-        # Cap at 50, keeping higher-priority types first
-        if len(kept) > 50:
-            _priority = {
-                "bomb": 0, "straight_flush": 1, "joker_bomb": 2,
-                "steel_plate": 3, "straight": 4, "pair_straight": 5,
-                "triple": 6, "triple_with_pair": 7, "pair": 8,
-                "single": 9, "pass": 10,
-            }
-            kept.sort(key=lambda a: (
-                _priority.get(str(a.get("declared_pattern", "")), 99),
-                DeepSeekClient._action_sort_key(a),
-            ))
-            kept = kept[:50]
-
-        return kept
+        return kept or list(legal_actions)
 
     @staticmethod
     def _compact_action_text(
@@ -291,20 +482,11 @@ class DeepSeekClient:
         declared = [str(t) for t in action.get("declared_cards", [])]
         wc = int(action.get("wildcard_count", 0))
 
-        def _sc(token: str) -> str:
-            if token == "SJ":
-                return "小王"
-            if token == "BJ":
-                return "大王"
-            rank = token[:-1] if len(token) >= 2 and token[-1] in _SUIT_DISPLAY else token
-            suit = token[-1] if len(token) >= 2 and token[-1] in _SUIT_DISPLAY else None
-            if suit == "H" and rank == current_level_rank:
-                return f"♥{rank}(逢)"
-            if has_straight_flush and pattern == "straight_flush":
-                return _card_display(token)
-            return rank
-
-        cards_text = "".join(_sc(t) for t in carrier)
+        cards_text = _cards_for_ai(
+            carrier,
+            current_level_rank,
+            is_flush_context=has_straight_flush and pattern == "straight_flush",
+        )
 
         if pattern == "bomb":
             main_rank = _rank_of(declared[0]) if declared else ""
@@ -332,7 +514,7 @@ class DeepSeekClient:
         else:
             label = pattern
 
-        return f"{cards_text}（{label}{'逢' if wc else ''}）"
+        return f"{cards_text}（{label}）"
 
     @staticmethod
     def _build_structured_prompt(
@@ -342,6 +524,7 @@ class DeepSeekClient:
         history: dict[str, object],
         legal_actions: list[dict[str, object]],
         rag_context: dict[str, object] | None = None,
+        hand_evaluation: dict[str, object] | None = None,
     ) -> str:
         """Build a structured Chinese prompt from the 5 observe() info blocks."""
         lines: list[str] = []
@@ -353,6 +536,7 @@ class DeepSeekClient:
             my_info.get("remaining_single_card_count"), default=0
         )
         current_level_rank = str(current_round.get("current_level_rank", ""))
+        step_no = DeepSeekClient._coerce_int(current_round.get("step_no"), default=0)
 
         wildcard_token = f"{current_level_rank}H" if current_level_rank else ""
         wildcard_count = hand_cards.count(wildcard_token) if wildcard_token else 0
@@ -361,7 +545,12 @@ class DeepSeekClient:
         lines.append(f"手牌总数：{hand_count} 张")
         lines.append(f"孤张数：{remaining_singles}")
         lines.append(f"逢人配张数：{wildcard_count}（红桃{current_level_rank}）")
-        lines.append(f"完整手牌：{' '.join(_simplify_hand_token(t, current_level_rank) for t in hand_cards)}")
+        lines.append(f"完整手牌：{' '.join(_card_for_ai(t, current_level_rank, False) for t in hand_cards)}")
+        if hand_evaluation is not None:
+            score = DeepSeekClient._coerce_int(hand_evaluation.get("total_score"), default=0)
+            label = str(hand_evaluation.get("label", ""))
+            comment = str(hand_evaluation.get("comment", ""))
+            lines.append(f"手牌评分：{score}（{label}）{comment}")
         lines.append("")
 
         # --- 【当前桌面/回合】 ---
@@ -383,7 +572,13 @@ class DeepSeekClient:
             lines.append("出牌限制：跟牌 — 必须打出比桌面牌型更大的牌")
             lines.append(f"桌面牌型：{ta_display}")
             if ta_carrier:
-                lines.append(f"桌面牌组：{' '.join(_card_display(t) for t in ta_carrier)}")
+                ta_cards_text = " ".join(
+                    _card_for_ai(t, current_level_rank, ta_pattern == "straight_flush")
+                    for t in ta_carrier
+                )
+                lines.append(
+                    f"桌面牌组：{ta_cards_text}"
+                )
         lines.append("")
 
         # --- 【其他玩家状态】 ---
@@ -432,39 +627,16 @@ class DeepSeekClient:
         lines.append("")
 
         # --- 【我的合法动作】 ---
-        has_sf = any(
-            str(a.get("declared_pattern")) == "straight_flush"
-            for a in legal_actions
-        )
-
         lines.append("【我的合法动作】")
-        lines.append(f"共 {len(legal_actions)} 个动作（已去重剪枝）")
-
-        counter = Counter(str(a.get("declared_pattern")) for a in legal_actions)
-        type_parts: list[str] = []
-        bomb_types = {"bomb", "straight_flush", "joker_bomb"}
-        for pattern in (
-            "single", "pair", "triple", "triple_with_pair", "straight",
-            "pair_straight", "steel_plate", "bomb", "straight_flush",
-            "joker_bomb", "pass",
-        ):
-            count = counter.get(pattern, 0)
-            if count > 0:
-                type_parts.append(f"{_PATTERN_FULL.get(pattern, pattern)}×{count}")
-        lines.append("按类型统计：" + "，".join(type_parts))
-        lines.append("")
-
-        for a in legal_actions:
-            aid = a.get("action_id", "?")
-            compact = DeepSeekClient._compact_action_text(
-                a, current_level_rank, has_sf,
+        lines.extend(
+            DeepSeekClient._grouped_legal_actions_summary(
+                legal_actions=legal_actions,
+                constraint=str(current_round.get("constraint", "free")),
+                step_no=step_no,
+                hand_count=hand_count,
+                current_level_rank=current_level_rank,
             )
-            pattern = str(a.get("declared_pattern", ""))
-
-            if pattern in bomb_types:
-                lines.append(f"  action_id={aid}  **{compact}**")
-            else:
-                lines.append(f"  action_id={aid}  {compact}")
+        )
 
         lines.append("")
 
@@ -511,32 +683,35 @@ class DeepSeekClient:
         """
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
-        with urllib_request.urlopen(req, timeout=timeout) as response:
-            for line_bytes in response:
-                line = line_bytes.decode("utf-8").strip()
-                if not line:
-                    continue
-                if not line.startswith("data: "):
-                    continue
-                data_str = line[6:]
-                if data_str == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(data_str)
-                except json.JSONDecodeError:
-                    continue
-                choices = chunk.get("choices", [])
-                if not choices or not isinstance(choices[0], dict):
-                    continue
-                delta = choices[0].get("delta")
-                if not isinstance(delta, dict):
-                    continue
-                rc = delta.get("reasoning_content")
-                if isinstance(rc, str):
-                    reasoning_parts.append(rc)
-                c = delta.get("content")
-                if isinstance(c, str):
-                    content_parts.append(c)
+        response_text = self._transport(req, timeout)
+        if isinstance(response_text, bytes):
+            response_text = response_text.decode("utf-8")
+
+        for raw_line in str(response_text).splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if not line.startswith("data: "):
+                continue
+            data_str = line[6:]
+            if data_str == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+            choices = chunk.get("choices", [])
+            if not choices or not isinstance(choices[0], dict):
+                continue
+            delta = choices[0].get("delta")
+            if not isinstance(delta, dict):
+                continue
+            rc = delta.get("reasoning_content")
+            if isinstance(rc, str):
+                reasoning_parts.append(rc)
+            c = delta.get("content")
+            if isinstance(c, str):
+                content_parts.append(c)
         return ("".join(content_parts), "".join(reasoning_parts))
 
     def suggest_action_id(
@@ -545,6 +720,7 @@ class DeepSeekClient:
         observation: dict[str, object],
         legal_actions: list[dict[str, object]],
         rag_context: dict[str, object] | None = None,
+        hand_evaluation: dict[str, object] | None = None,
         verbose: bool = False,
         debug_prefix: str = "[DeepSeek]",
     ) -> DeepSeekSuggestion:
@@ -556,9 +732,15 @@ class DeepSeekClient:
         my_info = dict(observation.get("my_info", {}))
         other_players = list(observation.get("other_players", []))
         history = dict(observation.get("history", {}))
+        hand_count = self._coerce_int(my_info.get("hand_count"), default=0)
 
         constraint = str(current_round.get("constraint", "free"))
-        pruned_actions = self._prune_legal_actions(legal_actions, constraint)
+        pruned_actions = self._prune_legal_actions(
+            legal_actions,
+            constraint,
+            step_no=step_no,
+            hand_count=hand_count,
+        )
 
         user_message = self._build_structured_prompt(
             my_info=my_info,
@@ -567,12 +749,13 @@ class DeepSeekClient:
             history=history,
             legal_actions=pruned_actions,
             rag_context=rag_context,
+            hand_evaluation=hand_evaluation,
         )
 
         if verbose:
             constraint = current_round.get("constraint")
             table_action = current_round.get("table_action")
-            me_hand_count = self._coerce_int(my_info.get("hand_count"), default=0)
+            me_hand_count = hand_count
             me_remaining_singles = self._coerce_int(my_info.get("remaining_single_card_count"), default=0)
 
             rag_rule_count = 0
@@ -594,6 +777,15 @@ class DeepSeekClient:
                 f"rag(rule={rag_rule_count}, exp={rag_experience_count})",
                 flush=True,
             )
+            summary_lines = self._grouped_legal_actions_summary(
+                pruned_actions,
+                str(current_round.get("constraint", "free")),
+                step_no,
+                hand_count,
+                current_level_rank,
+            )
+            for line in summary_lines:
+                print(f"{debug_prefix} {line}", flush=True)
 
         payload = {
             "model": self._model,

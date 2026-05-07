@@ -6,6 +6,7 @@
 2. AI 只读取 `observe()` 和 `legal_actions()`
 3. AI 只返回 `action_id`
 4. 规则真值全部由引擎维护
+5. DeepSeek 模式优先本地拦截：开局公式化、仅 pass 跳过 API、可一次出完时强制本地执行
 
 当前不接入 RAG、DeepSeek、多局比赛层、贡还层或升级层逻辑。
 
