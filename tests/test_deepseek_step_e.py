@@ -53,6 +53,42 @@ def _legal_actions() -> list[dict[str, object]]:
     ]
 
 
+class CountingClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def suggest_action_id(self, **_kwargs):
+        self.calls += 1
+        raise AssertionError("DeepSeek client should not be called")
+
+
+class CountingRAGAdvisor:
+    def __init__(self) -> None:
+        self.rule_calls = 0
+        self.experience_calls = 0
+
+    def retrieve_rule_evidence(self, query: str, top_k: int = 3):
+        self.rule_calls += 1
+        return ()
+
+    def retrieve_experience_evidence(self, query: str, top_k: int = 3):
+        self.experience_calls += 1
+        return ()
+
+
+def _agent_with_counting_dependencies() -> tuple[DeepSeekAIAgent, CountingClient, CountingRAGAdvisor]:
+    client = CountingClient()
+    rag = CountingRAGAdvisor()
+    agent = DeepSeekAIAgent(
+        player_id=1,
+        client=client,
+        rag_advisor=rag,
+        verbose=False,
+        hand_evaluation_enabled=False,
+    )
+    return agent, client, rag
+
+
 class TestDeepSeekStepE(unittest.TestCase):
     def test_client_uses_injected_transport_and_parses_action_id(self) -> None:
         captured: dict[str, object] = {}
@@ -113,6 +149,122 @@ class TestDeepSeekStepE(unittest.TestCase):
 
         expected = RuleBasedAIAgent(player_id=1).select_action(_observation(), _legal_actions())
         self.assertEqual(chosen, expected)
+
+    def test_agent_forces_pair_finish_from_raw_legal_actions_without_rag_or_client(self) -> None:
+        observation = _observation()
+        legal_actions = [
+            {
+                "action_id": 1,
+                "declared_pattern": "single",
+                "declared_cards": ["4"],
+                "carrier_cards": ["4S"],
+                "wildcard_count": 0,
+                "wildcard_info": [],
+                "display_text": "single:4",
+            },
+            {
+                "action_id": 2,
+                "declared_pattern": "single",
+                "declared_cards": ["4"],
+                "carrier_cards": ["4H"],
+                "wildcard_count": 0,
+                "wildcard_info": [],
+                "display_text": "single:4",
+            },
+            {
+                "action_id": 3,
+                "declared_pattern": "pair",
+                "declared_cards": ["4", "4"],
+                "carrier_cards": ["4S", "4H"],
+                "wildcard_count": 0,
+                "wildcard_info": [],
+                "display_text": "pair:4,4",
+            },
+        ]
+        agent, client, rag = _agent_with_counting_dependencies()
+
+        chosen = agent.select_action(observation, legal_actions)
+
+        self.assertEqual(chosen, 3)
+        self.assertEqual(agent.last_decision_source, "local")
+        self.assertEqual(client.calls, 0)
+        self.assertEqual(rag.rule_calls, 0)
+        self.assertEqual(rag.experience_calls, 0)
+
+    def test_agent_forces_triple_finish_from_raw_legal_actions_without_rag_or_client(self) -> None:
+        observation = _observation()
+        observation["my_info"]["hand_cards"] = ["5S", "5H", "5C"]
+        observation["my_info"]["hand_count"] = 3
+        legal_actions = [
+            {
+                "action_id": 1,
+                "declared_pattern": "single",
+                "declared_cards": ["5"],
+                "carrier_cards": ["5S"],
+                "wildcard_count": 0,
+                "wildcard_info": [],
+                "display_text": "single:5",
+            },
+            {
+                "action_id": 2,
+                "declared_pattern": "pair",
+                "declared_cards": ["5", "5"],
+                "carrier_cards": ["5S", "5H"],
+                "wildcard_count": 0,
+                "wildcard_info": [],
+                "display_text": "pair:5,5",
+            },
+            {
+                "action_id": 3,
+                "declared_pattern": "triple",
+                "declared_cards": ["5", "5", "5"],
+                "carrier_cards": ["5S", "5H", "5C"],
+                "wildcard_count": 0,
+                "wildcard_info": [],
+                "display_text": "triple:5,5,5",
+            },
+        ]
+        agent, client, rag = _agent_with_counting_dependencies()
+
+        chosen = agent.select_action(observation, legal_actions)
+
+        self.assertEqual(chosen, 3)
+        self.assertEqual(agent.last_decision_source, "local")
+        self.assertEqual(client.calls, 0)
+        self.assertEqual(rag.rule_calls, 0)
+        self.assertEqual(rag.experience_calls, 0)
+
+    def test_agent_keeps_pass_shortcut_without_rag_or_client(self) -> None:
+        observation = _observation()
+        observation["current_round"]["constraint"] = "single:8"
+        observation["current_round"]["table_action"] = {
+            "declared_pattern": "single",
+            "declared_cards": ["8"],
+            "carrier_cards": ["8S"],
+            "wildcard_count": 0,
+            "wildcard_info": [],
+            "display_text": "single:8",
+        }
+        legal_actions = [
+            {
+                "action_id": 7,
+                "declared_pattern": "pass",
+                "declared_cards": [],
+                "carrier_cards": [],
+                "wildcard_count": 0,
+                "wildcard_info": [],
+                "display_text": "pass",
+            }
+        ]
+        agent, client, rag = _agent_with_counting_dependencies()
+
+        chosen = agent.select_action(observation, legal_actions)
+
+        self.assertEqual(chosen, 7)
+        self.assertEqual(agent.last_decision_source, "local")
+        self.assertEqual(client.calls, 0)
+        self.assertEqual(rag.rule_calls, 0)
+        self.assertEqual(rag.experience_calls, 0)
 
 
 if __name__ == "__main__":

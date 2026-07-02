@@ -23,6 +23,7 @@ class AppConfig:
     deepseek_model: str
     deepseek_enabled: bool
     hand_evaluation_enabled: bool
+    card_tracking_enabled: bool
     deepseek_timeout: float
     deepseek_max_retries: int
     debug: bool
@@ -37,6 +38,7 @@ class AppConfig:
             deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
             deepseek_enabled=_parse_bool(os.getenv("DEEPSEEK_ENABLED"), default=False),
             hand_evaluation_enabled=_parse_bool(os.getenv("HAND_EVALUATION_ENABLED"), default=False),
+            card_tracking_enabled=_parse_bool(os.getenv("CARD_TRACKING_ENABLED"), default=True),
             deepseek_timeout=float(os.getenv("DEEPSEEK_TIMEOUT", "30")),
             deepseek_max_retries=int(os.getenv("DEEPSEEK_MAX_RETRIES", "1")),
             debug=_parse_bool(os.getenv("DEBUG"), default=True),

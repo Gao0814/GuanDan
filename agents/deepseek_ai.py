@@ -263,6 +263,18 @@ def _action_by_id(legal_actions: list[dict[str, object]], action_id: int) -> dic
     return None
 
 
+def _finishing_action_id(legal_actions: list[dict[str, object]], hand_count: int) -> int | None:
+    if hand_count <= 0:
+        return None
+    for action in legal_actions:
+        if str(action.get("declared_pattern")) == "pass":
+            continue
+        if len(list(action.get("carrier_cards", []))) != hand_count:
+            continue
+        return _coerce_int(action.get("action_id"), default=-1)
+    return None
+
+
 def _build_rag_context(
     *,
     rule_evidence: tuple[RAGEvidence, ...],
@@ -367,10 +379,14 @@ class DeepSeekAIAgent(BaseAgent):
     verbose: bool = False
     hand_evaluation_enabled: bool | None = None
     last_decision_source: str | None = field(default=None, init=False, repr=False)
+    card_tracker: object | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.hand_evaluation_enabled is None:
             self.hand_evaluation_enabled = AppConfig.from_env().hand_evaluation_enabled
+        if AppConfig.from_env().card_tracking_enabled:
+            # We delay actual initialization of CardTracker until level_rank is known in select_action
+            self.card_tracker = None
 
     def select_action(
         self,
@@ -394,6 +410,20 @@ class DeepSeekAIAgent(BaseAgent):
         display_constraint = str(current_round.get("constraint", "free"))
         step_no = _coerce_int(current_round.get("step_no"), default=0)
         hand_count = _coerce_int(my_info.get("hand_count"), default=0)
+        current_level_rank = str(current_round.get("current_level_rank", ""))
+        
+        card_tracking_summary: str | None = None
+        if AppConfig.from_env().card_tracking_enabled:
+            from agents.card_tracker import CardTracker
+            # Recreate if level rank changed or not init yet (since deepseek_ai might be persistent)
+            if self.card_tracker is None or getattr(self.card_tracker, 'current_level_rank', None) != current_level_rank:
+                self.card_tracker = CardTracker(current_level_rank)
+            
+            my_hand_cards = [str(x) for x in my_info.get("hand_cards", [])]
+            history_actions_list = list(history.get("actions", []))
+            self.card_tracker.update(history_actions_list, my_hand_cards)
+            card_tracking_summary = self.card_tracker.get_summary(my_hand_cards)
+
         pruned = DeepSeekClient._prune_legal_actions(
             legal_actions,
             display_constraint,
@@ -402,23 +432,24 @@ class DeepSeekAIAgent(BaseAgent):
         )
 
         # --- local shortcuts (no API call, no verbose output) ---
+        finishing_action_id = _finishing_action_id(legal_actions, hand_count)
+        if finishing_action_id is not None:
+            chosen = require_legal_action_id(finishing_action_id, legal_actions)
+            self.last_decision_source = "local"
+            return chosen
+
         if display_constraint == "free" and step_no == 0:
             analysis = self._analyze_opening_hand(observation, legal_actions)
             opening_pruned = self._prune_opening_actions(pruned, legal_actions)
             chosen = self._select_best_opening_action(analysis, opening_pruned, hand_evaluation)
             chosen = require_legal_action_id(int(chosen), legal_actions)
             self.last_decision_source = "local"
+            if verbose:
+                print(f"[DeepSeek 思考] 手牌分析：当前牌型判定为 {analysis.get('hand_type', '')}，推荐 {analysis.get('recommended_opening', '')}", flush=True)
+                action = _action_by_id(legal_actions, chosen)
+                display = _action_display_cn(action) if action is not None else "(unknown)"
+                print(f"[DeepSeek 思考] 开局使用公式化出牌：{display}", flush=True)
             return chosen
-
-        if hand_count > 0:
-            for action in pruned:
-                if len(list(action.get("carrier_cards", []))) != hand_count:
-                    continue
-
-                chosen = _coerce_int(action.get("action_id"), default=-1)
-                chosen = require_legal_action_id(chosen, legal_actions)
-                self.last_decision_source = "local"
-                return chosen
 
         if len(pruned) == 1 and (
             str(pruned[0].get("declared_pattern")) == "pass"
@@ -468,6 +499,10 @@ class DeepSeekAIAgent(BaseAgent):
                     player_parts.append(f"玩家{pid}({relation})余{hand_cnt}张")
             print(f"[DeepSeek 思考] 其他玩家：{'，'.join(player_parts)}", flush=True)
 
+            if card_tracking_summary:
+                for line in card_tracking_summary.splitlines():
+                    print(f"[DeepSeek 思考] {line}", flush=True)
+
             summary_lines = DeepSeekClient._grouped_legal_actions_summary(
                 pruned,
                 display_constraint,
@@ -511,6 +546,7 @@ class DeepSeekAIAgent(BaseAgent):
                 legal_actions=pruned,
                 rag_context=rag_context,
                 hand_evaluation=hand_evaluation,
+                card_tracking_summary=card_tracking_summary,
             )
             payload = {
                 "model": self.client._model,
@@ -542,6 +578,7 @@ class DeepSeekAIAgent(BaseAgent):
                 legal_actions=legal_actions,
                 rag_context=rag_context,
                 hand_evaluation=hand_evaluation,
+                card_tracking_summary=card_tracking_summary,
                 verbose=False,  # agent handles all printing
                 debug_prefix=f"[DeepSeek] 玩家{player_id}",
             )

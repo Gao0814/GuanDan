@@ -525,6 +525,7 @@ class DeepSeekClient:
         legal_actions: list[dict[str, object]],
         rag_context: dict[str, object] | None = None,
         hand_evaluation: dict[str, object] | None = None,
+        card_tracking_summary: str | None = None,
     ) -> str:
         """Build a structured Chinese prompt from the 5 observe() info blocks."""
         lines: list[str] = []
@@ -600,6 +601,11 @@ class DeepSeekClient:
             else:
                 lines.append(f"玩家{pid}（{relation}）剩余 {hand_cnt} 张")
         lines.append("")
+
+        # --- 【记牌器】 ---
+        if card_tracking_summary:
+            lines.append(card_tracking_summary)
+            lines.append("")
 
         # --- 【最近历史】 ---
         lines.append("【最近历史】")
@@ -721,6 +727,7 @@ class DeepSeekClient:
         legal_actions: list[dict[str, object]],
         rag_context: dict[str, object] | None = None,
         hand_evaluation: dict[str, object] | None = None,
+        card_tracking_summary: str | None = None,
         verbose: bool = False,
         debug_prefix: str = "[DeepSeek]",
     ) -> DeepSeekSuggestion:
@@ -750,6 +757,7 @@ class DeepSeekClient:
             legal_actions=pruned_actions,
             rag_context=rag_context,
             hand_evaluation=hand_evaluation,
+            card_tracking_summary=card_tracking_summary,
         )
 
         if verbose:

@@ -227,6 +227,7 @@ class GuanDanGame:
                             item.action.declared_pattern.value if item.action.declared_pattern is not None else "pass"
                         ),
                         "declared_cards": [_token_for_declared(card) for card in item.action.declared_cards],
+                        "carrier_cards": [card_to_token(card) for card in item.action.carrier_cards],
                     }
                     for item in state.history
                 ],

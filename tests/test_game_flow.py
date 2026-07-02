@@ -412,7 +412,9 @@ class TestGameFlow(unittest.TestCase):
 
         self.assertEqual(result["chosen_action"]["declared_cards"], ["8", "8", "8", "7", "7"])
         self.assertEqual(result["chosen_action"]["carrier_cards"], ["7S", "7C", "8S", "8C", "2H"])
-        self.assertEqual(game.observe()["history"]["actions"][-1]["declared_cards"], ["8", "8", "8", "7", "7"])
+        history_action = game.observe()["history"]["actions"][-1]
+        self.assertEqual(history_action["declared_cards"], ["8", "8", "8", "7", "7"])
+        self.assertEqual(history_action["carrier_cards"], ["7S", "7C", "8S", "8C", "2H"])
         self.assertEqual(game._state.get_player(1).hand_cards, ())
 
     def test_third_finish_ends_the_game_and_assigns_last_place(self) -> None:
