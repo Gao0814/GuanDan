@@ -150,6 +150,35 @@ class TestDeepSeekStepE(unittest.TestCase):
         expected = RuleBasedAIAgent(player_id=1).select_action(_observation(), _legal_actions())
         self.assertEqual(chosen, expected)
 
+    def test_agent_falls_back_when_client_returns_no_action_id(self) -> None:
+        class MissingActionClient:
+            def suggest_action_id(self, **_kwargs):
+                return DeepSeekSuggestion(action_id=None, reasoning=None)
+
+        agent = DeepSeekAIAgent(player_id=1, client=MissingActionClient(), rag_advisor=None, verbose=False)
+        chosen = agent.select_action(_observation(), _legal_actions())
+
+        expected = RuleBasedAIAgent(player_id=1).select_action(_observation(), _legal_actions())
+        self.assertEqual(chosen, expected)
+
+    def test_client_returns_no_action_id_for_unparseable_response(self) -> None:
+        def transport(_request, _timeout: float) -> str:
+            return 'data: {"choices":[{"delta":{"content":"not-json"}}]}\ndata: [DONE]\n'
+
+        client = DeepSeekClient(
+            api_key="test-key",
+            base_url="https://api.deepseek.com",
+            model="deepseek-chat",
+            transport=transport,
+        )
+
+        suggestion = client.suggest_action_id(
+            observation=_observation(),
+            legal_actions=_legal_actions(),
+        )
+
+        self.assertIsNone(suggestion.action_id)
+
     def test_agent_forces_pair_finish_from_raw_legal_actions_without_rag_or_client(self) -> None:
         observation = _observation()
         legal_actions = [

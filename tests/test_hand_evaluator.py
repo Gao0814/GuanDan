@@ -209,16 +209,16 @@ class TestHandEvaluator(unittest.TestCase):
             hand_evaluation=hand_evaluation,
         )
 
-        self.assertIn("【我的手牌】", prompt)
-        self.assertIn("手牌评分：", prompt)
-        self.assertIn(f"{hand_evaluation['total_score']}（{hand_evaluation['label']}）", prompt)
+        self.assertIn("【当前局面】", prompt)
+        self.assertIn("【手牌评估】", prompt)
+        self.assertIn(f"total_score={hand_evaluation['total_score']}", prompt)
+        self.assertIn(f"label={hand_evaluation['label']}", prompt)
         self.assertIn("大王", prompt)
         self.assertIn("小王", prompt)
         self.assertIn("♥2(逢人配)", prompt)
         self.assertIn("♠3♠4♠5♠6♠7", prompt)
         self.assertIn("同花顺", prompt)
-        self.assertNotIn("BJ", prompt)
-        self.assertNotIn("SJ", prompt)
+        self.assertIn('carrier_cards=["SJ","SJ","BJ","BJ"]', prompt)
 
 
 if __name__ == "__main__":

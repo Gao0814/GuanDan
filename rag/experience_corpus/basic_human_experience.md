@@ -1,178 +1,191 @@
-# 基础人类出牌经验
+---
+id: exp_general_boundary_001
+corpus: experience
+scene: [any]
+phase: [any]
+hand_strength: [any]
+action_context: [any]
+topic: [legal_actions, control]
+priority: medium
+keywords_cn: [经验, 合法动作, 策略参考, 不能裁决]
+---
 
-### 总原则（已接入）
-适用场景：通用
+# 经验库使用边界
 
-- 所有经验都只在合法动作集合内生效
-- 当规则与经验冲突时，必须以规则为准
-- 当信息不充分时，经验只能作为弱倾向，不能伪装成确定结论
+经验只影响候选合法动作内部的排序倾向，不能替代规则，也不能生成动作。最终仍只能从候选 action_id 中选择；当经验与规则口径冲突时，必须以 legal_actions 和 engine/ 为准。
 
-### 优先减少未来出牌轮次（已接入）
-适用场景：legal_actions, my_info
+---
+id: exp_lead_opening_strong_001
+corpus: experience
+scene: [lead_opening]
+phase: [opening]
+hand_strength: [strong]
+action_context: [free_lead]
+topic: [opening, control, bomb]
+priority: high
+keywords_cn: [强牌, 开局, 首出, 控局, 保留炸弹]
+---
 
-一般情况下，应优先考虑那些能帮助自己更快走完手牌、减少未来出牌轮次的动作。
+# 强牌早期首出：保留控制力
 
-常见倾向：
+强牌开局倾向先处理弱路或小路，保留炸弹、王、级牌、同花顺等控制资源。除非候选动作可以直接出完，或没有合理的普通动作，否则避免过早暴露高控制力牌型。最终仍只能从候选 action_id 中选择。
 
-- 优先保留更自然的成组结构
-- 减少无意义地把好牌拆成很多小步
-- 当多个合法动作强度接近时，优先选择更有利于后续连贯出牌的动作
+---
+id: exp_lead_opening_medium_001
+corpus: experience
+scene: [lead_opening]
+phase: [opening]
+hand_strength: [medium]
+action_context: [free_lead]
+topic: [opening, pair, run_out]
+priority: high
+keywords_cn: [中牌, 开局, 首出, 对子, 试探, 减少手数]
+---
 
-### 尽量保留成型组合（已接入）
-适用场景：my_info, legal_actions
+# 中牌早期首出：试探与减手
 
-一般情况下，不应为了当前一步的小收益，无意义拆解本来已经成型的组合，例如：
+中牌信息不明时，倾向优先考虑对子试探，或选择自然三带二、顺子、连对等能减少总手数的候选动作。避免为了短期主动权过早交出高价值控制资源。最终仍只能从候选 action_id 中选择。
 
-- 不轻易拆顺子
-- 不轻易拆连对
-- 不轻易拆钢板
-- 不轻易拆三带二的主体部分
-- 不轻易拆更高价值炸弹
+---
+id: exp_lead_opening_weak_001
+corpus: experience
+scene: [lead_opening]
+phase: [opening]
+hand_strength: [weak]
+action_context: [free_lead]
+topic: [opening, weak_escape, singles, run_out]
+priority: high
+keywords_cn: [弱牌, 开局, 首出, 孤张, 脱手]
+---
 
-但若当前局面明显需要立即抢节奏、保命、终结或阻断对手，则可以例外。
+# 弱牌早期首出：减少拖累
 
-### 炸弹不要无意义提前消耗（已接入）
-适用场景：legal_actions, current_round
+弱牌开局不应盲目争头游，倾向优先减少孤张和总手数。若有对子、自然三带二、顺子、连对等更能减手的候选动作，可优先考虑；若只能出单张，倾向选择较高单张而不是明显小单张。最终仍只能从候选 action_id 中选择。
 
-炸弹通常属于高价值资源，除非有明确收益，否则不应过早使用。
+---
+id: exp_follow_response_basic_001
+corpus: experience
+scene: [follow_response]
+phase: [midgame, opening, any]
+hand_strength: [any]
+action_context: [follow]
+topic: [follow_response, opponent_pressure, pass]
+priority: high
+keywords_cn: [跟牌, 压制, pass, 收益, 代价]
+---
 
-一般情况下，以下情形更值得考虑炸弹：
+# 跟牌压制：先看收益
 
-- 需要抢回出牌权
-- 需要阻断对手即将出完
-- 需要保证自己或队友的关键节奏
-- 已接近终局，炸弹价值即将兑现
+跟牌时不要只看能否压住，还要考虑压住后的收益和代价。若压制会明显拆坏结构或交出过高资源，而局面收益有限，可以考虑保留资源；若能抢回关键节奏、阻断对手或帮助队友，则压制价值提高。最终仍只能从候选 action_id 中选择。
 
-不建议因为“看起来能压”就机械性提前交炸弹。
+---
+id: exp_follow_bomb_timing_001
+corpus: experience
+scene: [follow_response]
+phase: [midgame, endgame, any]
+hand_strength: [any]
+action_context: [follow]
+topic: [bomb, straight_flush, joker_bomb, opponent_pressure]
+priority: high
+keywords_cn: [炸弹, 同花顺, 天王炸, 压制, 阻断]
+---
 
-### 高阶牌型要看收益，不只看能不能出（已接入）
-适用场景：legal_actions, current_round
+# 跟牌压制：炸弹使用时机
 
-同花顺、较长炸弹、天王炸等高阶牌型通常不应机械使用。
+炸弹、同花顺、天王炸通常是高价值资源。倾向在抢回出牌权、阻断对手快走、保护队友关键节奏或接近终局时使用；避免仅因“能压”就机械提前消耗。最终仍只能从候选 action_id 中选择。
 
-排序时应考虑：
+---
+id: exp_wildcard_timing_001
+corpus: experience
+scene: [any]
+phase: [any]
+hand_strength: [any]
+action_context: [any]
+topic: [wildcard, run_out, control]
+priority: high
+keywords_cn: [逢人配, 通配, 自然动作, 消耗, 结构]
+---
 
-- 是否只是为了压一个不值得压的小动作
-- 是否会提前暴露过强资源
-- 是否会破坏自己后续更顺的走牌结构
-- 是否当前已经进入必须强行抢回节奏的阶段
+# 逢人配使用时机
 
-### 队友少牌时优先考虑配合（已接入）
-适用场景：other_players
+逢人配灵活度高，倾向用于明显改善结构、减少手数或形成关键压制的候选动作。若自然动作与逢人配动作收益接近，通常优先保留逢人配；若逢人配能直接带来明显收益，则可积极考虑。最终仍只能从候选 action_id 中选择。
 
-当队友剩余手牌较少时，应提高“配合队友尽快走完”的优先级。
+---
+id: exp_teammate_support_001
+corpus: experience
+scene: [lead, follow_response, endgame, any]
+phase: [midgame, endgame, any]
+hand_strength: [any]
+action_context: [free_lead, follow, endgame, any]
+topic: [teammate_support, control, run_out]
+priority: medium
+keywords_cn: [队友, 快走, 配合, 放行, 节奏]
+---
 
-可考虑的经验倾向：
+# 队友快走时配合
 
-- 不轻易用高价值资源抢掉队友可能接管的节奏
-- 当自己与队友都能形成正收益时，优先支持队友完成出牌
-- 在阻断对手和放队友走之间，优先考虑更能帮助本队赢下本局的路径
+当队友剩余手牌较少时，倾向优先考虑帮助队友尽快走完，避免无意义抢掉队友可能接管的节奏。需要压制还是放行，只能在候选合法动作中选择，不能基于猜测构造动作。
 
-### 对手少牌时优先考虑阻断（已接入）
-适用场景：other_players, current_round
+---
+id: exp_opponent_pressure_001
+corpus: experience
+scene: [follow_response, endgame, any]
+phase: [midgame, endgame, any]
+hand_strength: [any]
+action_context: [follow, endgame, any]
+topic: [opponent_pressure, bomb, control]
+priority: high
+keywords_cn: [对手, 快走, 阻断, 压制, 抢回主动]
+---
 
-当对手剩余手牌较少时，应提高“阻断对手结束本局”的优先级。
+# 对手快走时压制
 
-常见倾向：
+当对手剩余手牌较少或即将出完时，阻断价值上升。可提高压制、抢回主动权以及必要时使用高价值资源的权重，但仍不能突破 legal_actions 的候选边界。
 
-- 只要收益足够，可以适当提高炸弹、同花顺等资源的使用意愿
-- 对手只剩 1～2 张牌时，对单张 / 对子压制价值通常更高
-- 若对手可能先手结束，应优先考虑抢回主动权
+---
+id: exp_endgame_run_out_001
+corpus: experience
+scene: [endgame]
+phase: [endgame]
+hand_strength: [any]
+action_context: [endgame]
+topic: [endgame, run_out, opponent_pressure]
+priority: high
+keywords_cn: [残局, 跑牌, 出完, 少牌, 终局]
+---
 
-### 首出时更重视结构与节奏（已接入）
-适用场景：current_round, my_info
+# 残局跑牌
 
-在首出阶段，没有当前桌面约束时，经验排序应更看重：
+残局倾向优先考虑能直接减少手数、争取出完或阻断对手出完的候选动作。控制资源价值会随局面变化而上升或下降，关键是候选动作是否能实际改变终局节奏。最终仍只能从候选 action_id 中选择。
 
-- 自己整体手牌结构是否更顺
-- 是否能主动打出更难处理的组合
-- 是否能为后续减少孤张 / 散牌
-- 是否能保留关键控制资源
+---
+id: exp_strong_control_001
+corpus: experience
+scene: [lead, follow_response, any]
+phase: [midgame, any]
+hand_strength: [strong]
+action_context: [free_lead, follow, any]
+topic: [control, bomb, joker_bomb]
+priority: medium
+keywords_cn: [强牌, 控局, 王, 炸弹, 控制力]
+---
 
-### 跟牌时更重视收益与资源交换（已接入）
-适用场景：current_round, legal_actions
+# 强牌控局
 
-在跟牌阶段，是否压制不只看“能不能压”，还要看“值不值得压”。
+强牌不一定要每手都强压，倾向保留能改变节奏的控制资源，在收益更高的节点使用。普通候选动作能维持节奏时，可优先保留王、炸弹、同花顺等关键资源。最终仍只能从候选 action_id 中选择。
 
-排序时可考虑：
+---
+id: exp_weak_escape_001
+corpus: experience
+scene: [lead, lead_opening, follow_response, any]
+phase: [opening, midgame, any]
+hand_strength: [weak]
+action_context: [free_lead, follow, any]
+topic: [weak_escape, run_out, singles]
+priority: medium
+keywords_cn: [弱牌, 脱手, 孤张, 减少手数]
+---
 
-- 压下去是否真的能拿到主动权
-- 为了这一压会不会交出过高代价
-- 这一压是否会破坏手牌整体结构
-- 压住之后下一手是否更容易继续走牌
+# 弱牌脱手
 
-### 逢人配应尽量当作高灵活度资源使用（已接入）
-适用场景：my_info, legal_actions
-
-逢人配具备很高灵活性，因此一般不建议无意义浪费。
-
-经验倾向：
-
-- 优先把逢人配用于能明显改善整体结构的场景
-- 优先用于补齐关键组合，而不是仅做低收益填充
-- 若普通出法与使用逢人配收益相近，通常可优先保留逢人配的灵活性
-- 但若使用逢人配能直接形成强收益动作，则应积极考虑
-
-### 王类资源应谨慎使用（已接入）
-适用场景：my_info, legal_actions
-
-大王、小王及其组合通常是高控制力资源。
-
-经验倾向：
-
-- 单张王 / 王对子一般不宜无意义提前裸露
-- 天王炸属于最高层资源，通常只在高收益场景下使用
-- 若当前局势平稳、收益有限，应优先保留更高控制力资源
-
-### 记录高价值公开信息（已接入）
-适用场景：history, other_players
-
-应尽量利用 observation 与历史信息记录以下公开信息：
-
-- 谁已经出过哪些高价值牌型
-- 谁频繁 `pass`
-- 谁剩余手牌最少
-- 当前节奏偏向哪一队
-- 哪类牌型已在牌局中大量出现
-
-这些信息可以作为排序辅助，但不能被包装成确定结论。
-
-### 读人与反推只能作为弱信号（已接入）
-适用场景：history, other_players
-
-可以做的弱反推包括：
-
-- 某玩家连续不压，可能说明其对应牌型储备不足
-- 某玩家出牌风格偏保守，可能在保资源
-- 某玩家在关键时刻突然强压，可能在抢节奏
-
-但必须明确：
-
-- 这些都只是弱信号
-- 不能把推断当成确定事实
-- 不能因为弱信号而违背规则真值或强行构造非法动作
-
-### 当多个动作收益接近时，优先更顺手、更容易复盘的选择（已接入）
-适用场景：通用
-
-在多个候选动作差异不大的情况下，优先选择：
-
-- 更符合整体结构的动作
-- 更容易向人解释“为什么这样出”的动作
-- 更有利于后续调试复盘的动作
-
-### 可进一步积累的经验方向（未接入）
-适用场景：通用
-
-- 对不同座位关系的更细节让牌 / 抢牌策略
-- 对不同回合阶段的复杂节奏建模
-- 更精细的“抢先手 vs 保资源”数值化策略
-- 基于更丰富历史信息的队友意图推断
-- 队友风格建模
-- 更复杂的配合优先级系统
-- 对手牌型分布概率建模
-- 基于长局数据的风格识别
-- 更复杂的 bluff / 保留 / 诱导判断
-- 多步终局搜索式经验
-- 多角色终局博弈经验
-- 更复杂的“放队友走”与“阻断对手走”的组合判断
+弱牌倾向把目标放在减少拖累和保留可走路径上。能减少孤张、缩短未来出牌轮次的候选动作通常更有价值；但在跟牌时仍要评估压制代价，不能为了短期出牌拆坏全部结构。最终仍只能从候选 action_id 中选择。

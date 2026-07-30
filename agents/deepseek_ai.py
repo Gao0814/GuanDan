@@ -16,6 +16,7 @@ from config import AppConfig
 from agents.base import BaseAgent, require_legal_action_id
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from agents.hand_evaluator import evaluate_hand
+from agents.opening_strategy import OpeningFormulaStrategy
 from agents.rag_advisor import RAGAdvisor, RAGEvidence
 from agents.rule_based_ai import RuleBasedAIAgent
 
@@ -275,10 +276,24 @@ def _finishing_action_id(legal_actions: list[dict[str, object]], hand_count: int
     return None
 
 
+def _only_pass_action_id(legal_actions: list[dict[str, object]]) -> int | None:
+    if len(legal_actions) != 1:
+        return None
+    action = legal_actions[0]
+    if (
+        str(action.get("declared_pattern")) == "pass"
+        or str(action.get("display_text", "")).lower() == "pass"
+    ):
+        return _coerce_int(action.get("action_id"), default=-1)
+    return None
+
+
 def _build_rag_context(
     *,
     rule_evidence: tuple[RAGEvidence, ...],
     experience_evidence: tuple[RAGEvidence, ...],
+    query: str = "",
+    scene_tags: dict[str, object] | None = None,
 ) -> dict[str, object]:
     def pack(evidence: RAGEvidence) -> dict[str, object]:
         return {
@@ -293,8 +308,10 @@ def _build_rag_context(
         pack(item) for item in experience_evidence if item.metadata.get("status") == "accepted"
     ]
     return {
-        "rule": accepted_rules,
-        "experience": accepted_experience,
+        "scene_tags": dict(scene_tags or {}),
+        "rule_hits": accepted_rules,
+        "experience_hits": accepted_experience,
+        "query": query,
     }
 
 
@@ -327,6 +344,8 @@ def _print_rag_summary(
 ) -> None:
     """Print RAG retrieval summary for --show-thinking mode."""
     total = len(rule_evidence) + len(experience_evidence)
+    if total == 0 and isinstance(rag_context, dict):
+        total = len(list(rag_context.get("rule_hits", []))) + len(list(rag_context.get("experience_hits", [])))
 
     if rag_context is None or total == 0:
         print("[DeepSeek 思考] RAG：未触发或无匹配结果", flush=True)
@@ -378,13 +397,17 @@ class DeepSeekAIAgent(BaseAgent):
     rag_top_k: int = 1
     verbose: bool = False
     hand_evaluation_enabled: bool | None = None
+    opening_formula_enabled: bool | None = None
     last_decision_source: str | None = field(default=None, init=False, repr=False)
     card_tracker: object | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        config = AppConfig.from_env()
         if self.hand_evaluation_enabled is None:
-            self.hand_evaluation_enabled = AppConfig.from_env().hand_evaluation_enabled
-        if AppConfig.from_env().card_tracking_enabled:
+            self.hand_evaluation_enabled = config.hand_evaluation_enabled
+        if self.opening_formula_enabled is None:
+            self.opening_formula_enabled = config.opening_formula_enabled
+        if config.card_tracking_enabled:
             # We delay actual initialization of CardTracker until level_rank is known in select_action
             self.card_tracker = None
 
@@ -397,33 +420,45 @@ class DeepSeekAIAgent(BaseAgent):
             raise ValueError("legal_actions must not be empty")
 
         my_info = dict(observation.get("my_info", {}))
-        other_players = list(observation.get("other_players", []))
-        history = dict(observation.get("history", {}))
-        player_id = _coerce_int(my_info.get("player_id"), default=self.player_id)
-        is_primary = player_id == 1
-        verbose = bool(self.verbose and is_primary)
-        hand_evaluation = evaluate_hand(observation, legal_actions) if self.hand_evaluation_enabled else None
+        hand_count = _coerce_int(my_info.get("hand_count"), default=0)
         self.last_decision_source = "model"
 
-        # Prune for display (same logic the client uses for the model)
+        # --- local shortcuts: run before pruning, tracking, RAG, or prompt construction ---
+        pass_action_id = _only_pass_action_id(legal_actions)
+        if pass_action_id is not None:
+            chosen = require_legal_action_id(pass_action_id, legal_actions)
+            self.last_decision_source = "local"
+            return chosen
+
+        finishing_action_id = _finishing_action_id(legal_actions, hand_count)
+        if finishing_action_id is not None:
+            chosen = require_legal_action_id(finishing_action_id, legal_actions)
+            self.last_decision_source = "local"
+            return chosen
+
+        opening_evaluation: dict[str, object] | None = None
+        if self.opening_formula_enabled:
+            opening_evaluation = evaluate_hand(observation, legal_actions)
+            opening_action_id = OpeningFormulaStrategy().select_action(
+                observation,
+                legal_actions,
+                opening_evaluation,
+            )
+            if opening_action_id is not None:
+                chosen = require_legal_action_id(opening_action_id, legal_actions)
+                self.last_decision_source = "local_opening_formula"
+                player_id = _coerce_int(my_info.get("player_id"), default=self.player_id)
+                verbose = bool(self.verbose and player_id == 1)
+                if verbose:
+                    action = _action_by_id(legal_actions, chosen)
+                    display = _action_display_cn(action) if action is not None else "(unknown)"
+                    print(f"[DeepSeek 思考] 开局公式策略：{display}", flush=True)
+                return chosen
+
         current_round = dict(observation.get("current_round", {}))
         display_constraint = str(current_round.get("constraint", "free"))
         step_no = _coerce_int(current_round.get("step_no"), default=0)
-        hand_count = _coerce_int(my_info.get("hand_count"), default=0)
         current_level_rank = str(current_round.get("current_level_rank", ""))
-        
-        card_tracking_summary: str | None = None
-        if AppConfig.from_env().card_tracking_enabled:
-            from agents.card_tracker import CardTracker
-            # Recreate if level rank changed or not init yet (since deepseek_ai might be persistent)
-            if self.card_tracker is None or getattr(self.card_tracker, 'current_level_rank', None) != current_level_rank:
-                self.card_tracker = CardTracker(current_level_rank)
-            
-            my_hand_cards = [str(x) for x in my_info.get("hand_cards", [])]
-            history_actions_list = list(history.get("actions", []))
-            self.card_tracker.update(history_actions_list, my_hand_cards)
-            card_tracking_summary = self.card_tracker.get_summary(my_hand_cards)
-
         pruned = DeepSeekClient._prune_legal_actions(
             legal_actions,
             display_constraint,
@@ -431,34 +466,27 @@ class DeepSeekAIAgent(BaseAgent):
             hand_count=hand_count,
         )
 
-        # --- local shortcuts (no API call, no verbose output) ---
-        finishing_action_id = _finishing_action_id(legal_actions, hand_count)
-        if finishing_action_id is not None:
-            chosen = require_legal_action_id(finishing_action_id, legal_actions)
-            self.last_decision_source = "local"
-            return chosen
+        hand_evaluation: dict[str, object] | None = None
+        if self.hand_evaluation_enabled:
+            hand_evaluation = opening_evaluation or evaluate_hand(observation, legal_actions)
 
-        if display_constraint == "free" and step_no == 0:
-            analysis = self._analyze_opening_hand(observation, legal_actions)
-            opening_pruned = self._prune_opening_actions(pruned, legal_actions)
-            chosen = self._select_best_opening_action(analysis, opening_pruned, hand_evaluation)
-            chosen = require_legal_action_id(int(chosen), legal_actions)
-            self.last_decision_source = "local"
-            if verbose:
-                print(f"[DeepSeek 思考] 手牌分析：当前牌型判定为 {analysis.get('hand_type', '')}，推荐 {analysis.get('recommended_opening', '')}", flush=True)
-                action = _action_by_id(legal_actions, chosen)
-                display = _action_display_cn(action) if action is not None else "(unknown)"
-                print(f"[DeepSeek 思考] 开局使用公式化出牌：{display}", flush=True)
-            return chosen
+        history = dict(observation.get("history", {}))
+        card_tracking_summary: str | None = None
+        if AppConfig.from_env().card_tracking_enabled:
+            from agents.card_tracker import CardTracker
 
-        if len(pruned) == 1 and (
-            str(pruned[0].get("declared_pattern")) == "pass"
-            or str(pruned[0].get("display_text", "")).lower() == "pass"
-        ):
-            chosen = _coerce_int(pruned[0].get("action_id"), default=-1)
-            chosen = require_legal_action_id(chosen, legal_actions)
-            self.last_decision_source = "local"
-            return chosen
+            if self.card_tracker is None or getattr(self.card_tracker, "current_level_rank", None) != current_level_rank:
+                self.card_tracker = CardTracker(current_level_rank)
+
+            my_hand_cards = [str(x) for x in my_info.get("hand_cards", [])]
+            history_actions_list = list(history.get("actions", []))
+            self.card_tracker.update(history_actions_list, my_hand_cards)
+            card_tracking_summary = self.card_tracker.get_summary(my_hand_cards)
+
+        other_players = list(observation.get("other_players", []))
+        player_id = _coerce_int(my_info.get("player_id"), default=self.player_id)
+        is_primary = player_id == 1
+        verbose = bool(self.verbose and is_primary)
 
         # --- pre-request verbose output (player 1 only) ---
         if verbose:
@@ -523,13 +551,31 @@ class DeepSeekAIAgent(BaseAgent):
         rule_evidence: tuple[RAGEvidence, ...] = ()
         experience_evidence: tuple[RAGEvidence, ...] = ()
         if self.rag_advisor is not None:
-            query = _rag_query_from_observation(observation)
-            rule_evidence = self.rag_advisor.retrieve_rule_evidence(query, top_k=self.rag_top_k)
-            experience_evidence = self.rag_advisor.retrieve_experience_evidence(query, top_k=self.rag_top_k)
-            rag_context = _build_rag_context(
-                rule_evidence=rule_evidence,
-                experience_evidence=experience_evidence,
-            )
+            try:
+                get_context = getattr(self.rag_advisor, "get_rag_context", None)
+                if callable(get_context):
+                    rag_context = get_context(
+                        observation=observation,
+                        legal_actions=legal_actions,
+                        hand_eval=hand_evaluation,
+                        top_k=self.rag_top_k,
+                    )
+                else:
+                    query = _rag_query_from_observation(observation)
+                    rule_evidence = self.rag_advisor.retrieve_rule_evidence(query, top_k=self.rag_top_k)
+                    experience_evidence = self.rag_advisor.retrieve_experience_evidence(query, top_k=self.rag_top_k)
+                    rag_context = _build_rag_context(
+                        rule_evidence=rule_evidence,
+                        experience_evidence=experience_evidence,
+                        query=query,
+                    )
+            except Exception:
+                rag_context = {
+                    "scene_tags": {},
+                    "rule_hits": [],
+                    "experience_hits": [],
+                    "query": "",
+                }
 
         if verbose:
             _print_rag_summary(
@@ -555,7 +601,7 @@ class DeepSeekAIAgent(BaseAgent):
                         "role": "system",
                         "content": (
                             "你是掼蛋智能体，根据给定的牌局信息选择最优合法动作。"
-                            "只返回 JSON：{\"action_id\": <整数>}"
+                            "只返回 JSON：{\"action_id\": <候选 action_id 原值>, \"reason\": <简短字符串>}"
                         ),
                     },
                     {
@@ -576,6 +622,7 @@ class DeepSeekAIAgent(BaseAgent):
             suggestion = self.client.suggest_action_id(
                 observation=observation,
                 legal_actions=legal_actions,
+                prompt_actions=pruned,
                 rag_context=rag_context,
                 hand_evaluation=hand_evaluation,
                 card_tracking_summary=card_tracking_summary,
