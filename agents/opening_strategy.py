@@ -6,10 +6,8 @@ never constructs actions and never decides legality.
 
 from __future__ import annotations
 
+from agents.game_phase import GamePhaseContext, OPENING, classify_game_phase
 
-EARLY_MAX_HISTORY_ACTIONS = 8
-EARLY_MIN_SELF_HAND_COUNT = 18
-EARLY_MIN_OTHER_HAND_COUNT = 16
 HIGH_RISK_PATTERNS = {"bomb", "straight_flush", "joker_bomb"}
 RUN_PATTERNS = {"triple_with_pair", "pair_straight", "straight", "steel_plate"}
 CONTROL_RANKS = {"A", "2", "SJ", "BJ"}
@@ -93,8 +91,9 @@ class OpeningFormulaStrategy:
         observation: dict[str, object],
         legal_actions: list[dict[str, object]],
         hand_eval: dict[str, object] | None = None,
+        phase_context: GamePhaseContext | None = None,
     ) -> object | None:
-        if not self._is_applicable(observation, legal_actions):
+        if not self._is_applicable(observation, legal_actions, phase_context=phase_context):
             return None
 
         candidates = [
@@ -126,6 +125,8 @@ class OpeningFormulaStrategy:
         self,
         observation: dict[str, object],
         legal_actions: list[dict[str, object]],
+        *,
+        phase_context: GamePhaseContext | None = None,
     ) -> bool:
         if not legal_actions:
             return False
@@ -139,30 +140,8 @@ class OpeningFormulaStrategy:
         if constraint != "free":
             return False
 
-        history = dict(observation.get("history", {}))
-        history_actions = list(history.get("actions", []))
-        if len(history_actions) > EARLY_MAX_HISTORY_ACTIONS:
-            return False
-
-        my_info = dict(observation.get("my_info", {}))
-        hand_count = _coerce_int(my_info.get("hand_count"), default=-1)
-        if hand_count < EARLY_MIN_SELF_HAND_COUNT:
-            return False
-
-        other_players = list(observation.get("other_players", []))
-        if len(other_players) != 3:
-            return False
-        other_counts = [
-            _coerce_int(dict(player).get("hand_count"), default=-1)
-            for player in other_players
-            if not bool(dict(player).get("finished", False))
-        ]
-        if len(other_counts) != 3:
-            return False
-        if min(other_counts) < EARLY_MIN_OTHER_HAND_COUNT:
-            return False
-
-        return True
+        context = phase_context or classify_game_phase(observation)
+        return context.phase == OPENING
 
     def _context(
         self,

@@ -320,7 +320,7 @@ class TestRAGStepH(unittest.TestCase):
                     "id": "exp:exact",
                     "corpus": "experience",
                     "scene": "follow_response",
-                    "phase": "midgame",
+                    "phase": "opening",
                     "hand_strength": "any",
                     "action_context": "follow",
                     "topic": "follow_response",

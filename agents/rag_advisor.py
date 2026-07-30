@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 import re
 
+from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase, phase_matches
 from agents.opening_strategy import normalize_hand_strength
 from rag.kb_loader import KnowledgeDocument
 from rag.retriever import KnowledgeRetriever
@@ -95,35 +96,19 @@ class RAGAdvisor:
         observation: dict[str, object],
         legal_actions: list[dict[str, object]],
         hand_eval: dict[str, object] | None = None,
+        phase_context: GamePhaseContext | None = None,
     ) -> dict[str, object]:
         my_info = dict(observation.get("my_info", {}))
         current_round = dict(observation.get("current_round", {}))
-        history = dict(observation.get("history", {}))
 
-        hand_count = RAGAdvisor._coerce_int(my_info.get("hand_count"), default=-1)
-        step_no = RAGAdvisor._coerce_int(current_round.get("step_no"), default=-1)
+        phase_context = phase_context or classify_game_phase(observation)
+        hand_count = phase_context.my_hand_count
+        phase = phase_context.phase
         constraint = str(current_round.get("constraint", "unknown"))
         table_action = current_round.get("table_action")
         current_level_rank = str(current_round.get("current_level_rank", ""))
 
-        other_players = list(observation.get("other_players", []))
-        other_counts = [
-            RAGAdvisor._coerce_int(dict(player).get("hand_count"), default=-1)
-            for player in other_players
-            if not bool(dict(player).get("finished", False))
-        ]
-        finish_order = list(dict(history).get("finish_order", []))
-
-        if hand_count > 0 and (hand_count < 10 or any(0 < count < 6 for count in other_counts) or finish_order):
-            phase = "endgame"
-        elif step_no == 0:
-            phase = "opening"
-        elif step_no >= 0:
-            phase = "midgame"
-        else:
-            phase = "unknown"
-
-        if phase == "endgame":
+        if is_endgame_phase(phase):
             scene = "endgame"
         elif table_action is None and constraint == "free":
             scene = "lead_opening" if phase == "opening" else "lead"
@@ -226,6 +211,18 @@ class RAGAdvisor:
         return None
 
     @staticmethod
+    def _phase_tag_match_score(doc_values: set[str], phase: str, exact_weight: float, any_weight: float) -> float | None:
+        if not doc_values:
+            return None
+        if any(phase_matches(phase, candidate) for candidate in doc_values):
+            return exact_weight
+        if "any" in doc_values:
+            return any_weight
+        if phase == "unknown" and "unknown" in doc_values:
+            return any_weight
+        return None
+
+    @staticmethod
     def _keyword_score(doc: KnowledgeDocument, query: str, desired_topics: set[str]) -> float:
         score = 0.0
         metadata = dict(doc.metadata)
@@ -269,12 +266,11 @@ class RAGAdvisor:
         score = 0.0
         for key, (exact_weight, any_weight) in _TAG_WEIGHTS.items():
             wanted = str(scene_tags.get(key, "unknown"))
-            tag_score = cls._tag_match_score(
-                cls._metadata_values(doc.metadata, key),
-                wanted,
-                exact_weight,
-                any_weight,
-            )
+            doc_values = cls._metadata_values(doc.metadata, key)
+            if key == "phase":
+                tag_score = cls._phase_tag_match_score(doc_values, wanted, exact_weight, any_weight)
+            else:
+                tag_score = cls._tag_match_score(doc_values, wanted, exact_weight, any_weight)
             if tag_score is None:
                 return None
             score += tag_score
@@ -401,8 +397,9 @@ class RAGAdvisor:
         legal_actions: list[dict[str, object]],
         hand_eval: dict[str, object] | None = None,
         top_k: int = 3,
+        phase_context: GamePhaseContext | None = None,
     ) -> dict[str, object]:
-        scene_tags = self._scene_tags(observation, legal_actions, hand_eval)
+        scene_tags = self._scene_tags(observation, legal_actions, hand_eval, phase_context)
         query = self.build_query(scene_tags)
 
         try:

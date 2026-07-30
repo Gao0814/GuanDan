@@ -14,6 +14,8 @@ import time
 from typing import Protocol
 from urllib import request as urllib_request
 
+from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
+
 _SUIT_DISPLAY: dict[str, str] = {"S": "♠", "H": "♥", "C": "♣", "D": "♦"}
 
 _PATTERN_FULL: dict[str, str] = {
@@ -233,11 +235,24 @@ class DeepSeekClient:
 
     @staticmethod
     def _phase_from_round(step_no: int, hand_count: int | None) -> str:
-        if step_no == 0:
-            return "opening"
-        if hand_count is not None and hand_count < 10:
-            return "endgame"
-        return "midgame"
+        """Adapt legacy pruning arguments through the unified classifier.
+
+        Normal callers provide ``GamePhaseContext``.  This preserves the
+        historical static helper for callers that only have these two public
+        fields, without reintroducing phase thresholds in the pruning module.
+        """
+        return classify_game_phase(
+            {
+                "my_info": {"hand_count": hand_count if hand_count is not None else 27},
+                "current_round": {"step_no": step_no},
+                "other_players": [
+                    {"hand_count": 27, "finished": False},
+                    {"hand_count": 27, "finished": False},
+                    {"hand_count": 27, "finished": False},
+                ],
+                "history": {"actions": [], "finish_order": []},
+            }
+        ).phase
 
     @staticmethod
     def _tactic_group(pattern: str) -> str:
@@ -570,7 +585,7 @@ class DeepSeekClient:
             ["single", "pair", "pass"],
             ["bomb", "straight_flush", "joker_bomb"],
         )
-        if phase == "endgame":
+        if is_endgame_phase(phase):
             pattern_groups = (
                 ["bomb", "straight_flush", "joker_bomb"],
                 ["steel_plate", "straight", "pair_straight", "triple_with_pair", "triple"],
@@ -633,6 +648,7 @@ class DeepSeekClient:
         constraint: str,
         step_no: int = 0,
         hand_count: int | None = None,
+        phase_context: GamePhaseContext | None = None,
     ) -> list[dict[str, object]]:
         """Prune redundant actions to reduce context size for the model.
 
@@ -640,7 +656,10 @@ class DeepSeekClient:
         The order is phase-aware so the prompt can emphasize opening, middle, or
         endgame priorities without changing legality.
         """
-        phase = DeepSeekClient._phase_from_round(step_no, hand_count)
+        # The optional legacy fields retain compatibility for callers that do
+        # not have an observation payload.  All normal decision paths provide
+        # the shared context instead.
+        phase = phase_context.phase if phase_context is not None else DeepSeekClient._phase_from_round(step_no, hand_count)
         if constraint == "free":
             kept = DeepSeekClient._lead_pruned_actions(legal_actions, phase)
         else:
@@ -817,6 +836,7 @@ class DeepSeekClient:
         rag_context: dict[str, object] | None = None,
         hand_evaluation: dict[str, object] | None = None,
         card_tracking_summary: str | None = None,
+        phase_context: GamePhaseContext | None = None,
     ) -> str:
         """Build the final Step-H structured prompt from public payloads."""
         lines: list[str] = []
@@ -846,6 +866,8 @@ class DeepSeekClient:
             f"我的玩家ID：{my_info.get('player_id', '?')}；级牌：{current_level_rank}"
         )
         lines.append(f"第{round_no}轮第{step_no}步；我的剩余手牌：{hand_count}张")
+        if phase_context is not None:
+            lines.append(f"统一局面阶段：{phase_context.phase}")
 
         if table_action is None:
             lines.append("动作场景：首出/新一轮领出；桌面约束：无")
@@ -990,6 +1012,7 @@ class DeepSeekClient:
         rag_context: dict[str, object] | None = None,
         hand_evaluation: dict[str, object] | None = None,
         card_tracking_summary: str | None = None,
+        phase_context: GamePhaseContext | None = None,
         verbose: bool = False,
         debug_prefix: str = "[DeepSeek]",
     ) -> DeepSeekSuggestion:
@@ -1002,6 +1025,7 @@ class DeepSeekClient:
         other_players = list(observation.get("other_players", []))
         history = dict(observation.get("history", {}))
         hand_count = self._coerce_int(my_info.get("hand_count"), default=0)
+        phase_context = phase_context or classify_game_phase(observation)
 
         constraint = str(current_round.get("constraint", "free"))
         if prompt_actions is None:
@@ -1010,6 +1034,7 @@ class DeepSeekClient:
                 constraint,
                 step_no=step_no,
                 hand_count=hand_count,
+                phase_context=phase_context,
             )
         else:
             pruned_actions = list(prompt_actions)
@@ -1023,6 +1048,7 @@ class DeepSeekClient:
             rag_context=rag_context,
             hand_evaluation=hand_evaluation,
             card_tracking_summary=card_tracking_summary,
+            phase_context=phase_context,
         )
 
         if verbose:

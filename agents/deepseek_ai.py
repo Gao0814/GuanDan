@@ -15,6 +15,7 @@ import json
 from config import AppConfig
 from agents.base import BaseAgent, require_legal_action_id
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
+from agents.game_phase import classify_game_phase
 from agents.hand_evaluator import evaluate_hand
 from agents.opening_strategy import OpeningFormulaStrategy
 from agents.rag_advisor import RAGAdvisor, RAGEvidence
@@ -436,6 +437,7 @@ class DeepSeekAIAgent(BaseAgent):
             self.last_decision_source = "local"
             return chosen
 
+        phase_context = classify_game_phase(observation)
         opening_evaluation: dict[str, object] | None = None
         if self.opening_formula_enabled:
             opening_evaluation = evaluate_hand(observation, legal_actions)
@@ -443,6 +445,7 @@ class DeepSeekAIAgent(BaseAgent):
                 observation,
                 legal_actions,
                 opening_evaluation,
+                phase_context=phase_context,
             )
             if opening_action_id is not None:
                 chosen = require_legal_action_id(opening_action_id, legal_actions)
@@ -464,6 +467,7 @@ class DeepSeekAIAgent(BaseAgent):
             display_constraint,
             step_no=step_no,
             hand_count=hand_count,
+            phase_context=phase_context,
         )
 
         hand_evaluation: dict[str, object] | None = None
@@ -559,6 +563,7 @@ class DeepSeekAIAgent(BaseAgent):
                         legal_actions=legal_actions,
                         hand_eval=hand_evaluation,
                         top_k=self.rag_top_k,
+                        phase_context=phase_context,
                     )
                 else:
                     query = _rag_query_from_observation(observation)
@@ -593,6 +598,7 @@ class DeepSeekAIAgent(BaseAgent):
                 rag_context=rag_context,
                 hand_evaluation=hand_evaluation,
                 card_tracking_summary=card_tracking_summary,
+                phase_context=phase_context,
             )
             payload = {
                 "model": self.client._model,
@@ -626,6 +632,7 @@ class DeepSeekAIAgent(BaseAgent):
                 rag_context=rag_context,
                 hand_evaluation=hand_evaluation,
                 card_tracking_summary=card_tracking_summary,
+                phase_context=phase_context,
                 verbose=False,  # agent handles all printing
                 debug_prefix=f"[DeepSeek] 玩家{player_id}",
             )

@@ -526,7 +526,7 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
 
         config = mock.Mock(card_tracking_enabled=False)
 
-        def prune(actions, _constraint, *, step_no, hand_count):
+        def prune(actions, _constraint, *, step_no, hand_count, phase_context):
             events.append("prune")
             return list(actions)
 
