@@ -70,7 +70,9 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 ## 4. Step J：牌面信念测试
 
-### 确定性统计
+### J-A：公开事实层
+
+状态：已完成。`tests/test_card_belief.py` 与兼容测试共 31 项通过，全量 141 项通过。
 
 - 初始完整牌池为 108 张；
 - 自己手牌和历史 `carrier_cards` 从未见牌池正确扣除；
@@ -80,13 +82,30 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 旧历史缺少 `carrier_cards` 时才回退到 `declared_cards`；
 - 不合法或重复历史产生诊断信息，而不是静默得到负计数。
 
-### 逐玩家状态
+### J-B1：所有权域与容量约束
 
-- 按 `player_id` 记录真实已出牌；
-- 剩余容量来自公开 `other_players.hand_count`；
-- pass 记录到对应玩家，但不作为确定无牌；
-- `confirmed` 只能来自公开事实或唯一可行分配；
-- 所有 `likely` 结论带置信度和证据来源。
+状态：下一步。
+
+- 只消费 J-A 的 `CardBeliefState`；
+- 自己、已完赛和零容量玩家不进入外部未知牌归属域；
+- token/点数归属域覆盖全部仍可持牌的外部玩家；
+- 玩家公开剩余容量总和与未见牌总数一致；
+- 输入不精确、容量冲突或空归属域产生诊断；
+- 多个候选玩家存在时不产生 `confirmed_cards`；
+- 只有硬约束唯一且输入一致时才允许确认；
+- pass 次数不能缩小硬归属域。
+
+### J-B2：有限残局分配
+
+- 只在受控规模下枚举完整可行分配；
+- 截断搜索不得输出唯一性结论；
+- `confirmed` 只能来自所有完整可行解的一致归属。
+
+### J-C：软推断与校准
+
+- pass 只作为软信号，不作为确定无牌；
+- 所有 `likely` 结论带置信度和证据来源；
+- 软信号不能覆盖 J-A 公开事实或 J-B 硬约束。
 
 ### 离线准确率
 
