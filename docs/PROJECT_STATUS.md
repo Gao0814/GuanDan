@@ -4,10 +4,10 @@
 
 ## 1. 当前基线
 
-- 已提交 Git 基线：`9a44c07 J-C3c2`
-- 当前工作状态：Step J-C3d1 已实现并验证；`agents/card_ranker.py` 与对应测试尚未提交
+- 已提交 Git 基线：`3ee050e J-C3d1`
+- 当前工作状态：Step J-D1a 已完成并独立复核；工作区包含 J-D1a 源码、测试及规划文档的未提交改动
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：250 项测试全部通过
+- 实际验证结果：256 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -28,7 +28,7 @@
 
 ### 当前优化愿景
 
-完成度：约 87%
+完成度：约 91%
 
 目标愿景包括：
 
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、离线评测、公开事件、多种子采集器、forced/战略性 pass 正式对照，并已撤销被拒绝的无条件 pass 软扣分。下一步用独立 corpus 封板验证 neutral baseline，再研究可由残局组合计数支持的新证据。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、离线评测、公开事件、多种子采集器、forced/战略性 pass 正式对照，并已用独立 corpus 证明 neutral baseline 不受 pass 策略分布影响。J-D1a 已为完整残局分配建立精确物理权重和 token 边际整数计数，下一步进入 J-D1b rank 边际整数聚合。
 
 ## 3. 分模块状态
 
@@ -52,10 +52,10 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-B2 完成 | 不超过 12 张时枚举完整分配、聚合上下界、保护截断结果 | 尚未接入主链，真实域缩减效果待批量样本 |
+| 残局精确分配 | Step J-D1a 完成 | 不超过 12 张时枚举完整分配，聚合上下界、物理权重与 token 边际整数计数 | 尚无 rank 边际、概率解释或主链接入 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
-| rank 排序 | Step J-C3d1 neutral 完成 | 只投影硬域与 confirmed；possible 均为零软分、空 evidence | 待 J-C3d2 独立 corpus 封板 |
+| rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
 | rank 排序评测 | Step J-C2b2 完成 | 真值隔离、并列安全 Top-K、零软分基线和单样本 delta | 尚未支持策略分布分层结论 |
 | rank 离线基准 | Step J-C3a/J-C3b 完成 | 固定种子采集、微聚合、阶段桶、可重复正式验收 | RuleBasedAI 不覆盖有牌可压时的战略性 pass |
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
@@ -305,15 +305,70 @@ J-C3d1 按以下要求恢复安全基线：
 
 开发试跑 seed `30..34` 只用于确认 J-C3d2 口径：四种 pass 策略均无 invalid/skip，overall 的 candidate、Top-1、Top-3、选择规模和 MRR delta 全部严格为 0。
 
-### P1：neutral baseline 尚未正式封板
+### 实施要求：neutral baseline 正式封板（J-C3d2）
 
-下一步 J-C3d2 使用独立 seed `3000..3049`，要求四种策略：
+J-C3d2 使用独立 seed `3000..3049`，要求四种策略：
 
 - 两次完整报告和 canonical JSON hash 一致；
 - 每个策略 50 局全部完成，无 invalid、skip 或 diagnostics；
 - overall、near-open、critical 的 baseline snapshot 与 neutral snapshot 完全相同；
 - 所有 delta 严格为 0；
 - 通过后将 J-C3 分支封板，转入 J-D1 残局分配概率设计。
+
+### 已解决：neutral baseline 正式封板（Step J-C3d2）
+
+正式参数与结果：
+
+- HEAD `3ee050e1ff80615038348b11e7ba185ded463ca2`；
+- seed `3000..3049`，四种 pass 策略各 50 局；
+- 两次完整报告相同，SHA-256 均为 `83d947387910c266034473e6eba96223fa744d4bf7d815631166275f4b247034`；
+- 每种策略 50/50 局完成，无 incomplete、invalid、skip 或 diagnostics；
+- forced/25/50/100 共 8759 个有效样本；
+- near-open/critical 每个策略均超过预注册的 500 样本门槛；
+- 12 个 bucket 的 baseline 与 neutral snapshot 逐字段完全相等；
+- candidate recall 均为 1.0；
+- candidate、Top-1/Top-3、选择规模和 MRR delta 全部精确为 0.0。
+
+唯一判定：`neutral_baseline_verified`。
+
+J-C 结论：
+
+- 被拒绝的 pass 信号已安全撤销；
+- 公开 pass 事件仍可审计，但不产生持牌结论；
+- hard candidates 与完整 J-B2 仍是当前唯一可信推断来源；
+- 没有新猜牌能力、概率、置信度、策略集成或胜率提升。
+
+### 已解决：可行分配矩阵获得精确物理权重（Step J-D1a）
+
+J-B2 当前将相同 token 的副本按整数份额分配，每个 count matrix 计一个
+`feasible_assignment_count`。实际双副本物理牌可区分，因此不同 count matrix
+对应的物理分配数量可能不同。J-D1a 已完成精确整数权重统计：
+
+- count matrix 权重为每种 token 的多项式系数乘积；
+- 所有统计只来自完整搜索；
+- 截断、跳过、无解或输入无效时不输出部分权重；
+- 先输出整数分母、持有权重和副本数加权和，不输出浮点概率；
+- 不使用 pass、队伍策略或 ground truth 调整权重。
+
+实现结果：
+
+- 每个完整 count matrix 的权重为 `product_t(c_t! / product_p(k_(p,t)!))`；
+- `physical_assignment_count` 是所有完整 matrix 权重之和；
+- 逐玩家记录每个 token 的持有分子和副本数加权分子；
+- token 副本守恒满足所有玩家副本分子之和等于 `token_count * physical_assignment_count`；
+- `truncated`、`invalid_input`、`skipped_too_many_cards` 和 `no_feasible_allocation` 不暴露部分权重；
+- 旧的 matrix 计数、min/max、confirmed 和 possible-owner 语义保持不变。
+
+验证：定向 132 项、全量 256 项测试通过；J-D1a 仍不输出概率、rank 边际、置信度或策略结论。
+
+### P1：rank 持有边际不能由 token 持有分子直接相加
+
+同一 rank 可以包含多个花色 token，同一物理分配中一个玩家也可能同时持有这些 token。因此：
+
+- rank 副本数加权分子可以由同 rank token 的副本数分子求和；
+- rank“至少持有一张”的分子是事件并集，不能对 token 持有分子直接求和；
+- J-D1b 必须在每个完整 matrix 的记录点按玩家聚合 rank 副本数，并对 rank 持有事件只计一次；
+- J-D1b 继续只输出整数分子/分母，概率解释和离线校准后移到 J-D1c。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -331,7 +386,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### P1：没有策略质量基准
 
-250 项测试证明当前实现满足已有功能契约，但不能证明：
+256 项测试证明当前实现满足已有功能契约，但不能证明：
 
 - 公式开局提高胜率；
 - RAG 改善动作质量；
@@ -358,7 +413,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-C3d1 已完成并核验，下一步实施 J-C3d2。
+状态：J-A 至 J-D1a 已完成并核验，下一步实施 J-D1b。
 
 拆分为：
 
@@ -374,8 +429,10 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-C3c1：实现 evaluation-only 战略性 pass 策略与多策略基准载体，已完成；
 - Step J-C3c2：使用独立种子运行策略分布稳健性验收，已完成，判定拒绝；
 - Step J-C3d1：撤销无条件 pass 软扣分，恢复零软分安全基线，已完成；
-- Step J-C3d2：固定种子验证 neutral ranking 在所有 pass 策略下无召回差异，下一步；
-- Step J-D1：研究基于完整残局分配计数的概率候选，不再用 pass 直接代表无牌；
+- Step J-C3d2：固定种子验证 neutral ranking 在所有 pass 策略下无召回差异，已完成；
+- Step J-D1a：在完整 J-B2 搜索中聚合物理分配整数权重和 token 边际计数，已完成；
+- Step J-D1b：在完整 matrix 记录点聚合精确 rank 持有/副本整数边际，下一步；
+- Step J-D1c：定义概率报告并使用离线真值做校准与分桶验收；
 - 置信度校准：暂停，直到新信号通过独立策略分布验收。
 
 设计见 `docs/BELIEF_STATE.md`。

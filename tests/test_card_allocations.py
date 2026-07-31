@@ -117,6 +117,7 @@ class CardAllocationTests(unittest.TestCase):
         self.assertEqual(result.status, "complete")
         self.assertTrue(result.search_complete)
         self.assertEqual(result.feasible_assignment_count, 1)
+        self.assertEqual(result.physical_assignment_count, 1)
         self.assertEqual(_bounds(result, 2).confirmed_cards, ("3S", "3S", "BJ"))
 
     def test_two_player_multiple_solutions_do_not_confirm(self) -> None:
@@ -125,6 +126,7 @@ class CardAllocationTests(unittest.TestCase):
         result = enumerate_card_allocations(belief, constraints)
 
         self.assertEqual(result.feasible_assignment_count, 2)
+        self.assertEqual(result.physical_assignment_count, 2)
         self.assertEqual(_bounds(result, 2).confirmed_cards, ())
         self.assertEqual(_bounds(result, 3).confirmed_cards, ())
 
@@ -134,9 +136,39 @@ class CardAllocationTests(unittest.TestCase):
         result = enumerate_card_allocations(belief, constraints)
 
         self.assertEqual(result.feasible_assignment_count, 1)
+        self.assertEqual(result.physical_assignment_count, 1)
         self.assertEqual(_bounds(result, 2).confirmed_cards, ("4H",))
         self.assertEqual(_bounds(result, 3).confirmed_cards, ("3S",))
-        self.assertEqual(result.possible_owners_by_token["3S"], (3,))
+
+    def test_asymmetric_counts_aggregate_exact_physical_weight_and_marginals(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"3S": 2, "4H": 1},
+            capacities={2: 2, 3: 1},
+            domains={"3S": (2, 3), "4H": (2, 3)},
+        )
+
+        result = enumerate_card_allocations(belief, constraints)
+        player_two = _bounds(result, 2)
+        player_three = _bounds(result, 3)
+
+        self.assertEqual(result.feasible_assignment_count, 2)
+        self.assertEqual(result.physical_assignment_count, 3)
+        self.assertEqual(player_two.holding_assignment_count_by_token, {"3S": 3, "4H": 2})
+        self.assertEqual(player_two.copy_assignment_count_by_token, {"3S": 4, "4H": 2})
+        self.assertEqual(player_three.holding_assignment_count_by_token, {"3S": 2, "4H": 1})
+        self.assertEqual(player_three.copy_assignment_count_by_token, {"3S": 2, "4H": 1})
+
+    def test_multi_token_matrix_weights_multiply(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"3S": 2, "4H": 2},
+            capacities={2: 2, 3: 2},
+            domains={"3S": (2, 3), "4H": (2, 3)},
+        )
+
+        result = enumerate_card_allocations(belief, constraints)
+
+        self.assertEqual(result.feasible_assignment_count, 3)
+        self.assertEqual(result.physical_assignment_count, 6)
 
     def test_identical_token_copies_are_counted_as_one_split(self) -> None:
         belief, constraints = _inputs(
@@ -148,6 +180,7 @@ class CardAllocationTests(unittest.TestCase):
         result = enumerate_card_allocations(belief, constraints)
 
         self.assertEqual(result.feasible_assignment_count, 1)
+        self.assertEqual(result.physical_assignment_count, 2)
 
     def test_split_identical_copies_confirm_one_for_each_player(self) -> None:
         belief, constraints = _inputs(
@@ -180,6 +213,49 @@ class CardAllocationTests(unittest.TestCase):
         self.assertEqual(result.possible_owners_by_token["3S"], (3,))
         self.assertEqual(result.possible_owners_by_token["4H"], (2,))
 
+    def test_physical_marginals_obey_conservation_and_bounds(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"3S": 2, "4H": 1},
+            capacities={2: 2, 3: 1},
+        )
+        result = enumerate_card_allocations(belief, constraints)
+
+        for token, count in belief.unseen_cards_by_token.items():
+            if not count:
+                continue
+            copies = sum(
+                player.copy_assignment_count_by_token[token]
+                for player in result.players
+            )
+            self.assertEqual(copies, count * result.physical_assignment_count)
+        for player in result.players:
+            for token, minimum in player.min_count_by_token.items():
+                holding = player.holding_assignment_count_by_token[token]
+                copies = player.copy_assignment_count_by_token[token]
+                maximum = player.max_count_by_token[token]
+                self.assertLessEqual(holding, result.physical_assignment_count)
+                self.assertLessEqual(
+                    copies,
+                    belief.unseen_cards_by_token[token] * result.physical_assignment_count,
+                )
+                if minimum > 0:
+                    self.assertEqual(holding, result.physical_assignment_count)
+                if maximum == 0:
+                    self.assertEqual(holding, 0)
+                    self.assertEqual(copies, 0)
+
+    def test_zero_count_tokens_do_not_appear_in_marginals(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"3S": 1, "4H": 0},
+            capacities={2: 1},
+            domains={"3S": (2,), "4H": (2,)},
+        )
+
+        result = enumerate_card_allocations(belief, constraints)
+
+        self.assertEqual(result.physical_assignment_count, 1)
+        self.assertEqual(_bounds(result, 2).copy_assignment_count_by_token, {"3S": 1})
+
     def test_no_feasible_allocation_is_diagnosed_without_confirmation(self) -> None:
         belief, constraints = _inputs(domains={"3S": (2,), "4H": (2,)})
 
@@ -188,6 +264,9 @@ class CardAllocationTests(unittest.TestCase):
         self.assertEqual(result.status, "no_feasible_allocation")
         self.assertIn("no_feasible_allocation", result.diagnostics)
         self.assertTrue(all(not player.confirmed_cards for player in result.players))
+        self.assertEqual(result.physical_assignment_count, 0)
+        self.assertTrue(all(not player.holding_assignment_count_by_token for player in result.players))
+        self.assertTrue(all(not player.copy_assignment_count_by_token for player in result.players))
 
     def test_inexact_belief_or_constraints_do_not_start_search(self) -> None:
         belief, constraints = _inputs(token_pool_exact=False)
@@ -195,6 +274,7 @@ class CardAllocationTests(unittest.TestCase):
         self.assertEqual(result.status, "invalid_input")
         self.assertIn("token_pool_inexact", result.diagnostics)
         self.assertEqual(result.search_nodes, 0)
+        self.assertEqual(result.physical_assignment_count, 0)
 
         belief, constraints = _inputs(constraints_exact=False, constraints_consistent=False)
         result = enumerate_card_allocations(belief, constraints)
@@ -246,6 +326,7 @@ class CardAllocationTests(unittest.TestCase):
         self.assertEqual(result.status, "skipped_too_many_cards")
         self.assertIn("too_many_external_cards", result.diagnostics)
         self.assertEqual(result.search_nodes, 0)
+        self.assertEqual(result.physical_assignment_count, 0)
 
     def test_node_limit_truncation_preserves_domains_and_confirms_nothing(self) -> None:
         belief, constraints = _inputs()
@@ -257,6 +338,8 @@ class CardAllocationTests(unittest.TestCase):
         self.assertIn("search_node_limit_reached", result.diagnostics)
         self.assertEqual(result.possible_owners_by_token, constraints.possible_owners_by_token)
         self.assertTrue(all(not player.confirmed_cards for player in result.players))
+        self.assertEqual(result.physical_assignment_count, 0)
+        self.assertTrue(all(not player.copy_assignment_count_by_token for player in result.players))
 
     def test_solution_limit_truncation_preserves_domains_and_confirms_nothing(self) -> None:
         belief, constraints = _inputs()
@@ -268,6 +351,21 @@ class CardAllocationTests(unittest.TestCase):
         self.assertIn("solution_limit_reached", result.diagnostics)
         self.assertEqual(result.possible_owners_by_token, constraints.possible_owners_by_token)
         self.assertTrue(all(not player.confirmed_cards for player in result.players))
+        self.assertEqual(result.physical_assignment_count, 0)
+        self.assertTrue(all(not player.holding_assignment_count_by_token for player in result.players))
+
+    def test_solution_limit_remains_a_count_matrix_limit_not_physical_weight_limit(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"3S": 2},
+            capacities={2: 1, 3: 1},
+            domains={"3S": (2, 3)},
+        )
+
+        result = enumerate_card_allocations(belief, constraints, max_solutions=1)
+
+        self.assertEqual(result.feasible_assignment_count, 1)
+        self.assertEqual(result.status, "truncated")
+        self.assertEqual(result.physical_assignment_count, 0)
 
     def test_fixed_input_is_deterministic(self) -> None:
         belief, constraints = _inputs()
@@ -292,8 +390,20 @@ class CardAllocationTests(unittest.TestCase):
             result.status = "invalid_input"  # type: ignore[misc]
         with self.assertRaises(TypeError):
             result.possible_owners_by_token["3S"] = ()  # type: ignore[index]
+        with self.assertRaises(TypeError):
+            _bounds(result, 2).copy_assignment_count_by_token["3S"] = 0  # type: ignore[index]
         self.assertEqual(belief.to_dict(), before_belief)
         self.assertEqual(constraints.to_dict(), before_constraints)
+
+    def test_new_statistics_are_integer_json_safe_and_do_not_expose_probabilities(self) -> None:
+        belief, constraints = _inputs(token_counts={"3S": 2}, capacities={2: 1, 3: 1})
+        payload = enumerate_card_allocations(belief, constraints).to_dict()
+        serialized = json.dumps(payload)
+
+        self.assertIsInstance(payload["physical_assignment_count"], int)
+        self.assertNotIn("probability", serialized)
+        self.assertNotIn("confidence", serialized)
+        self.assertNotIn("ground_truth", serialized)
 
     def test_invalid_limits_raise_value_error(self) -> None:
         belief, constraints = _inputs()

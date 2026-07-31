@@ -8,7 +8,8 @@ any confirmations come from every complete feasible allocation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from math import factorial
 from types import MappingProxyType
 from typing import Mapping
 
@@ -33,6 +34,12 @@ class PlayerAllocationBounds:
     min_count_by_token: Mapping[str, int]
     max_count_by_token: Mapping[str, int]
     confirmed_cards: tuple[str, ...]
+    holding_assignment_count_by_token: Mapping[str, int] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    copy_assignment_count_by_token: Mapping[str, int] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -41,6 +48,12 @@ class PlayerAllocationBounds:
             "min_count_by_token": dict(self.min_count_by_token),
             "max_count_by_token": dict(self.max_count_by_token),
             "confirmed_cards": list(self.confirmed_cards),
+            "holding_assignment_count_by_token": dict(
+                self.holding_assignment_count_by_token
+            ),
+            "copy_assignment_count_by_token": dict(
+                self.copy_assignment_count_by_token
+            ),
         }
 
 
@@ -57,6 +70,7 @@ class CardAllocationResult:
     possible_owners_by_token: Mapping[str, tuple[object, ...]]
     players: tuple[PlayerAllocationBounds, ...]
     diagnostics: tuple[str, ...]
+    physical_assignment_count: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -72,6 +86,7 @@ class CardAllocationResult:
             },
             "players": [player.to_dict() for player in self.players],
             "diagnostics": list(self.diagnostics),
+            "physical_assignment_count": self.physical_assignment_count,
         }
 
 
@@ -241,6 +256,9 @@ def enumerate_card_allocations(
     min_counts: list[list[int]] | None = None
     max_counts: list[list[int]] | None = None
     allocation = [[0 for _ in tokens] for _ in player_ids]
+    physical_assignment_count = 0
+    holding_assignment_counts = [[0 for _ in tokens] for _ in player_ids]
+    copy_assignment_counts = [[0 for _ in tokens] for _ in player_ids]
 
     def can_fill_remaining(token_index: int, remaining: tuple[int, ...]) -> bool:
         if sum(counts[token_index:]) != sum(remaining):
@@ -280,8 +298,24 @@ def enumerate_card_allocations(
         yield from visit_owner(0, amount)
 
     def record_solution() -> None:
-        nonlocal feasible_assignment_count, min_counts, max_counts, solution_limit_reached
+        nonlocal feasible_assignment_count, min_counts, max_counts
+        nonlocal solution_limit_reached, physical_assignment_count
         feasible_assignment_count += 1
+        matrix_weight = 1
+        for token_position, count in enumerate(counts):
+            denominator = 1
+            for player_position in range(len(player_ids)):
+                denominator *= factorial(allocation[player_position][token_position])
+            matrix_weight *= factorial(count) // denominator
+        physical_assignment_count += matrix_weight
+        for player_position in range(len(player_ids)):
+            for token_position in range(len(tokens)):
+                assigned = allocation[player_position][token_position]
+                if assigned:
+                    holding_assignment_counts[player_position][token_position] += matrix_weight
+                    copy_assignment_counts[player_position][token_position] += (
+                        matrix_weight * assigned
+                    )
         if min_counts is None or max_counts is None:
             min_counts = [row[:] for row in allocation]
             max_counts = [row[:] for row in allocation]
@@ -376,6 +410,22 @@ def enumerate_card_allocations(
                 if search_complete and feasible_assignment_count
                 else ()
             ),
+            holding_assignment_count_by_token=(
+                MappingProxyType({
+                    token: holding_assignment_counts[player_position][token_position]
+                    for token_position, token in enumerate(tokens)
+                })
+                if search_complete and feasible_assignment_count
+                else MappingProxyType({})
+            ),
+            copy_assignment_count_by_token=(
+                MappingProxyType({
+                    token: copy_assignment_counts[player_position][token_position]
+                    for token_position, token in enumerate(tokens)
+                })
+                if search_complete and feasible_assignment_count
+                else MappingProxyType({})
+            ),
         )
         for player_position, player_id in enumerate(player_ids)
     )
@@ -390,4 +440,9 @@ def enumerate_card_allocations(
         possible_owners_by_token=MappingProxyType(possible_owners),
         players=players,
         diagnostics=tuple(diagnostics),
+        physical_assignment_count=(
+            physical_assignment_count
+            if search_complete and feasible_assignment_count
+            else 0
+        ),
     )

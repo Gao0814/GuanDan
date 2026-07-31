@@ -24,6 +24,8 @@
 - Step J-C3c1 evaluation-only 战略性 pass 策略分布基准载体。
 - Step J-C3c2 独立种子策略分布验收，判定拒绝无条件 pass 信号。
 - Step J-C3d1 撤销无条件 pass 扣分并恢复 hard-only neutral ranking。
+- Step J-C3d2 独立 corpus neutral baseline 封板。
+- Step J-D1a 完整分配的精确物理权重与 token 边际整数计数。
 
 当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。
 
@@ -112,7 +114,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-C3d1 已完成；下一步实施 J-C3d2。
+状态：J-A 至 J-D1a 已完成；下一步实施 J-D1b。
 
 目标：
 
@@ -122,7 +124,7 @@ AI 决策分为四层：
 - 所有推断带来源和置信度；
 - 只有逻辑唯一时才能标记 `confirmed`。
 
-当前阶段已包含确定性公开事实、硬约束和一个未校准的软排序启发式；仍不输出概率或置信度，也不做 MCTS 或蒙特卡洛搜索。
+当前阶段已包含确定性公开事实、硬约束、完整残局枚举和 token 级精确物理权重；排序已恢复 hard-only neutral baseline。仍不输出概率或置信度，也不做 MCTS 或蒙特卡洛搜索。
 
 验收：
 
@@ -148,9 +150,11 @@ AI 决策分为四层：
 10. J-C3c1：实现 evaluation-only 战略性 pass 策略和策略分层报告，已完成；
 11. J-C3c2：用独立固定种子运行策略分布稳健性验收，已完成，判定拒绝；
 12. J-C3d1：移除无条件 pass 负分并恢复零软分 hard-only ranking，已完成；
-13. J-C3d2：验证 neutral ranking 在 forced/战略 pass 轨迹下均不损失召回，下一步；
-14. J-D1：设计完整残局分配的概率计数与离线校准；
-15. 置信度和策略接入：仅在新证据通过独立验收后恢复。
+13. J-C3d2：验证 neutral ranking 在 forced/战略 pass 轨迹下均不损失召回，已完成；
+14. J-D1a：聚合完整分配的精确物理权重和 token 边际整数计数，已完成；
+15. J-D1b：在完整 matrix 上聚合 rank 持有与副本数的精确整数边际，下一步；
+16. J-D1c：定义概率报告并做离线真值校准；
+17. 置信度和策略接入：仅在新证据通过独立验收后恢复。
 
 J-A 验证结果：
 
@@ -238,6 +242,26 @@ J-C3d1 验证结果：
 - 定向 140 项、全量 250 项测试通过；
 - seed `30..34` 开发试跑中，四种 pass 策略的全部 overall delta 严格为 0；
 - 下一步只做独立 seed neutral 封板，不恢复被拒绝信号。
+
+J-C3d2 正式结果：
+
+- HEAD：`3ee050e1ff80615038348b11e7ba185ded463ca2`；
+- seed `3000..3049`，四策略各 50 局，两次报告与 SHA-256 一致；
+- 所有对局和样本有效，无截断或 diagnostics；
+- 12 个 bucket 的 baseline/soft snapshot 完全相等；
+- 所有 delta 精确为 0；
+- 判定：`neutral_baseline_verified`；
+- J-C 分支封板，后续不恢复无条件 pass 负分。
+
+J-D1a 验证结果：
+
+- `CardAllocationResult.physical_assignment_count` 聚合所有完整 count matrix 的物理权重；
+- `PlayerAllocationBounds` 聚合逐 token 持有分子与副本数加权分子；
+- 权重使用 `math.factorial` 和 Python 整数，未引入第三方依赖或浮点数；
+- 不完整、无效、跳过和无解结果不输出部分权重或边际；
+- token 副本数分子满足全局守恒；
+- 定向 132 项、全量 256 项测试通过；
+- 该步骤没有输出 rank 边际、概率、置信度或策略收益。
 
 ### Step K：中局策略路由与残局决策
 

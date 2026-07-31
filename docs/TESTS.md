@@ -247,7 +247,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-C3d2：neutral corpus 封板
 
-状态：下一步。该步骤只运行已有 benchmark，不修改实现。
+状态：已完成。四策略各 50 局双运行结果一致，12 个 bucket 全部相等，判定为 `neutral_baseline_verified`。
 
 - J-C3d1 必须先形成可追溯提交，工作区干净；
 - 固定独立 seed `3000..3049`，四种策略各 50 局；
@@ -261,10 +261,50 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 通过后判定 `neutral_baseline_verified`，否则 `benchmark_invalid`；
 - 不在正式 seed 上修改实现、参数或筛选样本。
 
-#### J-D1：新证据
+#### J-D1a：物理分配权重
 
-- pass 只作为公开行为事实，不作为默认持牌负证据；
-- 新概率信号必须定义样本空间、权重和校准方式。
+状态：已完成。J-D1a 与兼容测试共 132 项通过，全量 256 项通过。
+
+- 完整 search 的每个 count matrix 计算精确整数权重；
+- token count 为 `c`、各玩家份额为 `k_i` 时，token 权重为
+  `c! / product(k_i!)`；
+- 一个矩阵总权重为所有 token 权重的乘积；
+- 相同 token 两副本的 1/1 split 权重为 2，2/0 split 权重为 1；
+- 全部 token count 为 1 时，总权重等于 feasible matrix count；
+- 聚合全局物理分配权重；
+- 聚合逐玩家逐 token 的持有权重和副本数加权和；
+- 唯一分配、重复 token、非对称容量和受限 domain 均有精确测试；
+- 所有 numerators 不超过全局分母对应的合法上界；
+- complete 结果可序列化、不可变且固定输入可重复；
+- truncated/skipped/invalid/no-feasible 结果的权重统计全部为空或 0；
+- partial traversal 不得泄露边际信息；
+- 现有 feasible count、min/max、confirmed 和 possible owners 不变；
+- 不输出 float、概率、置信度或 ground truth。
+
+#### J-D1b：rank 精确整数边际
+
+状态：下一步，仅聚合精确整数边际，不做概率或校准。
+
+- token 必须映射到合法 rank，joker 保持 `SJ` / `BJ`；
+- token 聚合得到的逐 rank 总数必须与 `unseen_cards_by_rank` 一致；
+- 每个完整 matrix 内，逐玩家同 rank 副本数先求和；
+- rank 副本数分子等于同 rank token 副本数分子之和；
+- rank 持有分子按“至少持有一张”事件计一次，不能直接求和 token 持有分子；
+- 覆盖一个玩家同时持有同 rank 多花色的重叠事件测试；
+- 单 token rank 的 rank 持有/副本分子与 token 级结果一致；
+- 所有玩家 rank 副本数分子之和等于 `rank_count * physical_assignment_count`；
+- rank 持有分子位于 `[0, physical_assignment_count]`；
+- complete 输出不可变、可 JSON 序列化且固定输入可重复；
+- truncated/skipped/invalid/no-feasible 的 rank mapping 全部为空；
+- 不改变 J-B2/J-D1a 的搜索、截断、硬域、确认或 token 边际语义；
+- 不输出 float、概率、置信度，不使用 pass、策略或 ground truth。
+
+#### J-D1c：概率报告与校准
+
+- 明确定义分子、分母和零分母行为；
+- ground truth 只允许在 `evaluation/` 显式传入；
+- 按阶段和外部未知牌数量分桶验证校准误差与覆盖率；
+- pass 只作为公开行为事实，不作为默认持牌负证据。
 
 #### 暂停：校准
 

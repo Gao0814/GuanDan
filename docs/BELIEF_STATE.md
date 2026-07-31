@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-C3d1 已完成；被拒绝的 pass 软扣分已撤销，ranker 恢复 hard-only neutral baseline。下一步为 Step J-C3d2 独立 corpus 封板。
+当前状态：Step J-A 至 J-D1a 已完成；neutral baseline 已封板，完整残局分配已具备精确物理权重与 token 边际整数计数。下一步为 Step J-D1b rank 边际整数聚合。
 
 ## 2. 数据来源
 
@@ -267,18 +267,41 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-C3d2：neutral ranking 回归
 
+状态：已完成，判定 `neutral_baseline_verified`。
+
 - 使用独立 seed `3000..3049` 和四种 pass 策略；
 - 同一参数完整运行两次并校验 canonical JSON hash；
 - forced-only 与战略 pass 轨迹的 soft/baseline 指标应完全一致；
 - candidate 和 Top-K recall delta 均为 0；
 - 确认撤销后不再存在策略分布导致的错误降级。
 
-### Step J-D1：新证据研究
+### Step J-D1a：物理分配权重
 
-- 优先研究完整残局分配的组合计数和边际归属；
-- 概率定义必须明确相同 token 副本的权重；
-- 任何概率或置信度都必须经过独立真值校准；
+- 状态：已完成；
+- 只在完整 J-B2 搜索中统计；
+- 每个 token 的相同牌面副本视为物理可区分副本；
+- count matrix 的权重使用精确多项式系数；
+- 聚合总物理分配权重、逐玩家 token 持有权重和副本数加权和；
+- 使用 Python 整数，不输出浮点概率；
+- 截断、跳过、无解和无效结果不暴露部分边际。
+- 新增 `physical_assignment_count`、`holding_assignment_count_by_token` 和 `copy_assignment_count_by_token`；
+- 定向 132 项、全量 256 项测试通过。
+
+### Step J-D1b：rank 精确整数边际
+
+- 在每个完整 count matrix 上先按玩家汇总同 rank 的 token 副本数；
+- rank 副本数分子可以汇总 token 副本分子，但 rank 持有分子必须按事件并集计数；
+- 对同一玩家、同一 rank、同一 matrix 最多增加一次持有权重；
+- 继续只输出 Python 整数，不计算 float、概率或置信度；
+- 不完整结果的 rank 边际必须为空；
 - 不再把 pass 本身解释为确定或默认的无牌证据。
+
+### Step J-D1c：概率报告与离线校准
+
+- 使用明确的物理分配总数作为分母，输出可审计的有理数语义；
+- 按阶段和外部未知牌数量分桶，与离线 ground truth 对照；
+- 校验覆盖、校准误差和过度自信，不只观察 Top-K；
+- ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准
 
