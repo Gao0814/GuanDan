@@ -9,11 +9,11 @@ passed directly to the evaluation function without being stored in a report.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from agents.base import require_legal_action_id
+from agents.base import BaseAgent, require_legal_action_id
 from agents.card_allocations import enumerate_card_allocations
 from agents.card_belief import build_card_belief
 from agents.card_constraints import build_card_constraints
@@ -322,6 +322,7 @@ def run_rank_benchmark(
     max_external_cards: int = 12,
     max_search_nodes: int = 1_000_000,
     max_solutions: int = 100_000,
+    agent_factory: Callable[[int, int], BaseAgent] | None = None,
 ) -> RankBenchmarkReport:
     """Run deterministic games and evaluate only the two target endgame phases."""
 
@@ -348,8 +349,11 @@ def run_rank_benchmark(
     for seed in normalized_seeds:
         game = GuanDanGame(seed=seed, current_level_rank=current_level_rank)
         game.reset()
+        factory = agent_factory or (
+            lambda _seed, player_id: RuleBasedAIAgent(player_id=player_id)
+        )
         agents = {
-            player_id: RuleBasedAIAgent(player_id=player_id)
+            player_id: factory(seed, player_id)
             for player_id in (1, 2, 3, 4)
         }
         game_sample_count = 0

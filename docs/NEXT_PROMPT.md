@@ -2,295 +2,245 @@
 
 ## 使用说明
 
-本提示词交给负责源码和测试实现的代理。项目规划代理只维护 `docs/*.md`。
+本提示词交给负责执行评测的代理。项目规划代理只维护 `docs/*.md`。
 
 ## 当前唯一任务
 
-实现 Step J-C3c1：evaluation-only 的战略性 pass 策略与多策略 rank 基准载体。
+执行 Step J-C3c2：在独立固定 seed 上，对 forced-only 与 25%/50%/100% 战略 pass 策略运行两次完整 rank 基准，并按预注册的 Top-K recall 护栏给出唯一判定。
 
-本轮只建立策略分布测试能力，不运行正式策略分布结论，不调整 J-C2b1 权重，不输出概率或置信度，也不接入 DeepSeek、RAG 或策略主链。
+本轮不修改代码、不调权重、不筛选 seed，也不因 MRR 改善忽略真实 rank 召回损失。
 
 ## 提示词
 
 ```text
-请在 GuanDan 项目中实现 Step J-C3c1“战略性 pass 策略分布基准载体”。
+请在 GuanDan 项目中执行 Step J-C3c2“战略性 pass 策略分布正式验收”。
 
-开始前必须阅读：
+开始前阅读：
 
 - AGENTS.md
 - docs/PROJECT_STATUS.md
 - docs/PLAN.md
 - docs/BELIEF_STATE.md
 - docs/TESTS.md
-- agents/base.py
-- agents/rule_based_ai.py
-- agents/card_signals.py
-- agents/card_ranker.py
-- agents/game_phase.py
-- engine/game.py
+- evaluation/pass_policy_benchmark.py
 - evaluation/rank_benchmark.py
 - evaluation/ranking_metrics.py
+- agents/card_ranker.py
+- agents/rule_based_ai.py
+- tests/test_pass_policy_benchmark.py
 - tests/test_rank_benchmark.py
-- tests/test_ranking_metrics.py
 
-当前基线：
+当前状态：
 
-- HEAD `39bd0247b9459999cdeb489703ff288eed7df791` 为 J-C3a；
-- J-C3a 定向 130 项、全量 240 项测试通过；
-- J-C3b 使用 seed 1000..1199 完成两次可重复正式运行；
-- J-C3b 共 8719 个有效样本，无 invalid、skip 或 diagnostics；
-- candidate recall 与 Top-1/Top-3 recall 无回退；
-- overall Top-1 precision delta +0.007357；
-- overall Top-3 precision delta +0.006385；
-- overall worst-case MRR delta +0.003233；
-- 唯一判定为 `retain_for_policy_diverse_validation`；
-- 该结果只覆盖 RuleBasedAIAgent 的被迫 pass。
+- 已提交基线为 `49ef31e J-C3b`；
+- Step J-C3c1 已实现并通过 140 项定向、250 项全量测试；
+- J-C3c1 尚未形成可追溯提交时不得开始正式基准；
+- J-C3b seed 1000..1199 只覆盖 RuleBasedAI 被迫 pass；
+- seed 20..29 已用于 J-C3c1 开发容量试跑，禁止进入正式结论；
+- 开发试跑显示 25% 战略 pass 下 overall Top-3 recall delta 约为 -0.126899；
+- 该开发结果只用于预注册召回护栏，不能替代本轮独立 holdout。
 
-问题定义：
+范围：
 
-现有 RuleBasedAIAgent 在有非 pass 合法动作时总会出牌。因此 J-C3b
-没有覆盖“面对敌方 single，明明存在合法压制动作但主动 pass”的策略行为。
-J-C3c1 要构造只读取公开 observation 和 legal actions 的确定性压力策略，
-并复用 J-C3a 的真值隔离和聚合能力。
+1. 不修改、创建、删除、格式化或提交任何文件。
+2. 不修改启发式、gate、pass rate、测试、docs、配置或依赖。
+3. 不访问网络，不调用 DeepSeek。
+4. 不写 JSON、日志、缓存或临时结果到仓库。
+5. 不运行权重搜索，不替换或追加 seed。
+6. 不实现 J-C3d、策略主链或 Step K。
 
-范围要求：
+前置检查：
 
-1. 新增 `evaluation/pass_policy_benchmark.py`。
-2. 新增 `tests/test_pass_policy_benchmark.py`。
-3. 允许对 `evaluation/rank_benchmark.py` 做最小、向后兼容的 agent factory 扩展。
-4. 如确有需要，只允许对 `evaluation/__init__.py` 做最小导出调整。
-5. 不修改 `engine/`、`agents/`、CLI、RAG、DeepSeek 或 docs。
-6. 不修改 J-A 至 J-C3a 的数据契约、指标定义和默认运行结果。
-7. 不修改 `opponent_single_pass` 的分值或累计上限。
-8. 不新增第三方依赖，不访问网络，不调用 DeepSeek。
-9. 不写正式 benchmark JSON、日志或其他运行产物。
-10. 不实现 J-C3c2 的正式独立种子验收、J-C3d 置信度或 Step K。
+1. 运行 `git status --short`。
+2. 确认以下文件均已被 Git 跟踪并包含在 HEAD：
+   - `evaluation/rank_benchmark.py`
+   - `evaluation/pass_policy_benchmark.py`
+   - `tests/test_pass_policy_benchmark.py`
+3. 记录 `git rev-parse HEAD`。
+4. 工作区必须干净。
+5. 如果 J-C3c1 未提交或工作区不干净：
+   - 停止正式基准；
+   - 不要 stash、还原、提交或清理；
+   - 报告 `precondition_failed`；
+   - 不输出策略信号判定。
 
-J-C3a 最小扩展：
-
-为 `run_rank_benchmark()` 增加可选 keyword-only agent factory。
-
-建议类型：
-
-`Callable[[int, int], BaseAgent]`
-
-两个参数分别为：
-
-- 当前 game seed；
-- player_id。
-
-要求：
-
-1. 未传 factory 时，行为必须与当前版本逐字段完全一致。
-2. 默认仍为每位玩家创建现有 `RuleBasedAIAgent`。
-3. 每个 seed、每位玩家只调用一次 factory。
-4. 不向 factory 传递 game、GameState、真实手牌或其他隐藏信息。
-5. 自定义 agent 返回值仍必须经过 `require_legal_action_id()`。
-6. factory 为 evaluation 扩展点，不得暴露到 runtime 主链。
-
-evaluation-only 策略：
-
-新增不可访问真值的 `StrategicPassAIAgent`，可以继承 `BaseAgent`。
-
-输入至少包括：
-
-- `player_id`
-- `strategic_pass_rate`，整数百分比 0、25、50 或 100
-
-允许支持任意 0..100 的整数用于单元测试，但正式策略集合固定为
-0 / 25 / 50 / 100。
-
-它的 `select_action(observation, legal_actions)` 只能读取这两个公开参数。
-禁止读取：
-
-- `GuanDanGame`
-- `game._state`
-- `GameState` / `PlayerState`
-- 真实手牌
-- benchmark ground truth
-- seed 对应的隐藏牌
-
-战略性 pass 机会必须同时满足：
-
-1. 当前桌面约束是 `single`；
-2. 能从公开当前 round/history 找到本轮最近有效非 pass 领出玩家；
-3. 领出玩家与当前玩家属于不同 team；
-4. 当前 legal actions 中存在合法 pass；
-5. 当前 legal actions 中至少存在一个非 pass 动作；
-6. 公开 `step_no` 和 `player_id` 格式有效。
-
-以下情况不得计为机会：
-
-- 队友领出；
-- 非 single；
-- 新 round 中没有可关联的非 pass；
-- round 回退或上下文无法验证；
-- 仅有 pass；
-- 没有 pass；
-- observation/history/team 字段缺失或格式错误。
-
-不要自己推断牌型合法性。桌面牌型和动作候选均以公开 payload 为准。
-
-确定性门控：
-
-1. 使用公开 `step_no`、`player_id` 和固定整数算式生成 0..99 的 gate。
-2. 不使用 Python `hash()`，避免进程随机化。
-3. 不使用随机模块或系统时间。
-4. 不使用 seed 计算 gate，避免 seed 与隐藏发牌产生不必要关联。
-5. 当 `gate < strategic_pass_rate` 时选择合法 pass。
-6. 未命中 gate 时调用现有 `RuleBasedAIAgent.select_action()`。
-7. 不复制或重写 RuleBasedAIAgent 的动作排序。
-8. rate=0 时从不主动 pass，动作轨迹必须与 RuleBasedAIAgent 完全相同。
-9. rate=100 时每个合格机会都选择 pass。
-
-策略 agent 公开计数：
-
-- `strategic_pass_opportunity_count`
-- `strategic_pass_count`
-
-计数规则：
-
-1. 每个合格机会 opportunity 加 1；
-2. 只有门控命中并实际返回 pass action ID 时 pass count 加 1；
-3. `0 <= strategic_pass_count <= opportunity_count`；
-4. rate=0 时 pass count 为 0；
-5. rate=100 时两个计数相等；
-6. 被迫 pass 不计入 strategic pass count。
-
-建议报告：
-
-- frozen/slots `PolicyVariantRankReport`
-- frozen/slots `PassPolicyBenchmarkReport`
-- `run_pass_policy_benchmark(...)`
-
-PolicyVariantRankReport 至少包含：
-
-- policy_name
-- strategic_pass_rate
-- strategic_pass_opportunity_count
-- strategic_pass_count
-- rank_benchmark
-
-PassPolicyBenchmarkReport 至少包含：
-
-- requested_policy_count
-- by_policy
-
-固定策略命名：
-
-- rate 0：`forced_only`
-- rate 25：`strategic_pass_25`
-- rate 50：`strategic_pass_50`
-- rate 100：`strategic_pass_100`
-
-多策略运行：
-
-1. 默认 rates 固定为 `(0, 25, 50, 100)`。
-2. 每个 rate 必须调用一次独立的 `run_rank_benchmark()`。
-3. 每个策略必须创建全新 game 和 agent，不能共享对局、计数器或推断状态。
-4. 所有策略使用完全相同的 seeds 和 benchmark 参数。
-5. 保留输入 seed 顺序，但报告不得包含 seed 列表。
-6. rate 列表必须非空、唯一；每项是非 bool 的 0..100 整数。
-7. 固定策略名不得因序列化顺序变化。
-8. 相同输入重复运行报告必须完全一致。
-
-报告安全：
-
-1. 所有报告使用 `@dataclass(frozen=True, slots=True)`。
-2. 映射字段不可变，不暴露可变内部状态。
-3. 每层提供 JSON 友好的 `to_dict()`。
-4. `json.dumps(..., allow_nan=False)` 必须成功。
-5. 报告不得包含：
-   - seed 值或逐 seed 结果
-   - observation/history 明细
-   - 逐步动作
-   - ground truth hands
-   - 逐玩家真实 token/rank
-   - 可逆隐藏牌信息
-6. 允许包含策略名、rate、机会/主动 pass 聚合计数和现有安全 RankBenchmarkReport。
-
-测试要求：
-
-`tests/test_pass_policy_benchmark.py` 至少覆盖：
-
-1. 空 rates、重复 rates、bool、负数、超过 100 和非整数被拒绝；
-2. rate 0/25/50/100 的稳定策略名；
-3. enemy single + pass + 非 pass 动作被识别为机会；
-4. teammate single 不计机会；
-5. 非 single 不计机会；
-6. 孤立或跨 round 的历史不计机会；
-7. 仅 pass 不计战略机会；
-8. 没有 pass 不计机会；
-9. malformed observation/history/team/step 不抛异常且不计机会；
-10. rate=0 每次回退 RuleBasedAIAgent，主动 pass 数为 0；
-11. rate=100 每个合格机会选择合法 pass，机会数等于主动 pass 数；
-12. 25%/50% 门控只依赖公开 step/player，固定输入重复结果一致；
-13. 门控不使用 Python hash、随机数、时间或 seed；
-14. 未命中门控时动作与 RuleBasedAIAgent 相同；
-15. 所有返回 action ID 来自传入 legal actions；
-16. 被迫 pass 不计 strategic pass；
-17. J-C3a 未传 factory 时固定 seed 报告与修改前基线一致；
-18. rate=0 的完整对局轨迹/RankBenchmarkReport 与默认 RuleBasedAI 完全一致；
-19. factory 每 seed/player 只调用一次；
-20. 多策略运行使用独立 agent 和独立计数；
-21. opportunity/pass 聚合计数正确且满足上下界；
-22. `by_policy` 稳定包含请求的全部策略；
-23. 相同 seeds/参数重复运行报告完全一致；
-24. `to_dict()` 可 JSON 序列化且没有 NaN/Infinity；
-25. 报告不含 seed、逐动作、observation、真实手牌/token/rank 明细；
-26. 输出不可变，运行不修改输入；
-27. `StrategicPassAIAgent` 不访问 `_state` 或导入引擎状态模型；
-28. `agents/`、CLI、RAG、DeepSeek 不新增对 `evaluation` 的反向导入。
-
-测试应优先使用小型公开 observation/legal action fixtures验证策略边界。
-真实对局集成只使用极少 seed 和较小样本上限，避免在单元测试中运行正式多策略 corpus。
-
-兼容要求：
-
-- `tests/test_rank_benchmark.py` 必须保持通过；
-- `tests/test_ranking_metrics.py` 必须保持通过；
-- `tests/test_card_ranker.py` 必须保持通过；
-- `tests/test_card_signals.py` 必须保持通过；
-- `tests/test_belief_metrics.py` 必须保持通过；
-- `tests/test_card_allocations.py` 必须保持通过；
-- `tests/test_card_constraints.py` 必须保持通过；
-- `tests/test_card_belief.py` 必须保持通过；
-- `tests/test_card_tracker.py` 必须保持通过；
-- `tests/test_game_phase.py` 必须保持通过；
-- 全量 unittest 必须无回归。
-
-完成后运行：
+回归检查：
 
 python -m unittest tests.test_pass_policy_benchmark tests.test_rank_benchmark tests.test_ranking_metrics tests.test_card_ranker tests.test_card_signals tests.test_belief_metrics tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q
 python -m unittest discover -q
-git diff --check
+
+任何测试失败时停止，判定为 `benchmark_invalid`。
+
+正式参数一次性锁定：
+
+- seeds：`tuple(range(2000, 2100))`
+- requested games per policy：100
+- strategic pass rates：`(0, 25, 50, 100)`
+- policy names：
+  - `forced_only`
+  - `strategic_pass_25`
+  - `strategic_pass_50`
+  - `strategic_pass_100`
+- `current_level_rank="2"`
+- `max_steps=5000`
+- `max_samples_per_game=512`
+- `max_external_cards=12`
+- `max_search_nodes=1_000_000`
+- `max_solutions=100_000`
+
+不得修改、筛选、重排或补充 seed/rate。每个策略必须使用完全相同的输入参数。
+
+运行要求：
+
+1. 在同一个 Python 进程内，用上述参数调用
+   `run_pass_policy_benchmark()` 两次。
+2. 分别记录两次耗时，耗时不进入 hash。
+3. 断言两个 `PassPolicyBenchmarkReport` 完全相等。
+4. 对每次 `report.to_dict()` 使用 canonical JSON：
+
+   `json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)`
+
+5. 对 canonical JSON UTF-8 字节计算 SHA-256。
+6. 两次 SHA-256 必须完全一致。
+7. 只在标准输出打印：
+   - 两次耗时；
+   - 两次 SHA-256；
+   - 第二次报告的格式化聚合 JSON。
+8. 不把结果重定向到仓库文件。
+
+数据完整性门槛：
+
+以下任一条件不满足，唯一判定为 `benchmark_invalid`：
+
+1. 两次完整报告不相等；
+2. 两次 SHA-256 不一致；
+3. `requested_policy_count != 4`；
+4. by_policy 名称或顺序与锁定策略不一致；
+5. 任一策略 `requested_game_count != 100`；
+6. 任一策略 `completed_game_count != 100`；
+7. 任一策略 `incomplete_game_count != 0`；
+8. 任一策略 `eligible != evaluated`；
+9. 任一策略 `evaluated != valid`；
+10. 任一策略 `invalid != 0`；
+11. 任一策略 `sample_limit_skipped_count != 0`；
+12. 任一策略顶层或阶段 diagnostics 非空；
+13. 任一策略 near-open 有效样本少于 500；
+14. 任一策略 critical 有效样本少于 500；
+15. 报告存在 NaN、Infinity 或不可 JSON 序列化值。
+
+策略行为完整性：
+
+以下任一条件不满足，判定为 `benchmark_invalid`：
+
+1. 每个策略 `strategic_pass_opportunity_count > 0`；
+2. forced-only `strategic_pass_count == 0`；
+3. strategic-pass-25 满足
+   `0 < pass_count < opportunity_count`；
+4. strategic-pass-50 满足
+   `0 < pass_count < opportunity_count`；
+5. strategic-pass-100 满足
+   `pass_count == opportunity_count`；
+6. 所有策略都满足
+   `0 <= pass_count <= opportunity_count`。
+
+不同策略会改变后续轨迹，因此不要求机会数相同，也不要求 25%/50%
+的实际 pass 比例精确等于名义 rate。
+
+硬候选安全门槛：
+
+对四个策略的 overall、near-open、critical 分别要求：
+
+1. baseline candidate recall 为 1.0；
+2. soft candidate recall 为 1.0；
+3. candidate recall delta 为 0.0。
+
+允许绝对浮点误差 `1e-12`。任一不满足判定为
+`benchmark_invalid`，因为软信号不应改变硬候选覆盖。
+
+forced-only 复验门槛：
+
+forced-only 必须同时满足：
+
+1. 三个桶 Top-1 recall delta 均不小于 `-1e-12`；
+2. 三个桶 Top-3 recall delta 均不小于 `-1e-12`；
+3. overall Top-1 precision delta 至少 `0.002`；
+4. overall Top-3 precision delta 至少 `0.002`；
+5. overall worst-case MRR delta 至少 `0.001`；
+6. near-open/critical 的 Top-1 precision delta 均大于 0；
+7. near-open/critical 的 Top-3 precision delta 均大于 0；
+8. near-open/critical 的 MRR delta 均大于 0。
+
+forced-only 未通过时，判定为 `reject_unconditioned_pass_signal`。
+
+战略 pass recall 护栏：
+
+分别对 strategic-pass-25、50、100 的 overall、near-open、critical
+检查：
+
+1. Top-1 recall delta 不得低于 `-0.03`；
+2. Top-3 recall delta 不得低于 `-0.02`；
+3. Top-1 precision delta 不得低于 `-0.002`；
+4. Top-3 precision delta 不得低于 `-0.002`。
+
+MRR 和 average selection size 仍需完整报告，但不能抵消上述任一护栏失败。
+
+唯一判定顺序：
+
+1. 前置、测试、可重复性、数据完整性、策略行为或硬候选安全失败：
+   `benchmark_invalid`
+2. forced-only 复验失败：
+   `reject_unconditioned_pass_signal`
+3. strategic-pass-25 任一桶任一 recall/precision 护栏失败：
+   `reject_unconditioned_pass_signal`
+4. strategic-pass-25 全部通过，但 50 或 100 任一护栏失败：
+   `retain_with_policy_conditioning`
+5. forced-only 和 25/50/100 全部通过：
+   `retain_for_confidence_calibration`
+
+不得新增第五种结论，不得因 MRR 为正而覆盖 Top-K recall 失败。
+
+结论含义：
+
+- `reject_unconditioned_pass_signal`：
+  当前把 enemy-single pass 无条件作为负向持牌信号的方式不能进入置信度校准或 runtime；下一步应重新设计为策略条件化证据，或撤销该软扣分。
+- `retain_with_policy_conditioning`：
+  低主动 pass 压力可接受，但必须先建立对手 pass 倾向或上下文条件，不能直接校准当前无条件信号。
+- `retain_for_confidence_calibration`：
+  只允许进入 J-C3d 离线校准，仍不代表可接入策略或提升胜率。
 
 最终报告必须包含：
 
-- 修改文件；
-- J-C3a agent factory 的向后兼容方式；
-- 战略性 pass 机会定义；
-- 公开信息边界和确定性 gate 算式；
-- 0/25/50/100 策略行为；
-- 机会数与主动 pass 数口径；
-- 报告安全边界；
-- 定向和全量测试数量；
-- 未解决风险；
-- 明确说明 J-C3c1 只建立策略分布基准载体，尚未运行正式独立种子策略分布验收、校准概率/置信度、接入策略或提升胜率。
+1. 前置检查结果与 HEAD SHA；
+2. 两条测试命令及 140/250 结果；
+3. 正式参数；
+4. 两次运行耗时和 SHA-256；
+5. 每个策略的 opportunity/pass count 和实际比例；
+6. 每个策略的 requested/completed/incomplete；
+7. 每个策略的 eligible/evaluated/valid/invalid/skipped；
+8. 每个策略的 diagnostics；
+9. 每个策略 overall、near-open、critical 的：
+   - sample count
+   - baseline/soft candidate recall
+   - baseline/soft Top-1 recall、precision、average selection size
+   - baseline/soft Top-3 recall、precision、average selection size
+   - baseline/soft worst-case MRR
+   - 全部 delta
+10. 对每条完整性、forced-only 和战略 pass 护栏逐项给出 pass/fail；
+11. 最终唯一判定；
+12. 未解决风险；
+13. 运行前后 `git status --short` 一致且本任务未修改文件。
 ```
 
 ## 完成判定
 
-只有同时满足以下条件，Step J-C3c1 才能标记完成：
+Step J-C3c2 只有在以下条件满足时才算执行完成：
 
-- evaluation-only 策略只读取公开 observation 和 legal actions；
-- 战略机会严格限定为敌方 single 且同时存在 pass/非 pass；
-- rate=0 与现有 RuleBasedAI 完全等价；
-- rate=100 在所有合格机会主动 pass；
-- 25%/50% gate 确定、稳定且不依赖 seed/隐藏牌；
-- 多策略对局和计数互相隔离；
-- 默认 J-C3a 报告不变；
-- 报告不泄露 seed、轨迹或真值；
-- 未修改 engine、runtime agents、RAG、DeepSeek、CLI 或 docs；
-- 现有 240 项测试无回归；
-- 实施代理向项目规划代理报告实际测试结果。
+- J-C3c1 已提交且工作区干净；
+- 140/250 回归通过；
+- 4 个策略各 100 局完整运行两次；
+- 两次报告和 SHA-256 一致；
+- 未更改 seed、rate、gate 或其他参数；
+- Top-K recall 护栏优先于 MRR；
+- 按顺序给出唯一判定；
+- 没有修改任何文件；
+- 没有把离线策略分布结果表述为置信度、策略集成或胜率提升。

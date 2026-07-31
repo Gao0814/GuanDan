@@ -198,7 +198,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-C3c1：战略性 pass 策略基准载体
 
-状态：下一步。
+状态：已完成。J-C3c1 与兼容测试共 140 项通过，全量 250 项通过。
 
 - evaluation-only 策略只读取公开 observation 和合法动作；
 - 只有当前敌方 single、pass 合法且至少存在一个非 pass 合法动作时，才计为战略性 pass 机会；
@@ -212,7 +212,23 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 报告不包含 seed、逐样本动作、真实牌、token 或 rank 明细；
 - 默认 J-C3a API 与既有 240 项测试保持兼容。
 
-#### J-C3c2/J-C3d：策略分布验收与校准
+#### J-C3c2：策略分布正式验收
+
+状态：下一步。该步骤只运行已实现基准，不修改实现。
+
+- J-C3c1 必须先形成可追溯提交，工作区保持干净；
+- 正式 seed 与 J-C3b、J-C3c1 开发试跑完全独立；
+- 四个策略使用相同 seed 和参数，并各自运行全新对局；
+- 两次完整运行报告与 canonical JSON SHA-256 一致；
+- 每个策略无 incomplete、invalid、sample skip 或 diagnostics；
+- forced-only 必须再次满足 J-C3b 的召回和正向排序门槛；
+- 所有策略 candidate recall 保持 1.0；
+- 25% 战略 pass 的 Top-3 recall 回退超过 0.02 时，当前无条件 pass 信号不得进入置信度校准；
+- 25% 战略 pass 通过但 50/100% 未通过时，只能进入策略条件化重设计；
+- MRR 改善不能抵消 Top-K recall 护栏失败；
+- 不在正式 seed 上调参或重新筛选样本。
+
+#### J-C3d：校准
 
 - pass 只作为软信号，不作为确定无牌；
 - 所有 `likely` 结论带置信度和证据来源；

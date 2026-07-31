@@ -21,6 +21,7 @@
 - Step J-C2b2 并列安全 Top-K 与零软分单样本消融。
 - Step J-C3a 固定种子残局采集与微聚合基准运行器。
 - Step J-C3b RuleBasedAI 独立种子正式基准，判定为保留进入策略分布验证。
+- Step J-C3c1 evaluation-only 战略性 pass 策略分布基准载体。
 
 当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。
 
@@ -109,7 +110,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-C3b 已完成；下一步实施 J-C3c1。
+状态：J-A 至 J-C3c1 已完成；下一步实施 J-C3c2。
 
 目标：
 
@@ -142,8 +143,8 @@ AI 决策分为四层：
 7. J-C2b2：扩展离线评测为并列分数友好的 Top-K 指标，做零软分/实际软分消融，已完成；
 8. J-C3a：固定种子离线残局样本采集、总体和分阶段聚合，已完成；
 9. J-C3b：用独立固定种子和预注册门槛运行 RuleBasedAI 正式基准，已完成；
-10. J-C3c1：实现 evaluation-only 战略性 pass 策略和策略分层报告，下一步；
-11. J-C3c2：用独立固定种子运行策略分布稳健性验收；
+10. J-C3c1：实现 evaluation-only 战略性 pass 策略和策略分层报告，已完成；
+11. J-C3c2：用独立固定种子运行策略分布稳健性验收，下一步；
 12. J-C3d：只对通过多样本与策略分布验收的信号做置信度校准和策略接入前验收。
 
 J-A 验证结果：
@@ -204,6 +205,14 @@ J-C3b 正式结果：
 - overall Top-1 precision `+0.007357`、Top-3 precision `+0.006385`、MRR `+0.003233`；
 - 唯一判定：`retain_for_policy_diverse_validation`；
 - 该结论只覆盖 RuleBasedAI 的被迫 pass 轨迹，不授权置信度校准或策略接入。
+
+J-C3c1 验证结果：
+
+- `python -m unittest tests.test_pass_policy_benchmark tests.test_rank_benchmark tests.test_ranking_metrics tests.test_card_ranker tests.test_card_signals tests.test_belief_metrics tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q`：140 项通过；
+- `python -m unittest discover -q`：250 项通过；
+- rate 0/25/50/100 的公开、确定性战略 pass 轨迹和隔离报告已经建立；
+- seed `20..29` 开发试跑中，25% 战略 pass 的 overall Top-3 recall delta 约为 `-0.126899`，显示当前无条件 pass 负向信号存在明显策略分布风险；
+- 该试跑不用于正式判定，J-C3c2 必须使用独立 seed 和预注册召回护栏。
 
 ### Step K：中局策略路由与残局决策
 

@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-C3b 已完成；正式 RuleBasedAI 基准判定为 `retain_for_policy_diverse_validation`。下一步为 Step J-C3c1 战略性 pass 策略基准载体。
+当前状态：Step J-A 至 J-C3c1 已完成；战略性 pass 策略分布载体通过 140 项定向和 250 项全量测试。下一步为 Step J-C3c2 独立种子稳健性验收。
 
 ## 2. 数据来源
 
@@ -237,6 +237,8 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-C3c1：策略分布基准载体
 
+状态：已完成。
+
 - 增加存在合法压制动作但选择战略性 pass 的公开轨迹；
 - 区分规则 AI 的被迫 pass 与其他策略的主动 pass；
 - 输出每种策略的机会数、主动 pass 数和安全聚合 rank 指标；
@@ -244,6 +246,8 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-C3c2：策略分布稳健性验收
 
+- 固定独立 seed、四种 pass rate 和运行参数；
+- Top-1/Top-3 recall 是首要护栏，MRR 改善不能抵消真实 rank 召回损失；
 - 使用独立于 J-C3b 的样本验证方向和召回护栏；
 - 未通过时不得用 RuleBasedAI 结果校准 runtime 置信度。
 
