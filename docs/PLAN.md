@@ -4,7 +4,7 @@
 
 ## 1. 当前结论
 
-截至 2026-07-30，项目已经完成：
+截至 2026-07-31，项目已经完成：
 
 - 单局掼蛋规则引擎和 4 AI 对局闭环；
 - `observe()` / `legal_actions()` / `step(action_id)` 公开契约；
@@ -13,6 +13,12 @@
 - 本地公式化开局；
 - 带元数据的规则库、经验库和场景化 RAG。
 - Step J-A 精确公开牌池和逐玩家公开事实层。
+- Step J-B1 未见牌归属域和公开容量约束。
+- Step J-B2 受控残局精确可行分配枚举。
+- Step J-C1 离线牌面信念真值评测。
+- Step J-C2a 公开行为事件提取。
+- Step J-C2b1 最小软评分和 rank 候选排序。
+- Step J-C2b2 并列安全 Top-K 与零软分单样本消融。
 
 当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。
 
@@ -101,7 +107,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 已完成；下一步实施 J-B1。
+状态：J-A 至 J-C2b2 已完成；下一步实施 J-C3a。
 
 目标：
 
@@ -111,7 +117,7 @@ AI 决策分为四层：
 - 所有推断带来源和置信度；
 - 只有逻辑唯一时才能标记 `confirmed`。
 
-当前阶段只做确定性公开信息和硬约束，不做概率推断、MCTS 或蒙特卡洛搜索。
+当前阶段已包含确定性公开事实、硬约束和一个未校准的软排序启发式；仍不输出概率或置信度，也不做 MCTS 或蒙特卡洛搜索。
 
 验收：
 
@@ -126,15 +132,57 @@ AI 决策分为四层：
 实施拆分：
 
 1. J-A：牌池守恒、真实已出牌、逐玩家公开状态和诊断，已完成；
-2. J-B1：未见牌可能归属域、玩家容量约束和一致性诊断，下一步；
-3. J-B2：关键残局的有限可行分配与唯一性证明；
-4. J-C：pass 等软信号、候选排序、置信度与离线校准。
+2. J-B1：未见牌可能归属域、玩家容量约束和一致性诊断，已完成；
+3. J-B2：关键残局的有限可行分配与唯一性证明，已完成；
+4. J-C1：使用离线真实手牌建立覆盖率、错误确认和边界违例基线，已完成；
+5. J-C2a：从公开历史提取 pass 响应、首出/跟牌和公开牌型事件，已完成；
+6. J-C2b1：仅用敌方单张后 pass 建立有上限的 rank 软评分，已完成；
+7. J-C2b2：扩展离线评测为并列分数友好的 Top-K 指标，做零软分/实际软分消融，已完成；
+8. J-C3a：固定种子离线残局样本采集、总体和分阶段聚合，下一步；
+9. J-C3b：运行批量基准，依据预设门槛决定保留、调整或撤销启发式；
+10. J-C3c：只对通过多样本验收的信号做置信度校准和策略接入前验收。
 
 J-A 验证结果：
 
 - `python -m unittest tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q`：31 项通过；
 - `python -m unittest discover -q`：141 项通过；
 - 未修改 `engine/`、现有 `CardTracker`、RAG 或 DeepSeek 提示词。
+
+J-B1 验证结果：
+
+- `python -m unittest tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q`：43 项通过；
+- `python -m unittest discover -q`：153 项通过；
+- 只建立公开硬约束，不枚举完整分配，不输出概率或软推断。
+
+J-B2 验证结果：
+
+- `python -m unittest tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q`：61 项通过；
+- `python -m unittest discover -q`：171 项通过；
+- 只做受控确定性分配枚举；截断结果不确认、不缩小硬归属域。
+
+J-C1 验证结果：
+
+- `python -m unittest tests.test_belief_metrics tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q`：78 项通过；
+- `python -m unittest discover -q`：188 项通过；
+- ground truth 仅进入离线评测，运行时模块没有 `evaluation` 依赖。
+
+J-C2a 验证结果：
+
+- `python -m unittest tests.test_card_signals tests.test_belief_metrics tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q`：92 项通过；
+- `python -m unittest discover -q`：202 项通过；
+- 只提取公开行为事件，没有软评分、概率、置信度或策略集成。
+
+J-C2b1 验证结果：
+
+- `python -m unittest tests.test_card_ranker tests.test_card_signals tests.test_belief_metrics tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q`：107 项通过；
+- `python -m unittest discover -q`：217 项通过；
+- 只有一个未校准 pass 启发式，尚无多种子 Top-K 改进证据。
+
+J-C2b2 验证结果：
+
+- `python -m unittest tests.test_ranking_metrics tests.test_card_ranker tests.test_card_signals tests.test_belief_metrics tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q`：120 项通过；
+- `python -m unittest discover -q`：230 项通过；
+- 只建立单样本、并列安全的零软分消融指标；尚无多种子改进证据。
 
 ### Step K：中局策略路由与残局决策
 
