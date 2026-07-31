@@ -19,6 +19,7 @@
 - Step J-C2a 公开行为事件提取。
 - Step J-C2b1 最小软评分和 rank 候选排序。
 - Step J-C2b2 并列安全 Top-K 与零软分单样本消融。
+- Step J-C3a 固定种子残局采集与微聚合基准运行器。
 
 当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。
 
@@ -107,7 +108,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-C2b2 已完成；下一步实施 J-C3a。
+状态：J-A 至 J-C3a 已完成；下一步实施 J-C3b。
 
 目标：
 
@@ -138,9 +139,10 @@ AI 决策分为四层：
 5. J-C2a：从公开历史提取 pass 响应、首出/跟牌和公开牌型事件，已完成；
 6. J-C2b1：仅用敌方单张后 pass 建立有上限的 rank 软评分，已完成；
 7. J-C2b2：扩展离线评测为并列分数友好的 Top-K 指标，做零软分/实际软分消融，已完成；
-8. J-C3a：固定种子离线残局样本采集、总体和分阶段聚合，下一步；
-9. J-C3b：运行批量基准，依据预设门槛决定保留、调整或撤销启发式；
-10. J-C3c：只对通过多样本验收的信号做置信度校准和策略接入前验收。
+8. J-C3a：固定种子离线残局样本采集、总体和分阶段聚合，已完成；
+9. J-C3b：用独立固定种子和预注册门槛运行 RuleBasedAI 正式基准，下一步；
+10. J-C3c：补充战略性 pass 等策略分布，做独立稳健性验证；
+11. J-C3d：只对通过多样本与策略分布验收的信号做置信度校准和策略接入前验收。
 
 J-A 验证结果：
 
@@ -183,6 +185,13 @@ J-C2b2 验证结果：
 - `python -m unittest tests.test_ranking_metrics tests.test_card_ranker tests.test_card_signals tests.test_belief_metrics tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q`：120 项通过；
 - `python -m unittest discover -q`：230 项通过；
 - 只建立单样本、并列安全的零软分消融指标；尚无多种子改进证据。
+
+J-C3a 验证结果：
+
+- `python -m unittest tests.test_rank_benchmark tests.test_ranking_metrics tests.test_card_ranker tests.test_card_signals tests.test_belief_metrics tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q`：130 项通过；
+- `python -m unittest discover -q`：240 项通过；
+- 固定种子运行、阶段采集、原始计数微聚合和真值隔离已经建立；
+- seed `0..19` 的开发试跑只用于测量容量：866 个 eligible、480 个 evaluated、386 个因每局 24 上限跳过，不能作为正式启发式结论。
 
 ### Step K：中局策略路由与残局决策
 

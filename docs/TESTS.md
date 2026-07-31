@@ -164,7 +164,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-C3a：多种子离线残局基准
 
-状态：下一步。
+状态：已完成。J-C3a 与兼容测试共 130 项通过，全量 240 项通过。
 
 - 固定种子和相同参数重复运行得到完全一致的聚合报告；
 - 规则 AI 推进时每个动作 ID 都来自当前公开合法动作；
@@ -179,7 +179,24 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 非法参数、步数上限和异常样本有确定状态，不产生 NaN；
 - 不修改现有启发式，不输出置信度，不接入 RAG、DeepSeek 或策略主链。
 
-#### J-C3b/J-C3c：批量消融验收与校准
+#### J-C3b：预注册正式基准
+
+状态：下一步。该步骤运行现有评测器，不修改实现。
+
+- J-C3a 必须先形成可追溯 Git 提交；
+- 固定 seed `1000..1199`，不得替换、筛选或删除不利种子；
+- 固定 `current_level_rank="2"`、`max_steps=5000`、`max_samples_per_game=512`；
+- 两次完整运行的报告和 canonical JSON SHA-256 必须一致；
+- 200 局全部完成，无 invalid、sample limit skip、step limit 或其他诊断；
+- 两个阶段必须各有至少 1000 个有效样本；
+- candidate recall 保持 1.0，candidate recall delta 保持 0；
+- Top-1/Top-3 recall 不低于 baseline；
+- overall Top-1/Top-3 precision delta 至少为 0.002；
+- overall worst-case MRR delta 至少为 0.001；
+- 两个阶段的 precision 和 MRR delta 均大于 0；
+- 结果只代表 RuleBasedAI 轨迹，不外推到战略性 pass、DeepSeek 或胜率。
+
+#### J-C3c/J-C3d：策略分布验收与校准
 
 - pass 只作为软信号，不作为确定无牌；
 - 所有 `likely` 结论带置信度和证据来源；
