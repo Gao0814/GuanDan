@@ -502,7 +502,7 @@ J-D1c3c1a 已补测：
 
 #### J-D1c3c2a：runtime confidence shadow 装配
 
-状态：下一步。只建立 orchestration 与审计，不允许 prompt 或动作消费。
+状态：已完成。只建立 orchestration 与审计，prompt 或动作未消费。
 
 - pipeline 使用调用方传入的统一 `GamePhaseContext`，不得重复分类阶段；
 - 非 critical 阶段不调用 allocation 枚举；
@@ -516,6 +516,25 @@ J-D1c3c1a 已补测：
 - pipeline unavailable 或内部异常时，原 DeepSeek/fallback 行为保持不变；
 - 不修改 `config.py`、`.env.example`、CLI 或 AppConfig；
 - 全量回归和 `git diff --check` 必须通过。
+
+验证结果：定向 40 项、相关 124 项、全量 331 项通过；off/on client 参数、动作、fallback 与 decision source 一致；边界扫描和 `git diff --check` 通过。
+
+#### J-D1c3c2b1：confidence prompt 序列化
+
+状态：下一步。只新增 formatter 和测试，不修改 DeepSeekClient、agent 或动作路径。
+
+- unavailable 或 source/scope 不符时返回 omitted payload；
+- available 的 denominator 和全部分子必须再次验证为非 `bool` 合法整数；
+- presence 和 expected-copy 分数分别用 `gcd` 约分；
+- 0 输出 `0`，等于 1 输出 `1`，其他输出 `n/d`；
+- 不输出 float、百分比或置信度等级；
+- 所有玩家和 rank 按输入已封板顺序稳定输出；
+- 文本包含“公开硬约束组合边际、不是隐藏牌事实”的边界说明；
+- 固定最大字符数；超限整体 omitted 且文本为空，不允许部分截断；
+- malformed 玩家、rank、分母、分子或重复项整体 omitted；
+- payload frozen/slots、JSON 友好且调用稳定；
+- formatter 不读取 observation/history、ground truth、evaluation 或 engine；
+- 现有 DeepSeek prompt snapshot 和 action path 必须完全不变。
 
 #### 暂停：校准
 

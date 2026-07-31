@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c1a 已完成；runtime confidence 数据契约已通过 malformed 边界封板和 322 项全量测试。下一步为 J-D1c3c2a 默认关闭的 shadow 装配；模型消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2a 已完成；默认关闭的 shadow pipeline 已通过 331 项全量测试和 off/on 行为等价性验证。下一步为 J-D1c3c2b1 有界 prompt 序列化；模型消费继续暂停。
 
 ## 2. 数据来源
 
@@ -416,7 +416,7 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2a：默认关闭的 shadow 装配
 
-- 状态：下一步；
+- 状态：已完成；
 - 独立 pipeline 复用统一阶段并串联 J-A/J-B1/J-D1b/confidence；
 - 非 critical 或任一异常返回 unavailable，不启动不必要枚举；
 - agent 显式开关默认关闭，不由环境变量隐式开启；
@@ -424,11 +424,28 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 - confidence 不进入 prompt、RAG、剪枝、策略或 action 选择；
 - shadow off/on 必须在固定 observation 和固定 client 返回下选择相同 action ID。
 
+验证结果：
+
+- 非 critical 不启动公开推断或枚举，critical 各层调用一次；
+- agent 默认关闭，结果只写 `last_card_confidence`；
+- off/on client kwargs、action、fallback 和 decision source 一致；
+- 定向 40 项、相关 124 项、全量 331 项测试通过。
+
+### Step J-D1c3c2b1：有界 prompt 序列化
+
+- 状态：下一步；
+- 独立 formatter 只消费 `CardConfidenceState`，不读取 observation 或引擎；
+- 只接受 available 和固定 source/scope；
+- presence/expected copies 使用约分精确分数；
+- 全量保留 canonical 玩家/rank 顺序，不做 Top-K 或主观等级；
+- 固定字符预算，超限整体 omitted；
+- 本步骤不修改 DeepSeek prompt 或任何动作路径。
+
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有 J-D1c3c2a shadow 等价性和后续 J-D1c3c2b 显式消费消融通过，才允许决策消费者读取；
+- 只有 J-D1c3c2b1 序列化、J-D1c3c2b2 显式消费和 J-D1c3c2c 动作消融依次通过，才允许默认策略读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准

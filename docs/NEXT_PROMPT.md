@@ -1,205 +1,239 @@
 # 下一步实施提示词
 
-## Step J-D1c3c2a：默认关闭的 runtime confidence shadow 装配
+## Step J-D1c3c2b1：有界、确定的 confidence prompt 序列化契约
 
-请在 GuanDan 项目中实现 Step J-D1c3c2a。任务是把已封板的 J-A -> J-B1 -> J-D1b -> confidence 流水线装配到一个独立 runtime orchestration 模块，并在 `DeepSeekAIAgent` 中增加默认关闭的 shadow 审计开关。
+请在 GuanDan 项目中实现 Step J-D1c3c2b1。任务是把已封板的 `CardConfidenceState` 转换成一个独立、精确、有界、可审计的 prompt payload。
 
-本步骤不得让 confidence 进入 prompt、RAG、剪枝、策略或动作选择。目标是先证明装配安全、失败关闭以及 shadow off/on 的决策等价性。
+本步骤只建立 formatter 和测试，不修改 DeepSeekClient 或 agent，不让模型、RAG、剪枝或动作选择消费 confidence。
 
 ## 一、前置状态
 
-J-D1c3c1/J-D1c3c1a 已完成：
+J-D1c3c2a 已完成：
 
-- `agents/card_confidence.py` 提供 frozen runtime confidence 契约；
-- available 仅限 `critical_endgame`、1..12 张外部未知牌和完整精确分配；
-- malformed 输入整体 unavailable；
-- 单文件 11 项、相关 80 项、全量 322 项测试通过；
-- 当前 DeepSeek、RAG、CLI 和 engine 尚未引用 confidence。
+- runtime pipeline 只在 `critical_endgame` 运行公开 J-A -> J-B1 -> J-D1b -> confidence 链；
+- `DeepSeekAIAgent.card_confidence_shadow_enabled` 默认关闭；
+- 开启后只写 `last_card_confidence`；
+- shadow off/on 的 client kwargs、动作、fallback 和 decision source 一致；
+- 定向 40 项、相关 124 项、全量 331 项测试通过。
 
-`agents/card_confidence.py` 与 `tests/test_card_confidence.py` 当前可能尚未提交或未跟踪。保留这些文件，不要删除或还原。
+现有 confidence/shadow 文件可能尚未提交。保留全部现有改动，不要删除、还原或重写。
 
 ## 二、修改范围
 
-允许新增：
+只允许新增：
 
-- `agents/card_confidence_pipeline.py`
-- `tests/test_card_confidence_pipeline.py`
+- `agents/card_confidence_prompt.py`
+- `tests/test_card_confidence_prompt.py`
 
-允许最小修改：
-
-- `agents/deepseek_ai.py`
-- `tests/test_deepseek_prompt_step_h.py`
-
-不要修改：
+不要修改任何现有文件，包括：
 
 - `agents/card_confidence.py`
-- `agents/card_belief.py`
-- `agents/card_constraints.py`
-- `agents/card_allocations.py`
+- `agents/card_confidence_pipeline.py`
+- `agents/deepseek_ai.py`
 - `agents/deepseek_client.py`
-- `config.py`、`.env.example`、CLI
-- RAG、opening、剪枝或 engine
-- evaluation 或 docs
+- 现有测试
+- config、CLI、RAG、engine、evaluation 或 docs
 
-不得新增依赖，不扩展到 J-D1c3c2b。
+不得新增依赖，不扩展到 J-D1c3c2b2。
 
-## 三、独立 pipeline
+## 三、公共契约
 
-在 `agents/card_confidence_pipeline.py` 提供：
+在 `agents/card_confidence_prompt.py` 定义：
 
 ```python
-build_runtime_card_confidence(
-    observation: dict[str, object],
-    phase_context: GamePhaseContext,
-    *,
-    max_external_cards: int = 12,
-    max_search_nodes: int = 1_000_000,
-    max_solutions: int = 100_000,
-) -> CardConfidenceState
+CARD_CONFIDENCE_PROMPT_MAX_CHARS = 2400
 ```
 
-行为必须为：
+新增 frozen、slots dataclass：
 
-1. 使用调用方传入的 `GamePhaseContext`，不得再次调用 `classify_game_phase()`；
-2. phase 不是 `critical_endgame` 时立即返回 unavailable；
-3. 非 critical 路径不得调用 `build_card_belief()`、`build_card_constraints()` 或 `enumerate_card_allocations()`；
-4. critical 路径严格按以下顺序各调用一次：
+```python
+CardConfidencePromptPayload
+```
+
+至少包含：
+
+- `status: str`，只能为 `ready` 或 `omitted`
+- `text: str`
+- `char_count: int`
+- `source: str`
+- `calibration_scope: str`
+- `diagnostics: tuple[str, ...]`
+
+提供 JSON 友好的 `to_dict()`。
+
+新增纯函数：
+
+```python
+build_card_confidence_prompt_payload(
+    confidence: CardConfidenceState,
+    *,
+    max_chars: int = CARD_CONFIDENCE_PROMPT_MAX_CHARS,
+) -> CardConfidencePromptPayload
+```
+
+`max_chars` 必须为 1..2400 的非 `bool` 整数；非法调用参数显式抛 `ValueError`。
+
+## 四、ready 前置条件
+
+只有以下条件全部满足才能返回 `status="ready"`：
+
+1. 输入是 `CardConfidenceState`；
+2. `confidence.status == "available"`；
+3. `phase == "critical_endgame"`；
+4. `source == "physical_assignment_marginal_v1"`；
+5. `calibration_scope == "critical_endgame_policy_diverse_v1"`；
+6. confidence diagnostics 为空；
+7. `external_unknown_count` 为 1..12 的非 `bool` 整数；
+8. `physical_assignment_count` 为非 `bool` 正整数；
+9. players 为包含 1..3 项的非空 tuple；
+10. 玩家 ID 为 1..4 的非 `bool` 整数且不重复；
+11. remaining capacity 为 1..12 的非 `bool` 整数；
+12. 所有玩家 remaining capacity 之和等于 `external_unknown_count`；
+13. ranks 为非空 tuple；
+14. rank 只来自 canonical `3..10,J,Q,K,A,2,SJ,BJ`；
+15. 每位玩家 rank 不重复且顺序严格遵循 canonical 顺序；
+16. 所有玩家的 rank 集合和顺序完全相同；
+17. 每个 rank marginal 的 denominator 与全局物理分母相同；
+18. presence numerator 为 `[0, denominator]` 内的非 `bool` 整数；
+19. expected-copy numerator 为 `[0, remaining_capacity * denominator]` 内的非 `bool` 整数。
+
+不要信任手工构造的 frozen dataclass；formatter 必须再次 fail-closed 校验。
+
+## 五、精确分数格式
+
+使用标准库 `math.gcd` 分别约分 presence 和 expected-copy：
+
+- 分子为 0 输出 `0`；
+- 约分后分母为 1 输出整数，例如 `1`、`2`；
+- 其他输出 `n/d`；
+- 不输出 float、科学计数法、百分比或小数；
+- 不生成 high/medium/low、likely/unlikely 等主观标签。
+
+不得使用 `Fraction` 的 float 转换。
+
+## 六、固定文本结构
+
+ready 文本固定为：
 
 ```text
-build_card_belief(observation, phase_context)
-  -> build_card_constraints(card_belief)
-  -> enumerate_card_allocations(card_belief, constraints, locked limits)
-  -> build_card_confidence(card_belief, constraints, allocation)
+范围：critical_endgame_policy_diverse_v1
+说明：以下是公开硬约束下等权物理分配的组合边际，不是隐藏牌事实；P=至少持有一张，E=期望张数。
+玩家2（余4张）：3[P=1/2,E=1/2]；4[P=0,E=0]
+玩家3（余4张）：3[P=1/2,E=1/2]；4[P=1,E=1]
 ```
 
-5. `max_external_cards` 不得允许超过已验证上限 12；
-6. 参数必须为非 `bool` 正整数；非法参数显式抛 `ValueError`，这是调用方编程错误；
-7. 公开流水线任一内部异常必须被规范为 unavailable，不向 agent 传播；
-8. 不读取 ground truth、`game._state` 或任何 engine 内部状态。
+要求：
 
-pipeline 生成的 unavailable 状态必须：
+- 前两行文案逐字固定；
+- 玩家沿 `confidence.players` 顺序；
+- rank 沿已验证 canonical 顺序；
+- 每个玩家输出其全部 rank，不按概率做 Top-K、过滤或重排；
+- 只允许使用验证后的玩家整数 ID、容量、canonical rank 和精确分数插值；
+- 不输出物理分母原始字段、diagnostics、source 内部字段或完整 `to_dict()`；
+- 相同输入必须产生完全相同文本。
 
-- `status="unavailable"`；
+## 七、预算与 fail-closed
+
+完整文本生成后使用 `len(text)` 检查字符数。
+
+若完整文本超过 `max_chars`：
+
+- 返回 `status="omitted"`；
+- `text=""`；
+- `char_count=0`；
 - `source="none"`；
 - `calibration_scope="none"`；
-- `physical_assignment_count=0`；
-- `players=()`；
-- diagnostics 使用稳定类别，不包含异常文本或 observation 内容。
+- `diagnostics=("prompt_budget_exceeded",)`；
+- 不允许截断、删玩家、删 rank 或保留部分文本。
 
-至少使用：
+任何输入验证失败也必须整体 omitted，不抛出由 malformed dataclass 导致的异常。
 
-- `invalid_phase_context`
-- `unsupported_phase`
-- `pipeline_error`
+diagnostics 至少覆盖：
 
-正常 builder 返回的 unavailable 状态应原样返回，不要覆盖其诊断。
+- `invalid_confidence_state`
+- `confidence_unavailable`
+- `invalid_phase`
+- `invalid_source`
+- `invalid_calibration_scope`
+- `confidence_diagnostics_present`
+- `invalid_external_unknown_count`
+- `invalid_denominator`
+- `invalid_player`
+- `duplicate_player`
+- `invalid_capacity`
+- `capacity_mismatch`
+- `invalid_rank_order`
+- `duplicate_rank`
+- `rank_set_mismatch`
+- `invalid_rank_marginal`
+- `prompt_budget_exceeded`
 
-## 四、DeepSeek shadow 开关
+omitted 一律空文本、零字符、`source/scope="none"`，不得泄露部分内容。
 
-在 `DeepSeekAIAgent` 增加：
+ready 一律复制固定 source/scope，`diagnostics=()`，且 `char_count=len(text)`。
 
-```python
-card_confidence_shadow_enabled: bool = False
-last_card_confidence: CardConfidenceState | None = field(
-    default=None,
-    init=False,
-    repr=False,
-)
-```
+## 八、安全边界
 
-为避免默认路径加载新流水线：
+formatter 只能消费 `CardConfidenceState`。
 
-- 类型注解可使用 `TYPE_CHECKING` 和字符串前向引用；
-- 仅在开关为真且需要 shadow 计算时 lazy-import pipeline；
-- 不向 `AppConfig` 增加字段，不读取环境变量。
+禁止：
 
-`select_action()` 必须满足：
+- 读取 observation 或 history；
+- 读取 ground truth 或 `game._state`；
+- 导入 evaluation、engine、DeepSeekClient、DeepSeekAIAgent 或 RAG；
+- 调用 pipeline、belief、constraints 或 allocation；
+- 修改任何动作或提示词。
 
-1. 每次调用开始先把 `last_card_confidence` 重置为 `None`；
-2. only-pass shortcut 不计算 confidence；
-3. 一次出完 shortcut 不计算 confidence；
-4. opening formula 本地命中时不计算 confidence；
-5. 默认关闭时不导入、不调用 pipeline；
-6. 开启后只调用一次 pipeline，并把结果保存到 `last_card_confidence`；
-7. 不把结果传给 prune、RAG、prompt builder 或 `suggest_action_id()`；
-8. 不新增 verbose 输出；
-9. pipeline 返回 unavailable 或内部失败时，原有模型调用和 fallback 继续执行；
-10. 不改变 `last_decision_source` 语义。
+本步骤完成后，现有 DeepSeek prompt 必须逐字保持不变。
 
-## 五、严格等价边界
+## 九、测试要求
 
-本步骤禁止修改 `DeepSeekClient` 方法签名或 prompt 文本。
+`tests/test_card_confidence_prompt.py` 至少覆盖：
 
-对于相同的：
+### 正常格式
 
-- observation；
-- legal actions；
-- agent 配置；
-- RAG/hand evaluation/card tracker 输入；
-- client 返回或异常；
+- 两玩家、多 rank 的完整固定 snapshot；
+- presence 与 expected-copy 分别约分；
+- 0、1、整数大于 1 和普通 `n/d`；
+- 玩家顺序与 canonical rank 顺序；
+- `char_count == len(text)`；
+- frozen/slots、JSON 序列化和重复调用稳定。
 
-shadow off/on 必须得到相同：
+### 状态边界
 
-- pruned action IDs；
-- `suggest_action_id()` keyword 参数；
-- 最终 action ID；
-- `last_decision_source`；
-- fallback 行为。
+- unavailable；
+- phase、source、scope 不符；
+- confidence diagnostics 非空；
+- external count、分母为 0、负数、float、`bool`；
+- players 非 tuple 或为空；
+- 玩家 ID 越界、`bool`、重复或非法类型；
+- capacity 非法；
+- ranks 非 tuple、为空、重复、未知或乱序；
+- marginal denominator 不一致；
+- presence/copy 分子为负、越界、float、字符串、`None`、`bool`。
 
-唯一允许差异是开启态的 `last_card_confidence`。
+所有 malformed 输入必须 omitted 且不抛异常。
 
-## 六、测试要求
+### 字符预算
 
-### Pipeline 单元测试
+- 文本长度恰好等于预算时 ready；
+- 比预算多 1 时整体 omitted；
+- 超预算 payload 不包含任何玩家或 rank 文本；
+- `max_chars` 为 0、负数、float、`bool` 或大于 2400 时抛 `ValueError`。
 
-`tests/test_card_confidence_pipeline.py` 至少覆盖：
+### 隔离
 
-- critical 正常路径按顺序各调用一次并返回 available；
-- pipeline 把同一个 `phase_context` 传给 J-A；
-- opening/midgame/endgame/near-open 均立即 unavailable；
-- 非 critical 不调用 J-A/J-B1/allocation/confidence；
-- J-A、J-B1、allocation、confidence 每一层分别抛异常时返回 `pipeline_error`；
-- builder 自身返回 unavailable 时保持原对象或完整内容；
-- `max_external_cards > 12`、0、负数、float、`bool` 非法；
-- search nodes/solutions 的 0、负数、float、`bool` 非法；
-- 不重复调用阶段分类器；
-- 输出可 JSON 序列化且不包含输入 observation。
+- formatter 源码不包含 observation、history、ground truth、evaluation、engine、DeepSeek 或 RAG 读取；
+- `agents/deepseek_client.py` 与 `agents/deepseek_ai.py` 不导入或调用新 formatter；
+- 现有 `_build_structured_prompt()` snapshot 不变。
 
-### Agent shadow 测试
+## 十、验证命令
 
-在 `tests/test_deepseek_prompt_step_h.py` 或新测试文件覆盖：
-
-- 默认构造时开关为 False、审计值为 None；
-- 关闭态不导入/调用 pipeline；
-- 每次决策重置旧审计值；
-- 三类 local shortcut 不调用 pipeline；
-- 开启 critical 时 pipeline 恰好调用一次，返回值保存为最后审计状态；
-- 开启非 critical 时可保存 unavailable，但不得启动 allocation；
-- pipeline unavailable 不改变模型动作；
-- pipeline 抛出意外异常时 agent 仍按原路径决策，不传播异常；
-- client 成功和 client 失败 fallback 两种情况下，shadow off/on action 与 decision source 相同；
-- 捕获并比较 off/on 传给 client 的完整 keyword 参数，必须相等；
-- `_build_structured_prompt()` 输出 snapshot 不变且不包含 confidence 新标题或字段。
-
-不要通过真实 DeepSeek 网络调用测试。
-
-## 七、验证命令
-
-先运行：
+运行：
 
 ```bash
-python -m unittest tests.test_card_confidence_pipeline tests.test_card_confidence tests.test_deepseek_prompt_step_h -q
-```
-
-再运行相关回归：
-
-```bash
-python -m unittest tests.test_card_confidence_pipeline tests.test_card_confidence tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_game_phase tests.test_action_pruning tests.test_opening_strategy tests.test_rag_step_h -q
-```
-
-最后运行：
-
-```bash
+python -m unittest tests.test_card_confidence_prompt tests.test_card_confidence_pipeline tests.test_card_confidence -q
+python -m unittest tests.test_deepseek_prompt_step_h tests.test_rag_step_h tests.test_action_pruning -q
 python -m unittest discover -q
 git diff --check
 ```
@@ -207,38 +241,37 @@ git diff --check
 边界扫描：
 
 ```bash
-rg -n "card_confidence" agents/deepseek_client.py agents/rag_advisor.py cli engine
-rg -n "ground_truth|game\._state|evaluation" agents/card_confidence_pipeline.py
+rg -n "observation|history|ground_truth|game\._state|evaluation|engine|deepseek|rag" agents/card_confidence_prompt.py
+rg -n "card_confidence_prompt" agents/deepseek_ai.py agents/deepseek_client.py agents/rag_advisor.py cli engine
 ```
 
-两条均不得出现实际导入或读取。
+第二条必须无匹配；第一条不允许实际导入或读取。
 
-## 八、验收标准
+## 十一、验收标准
 
 完成后必须同时满足：
 
-- 只修改四个约定文件，并保留既有两个 confidence 文件；
-- pipeline 只复用公开推断层和统一 phase；
-- 非 critical 不启动枚举；
-- 默认关闭路径不调用 pipeline；
-- shadow 开启只写审计状态；
-- prompt、client 参数、action ID 和 decision source off/on 等价；
-- pipeline 失败不影响原决策或 fallback；
-- 不修改 AppConfig、环境变量、CLI、RAG 或 engine；
-- 定向、相关和全量测试通过；
+- 只新增两个文件；
+- payload frozen/slots 且可 JSON 序列化；
+- ready 只来自严格合法 available confidence；
+- 精确分数和固定文本 snapshot 通过；
+- 2400 字符硬上限生效；
+- 超限和 malformed 输入整体 omitted；
+- 不修改 DeepSeek prompt、agent 或动作路径；
+- 定向与全量测试通过；
 - `git diff --check` 通过。
 
-## 九、输出要求
+## 十二、输出要求
 
 最终报告必须包含：
 
 1. 修改文件；
-2. pipeline 调用顺序和 fail-closed 诊断；
-3. shadow 字段、默认值和实际插入位置；
-4. off/on 等价性测试覆盖；
-5. 定向、相关和全量测试结果；
-6. 边界扫描结果；
-7. 明确说明 prompt、RAG、剪枝和动作选择没有消费 confidence；
-8. 明确说明本步骤不构成策略收益或胜率结论。
+2. payload 字段和 formatter 签名；
+3. 固定文本 snapshot 示例；
+4. 精确分数与预算处理；
+5. fail-closed diagnostics；
+6. 定向和全量测试结果；
+7. 边界扫描结果；
+8. 明确说明 DeepSeek prompt、RAG、剪枝和动作仍未消费 confidence。
 
-完成后停止，不扩展到 J-D1c3c2b，不修改 docs。
+完成后停止，不扩展到 J-D1c3c2b2，不修改 docs。

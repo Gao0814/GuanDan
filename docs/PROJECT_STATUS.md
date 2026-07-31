@@ -5,7 +5,7 @@
 ## 1. 当前基线
 
 - J-D1c3b2 执行基线：`b2491a8 Document J-D1c3b invalid benchmark`
-- 当前工作状态：Step J-D1c3c1a 已完成但两个实现文件尚未提交；单文件 11 项、相关 80 项、全量 322 项通过
+- 当前工作状态：Step J-D1c3c2a 已完成但六个 confidence/shadow 实现文件尚未提交；定向 40 项、相关 124 项、全量 331 项通过
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：311 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准和 fail-closed runtime confidence 数据契约。J-D1c3c1a 已严格封闭 truthy 标志、玩家集合和 malformed copy 边界，合法 available snapshot 保持不变。下一步建立默认关闭的 shadow 装配层，只记录可审计状态，不向提示词、RAG 或动作选择暴露。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence 契约和默认关闭的 DeepSeek shadow 装配。J-D1c3c2a 已证明 off/on 的 client 参数、动作、fallback 和 decision source 等价。下一步只建立确定、有界、精确分数的 prompt 序列化契约，仍不让模型消费。
 
 ## 3. 分模块状态
 
@@ -52,7 +52,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c1a 完成 | 四策略校准通过；critical-only 精确整数 confidence 契约已 fail-closed 封板 | 尚无 runtime 装配、shadow 审计或策略接入 |
+| 残局精确分配 | Step J-D1c3c2a 完成 | critical-only pipeline 已接入默认关闭的 DeepSeek shadow 审计，动作等价 | 尚无有界 prompt 表示或策略消费 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -530,16 +530,29 @@ J-D1c3c1a 已完成：
 - 单文件 11 项、相关 80 项、全量 322 项测试通过；
 - 边界扫描和 `git diff --check` 通过；现有决策路径仍未引用新模块。
 
-### P1：runtime 尚无受控装配与 shadow 审计
+### 已解决：runtime 受控装配与 shadow 审计（Step J-D1c3c2a）
 
-当前 confidence builder 需要调用方手工提供 J-A、J-B1 和 J-D1b 三层结果，正常 DeepSeek 主链不会构建或记录该状态。下一步 J-D1c3c2a 只建立：
+J-D1c3c2a 已完成：
 
-- 独立 pipeline 按统一 `GamePhaseContext` 串联 J-A -> J-B1 -> J-D1b -> confidence；
-- 非 critical 阶段在枚举前立即 unavailable；
-- `DeepSeekAIAgent` 显式构造参数默认关闭；
-- 开启时只保存 `last_card_confidence` 供测试和审计；
-- pipeline 异常整体 unavailable，不能影响合法动作、剪枝、prompt 参数或最终 action ID；
-- 本步骤不新增环境变量，不接入 CLI，不让模型、RAG 或策略读取 confidence。
+- 新增公开 pipeline，复用调用方统一阶段，critical 链路各调用一次；
+- 非 critical 在 J-A 和 allocation 前立即 unavailable；
+- 参数非法显式报错，内部异常规范为 `pipeline_error`；
+- `DeepSeekAIAgent.card_confidence_shadow_enabled` 默认 False，仅启用时 lazy import；
+- `last_card_confidence` 每步重置，三个 local shortcut 不计算；
+- shadow off/on 的模型参数、动作、fallback 和 decision source 已验证一致；
+- 定向 40 项、相关 124 项、全量 331 项测试通过；
+- DeepSeekClient、RAG、CLI、engine 均未消费 confidence。
+
+### P1：confidence 尚无有界 prompt 表示
+
+直接把 `CardConfidenceState.to_dict()` 或未约分大整数写入 prompt 会造成上下文膨胀，并让模型误读内部字段。J-D1c3c2b1 必须先建立独立序列化契约：
+
+- 只接受 available、正确 source/scope 的状态；
+- presence 与 expected copies 使用约分后的精确分数字符串，不生成 float 或主观等级；
+- 明确说明是公开硬约束下组合边际，不是隐藏牌事实；
+- 玩家与 rank 顺序稳定，合法状态全量表示，不做概率驱动 Top-K；
+- 固定字符预算，超限时整体 omitted，不截断玩家或 rank；
+- 本步骤不修改 DeepSeekClient、agent、RAG 或动作。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -584,7 +597,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3c1a 已完成；runtime confidence 契约已封板但尚无主链装配。下一步为 J-D1c3c2a 默认关闭的 shadow 装配。
+状态：J-A 至 J-D1c3c2a 已完成；shadow 装配通过行为等价性回归。下一步为 J-D1c3c2b1 有界 prompt 序列化契约，不接入模型。
 
 拆分为：
 
@@ -612,9 +625,10 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3b2：保持模型、分桶和阈值不变，使用全新 seed 扩大样本后重新正式验收，已完成，判定 `policy_diverse_calibration_verified`；
 - Step J-D1c3c1：新增最小 runtime confidence 数据契约和单元测试，已完成；
 - Step J-D1c3c1a：严格校验布尔标志、完整玩家集合并消除 malformed copy 求和异常，已完成；
-- Step J-D1c3c2a：新增默认关闭的 runtime pipeline 与 DeepSeek shadow 审计，不改变 prompt 或动作，下一步；
-- Step J-D1c3c2b：仅在 shadow 等价性通过后设计有界序列化和显式消费开关，尚未开始；
-- 策略接入：继续暂停，直到 J-D1c3c2b 显式消费与消融单独验收。
+- Step J-D1c3c2a：新增默认关闭的 runtime pipeline 与 DeepSeek shadow 审计，不改变 prompt 或动作，已完成；
+- Step J-D1c3c2b1：建立独立、有界、确定、精确分数的 prompt 序列化契约，下一步；
+- Step J-D1c3c2b2：序列化封板后再增加默认关闭的 DeepSeek prompt 消费开关，尚未开始；
+- 策略接入：继续暂停，直到 J-D1c3c2b2 显式消费和 J-D1c3c2c 动作消融单独验收。
 
 设计见 `docs/BELIEF_STATE.md`。
 

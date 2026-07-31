@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c1a 已完成；runtime confidence 契约已封板。下一步完成 J-D1c3c2a 默认关闭的 shadow 装配。
+状态：J-A 至 J-D1c3c2a 已完成；shadow off/on 行为等价。下一步完成 J-D1c3c2b1 有界 prompt 序列化契约。
 
 目标：
 
@@ -168,9 +168,11 @@ AI 决策分为四层：
 22. J-D1c3b2：不改模型、分桶或阈值，使用全新 seed 扩大独立样本并重新正式验收，已完成并通过；
 23. J-D1c3c1：建立 critical-endgame-only 的 runtime confidence 数据契约，已完成；
 24. J-D1c3c1a：严格布尔标志、玩家集合和非法分子守恒路径，已完成；
-25. J-D1c3c2a：建立默认关闭的 pipeline 和 DeepSeek shadow 审计，证明动作与 prompt 等价，下一步；
-26. J-D1c3c2b：设计有界 prompt 序列化、显式消费开关和离线消融；
-27. 策略接入：仅在 J-D1c3c2b 独立验收后开始。
+25. J-D1c3c2a：建立默认关闭的 pipeline 和 DeepSeek shadow 审计，证明动作与 prompt 等价，已完成；
+26. J-D1c3c2b1：建立有界、确定、精确分数的 prompt payload，不接入模型，下一步；
+27. J-D1c3c2b2：增加默认关闭的 prompt 消费开关并保持关闭态完全兼容；
+28. J-D1c3c2c：使用固定残局 observation corpus 做 confidence-on/off 动作消融；
+29. 策略接入：仅在 J-D1c3c2c 独立验收后开始。
 
 J-A 验证结果：
 
@@ -433,7 +435,26 @@ J-D1c3c2a 设计边界：
 - 开启时只更新只读审计字段 `last_card_confidence`，不得传给 prompt、RAG、剪枝或策略；
 - 每次决策开始清空旧审计值，local shortcut 不计算 confidence；
 - pipeline 失败返回 unavailable，不能阻断或改变 DeepSeek 降级路径；
-- 先证明 shadow off/on 的动作等价，再考虑 J-D1c3c2b 消费。
+- shadow off/on 动作等价已证明，下一步先封板 J-D1c3c2b1 序列化，再考虑 J-D1c3c2b2 消费。
+
+J-D1c3c2a 实现结果：
+
+- 新增 `agents/card_confidence_pipeline.py` 与对应测试；
+- `DeepSeekAIAgent` 增加默认关闭的 shadow 开关和最后审计状态；
+- 非 critical 不构建 belief 或 allocation，critical 公开链路各执行一次；
+- pipeline 正常 unavailable 原样保留，异常规范为 `pipeline_error`；
+- shadow 结果不传给 prompt、RAG、剪枝、client 或动作选择；
+- off/on 的 client kwargs、动作、fallback 与 decision source 完全一致；
+- 定向 40 项、相关 124 项、全量 331 项测试通过。
+
+J-D1c3c2b1 设计边界：
+
+- 新增独立 formatter 模块和单元测试，不修改 agent 或 DeepSeekClient；
+- 只格式化已验证 available source/scope；
+- 使用约分精确分数，不输出 float、百分比或 high/medium/low；
+- 保留全部玩家和正数公开 rank，不基于概率删选；
+- 输出必须在固定字符预算内；超预算整体 omitted，不能截断；
+- 后续 J-D1c3c2b2 只能消费该封板 payload，不能直接序列化 runtime dataclass。
 
 ### Step K：中局策略路由与残局决策
 
