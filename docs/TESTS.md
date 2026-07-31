@@ -521,7 +521,7 @@ J-D1c3c1a 已补测：
 
 #### J-D1c3c2b1：confidence prompt 序列化
 
-状态：下一步。只新增 formatter 和测试，不修改 DeepSeekClient、agent 或动作路径。
+状态：已完成。只新增 formatter 和测试，DeepSeekClient、agent 或动作路径未修改。
 
 - unavailable 或 source/scope 不符时返回 omitted payload；
 - available 的 denominator 和全部分子必须再次验证为非 `bool` 合法整数；
@@ -535,6 +535,28 @@ J-D1c3c1a 已补测：
 - payload frozen/slots、JSON 友好且调用稳定；
 - formatter 不读取 observation/history、ground truth、evaluation 或 engine；
 - 现有 DeepSeek prompt snapshot 和 action path 必须完全不变。
+
+验证结果：formatter/confidence 相关 22 项、DeepSeek/RAG/剪枝 52 项、全量 338 项通过；`git diff --check` 与边界扫描通过。
+
+#### J-D1c3c2b2：默认关闭的 confidence prompt 消费
+
+状态：下一步。允许最小修改 agent、client 与对应测试，不修改配置、RAG、剪枝或 engine。
+
+- `card_confidence_prompt_enabled` 默认 False；prompt=True 且 shadow=False 时构造失败；
+- 每次决策同时重置 confidence state 与 prompt payload 审计字段；
+- shadow-only 不调用 formatter，client kwargs 与 J-D1c3c2a 完全一致；
+- prompt 模式只格式化本步 `last_card_confidence`；
+- ready 时 client kwargs 只新增一个类型化 payload；
+- omitted/unavailable 时不传新 keyword，prompt 与 shadow-only 完全一致；
+- `_build_structured_prompt()` 默认参数为 None，所有旧调用 snapshot 逐字不变；
+- ready payload 新增且只新增一个 `【残局牌面信念】` 章节；
+- client 必须复核 payload status/source/scope/diagnostics/char_count/预算；malformed payload 整体省略；
+- 新章节位于 `【记牌信息】` 后、`【场景标签】` 前；
+- section 文本不得二次改写、截断或重新计算概率；
+- legal actions、剪枝、RAG、输出格式、fallback 和 decision source 保持不变；
+- local shortcuts 不计算 state 或 payload；
+- 不修改 AppConfig、环境变量、CLI 或默认运行行为；
+- 定向、相关和全量测试以及 `git diff --check` 必须通过。
 
 #### 暂停：校准
 

@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2a 已完成；默认关闭的 shadow pipeline 已通过 331 项全量测试和 off/on 行为等价性验证。下一步为 J-D1c3c2b1 有界 prompt 序列化；模型消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2b1 已完成；2400 字符精确 prompt payload 已通过 338 项全量测试。下一步为 J-D1c3c2b2 默认关闭的 prompt 接入；默认策略消费继续暂停。
 
 ## 2. 数据来源
 
@@ -433,7 +433,7 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2b1：有界 prompt 序列化
 
-- 状态：下一步；
+- 状态：已完成；
 - 独立 formatter 只消费 `CardConfidenceState`，不读取 observation 或引擎；
 - 只接受 available 和固定 source/scope；
 - presence/expected copies 使用约分精确分数；
@@ -441,11 +441,27 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 - 固定字符预算，超限整体 omitted；
 - 本步骤不修改 DeepSeek prompt 或任何动作路径。
 
+验证结果：
+
+- ready/omitted payload frozen、JSON 友好且稳定；
+- 固定文本使用约分整数分数，无 float、百分比或主观等级；
+- 2400 字符预算超限时整体 omitted；
+- 相关 22 项、DeepSeek/RAG/剪枝 52 项、全量 338 项测试通过。
+
+### Step J-D1c3c2b2：默认关闭的 prompt 消费
+
+- 状态：下一步；
+- 新 prompt 开关默认 False，且依赖 shadow 开关；
+- 只有 ready payload 进入 DeepSeekClient；
+- omitted/unavailable 与纯 shadow prompt 完全相同；
+- 固定章节位于记牌信息之后，不改变候选动作、RAG 或输出格式；
+- 本步骤只验证接线和兼容性，不形成动作质量结论。
+
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有 J-D1c3c2b1 序列化、J-D1c3c2b2 显式消费和 J-D1c3c2c 动作消融依次通过，才允许默认策略读取；
+- 只有 J-D1c3c2b2 显式消费和 J-D1c3c2c 动作消融依次通过，才允许默认策略读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准
