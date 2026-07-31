@@ -335,7 +335,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-D1c2b：固定种子采集与开发容量
 
-- 状态：下一步。实现采集器并运行开发 seed，不形成正式校准结论；
+- 状态：已完成。定向 179 项、全量 303 项通过；开发判定 `development_capacity_verified`；
 - 默认只采集 `critical_endgame`，因为精确分配默认上限为 12 张；
 - 按 overall 和外部未知牌 `0..4`、`5..8`、`9..12` 聚合；
 - 固定 seed、级牌、步数、样本上限和搜索上限；
@@ -350,6 +350,26 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 正式参数与门槛留给 J-D1c2c 预注册；
 - 由原始充分统计量重算 Brier 与可靠性，不平均单样本比例；
 - 不在正式 seed 上调桶、调参或筛选样本。
+
+#### J-D1c2c：独立语料正式校准
+
+状态：下一步。只运行锁定基准并判定，不修改代码或文档。
+
+- HEAD 必须包含 J-D1c2b，运行前后工作区均干净；
+- seed `5000..5099`，默认规则 AI，完整运行两次；
+- 两份报告、`to_dict()` 和 canonical JSON SHA-256 完全相同；
+- 100/100 局完成，无 incomplete、invalid、skip 或 diagnostics；
+- eligible、evaluated、valid 三者相等；
+- 三个外部牌数桶各至少 700 个 valid 样本；
+- overall 与每个桶 certainty error count 均为 0；
+- overall ECE 不超过 `0.03`，每个桶 ECE 不超过 `0.05`；
+- overall Brier skill 相对经验正例率常数基线至少 `0.15`；
+- 每个外部牌数桶 Brier skill 至少 `0.10`；
+- overall 中 prediction count 至少 200 的桶，其最大 absolute gap 不超过 `0.10`；
+- 每个外部牌数桶中 prediction count 至少 100 的桶，其最大 absolute gap 不超过 `0.15`；
+- overall 和每个外部牌数桶至少有两个达到对应支持度的校准桶；
+- 原始 MCE 与 copy MSE 只报告，不单独作为拒绝门槛；
+- 正式运行中不改实现、seed、上限、分桶、支持度或阈值。
 
 #### 暂停：校准
 

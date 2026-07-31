@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c2a 已完成；完整残局分配已具备精确 token/rank 边际、单样本评分和跨样本微聚合。下一步为 Step J-D1c2b 固定 seed 采集与开发容量试验。
+当前状态：Step J-A 至 J-D1c2b 已完成；critical 完整分配已具备精确边际、离线评分、跨样本聚合和固定 seed collector。下一步为 Step J-D1c2c 独立语料正式校准。
 
 ## 2. 数据来源
 
@@ -325,16 +325,21 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c2b：固定种子采集器
 
+- 状态：已完成，判定 `development_capacity_verified`；
 - 由于 J-D1b 默认精确上限为 12 张，首个采集器只把 `critical_endgame` 作为可评分目标；
 - 使用开发固定 seed 采集完整分配样本，不把 near-open 的 13..20 张跳过结果混入校准；
 - 按外部未知牌 `0..4`、`5..8`、`9..12` 分桶；
 - 先建立 neutral 组合模型基线，不叠加 pass 或其他软信号；
 - 开发试跑只测完成率、有效样本量、截断和运行成本，不形成正式校准结论。
+- seed `40..59` 双运行 hash 一致，20/20 局和 522/522 样本完成；
+- 无 invalid、skip、diagnostics 或 certainty error；
+- 定向 179 项、全量 303 项测试通过。
 
 ### Step J-D1c2c：正式校准
 
-- 在开发语料之外预注册独立 seed、样本数和门槛；
+- 独立 seed 固定为 `5000..5099`，两次各 100 局；
 - 对 overall、阶段桶和外部牌数桶运行双次可重复验收；
+- 完整性、Brier skill、ECE、支持度 MCE 和 certainty error 使用预注册门槛；
 - 正式语料不得用于调桶或修改模型。
 
 ### Step J-D1c3：runtime 准入判定

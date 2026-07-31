@@ -1,9 +1,8 @@
 """Repeatable offline endgame benchmark for the J-C2b1 rank ordering.
 
-This module is deliberately the sole place where the offline benchmark reads
-``GuanDanGame._state``.  That read is delayed until after the public-only
-agent pipeline has produced a ranking, and the resulting truth mapping is
-passed directly to the evaluation function without being stored in a report.
+Offline truth is delegated to ``evaluation.benchmark_truth`` after the
+public-only agent pipeline has produced a ranking.  The resulting mapping is
+passed directly to the evaluator and is never stored in a report.
 """
 
 from __future__ import annotations
@@ -21,8 +20,9 @@ from agents.card_ranker import build_card_rankings
 from agents.card_signals import build_public_signal_state
 from agents.game_phase import CRITICAL_ENDGAME, NEAR_OPEN_ENDGAME, classify_game_phase
 from agents.rule_based_ai import RuleBasedAIAgent
-from engine.cards import RANKS, card_to_token
+from engine.cards import RANKS
 from engine.game import GuanDanGame
+from evaluation.benchmark_truth import extract_ground_truth_hands
 from evaluation.ranking_metrics import (
     RankAblationReport,
     RankMetricSnapshot,
@@ -289,24 +289,8 @@ def _validate_benchmark_inputs(
     return normalized_seeds
 
 
-def _ground_truth_hands_from_state(
-    game: GuanDanGame,
-    observer_player_id: object,
-) -> dict[object, tuple[str, ...]]:
-    """Extract offline truth only after public inference has completed."""
-
-    state = game._state
-    if state is None or state.current_player_id != observer_player_id:
-        raise ValueError("offline truth observer must match the current game player")
-    return {
-        player.player_id: tuple(card_to_token(card) for card in player.hand_cards)
-        for player in state.players
-        if (
-            player.player_id != observer_player_id
-            and not player.is_finished
-            and player.hand_cards
-        )
-    }
+# Compatibility alias for existing tests and private benchmark consumers.
+_ground_truth_hands_from_state = extract_ground_truth_hands
 
 
 def _record_category(counts: Counter[str], category: str) -> None:
