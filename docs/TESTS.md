@@ -301,7 +301,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-D1c1：单样本概率评分
 
-状态：下一步。只建立 evaluation-only 单样本充分统计量。
+状态：已完成。J-D1c1 与兼容测试共 152 项通过，全量 276 项通过。
 
 - 只接受完整、有解、物理分母为正且 phase 一致的 J-D1b；
 - 严格校验 allocation 玩家、容量、rank key、整数边际和跨玩家副本守恒；
@@ -316,10 +316,38 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 报告不可变、JSON 友好、无 NaN/Infinity，固定输入可重复；
 - pass 只作为公开行为事实，不作为默认持牌负证据。
 
-#### J-D1c2：多样本校准
+#### J-D1c2a：多样本精确聚合
 
-- 使用独立固定 seed 和预注册样本范围；
-- 按 overall、near-open、critical 和外部未知牌数区间聚合；
+状态：已完成。J-D1c2a 与兼容测试共 166 项通过，全量 290 项通过。
+
+- valid 样本按 rank pair 数做微聚合，不平均单样本分数；
+- 不同分母的 Brier 和 copy 误差使用 `Fraction` 精确相加；
+- Brier mean 与 copy MSE 从总误差和除以总 pair 数重算；
+- ECE 使用 `sum(abs(prediction_sum - truth_positive)) / total_pair_count`；
+- MCE 使用非空桶平均预测与真实率的最大绝对差；
+- 确定性错误率和真实正例率输出精确分数；
+- 十档桶跨样本精确聚合，空桶保持 `0/1`；
+- invalid 样本不进入指标，只进入 invalid count 与规范化 diagnostics；
+- 同一无效样本内重复诊断类别只计一次；
+- 聚合结果不保留单样本报告、seed、玩家、rank、token 或手牌；
+- 冻结、不可变、JSON 友好且固定输入顺序无关；
+- malformed 手工报告必须显式拒绝，不能静默产生指标。
+
+#### J-D1c2b：固定种子采集与开发容量
+
+- 状态：下一步。实现采集器并运行开发 seed，不形成正式校准结论；
+- 默认只采集 `critical_endgame`，因为精确分配默认上限为 12 张；
+- 按 overall 和外部未知牌 `0..4`、`5..8`、`9..12` 聚合；
+- 固定 seed、级牌、步数、样本上限和搜索上限；
+- 同一参数双运行报告和 canonical JSON hash 一致；
+- 每个游戏/玩家只构造一次 agent，所有动作经过合法 action ID 校验；
+- 真值只在公开推断完成后由既有 evaluation-only helper 提取；
+- 报告不保留 seed、逐样本报告、observation、玩家或真值明细；
+- 重复样本、步数上限和样本上限有规范化 diagnostics；
+- overall 必须由原始单样本报告合并，不平均分桶指标；
+- 外部牌数桶互斥且完整覆盖所有 evaluated 样本；
+- 开发 seed 只用于容量和运行成本，不据此宣称校准通过；
+- 正式参数与门槛留给 J-D1c2c 预注册；
 - 由原始充分统计量重算 Brier 与可靠性，不平均单样本比例；
 - 不在正式 seed 上调桶、调参或筛选样本。
 

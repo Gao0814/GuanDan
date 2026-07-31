@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1b 已完成；完整残局分配已具备精确物理权重与 token/rank 边际整数计数。下一步为 Step J-D1c1 单样本离线概率评分契约。
+当前状态：Step J-A 至 J-D1c2a 已完成；完整残局分配已具备精确 token/rank 边际、单样本评分和跨样本微聚合。下一步为 Step J-D1c2b 固定 seed 采集与开发容量试验。
 
 ## 2. 数据来源
 
@@ -301,6 +301,7 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c1：单样本概率评分
 
+- 状态：已完成；
 - 仅在 `evaluation/` 消费完整 J-D1b 与显式 ground truth；
 - 使用 `physical_assignment_count` 作为共同分母；
 - 对逐玩家/逐 rank 持有事件计算精确 Brier 和校准分桶充分统计量；
@@ -308,13 +309,33 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 - 使用整数和 `fractions.Fraction` 聚合，报告 JSON 中只保留整数分子/分母；
 - 报告不得包含玩家-rank 真值明细、真实 token 或真实手牌；
 - 不完整或不一致的 allocation 必须 fail closed。
+- 新增 presence Brier、copy 平方误差和十档预测和的精确分数；
+- 定向 152 项、全量 276 项测试通过。
 
-### Step J-D1c2：多样本校准
+### Step J-D1c2a：多样本精确聚合
 
-- 使用独立固定 seed 采集 near-open/critical 完整分配样本；
-- 按阶段和外部未知牌数量分桶聚合 Brier 与可靠性分桶；
+- 状态：已完成；
+- 对 valid 单样本报告做原始充分统计量微聚合；
+- 使用 `Fraction` 跨不同物理分母求和，不平均单样本比例；
+- 输出精确 Brier mean、copy MSE、ECE、MCE 与确定性错误率；
+- 聚合十档 prediction count、prediction sum 与 truth positive count；
+- invalid 样本只进入无效计数和规范化 diagnostics。
+- 输出精确 Brier mean、copy MSE、正例率、确定性错误率、ECE 与 MCE；
+- 定向 166 项、全量 290 项测试通过。
+
+### Step J-D1c2b：固定种子采集器
+
+- 由于 J-D1b 默认精确上限为 12 张，首个采集器只把 `critical_endgame` 作为可评分目标；
+- 使用开发固定 seed 采集完整分配样本，不把 near-open 的 13..20 张跳过结果混入校准；
+- 按外部未知牌 `0..4`、`5..8`、`9..12` 分桶；
 - 先建立 neutral 组合模型基线，不叠加 pass 或其他软信号；
-- 校验覆盖、校准误差和过度自信，不只观察 Top-K。
+- 开发试跑只测完成率、有效样本量、截断和运行成本，不形成正式校准结论。
+
+### Step J-D1c2c：正式校准
+
+- 在开发语料之外预注册独立 seed、样本数和门槛；
+- 对 overall、阶段桶和外部牌数桶运行双次可重复验收；
+- 正式语料不得用于调桶或修改模型。
 
 ### Step J-D1c3：runtime 准入判定
 

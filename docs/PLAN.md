@@ -27,6 +27,8 @@
 - Step J-C3d2 独立 corpus neutral baseline 封板。
 - Step J-D1a 完整分配的精确物理权重与 token 边际整数计数。
 - Step J-D1b 完整分配的逐玩家 rank 持有/副本精确整数边际。
+- Step J-D1c1 evaluation-only 单样本精确 Brier、copy 误差与十档充分统计量。
+- Step J-D1c2a 多样本精确微聚合、ECE/MCE 与规范化 diagnostics。
 
 当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。
 
@@ -115,7 +117,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1b 已完成；下一步实施 J-D1c1。
+状态：J-A 至 J-D1c2a 已完成；下一步实施 J-D1c2b。
 
 目标：
 
@@ -154,10 +156,12 @@ AI 决策分为四层：
 13. J-C3d2：验证 neutral ranking 在 forced/战略 pass 轨迹下均不损失召回，已完成；
 14. J-D1a：聚合完整分配的精确物理权重和 token 边际整数计数，已完成；
 15. J-D1b：在完整 matrix 上聚合 rank 持有与副本数的精确整数边际，已完成；
-16. J-D1c1：建立单样本、evaluation-only 的概率评分与校准充分统计量，下一步；
-17. J-D1c2：接入独立多种子 corpus，聚合并分层检验组合边际校准；
-18. J-D1c3：预注册门槛并决定是否允许 runtime 置信度；
-19. 策略接入：仅在校准和独立策略收益验收后开始。
+16. J-D1c1：建立单样本、evaluation-only 的概率评分与校准充分统计量，已完成；
+17. J-D1c2a：从单样本原始充分统计量精确微聚合 Brier、copy MSE、ECE/MCE，已完成；
+18. J-D1c2b：实现固定 seed 残局采集器并运行开发容量试验，下一步；
+19. J-D1c2c：预注册并运行独立语料正式校准；
+20. J-D1c3：根据正式校准决定是否允许 runtime 置信度；
+21. 策略接入：仅在校准和独立策略收益验收后开始。
 
 J-A 验证结果：
 
@@ -276,6 +280,28 @@ J-D1b 验证结果：
 - 非完整结果不泄露部分 rank 边际；
 - 定向 139 项、全量 263 项测试通过；
 - 该步骤尚未输出概率、置信度、校准结论或策略收益。
+
+J-D1c1 验证结果：
+
+- 新增冻结的 `MarginalCalibrationBin` 与 `MarginalEvaluationReport`；
+- presence Brier、rank copy 平方误差和桶内预测和全部用 `Fraction` 累计；
+- 每个活跃外部玩家 × 每个正数公开 rank 都评分，包含负例；
+- fail-closed 覆盖 allocation、rank 边际、守恒和显式真值；
+- invalid 报告计数归零、误差为 `0/1`，并固定输出 10 个空桶；
+- runtime 目录没有新 evaluation 依赖，报告不保留真实手牌或逐 pair 明细；
+- 定向 152 项、全量 276 项测试通过；
+- 尚未运行多种子校准，也未生成 runtime 置信度。
+
+J-D1c2a 验证结果：
+
+- 新增 `MarginalCalibrationAggregate` 与 `MarginalBenchmarkBucket`；
+- 从 valid 报告原始误差和与 pair count 做精确微聚合；
+- 输出 Brier mean、copy MSE、正例率、确定性错误率、ECE 和 MCE 的最简分数；
+- 十档预测和跨样本精确通分，空桶稳定为 `0/1`；
+- invalid 报告仅进入无效计数和同报告去重后的诊断类别；
+- malformed 报告显式失败，输出顺序无关且不保留样本内容；
+- 定向 166 项、全量 290 项测试通过；
+- 尚未实现 seed 采集器或运行校准语料。
 
 ### Step K：中局策略路由与残局决策
 
