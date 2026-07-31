@@ -30,6 +30,7 @@
 - Step J-D1c1 evaluation-only 单样本精确 Brier、copy 误差与十档充分统计量。
 - Step J-D1c2a 多样本精确微聚合、ECE/MCE 与规范化 diagnostics。
 - Step J-D1c2b critical 固定 seed collector 与开发容量验证。
+- Step J-D1c2c 默认 RuleBasedAI 独立语料正式校准。
 
 当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。
 
@@ -118,7 +119,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c2b 已完成；下一步运行 J-D1c2c 正式校准。
+状态：J-A 至 J-D1c2c 已完成；下一步实施 J-D1c3a 策略多样性载体。
 
 目标：
 
@@ -160,9 +161,11 @@ AI 决策分为四层：
 16. J-D1c1：建立单样本、evaluation-only 的概率评分与校准充分统计量，已完成；
 17. J-D1c2a：从单样本原始充分统计量精确微聚合 Brier、copy MSE、ECE/MCE，已完成；
 18. J-D1c2b：实现固定 seed 残局采集器并运行开发容量试验，已完成；
-19. J-D1c2c：使用预注册独立语料运行正式校准，下一步；
-20. J-D1c3：根据正式校准决定是否允许 runtime 置信度；
-21. 策略接入：仅在校准和独立策略收益验收后开始。
+19. J-D1c2c：使用预注册独立语料运行正式校准，已完成；
+20. J-D1c3a：建立 forced/25/50/100 strategic-pass marginal corpus 载体并运行开发试验，下一步；
+21. J-D1c3b：使用独立 seed 运行多策略正式校准；
+22. J-D1c3c：根据多策略结果决定 runtime confidence 准入；
+23. 策略接入：仅在校准和独立策略收益验收后开始。
 
 J-A 验证结果：
 
@@ -325,6 +328,16 @@ J-D1c2c 预注册参数：
 - 外部牌上限 12、节点上限 1,000,000、解上限 100,000；
 - 默认 `RuleBasedAIAgent`；
 - 正式运行期间不改实现、分桶、参数、阈值或样本筛选。
+
+J-D1c2c 正式结果：
+
+- 两次 100 局报告完全相同，SHA-256 为 `c4a91d81bed216e919189fe4fdddf76c76ee8e35eb28f5fcae21ebc9e401e190`；
+- 100/100 局完成，2727 个样本全部有效，无 skip 或 diagnostics；
+- 三个外部牌数桶有效样本均超过 900；
+- overall 与三个桶的 certainty error 均为 0；
+- overall/三桶的 ECE、Brier skill、支持度 MCE 全部通过预注册门槛；
+- 判定 `retain_for_policy_diverse_calibration`；
+- 该结论只覆盖默认 RuleBasedAI，不授权 runtime confidence。
 
 ### Step K：中局策略路由与残局决策
 

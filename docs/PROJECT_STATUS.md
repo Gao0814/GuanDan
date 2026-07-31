@@ -4,8 +4,8 @@
 
 ## 1. 当前基线
 
-- 已提交 Git 基线：`c2d0047 J-D1c2b`（实际包含 J-D1c1/J-D1c2a 与当时规划文档）
-- 当前工作状态：Step J-D1c2b 已完成并独立复核；collector、共享 truth helper 与测试尚未提交
+- 已提交 Git 基线：`241cbb95492d30d1cfbe5e8436791e42d12974bf J-D1c2b`
+- 当前工作状态：Step J-D1c2c 正式校准已完成；工作区干净，无源码改动
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：303 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -28,7 +28,7 @@
 
 ### 当前优化愿景
 
-完成度：约 97%
+完成度：约 98%
 
 目标愿景包括：
 
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、单样本评分、跨样本精确聚合和 critical 固定 seed 采集器。J-D1c2b 开发容量与双运行可重复性已通过，下一步进入 J-D1c2c 独立语料正式校准。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、单样本评分、跨样本精确聚合和 critical 固定 seed 采集。J-D1c2c 在默认 RuleBasedAI 独立语料上通过正式校准，下一步进入 J-D1c3a 策略分布多样性载体与开发验证。
 
 ## 3. 分模块状态
 
@@ -52,7 +52,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c2b 完成 | critical 完整分配可固定 seed 采集并按外部牌数精确聚合，开发容量已验证 | 尚无正式校准、策略分布稳健性或主链接入 |
+| 残局精确分配 | Step J-D1c2c 完成 | 默认规则 AI critical 语料通过 Brier skill、ECE、支持度 MCE 与确定性安全门槛 | 尚无策略分布稳健性或 runtime 准入 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -419,6 +419,35 @@ J-D1c2b 已完成 fixed-seed collector 与开发容量验证：
 
 唯一开发判定：`development_capacity_verified`。该判定只允许预注册正式语料，不构成校准或 runtime 准入。
 
+### 已解决：默认规则 AI 语料上的组合边际正式校准（Step J-D1c2c）
+
+正式参数与结果：
+
+- HEAD `241cbb95492d30d1cfbe5e8436791e42d12974bf`；
+- seed `5000..5099`，默认 RuleBasedAI，100 局完整运行两次；
+- 两次耗时约 180.9s / 179.7s，报告和 canonical JSON 完全相同；
+- SHA-256 均为 `c4a91d81bed216e919189fe4fdddf76c76ee8e35eb28f5fcae21ebc9e401e190`；
+- 100/100 局完成，2727/2727 样本有效，无 invalid、skip 或 diagnostics；
+- 三个外部牌数桶分别有 902、901、924 个有效样本；
+- overall/三桶 rank pair 共 36,804；
+- overall Brier skill 约 `0.236809`、ECE 约 `0.021901`、supported MCE 约 `0.063909`；
+- 三桶 Brier skill 均至少约 `0.221291`，ECE 均不超过约 `0.024514`；
+- overall 与三个桶 certainty error 均为 0；
+- 16 项数据完整性和所有预注册校准护栏全部通过。
+
+唯一判定：`retain_for_policy_diverse_calibration`。
+
+### P1：正式校准仍只覆盖单一策略轨迹分布
+
+当前正式 corpus 来自默认 RuleBasedAI。虽然组合边际不使用 pass 软信号，但不同策略会改变到达 critical 局面的牌池、容量和历史分布。因此当前结论不能外推到：
+
+- 主动战略 pass 轨迹；
+- DeepSeek 或真实玩家策略；
+- runtime confidence；
+- 动作质量或胜率。
+
+J-D1c3a 需要复用现有 0/25/50/100% strategic-pass agent 与 marginal collector，建立隔离的多策略报告并先运行开发容量试验。
+
 ### P1：RAG 不能单独承担策略路由
 
 RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
@@ -462,7 +491,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c2b 已完成并核验，下一步运行 J-D1c2c。
+状态：J-A 至 J-D1c2c 已完成并核验，下一步实施 J-D1c3a。
 
 拆分为：
 
@@ -484,8 +513,10 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c1：建立 evaluation-only 单样本概率评分与精确分桶充分统计量，已完成；
 - Step J-D1c2a：精确微聚合多样本 Brier、copy MSE、ECE/MCE 与十档统计，已完成；
 - Step J-D1c2b：实现固定 seed 采集器并运行开发容量试验，已完成，判定 `development_capacity_verified`；
-- Step J-D1c2c：预注册并运行独立语料正式校准，下一步；
-- Step J-D1c3：根据正式校准决定是否允许生成 runtime 置信度；
+- Step J-D1c2c：预注册并运行独立语料正式校准，已完成，判定 `retain_for_policy_diverse_calibration`；
+- Step J-D1c3a：建立 forced/战略 pass 多策略 marginal corpus 载体并运行开发容量试验，下一步；
+- Step J-D1c3b：预注册并运行独立多策略正式校准；
+- Step J-D1c3c：根据策略分布正式结果决定 runtime confidence 准入；
 - 置信度校准：暂停，直到新信号通过独立策略分布验收。
 
 设计见 `docs/BELIEF_STATE.md`。

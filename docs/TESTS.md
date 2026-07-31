@@ -353,7 +353,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-D1c2c：独立语料正式校准
 
-状态：下一步。只运行锁定基准并判定，不修改代码或文档。
+状态：已完成。16 项完整性与全部校准护栏通过，判定 `retain_for_policy_diverse_calibration`。
 
 - HEAD 必须包含 J-D1c2b，运行前后工作区均干净；
 - seed `5000..5099`，默认规则 AI，完整运行两次；
@@ -370,6 +370,28 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - overall 和每个外部牌数桶至少有两个达到对应支持度的校准桶；
 - 原始 MCE 与 copy MSE 只报告，不单独作为拒绝门槛；
 - 正式运行中不改实现、seed、上限、分桶、支持度或阈值。
+
+正式结果：
+
+- 双运行 SHA-256：`c4a91d81bed216e919189fe4fdddf76c76ee8e35eb28f5fcae21ebc9e401e190`；
+- 100/100 局，2727 个样本全部有效；
+- 三桶样本 902 / 901 / 924；
+- overall Brier skill 约 0.236809、ECE 约 0.021901、supported MCE 约 0.063909；
+- overall 与三桶 certainty error 均为 0。
+
+#### J-D1c3a：策略分布 marginal corpus
+
+状态：下一步。实现多策略包装器并运行开发容量试验。
+
+- 固定策略顺序为 forced-only、strategic-pass 25/50/100；
+- 每个策略创建独立游戏、agent 和报告；
+- rate 0 corpus 与默认 marginal corpus 完全一致；
+- opportunity/pass 满足 `0 <= pass <= opportunity`；
+- rate 0 主动 pass 为 0，rate 100 主动 pass 等于机会数；
+- 每个策略报告完整对局、样本、外部牌数桶和校准指标；
+- 同参数双运行报告和 hash 一致；
+- 报告不包含 seed、逐样本、observation 或 truth；
+- 开发试跑只验证容量与行为分布，不形成正式校准或 runtime 结论。
 
 #### 暂停：校准
 

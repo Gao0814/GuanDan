@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c2b 已完成；critical 完整分配已具备精确边际、离线评分、跨样本聚合和固定 seed collector。下一步为 Step J-D1c2c 独立语料正式校准。
+当前状态：Step J-A 至 J-D1c2c 已完成；默认 RuleBasedAI critical 独立语料已通过正式组合边际校准。下一步为 Step J-D1c3a 策略分布多样性载体与开发验证。
 
 ## 2. 数据来源
 
@@ -337,10 +337,28 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c2c：正式校准
 
+- 状态：已完成，判定 `retain_for_policy_diverse_calibration`；
 - 独立 seed 固定为 `5000..5099`，两次各 100 局；
 - 对 overall、阶段桶和外部牌数桶运行双次可重复验收；
 - 完整性、Brier skill、ECE、支持度 MCE 和 certainty error 使用预注册门槛；
 - 正式语料不得用于调桶或修改模型。
+- seed `5000..5099` 双运行 hash 一致，100/100 局和 2727/2727 样本完成；
+- 数据完整性、certainty、ECE、Brier skill 和 supported MCE 门槛全部通过；
+- 结论只覆盖默认 RuleBasedAI 轨迹。
+
+### Step J-D1c3a：策略分布载体
+
+- 复用 evaluation-only `StrategicPassAIAgent` 的 0/25/50/100% 变体；
+- 每个策略独立运行 marginal corpus，不共享 game、agent 或计数器；
+- 同时报告战略 pass 机会数、主动 pass 数和完整 calibration bucket；
+- 先用开发 seed 验证容量、行为梯度和双运行确定性；
+- 不在该步骤设置 runtime confidence。
+
+### Step J-D1c3b：多策略正式校准
+
+- 使用独立于开发和 J-D1c2c 的 seed；
+- 对每个策略的 overall 和外部牌数桶检查完整性与校准护栏；
+- 不以策略间指标平均值掩盖任一策略失败。
 
 ### Step J-D1c3：runtime 准入判定
 
