@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3a 已完成；默认规则 AI 已通过正式校准。J-D1c3b 多策略正式双运行因一个范围只有一个支持 bin 而判定 `benchmark_invalid`。下一步为 J-D1c3b2 独立扩容复验，runtime confidence 继续暂停。
+当前状态：Step J-A 至 J-D1c3b2 已完成；四策略扩容正式校准判定 `policy_diverse_calibration_verified`。下一步为 J-D1c3c1 最小 runtime confidence 数据契约；决策接入继续暂停。
 
 ## 2. 数据来源
 
@@ -369,16 +369,31 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3b2：独立扩容复验
 
-- 状态：下一步；
+- 状态：已完成，判定 `policy_diverse_calibration_verified`；
 - 冻结 J-D1c3b 的实现、策略、十档分桶、支持阈值和数值护栏；
 - 排除所有历史开发与正式 seed，使用 `8000..8119`，四策略各 120 局并完整双运行；
 - J-D1c3b 数据只用于样本量规划，不参与 J-D1c3b2 指标或判定；
-- 任一范围完整性、支持度或数值护栏失败，仍不得进入 runtime confidence。
+- 双运行 SHA-256 均为 `425bf197c7642894ebb6a0293383b94c160bdddb9dc44c180216278e200e113e`；
+- 四策略所有对局完成，invalid、skip、diagnostics 均为 0；
+- 16 个范围全部通过支持度、certainty、ECE、Brier skill 和 supported MCE 护栏；
+- 该结论只授权设计 runtime confidence 数据契约。
+
+### Step J-D1c3c1：runtime confidence 数据契约
+
+- 状态：下一步；
+- 新模块只消费 J-A/J-B1/J-D1b 不可变结果，不重新解析 observation 或 history；
+- 只在 `critical_endgame`、精确一致牌池、完整搜索、正物理分母和外部未知牌不超过 12 张时 available；
+- 对逐玩家逐 rank 输出 presence 与 expected-copy 的整数分子/分母；
+- 不输出 float、百分比或未经验证的 high/medium/low 标签；
+- 任一阶段、玩家、容量、rank、分子范围或跨玩家 copy 守恒异常时整体 unavailable，不保留部分结果；
+- runtime 模块不得导入 `evaluation/`，ground truth 不得进入 API；
+- 本步骤不接入策略、RAG、DeepSeek、提示词、剪枝或动作选择。
 
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
-- 只有 J-D1c3b2 独立扩容语料有效通过后，才设计 runtime 置信度输出；
+- J-D1c3b2 已授权设计 runtime 置信度输出契约；
+- 只有契约和后续显式开关消融通过，才允许决策消费者读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准

@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3a 已完成；J-D1c3b 已运行但因支持度前提失败判定 `benchmark_invalid`；下一步运行 J-D1c3b2 独立扩容复验。
+状态：J-A 至 J-D1c3b2 已完成；多策略扩容正式校准判定 `policy_diverse_calibration_verified`。下一步实现 J-D1c3c1 runtime confidence 数据契约。
 
 目标：
 
@@ -165,9 +165,10 @@ AI 决策分为四层：
 19. J-D1c2c：使用预注册独立语料运行正式校准，已完成；
 20. J-D1c3a：建立 forced/25/50/100 strategic-pass marginal corpus 载体并运行开发试验，已完成；
 21. J-D1c3b：使用独立 seed 运行多策略正式校准，已完成但支持度不足，判定 `benchmark_invalid`；
-22. J-D1c3b2：不改模型、分桶或阈值，使用全新 seed 扩大独立样本并重新正式验收，下一步；
-23. J-D1c3c：仅根据有效的多策略正式结果决定 runtime confidence 准入；
-24. 策略接入：仅在校准和独立策略收益验收后开始。
+22. J-D1c3b2：不改模型、分桶或阈值，使用全新 seed 扩大独立样本并重新正式验收，已完成并通过；
+23. J-D1c3c1：建立 critical-endgame-only、fail-closed 的 runtime confidence 数据契约，下一步；
+24. J-D1c3c2：通过显式开关接入候选消费端并做等轨迹消融与策略收益验收；
+25. 策略接入：仅在 J-D1c3c2 独立验收后开始。
 
 J-A 验证结果：
 
@@ -375,6 +376,25 @@ J-D1c3b2 预注册方向：
 - 保持实现、策略 gate、十档分桶、支持阈值和全部数值护栏不变；
 - 扩容目的仅是让偏斜的 `strategic_pass_100 / external_0_4` 获得足够支持，不能做事后调参；
 - 只有完整性、支持度和全部数值护栏同时通过，才能进入 J-D1c3c。
+
+J-D1c3b2 正式结果：
+
+- seed `8000..8119` 四策略各 120 局，双运行报告完全相等；
+- SHA-256 为 `425bf197c7642894ebb6a0293383b94c160bdddb9dc44c180216278e200e113e`；
+- 四策略全部完成，无 invalid、skip 或 diagnostics，主动 pass 比例严格递增；
+- 每个策略的三个 external bucket 均超过 980 个有效样本；
+- 16 个范围全部满足至少两个支持 bin、certainty=0、ECE、Brier skill 和 supported MCE 护栏；
+- 判定 `policy_diverse_calibration_verified`；
+- 只授权进入最小 runtime confidence 契约设计，不授权动作决策或胜率声明。
+
+J-D1c3c1 设计边界：
+
+- 新增独立 runtime 模块，消费 `CardBeliefState`、`CardConstraintState` 和完整 `CardAllocationResult`；
+- 只覆盖 `critical_endgame` 且外部未知牌不超过 12 张的已验证范围；
+- 公开整数分子/分母，不做浮点四舍五入、概率重映射或主观高/中/低分档；
+- 任一前置条件或守恒校验失败时返回无玩家、零分母的 unavailable 状态；
+- 不导入 `evaluation/`，不读取 observation、history 或 ground truth；
+- 本步骤不修改 DeepSeek、RAG、剪枝、提示词或动作选择。
 
 ### Step K：中局策略路由与残局决策
 

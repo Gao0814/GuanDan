@@ -432,7 +432,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-D1c3b2：支持度扩容复验
 
-状态：下一步。只运行锁定参数，不修改实现、测试、docs、策略、分桶、支持阈值或数值护栏。
+状态：已完成，判定 `policy_diverse_calibration_verified`。运行中未修改实现、测试、docs、策略、分桶、支持阈值或数值护栏。
 
 - seed `8000..8119`，四策略各 120 局，完整运行两次；
 - seed `7000..7049` 只用于样本量规划，不进入新报告或判定；
@@ -446,6 +446,37 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - overall 仍以 count>=200、external 仍以 count>=100 定义支持 bin；
 - 每个策略、每个聚合范围仍至少需要两个支持 bin；
 - 任一完整性或支持度失败判定 `benchmark_invalid`；有效 benchmark 的任一数值护栏失败判定 `reject_runtime_confidence`；全部通过才判定 `policy_diverse_calibration_verified`。
+
+正式结果：
+
+- 双运行耗时约 790.2s / 785.0s，报告完全相等；
+- SHA-256 均为 `425bf197c7642894ebb6a0293383b94c160bdddb9dc44c180216278e200e113e`；
+- 定向 187 项、全量 311 项测试通过；
+- 四策略各 120/120 局完成，无 invalid、skip 或 diagnostics；
+- 有效样本为 3260 / 3399 / 3531 / 2997；
+- 每个策略的三个 external bucket 均至少 984 个有效样本；
+- 主动 pass 比例为 0、约 0.357、约 0.546、1.0；
+- 16 个范围支持 bin 数均至少为 4；
+- 16 个范围全部通过 certainty、ECE、Brier skill 和 supported MCE 护栏。
+
+#### J-D1c3c1：runtime confidence 数据契约
+
+状态：下一步。只新增独立 runtime 转换模块和对应单元测试，不接入任何决策消费者。
+
+- available 只允许 `critical_endgame`、精确牌池、精确一致约束和完整有解 allocation；
+- `physical_assignment_count` 必须为非 `bool` 正整数；
+- belief、constraints、allocation 的 phase、外部牌数、玩家集合和容量必须一致；
+- rank key 必须与正数 `unseen_cards_by_rank` 完全一致；
+- presence 分子必须位于 `[0, denominator]`；
+- copy 分子必须满足逐玩家范围与跨玩家 `rank_count * denominator` 守恒；
+- 输出只使用整数分子/分母，`to_dict()` 可 JSON 序列化；
+- certainty 只允许 `presence_numerator == denominator`；
+- 阶段外、不精确、不一致、截断、无解、跳过、诊断或 malformed 手工夹具都整体 unavailable；
+- unavailable 状态必须零分母、无玩家结果，不泄露部分边际；
+- frozen/slots、稳定顺序和不可变结构必须有测试；
+- `agents/card_confidence.py` 不得导入 `evaluation/`，也不得读取 observation、history 或 ground truth；
+- `deepseek_ai.py`、`deepseek_client.py`、RAG、CLI、剪枝和动作选择在本步骤保持不变；
+- 先运行 `tests.test_card_confidence` 及 J-A/J-B/J-D1 allocation 相关定向测试，再运行全量 `python -m unittest discover -q`。
 
 #### 暂停：校准
 
