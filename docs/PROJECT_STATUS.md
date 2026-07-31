@@ -5,7 +5,7 @@
 ## 1. 当前基线
 
 - J-D1c3b2 执行基线：`b2491a8 Document J-D1c3b invalid benchmark`
-- 当前工作状态：Step J-D1c3c1 已实现但尚未提交；定向 76 项、全量 318 项通过；封板前发现三个 fail-closed 边界需硬化
+- 当前工作状态：Step J-D1c3c1a 已完成但两个实现文件尚未提交；单文件 11 项、相关 80 项、全量 322 项通过
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：311 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、精确校准链和四策略 critical corpus 正式验收。J-D1c3c1 已新增独立 runtime confidence 数据契约，正常与已覆盖异常路径通过测试，且未接入任何决策消费者。代码审阅发现 truthy 非布尔标志、额外 constraint 玩家和非法 copy 分子守恒求和三个边界尚未完全 fail-closed，下一步先完成 J-D1c3c1a 硬化。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准和 fail-closed runtime confidence 数据契约。J-D1c3c1a 已严格封闭 truthy 标志、玩家集合和 malformed copy 边界，合法 available snapshot 保持不变。下一步建立默认关闭的 shadow 装配层，只记录可审计状态，不向提示词、RAG 或动作选择暴露。
 
 ## 3. 分模块状态
 
@@ -52,7 +52,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c1 已实现，待硬化 | 四策略校准通过；已提供 critical-only 精确整数 runtime confidence 契约 | 三个 malformed 边界待补测，尚无策略接入 |
+| 残局精确分配 | Step J-D1c3c1a 完成 | 四策略校准通过；critical-only 精确整数 confidence 契约已 fail-closed 封板 | 尚无 runtime 装配、shadow 审计或策略接入 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -503,7 +503,7 @@ J-D1c3b2 保持模型、十档分桶和全部护栏不变，使用全新 seed �
 
 唯一判定：`policy_diverse_calibration_verified`。该结论只允许设计 runtime confidence 契约，不授权接入策略主链，也不证明动作质量或胜率提升。
 
-### P1：runtime confidence 契约需完成 fail-closed 硬化
+### 已解决：runtime confidence 契约 fail-closed 硬化（Step J-D1c3c1/J-D1c3c1a）
 
 J-D1c3c1 已新增 `agents/card_confidence.py` 与 `tests/test_card_confidence.py`：
 
@@ -520,7 +520,26 @@ J-D1c3c1 已新增 `agents/card_confidence.py` 与 `tests/test_card_confidence.p
 - constraint 玩家遍历会静默忽略不属于公开外部玩家集合的额外玩家；
 - copy mapping 含字符串、`None` 等非法值时，后续直接 `sum()` 原始 mapping 可能抛出 `TypeError`，而不是返回 unavailable。
 
-J-D1c3c1a 只修复这些 malformed 输入边界并补测试，不改变正常 available 输出，不接入任何消费者。
+J-D1c3c1a 已完成：
+
+- 四个 exact/consistent/search-complete 字段只接受实际 `True`；
+- belief、constraints、allocation 正容量外部候选玩家集合严格一致；
+- copy 分子完成类型与上界校验后写入 `validated_copies`，守恒不再读取 malformed 原始值；
+- 新增 4 个布尔字段 × 2 类 truthy 值、额外/重复/未知/不可哈希玩家及 6 类 malformed copy 测试；
+- 合法 available `to_dict()` snapshot 逐字段不变；
+- 单文件 11 项、相关 80 项、全量 322 项测试通过；
+- 边界扫描和 `git diff --check` 通过；现有决策路径仍未引用新模块。
+
+### P1：runtime 尚无受控装配与 shadow 审计
+
+当前 confidence builder 需要调用方手工提供 J-A、J-B1 和 J-D1b 三层结果，正常 DeepSeek 主链不会构建或记录该状态。下一步 J-D1c3c2a 只建立：
+
+- 独立 pipeline 按统一 `GamePhaseContext` 串联 J-A -> J-B1 -> J-D1b -> confidence；
+- 非 critical 阶段在枚举前立即 unavailable；
+- `DeepSeekAIAgent` 显式构造参数默认关闭；
+- 开启时只保存 `last_card_confidence` 供测试和审计；
+- pipeline 异常整体 unavailable，不能影响合法动作、剪枝、prompt 参数或最终 action ID；
+- 本步骤不新增环境变量，不接入 CLI，不让模型、RAG 或策略读取 confidence。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -565,7 +584,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3b2 已完成并核验；J-D1c3c1 已实现但需完成 fail-closed 硬化。下一步为 J-D1c3c1a，不接入决策主链。
+状态：J-A 至 J-D1c3c1a 已完成；runtime confidence 契约已封板但尚无主链装配。下一步为 J-D1c3c2a 默认关闭的 shadow 装配。
 
 拆分为：
 
@@ -591,10 +610,11 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3a：建立 forced/战略 pass 多策略 marginal corpus 载体并运行开发容量试验，已完成，判定 `policy_diversity_capacity_verified`；
 - Step J-D1c3b：预注册并运行独立多策略正式校准，已完成，判定 `benchmark_invalid`；
 - Step J-D1c3b2：保持模型、分桶和阈值不变，使用全新 seed 扩大样本后重新正式验收，已完成，判定 `policy_diverse_calibration_verified`；
-- Step J-D1c3c1：新增最小 runtime confidence 数据契约和单元测试，已实现，待边界封板；
-- Step J-D1c3c1a：严格校验布尔标志、完整玩家集合并消除 malformed copy 求和异常，下一步；
-- Step J-D1c3c2：仅在 J-D1c3c1a 通过后设计显式开关、决策链集成和消融验收，尚未开始；
-- 策略接入：继续暂停，直到 J-D1c3c2 单独验收。
+- Step J-D1c3c1：新增最小 runtime confidence 数据契约和单元测试，已完成；
+- Step J-D1c3c1a：严格校验布尔标志、完整玩家集合并消除 malformed copy 求和异常，已完成；
+- Step J-D1c3c2a：新增默认关闭的 runtime pipeline 与 DeepSeek shadow 审计，不改变 prompt 或动作，下一步；
+- Step J-D1c3c2b：仅在 shadow 等价性通过后设计有界序列化和显式消费开关，尚未开始；
+- 策略接入：继续暂停，直到 J-D1c3c2b 显式消费与消融单独验收。
 
 设计见 `docs/BELIEF_STATE.md`。
 

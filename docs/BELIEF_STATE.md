@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3b2 已完成；J-D1c3c1 runtime confidence 数据契约已实现并通过 318 项全量测试，但封板前发现三个 malformed 输入边界。下一步为 J-D1c3c1a fail-closed 硬化；决策接入继续暂停。
+当前状态：Step J-A 至 J-D1c3c1a 已完成；runtime confidence 数据契约已通过 malformed 边界封板和 322 项全量测试。下一步为 J-D1c3c2a 默认关闭的 shadow 装配；模型消费继续暂停。
 
 ## 2. 数据来源
 
@@ -398,7 +398,7 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c1a：fail-closed 边界硬化
 
-- 状态：下一步；
+- 状态：已完成；
 - 所有布尔语义字段只接受实际 `True`，拒绝 truthy 非布尔值；
 - constraints/allocation 玩家集合必须与公开 active external 玩家集合严格一致；
 - 所有 copy 分子完成类型和范围校验后才能参与守恒求和；
@@ -406,11 +406,29 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 - 不改变合法输入输出、公开字段或校准范围；
 - 不接入任何决策消费者。
 
+验证结果：
+
+- 四个布尔语义字段严格拒绝 truthy 非布尔值；
+- 三层外部候选玩家集合严格一致；
+- malformed copy 分子不会进入守恒求和或触发异常；
+- 合法 available snapshot 不变；
+- 单文件 11 项、相关 80 项、全量 322 项测试通过。
+
+### Step J-D1c3c2a：默认关闭的 shadow 装配
+
+- 状态：下一步；
+- 独立 pipeline 复用统一阶段并串联 J-A/J-B1/J-D1b/confidence；
+- 非 critical 或任一异常返回 unavailable，不启动不必要枚举；
+- agent 显式开关默认关闭，不由环境变量隐式开启；
+- 开启时仅保存最后一次 confidence 审计状态；
+- confidence 不进入 prompt、RAG、剪枝、策略或 action 选择；
+- shadow off/on 必须在固定 observation 和固定 client 返回下选择相同 action ID。
+
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有 J-D1c3c1a 封板和后续显式开关消融通过，才允许决策消费者读取；
+- 只有 J-D1c3c2a shadow 等价性和后续 J-D1c3c2b 显式消费消融通过，才允许决策消费者读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准
