@@ -31,6 +31,7 @@
 - Step J-D1c2a 多样本精确微聚合、ECE/MCE 与规范化 diagnostics。
 - Step J-D1c2b critical 固定 seed collector 与开发容量验证。
 - Step J-D1c2c 默认 RuleBasedAI 独立语料正式校准。
+- Step J-D1c3a forced/25/50/100 strategic-pass corpus 载体与开发容量验证。
 
 当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。
 
@@ -119,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c2c 已完成；下一步实施 J-D1c3a 策略多样性载体。
+状态：J-A 至 J-D1c3a 已完成；下一步运行 J-D1c3b 多策略正式校准。
 
 目标：
 
@@ -162,8 +163,8 @@ AI 决策分为四层：
 17. J-D1c2a：从单样本原始充分统计量精确微聚合 Brier、copy MSE、ECE/MCE，已完成；
 18. J-D1c2b：实现固定 seed 残局采集器并运行开发容量试验，已完成；
 19. J-D1c2c：使用预注册独立语料运行正式校准，已完成；
-20. J-D1c3a：建立 forced/25/50/100 strategic-pass marginal corpus 载体并运行开发试验，下一步；
-21. J-D1c3b：使用独立 seed 运行多策略正式校准；
+20. J-D1c3a：建立 forced/25/50/100 strategic-pass marginal corpus 载体并运行开发试验，已完成；
+21. J-D1c3b：使用独立 seed 运行多策略正式校准，下一步；
 22. J-D1c3c：根据多策略结果决定 runtime confidence 准入；
 23. 策略接入：仅在校准和独立策略收益验收后开始。
 
@@ -338,6 +339,24 @@ J-D1c2c 正式结果：
 - overall/三桶的 ECE、Brier skill、支持度 MCE 全部通过预注册门槛；
 - 判定 `retain_for_policy_diverse_calibration`；
 - 该结论只覆盖默认 RuleBasedAI，不授权 runtime confidence。
+
+J-D1c3a 验证结果：
+
+- 多策略 wrapper 只复用 evaluation-only agent 与现有 marginal collector；
+- 四个 rate 的 agent、对局、计数器和 corpus 完全隔离；
+- 开发 seed `60..69` 双运行 SHA-256 均为 `dc5bfa083d686e57cb711e9892738713904da96178988931deda7318427a58a3`；
+- 四策略各 10/10 局完成，invalid/skip/diagnostics 全为 0；
+- 主动 pass 比例呈 0、约 0.397、约 0.496、1.0 的行为梯度；
+- 三个 external bucket 在每个策略中均有样本；
+- 定向 187 项、全量 311 项测试通过；
+- 判定 `policy_diversity_capacity_verified`，尚未形成正式多策略校准结论。
+
+J-D1c3b 预注册参数：
+
+- seed `7000..7049`，四策略各 50 局，完整运行两次；
+- 级牌 `2`，每局最多 128 样本，其他搜索上限保持不变；
+- 正式运行期间不改实现、策略、gate、seed、分桶或校准门槛；
+- 任一策略或任一外部牌数桶失败都不能被跨策略平均掩盖。
 
 ### Step K：中局策略路由与残局决策
 

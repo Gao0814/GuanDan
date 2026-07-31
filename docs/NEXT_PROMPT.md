@@ -1,243 +1,49 @@
 # 下一步实施提示词
 
-## Step J-D1c3a：策略分布多样性 marginal corpus 载体
+## Step J-D1c3b：独立多策略正式校准
 
-请在 GuanDan 项目中实现 Step J-D1c3a。目标是复用现有 evaluation-only `StrategicPassAIAgent` 与 `run_marginal_corpus()`，为 forced-only、25%、50%、100% strategic-pass 轨迹分别生成隔离的组合边际校准报告。
+请在 GuanDan 项目中执行 Step J-D1c3b。任务是使用独立固定 seed，对 forced-only 与 25/50/100% strategic-pass 四种轨迹分别做正式组合边际校准。
 
-本步骤实现多策略包装器并运行开发容量试验，不做正式多策略校准，不生成 runtime confidence。
+本步骤只运行现有测试和 benchmark，不修改代码、测试、docs、策略、参数、分桶或阈值。
 
-## 一、开始前检查
+## 一、执行前提
 
-先阅读：
+正式运行前必须：
 
-- `evaluation/pass_policy_benchmark.py`
-- `evaluation/marginal_corpus.py`
-- `evaluation/marginal_benchmark.py`
-- `evaluation/marginal_metrics.py`
-- `tests/test_pass_policy_benchmark.py`
-- `tests/test_marginal_corpus.py`
-- `docs/PROJECT_STATUS.md`
+1. HEAD 已包含：
+   - `evaluation/marginal_policy_corpus.py`
+   - `tests/test_marginal_policy_corpus.py`
+   - J-D1c1 至 J-D1c3a 全部依赖；
+2. `git status --short` 为空；
+3. J-D1c2c 判定为 `retain_for_policy_diverse_calibration`；
+4. J-D1c3a 判定为 `policy_diversity_capacity_verified`；
+5. 不使用开发 seed `60..69` 或单策略正式 seed `5000..5099`。
 
-确认：
+若 J-D1c3a 尚未提交，先形成检查点提交并确保工作区干净。
 
-- J-D1c2c 判定为 `retain_for_policy_diverse_calibration`；
-- 该判定只覆盖默认 RuleBasedAI；
-- `run_marginal_corpus()` 已提供 keyword-only `agent_factory(seed, player_id)`；
-- `StrategicPassAIAgent` 只读取公开 observation 与 legal actions；
-- rate 0 回退 RuleBasedAI，rate 100 在所有合格机会主动 pass。
-
-开始前运行：
+## 二、运行前回归
 
 ```bash
-python -m unittest tests.test_marginal_corpus tests.test_marginal_benchmark tests.test_marginal_metrics tests.test_rank_benchmark tests.test_card_allocations tests.test_belief_metrics tests.test_ranking_metrics tests.test_card_ranker tests.test_pass_policy_benchmark tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q
+python -m unittest tests.test_marginal_policy_corpus tests.test_marginal_corpus tests.test_marginal_benchmark tests.test_marginal_metrics tests.test_pass_policy_benchmark tests.test_rank_benchmark tests.test_card_allocations tests.test_belief_metrics tests.test_ranking_metrics tests.test_card_ranker tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q
 python -m unittest discover -q
+git diff --check
 ```
 
-当前基线为定向 179 项、全量 303 项通过。若不同，先报告实际状态，不要覆盖不明改动。
+预期：
 
-## 二、允许修改范围
+- 定向 187 项通过；
+- 全量 311 项通过；
+- 工作区保持干净。
 
-只新增：
+任一失败则判定 `benchmark_invalid`，不运行正式 corpus。
 
-- `evaluation/marginal_policy_corpus.py`
-- `tests/test_marginal_policy_corpus.py`
+## 三、锁定参数
 
-不要修改：
-
-- `engine/`
-- `agents/`
-- 现有 evaluation 模块
-- strategic-pass 策略或 gate
-- marginal collector、metrics、aggregator
-- RAG、DeepSeek、CLI
-- docs
-- 依赖配置
-
-不要新增第三方依赖。
-
-## 三、公开接口
-
-实现：
-
-```python
-run_marginal_policy_corpus(
-    seeds: Sequence[int],
-    *,
-    strategic_pass_rates: Sequence[int] = (0, 25, 50, 100),
-    current_level_rank: str = "2",
-    max_steps: int = 5000,
-    max_samples_per_game: int = 128,
-    max_external_cards: int = 12,
-    max_search_nodes: int = 1_000_000,
-    max_solutions: int = 100_000,
-) -> MarginalPolicyCorpusReport
-```
-
-每个 rate 都调用一次独立的 `run_marginal_corpus()`。
-
-## 四、策略命名与顺序
-
-固定命名：
+两次完整运行均使用：
 
 ```text
-0   -> forced_only
-25  -> strategic_pass_25
-50  -> strategic_pass_50
-100 -> strategic_pass_100
-```
-
-要求：
-
-- 输出 mapping 顺序与调用方传入 rates 顺序一致；
-- 默认顺序固定为 0、25、50、100；
-- rates 必须是非空、无重复、非 bool 整数 Sequence；
-- 每个 rate 位于 0..100；
-- 非法 rates 在启动任何 corpus 前抛出 `ValueError`。
-
-不要导入或依赖 `pass_policy_benchmark.py` 的私有命名/校验 helper；可在新模块中实现小型本地校验。`StrategicPassAIAgent` 本身直接复用。
-
-## 五、策略隔离
-
-对每个 rate：
-
-1. 创建新的 `created_agents` 列表；
-2. factory 每次返回全新的 `StrategicPassAIAgent`；
-3. 调用独立的 `run_marginal_corpus()`；
-4. corpus 完成后汇总该策略所有 agent 的：
-   - `strategic_pass_opportunity_count`
-   - `strategic_pass_count`
-5. 构造该策略独立报告；
-6. 不把 game、agent、计数器或报告列表复用到下一个 rate。
-
-每个 `(rate, seed, player_id)` 只创建一个 agent。
-
-## 六、建议报告结构
-
-### 1. PolicyVariantMarginalReport
-
-冻结、slots dataclass，至少包含：
-
-```python
-strategic_pass_rate: int
-strategic_pass_opportunity_count: int
-strategic_pass_count: int
-corpus: MarginalCorpusReport
-```
-
-`to_dict()` 必须展开为 JSON 友好结构。
-
-### 2. MarginalPolicyCorpusReport
-
-冻结、slots dataclass，至少包含：
-
-```python
-requested_policy_count: int
-by_policy: Mapping[str, PolicyVariantMarginalReport]
-```
-
-要求：
-
-- mapping 不可变；
-- 不保留 seeds、agent、游戏或逐样本对象；
-- 不跨策略平均 calibration 指标；
-- 不增加一个掩盖单策略失败的 overall-across-policy 指标；
-- `to_dict()` 顺序稳定、JSON 友好。
-
-## 七、行为不变量
-
-每个策略满足：
-
-```text
-0 <= strategic_pass_count
-  <= strategic_pass_opportunity_count
-```
-
-额外要求：
-
-- rate 0：`strategic_pass_count == 0`；
-- rate 100：`strategic_pass_count == strategic_pass_opportunity_count`；
-- forced-only corpus 必须与同参数默认 `run_marginal_corpus()` 完全相等；
-- forced pass 不计入 strategic pass count；
-- opportunity 和主动 pass 只由现有 `StrategicPassAIAgent` 统计；
-- 包装器不得重新判断 pass 机会。
-
-## 八、参数透传
-
-以下参数原样传给每个独立 corpus：
-
-- seeds
-- current level rank
-- max steps
-- per-game sample limit
-- external card limit
-- search node limit
-- solution limit
-
-不要：
-
-- 为不同策略使用不同 seed；
-- 根据前一策略结果改变后续参数；
-- 因某策略样本较少而补采；
-- 使用 truth 调整 agent 或 gate；
-- 复用一个策略的 corpus 作为另一个策略结果。
-
-## 九、确定性与安全
-
-同一参数双运行必须：
-
-- 完整 `MarginalPolicyCorpusReport` 相等；
-- `to_dict()` 相等；
-- canonical JSON SHA-256 相等；
-- 四个策略各自 corpus 相等；
-- opportunity/pass 计数相等；
-- JSON 无 NaN/Infinity。
-
-报告不得包含：
-
-- seed 列表；
-- sample ID；
-- observation/history；
-- 玩家级预测；
-- truth hand/token/rank；
-- agent 对象或逐 agent 计数。
-
-## 十、最低测试覆盖
-
-在 `tests/test_marginal_policy_corpus.py` 至少覆盖：
-
-1. 默认策略名称与顺序；
-2. 自定义 rate 顺序稳定；
-3. 空 rates 拒绝；
-4. 重复 rates 拒绝；
-5. bool、负数、超过 100、非整数拒绝；
-6. 非 Sequence/string rates 拒绝；
-7. 每个策略调用独立 corpus；
-8. 每个 rate/seed/player 只创建一次 agent；
-9. 不同策略不共享 agent；
-10. rate 0 strategic pass count 为 0；
-11. rate 100 pass count 等于 opportunity；
-12. 所有策略满足 pass 不超过 opportunity；
-13. forced-only corpus 等于默认 marginal corpus；
-14. collector 参数完整透传；
-15. 一个策略失败时显式传播异常，不返回部分顶层报告；
-16. report/dataclass frozen + slots；
-17. mapping 不可变；
-18. `to_dict()` 可由 `json.dumps(..., allow_nan=False)` 序列化；
-19. payload 不包含 seed/sample/observation/player/truth/token/rank 明细；
-20. 固定小 seed 双运行报告和 hash 相等；
-21. 四策略 corpus 的游戏、样本和 bucket 计数各自可审计；
-22. 包装器不输出跨策略平均 calibration 指标；
-23. runtime agents、CLI 和 RAG 不导入新 evaluation 模块。
-
-测试使用 mock 或小 seed，不运行正式多策略 corpus。
-
-## 十一、开发容量试验
-
-实现和全量测试通过后，使用以下开发参数完整运行两次：
-
-```text
-seeds = 60..69
-games per policy = 10
+seeds = 7000..7049
+games per policy = 50
 rates = 0, 25, 50, 100
 current_level_rank = 2
 max_steps = 5000
@@ -247,108 +53,284 @@ max_search_nodes = 1,000,000
 max_solutions = 100,000
 ```
 
-记录：
+调用：
 
-- 两次总耗时；
-- 两份完整报告是否相等；
-- canonical JSON SHA-256；
-- 每个策略 opportunity、active pass、实际 pass/opportunity 比例；
-- 每个策略 requested/completed/incomplete；
-- eligible/evaluated/valid/invalid/skipped；
-- diagnostics；
-- 三个 external bucket 的 samples、valid、rank pairs；
-- overall 与三桶的 Brier skill、ECE、raw MCE、supported MCE、certainty error；
-- 四策略是否都覆盖三个 external bucket。
+```python
+run_marginal_policy_corpus(
+    tuple(range(7000, 7050)),
+    strategic_pass_rates=(0, 25, 50, 100),
+    current_level_rank="2",
+    max_steps=5000,
+    max_samples_per_game=128,
+    max_external_cards=12,
+    max_search_nodes=1_000_000,
+    max_solutions=100_000,
+)
+```
 
-开发容量要求：
+预计双运行总耗时约 10 至 12 分钟。
 
-- 每个策略 10/10 局完成；
-- invalid = 0；
-- skipped = 0；
-- diagnostics 为空；
-- 三个 external bucket 均非空；
-- forced-only 主动 pass 为 0；
-- rate 25/50/100 都有 opportunity；
-- rate 25/50 有主动 pass；
-- rate 100 pass = opportunity；
-- 实际主动 pass 比例满足 `rate25 < rate50 < rate100`；
-- 两次完整报告和 hash 相等。
+## 四、双运行可重复性
 
-若满足，判定：
+对每次完整报告生成：
+
+```python
+payload = json.dumps(
+    report.to_dict(),
+    ensure_ascii=False,
+    sort_keys=True,
+    separators=(",", ":"),
+    allow_nan=False,
+)
+digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+```
+
+必须满足：
+
+- 两个顶层报告完全相等；
+- 两个 `to_dict()` 完全相等；
+- canonical JSON 完全相等；
+- SHA-256 完全相等；
+- 四个策略的 corpus、行为计数逐项相等；
+- JSON 无 NaN/Infinity；
+- 运行前后工作区均干净。
+
+失败时不得增加第三次运行挑选结果，直接判定 `benchmark_invalid`。
+
+## 五、策略行为完整性
+
+顶层必须包含且只包含：
 
 ```text
-policy_diversity_capacity_verified
+forced_only
+strategic_pass_25
+strategic_pass_50
+strategic_pass_100
 ```
 
-该判定只允许预注册 J-D1c3b，不表示任一策略已通过正式校准。
+每个策略：
 
-## 十二、开发指标边界
+- opportunity count > 0；
+- `0 <= active_pass <= opportunity`。
 
-开发 seed 只用于：
+额外门槛：
 
-- 验证四策略容量；
-- 检查行为梯度；
-- 估算正式运行耗时；
-- 确认各外部牌数桶有样本；
-- 观察是否需要更高样本量。
+- forced-only active pass = 0；
+- 25% active pass > 0 且 < opportunity；
+- 50% active pass > 0 且 < opportunity；
+- 100% active pass = opportunity；
+- 实际 `active_pass / opportunity` 严格满足：
 
-不得用开发结果：
-
-- 调整组合边际；
-- 选择有利策略；
-- 删除表现差的桶；
-- 声称正式校准通过；
-- 生成 runtime confidence；
-- 接入策略或宣称胜率提升。
-
-## 十三、验证命令
-
-先运行：
-
-```bash
-python -m unittest tests.test_marginal_policy_corpus tests.test_marginal_corpus tests.test_marginal_benchmark tests.test_marginal_metrics tests.test_pass_policy_benchmark tests.test_rank_benchmark tests.test_card_allocations tests.test_belief_metrics tests.test_ranking_metrics tests.test_card_ranker tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q
+```text
+forced < pass25 < pass50 < pass100
 ```
 
-再运行：
+任一行为门槛失败，判定 `benchmark_invalid`，因为策略分布没有按预注册方式形成。
 
-```bash
-python -m unittest discover -q
-git diff --check
+## 六、每策略数据完整性
+
+四个策略分别满足全部条件：
+
+1. requested/completed/incomplete = `50 / 50 / 0`；
+2. eligible = evaluated = valid；
+3. invalid = 0；
+4. skipped = 0；
+5. top-level corpus diagnostics = `{}`；
+6. overall diagnostics = `{}`；
+7. 三个 external bucket diagnostics 均为 `{}`；
+8. overall sample count = evaluated；
+9. 三桶 sample 总数 = overall；
+10. 三桶 valid 总数 = overall；
+11. 三桶 rank pair 总数 = overall；
+12. `external_0_4` valid samples ≥ 350；
+13. `external_5_8` valid samples ≥ 350；
+14. `external_9_12` valid samples ≥ 350；
+15. corpus 可 JSON 序列化；
+16. payload 不含 seed、sample ID、observation、玩家或 truth 明细。
+
+任一策略的数据完整性失败，顶层判定 `benchmark_invalid`。
+
+## 七、精确指标定义
+
+对四个策略的：
+
+- overall
+- external_0_4
+- external_5_8
+- external_9_12
+
+共 16 个聚合范围分别计算，不跨策略平均。
+
+使用 `Fraction`：
+
+```text
+q = truth_positive_rate
+constant_brier = q * (1 - q)
+brier_skill =
+    (constant_brier - presence_brier_mean)
+    / constant_brier
 ```
 
-检查边界：
+如果任一范围 `q == 0` 或 `q == 1`，判定 `benchmark_invalid`。
 
-```bash
-rg -n "marginal_policy_corpus" agents cli rag
+## 八、支持度 MCE
+
+原始 MCE 只报告，不作为单独拒绝门槛。
+
+另计算：
+
+```text
+supported_mce =
+    max(bin.absolute_gap for supported bins)
 ```
 
-预期 runtime 无导入。
+支持度：
 
-## 十四、完成报告
+- overall：bin prediction count ≥ 200；
+- external bucket：bin prediction count ≥ 100。
 
-报告必须包含：
+每个策略的每个聚合范围至少要有两个支持度达标 bin，否则判定 `benchmark_invalid`。
 
-- 修改文件；
-- 两层 dataclass 与策略命名；
-- agent/corpus 隔离方式；
-- opportunity/pass 行为不变量；
-- forced-only 与默认 corpus 一致性；
-- 定向、全量测试和 `git diff --check`；
-- 开发双运行耗时、hash；
-- 四策略完整计数、行为计数、桶覆盖和描述性校准指标；
-- 唯一开发判定；
-- 明确说明未运行正式策略分布校准、未生成 runtime confidence、未接入策略或证明胜率提升。
+## 九、逐策略校准护栏
 
-## 十五、完成门槛
+16 个聚合范围必须分别通过。
 
-只有同时满足以下条件，Step J-D1c3a 才能标记完成：
+### 确定性安全
 
-- 四策略独立运行且无共享状态；
-- rate 0/100 行为边界正确；
-- forced-only corpus 与默认 collector 一致；
-- 报告不可变、确定、无真值明细；
-- 开发双运行报告和 hash 一致；
-- 四策略容量与行为梯度满足要求；
-- 全量测试通过；
-- runtime/engine/现有评测语义未修改；
-- 未把开发试跑解释为正式校准。
+- certainty error count = 0。
+
+### ECE
+
+- 每个策略 overall ECE ≤ `3/100`；
+- 每个策略每个 external bucket ECE ≤ `1/20`。
+
+### Brier skill
+
+- 每个策略 overall Brier skill ≥ `3/20`；
+- 每个策略每个 external bucket Brier skill ≥ `1/10`。
+
+### supported MCE
+
+- 每个策略 overall supported MCE ≤ `1/10`；
+- 每个策略每个 external bucket supported MCE ≤ `3/20`。
+
+不得：
+
+- 对四策略指标求平均后验收；
+- 用 forced-only 的通过抵消 strategic-pass 失败；
+- 用 overall 通过抵消某 external bucket 失败；
+- 用 MRR、Top-K 或其他旧指标替代当前校准护栏。
+
+## 十、唯一判定
+
+### `benchmark_invalid`
+
+任一情况：
+
+- 回归或工作区前提失败；
+- 双运行报告/hash 不一致；
+- 策略行为梯度失败；
+- 任一策略数据不完整；
+- 任一范围正例率退化；
+- 任一范围少于两个支持度达标 bin。
+
+### `reject_runtime_confidence`
+
+benchmark 有效，但任一策略、任一聚合范围未通过 certainty、ECE、Brier skill 或 supported MCE。
+
+含义：
+
+- 当前组合边际不得设计为通用 runtime confidence；
+- 不得修改正式阈值或筛选策略/桶挽回；
+- J-D1 硬约束、整数边际和离线工具继续保留。
+
+### `policy_diverse_calibration_verified`
+
+四策略的 16 个聚合范围全部通过。
+
+含义仅为：
+
+- 可进入 J-D1c3c runtime confidence 准入设计；
+- 不等于已经接入 runtime；
+- 不证明动作质量或胜率提升。
+
+## 十一、禁止事项
+
+正式运行开始后不得：
+
+- 修改代码、测试或 docs；
+- 修改 strategic-pass gate；
+- 修改 seed、对局数、搜索/样本上限；
+- 修改 external bucket；
+- 修改支持度或校准阈值；
+- 根据第一次结果补采或删除样本；
+- 删除表现差的策略；
+- 使用跨策略平均；
+- 接入 runtime、RAG、DeepSeek、提示词或动作剪枝；
+- 声称真实玩家或胜率结论。
+
+## 十二、完成报告
+
+必须包含：
+
+### 前置与可重复性
+
+- HEAD；
+- 前后 git status；
+- 定向/全量回归；
+- 锁定参数；
+- 两次耗时；
+- 报告相等性与 SHA-256。
+
+### 策略行为
+
+每个策略报告：
+
+- opportunity；
+- active pass；
+- 实际比例；
+- 行为完整性门槛。
+
+### 数据完整性
+
+每个策略报告：
+
+- requested/completed/incomplete；
+- eligible/evaluated/valid/invalid/skipped；
+- diagnostics；
+- 三个 external bucket 的 sample、valid、invalid、rank pair；
+- 16 项完整性门槛。
+
+### 校准
+
+每个策略的 overall 与三桶分别报告：
+
+- truth positive rate；
+- Brier mean；
+- constant baseline；
+- Brier skill；
+- copy MSE；
+- ECE；
+- raw MCE；
+- supported MCE；
+- certainty count/rate；
+- 支持度 bin 数；
+- 十档 count、mean prediction、observed rate、gap。
+
+### 判定
+
+- 16 个范围的 certainty/ECE/skill/MCE 护栏；
+- 唯一判定；
+- 明确结论边界。
+
+## 十三、完成边界
+
+即使判定为 `policy_diverse_calibration_verified`，本步骤仍然：
+
+- 不生成 runtime confidence；
+- 不修改 agent 决策；
+- 不进入 RAG、DeepSeek 或提示词；
+- 不改变动作剪枝；
+- 不证明胜率提升。
+
+下一步只能先设计最小、fail-closed、可消融的 runtime confidence 契约，再单独验证策略收益。

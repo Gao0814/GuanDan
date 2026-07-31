@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c2c 已完成；默认 RuleBasedAI critical 独立语料已通过正式组合边际校准。下一步为 Step J-D1c3a 策略分布多样性载体与开发验证。
+当前状态：Step J-A 至 J-D1c3a 已完成；默认规则 AI 已通过正式校准，四策略隔离 collector 已通过开发容量验证。下一步为 Step J-D1c3b 独立多策略正式校准。
 
 ## 2. 数据来源
 
@@ -348,15 +348,19 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3a：策略分布载体
 
+- 状态：已完成，判定 `policy_diversity_capacity_verified`；
 - 复用 evaluation-only `StrategicPassAIAgent` 的 0/25/50/100% 变体；
 - 每个策略独立运行 marginal corpus，不共享 game、agent 或计数器；
 - 同时报告战略 pass 机会数、主动 pass 数和完整 calibration bucket；
 - 先用开发 seed 验证容量、行为梯度和双运行确定性；
 - 不在该步骤设置 runtime confidence。
+- seed `60..69` 双运行 hash 一致，四策略各 10/10 局完成；
+- opportunity/pass 行为梯度正确，所有 corpus 无 invalid、skip 或 diagnostics；
+- 定向 187 项、全量 311 项测试通过。
 
 ### Step J-D1c3b：多策略正式校准
 
-- 使用独立于开发和 J-D1c2c 的 seed；
+- 使用独立 seed `7000..7049`，四策略各 50 局并完整双运行；
 - 对每个策略的 overall 和外部牌数桶检查完整性与校准护栏；
 - 不以策略间指标平均值掩盖任一策略失败。
 

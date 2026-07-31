@@ -381,7 +381,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-D1c3a：策略分布 marginal corpus
 
-状态：下一步。实现多策略包装器并运行开发容量试验。
+状态：已完成。定向 187 项、全量 311 项通过；开发判定 `policy_diversity_capacity_verified`。
 
 - 固定策略顺序为 forced-only、strategic-pass 25/50/100；
 - 每个策略创建独立游戏、agent 和报告；
@@ -392,6 +392,31 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 同参数双运行报告和 hash 一致；
 - 报告不包含 seed、逐样本、observation 或 truth；
 - 开发试跑只验证容量与行为分布，不形成正式校准或 runtime 结论。
+
+开发结果：
+
+- 双运行 SHA-256：`dc5bfa083d686e57cb711e9892738713904da96178988931deda7318427a58a3`；
+- 四策略各 10/10 局完成，无 invalid、skip 或 diagnostics；
+- opportunity/pass 为 117/0、121/48、127/63、133/133；
+- 四策略均覆盖三个 external bucket。
+
+#### J-D1c3b：多策略正式校准
+
+状态：下一步。只运行锁定参数，不修改代码、测试或 docs。
+
+- HEAD 必须包含 J-D1c3a，运行前后工作区干净；
+- seed `7000..7049`，四策略各 50 局，完整运行两次；
+- 两份顶层报告和 canonical JSON SHA-256 完全一致；
+- 每个策略 50/50 局完成，无 invalid、skip 或 diagnostics；
+- 每个策略的三个 external bucket 各至少 350 个 valid 样本；
+- forced 主动 pass 为 0，100% 主动 pass 等于机会数；
+- 25/50% 均有主动 pass，实际比例满足 `rate25 < rate50 < rate100`；
+- 每个策略的 overall 与三桶 certainty error 均为 0；
+- 每个策略 overall ECE ≤ 0.03，每个 external bucket ECE ≤ 0.05；
+- 每个策略 overall Brier skill ≥ 0.15，每个 external bucket skill ≥ 0.10；
+- overall 中 count≥200 的支持桶 MCE ≤0.10；external 桶中 count≥100 的支持桶 MCE ≤0.15；
+- 每个策略、每个聚合范围至少两个 calibration bin 达到对应支持度；
+- 不计算跨策略平均指标，不用其他策略通过抵消单策略失败。
 
 #### 暂停：校准
 
