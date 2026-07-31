@@ -283,7 +283,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-D1b：rank 精确整数边际
 
-状态：下一步，仅聚合精确整数边际，不做概率或校准。
+状态：已完成。J-D1b 与兼容测试共 139 项通过，全量 263 项通过。
 
 - token 必须映射到合法 rank，joker 保持 `SJ` / `BJ`；
 - token 聚合得到的逐 rank 总数必须与 `unseen_cards_by_rank` 一致；
@@ -299,12 +299,29 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 不改变 J-B2/J-D1a 的搜索、截断、硬域、确认或 token 边际语义；
 - 不输出 float、概率、置信度，不使用 pass、策略或 ground truth。
 
-#### J-D1c：概率报告与校准
+#### J-D1c1：单样本概率评分
 
-- 明确定义分子、分母和零分母行为；
-- ground truth 只允许在 `evaluation/` 显式传入；
-- 按阶段和外部未知牌数量分桶验证校准误差与覆盖率；
+状态：下一步。只建立 evaluation-only 单样本充分统计量。
+
+- 只接受完整、有解、物理分母为正且 phase 一致的 J-D1b；
+- 严格校验 allocation 玩家、容量、rank key、整数边际和跨玩家副本守恒；
+- ground truth 只允许在 `evaluation/` 显式传入，并与公开 token multiset 完全一致；
+- 每个活跃外部玩家 × 每个正数未见 rank 构成一个持有事件；
+- Brier 平方误差使用精确有理数累计；
+- rank 副本期望的平方误差使用精确有理数累计；
+- 固定 10 个概率桶，使用整数算术确定桶边界；
+- 每个桶只保留样本数、预测概率和的分子/分母、真实正例数；
+- 报告不包含玩家-rank 真值明细、真实 token、真实 rank 列表或手牌；
+- invalid/truncated/skipped/no-feasible 结果返回零化无效报告；
+- 报告不可变、JSON 友好、无 NaN/Infinity，固定输入可重复；
 - pass 只作为公开行为事实，不作为默认持牌负证据。
+
+#### J-D1c2：多样本校准
+
+- 使用独立固定 seed 和预注册样本范围；
+- 按 overall、near-open、critical 和外部未知牌数区间聚合；
+- 由原始充分统计量重算 Brier 与可靠性，不平均单样本比例；
+- 不在正式 seed 上调桶、调参或筛选样本。
 
 #### 暂停：校准
 

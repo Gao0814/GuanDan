@@ -8,7 +8,13 @@ from types import MappingProxyType
 import unittest
 
 from agents.card_allocations import PlayerAllocationBounds, enumerate_card_allocations
-from agents.card_belief import CardBeliefState, PlayerPublicBelief
+from agents.card_belief import (
+    CardBeliefState,
+    JOKER_RANKS,
+    NORMAL_RANKS,
+    SUITS,
+    PlayerPublicBelief,
+)
 from agents.card_constraints import CardConstraintState, PlayerCardConstraints
 from evaluation.belief_metrics import evaluate_belief_state
 
@@ -32,7 +38,15 @@ def _inputs(
         if domains is None else domains
     )
     confirmed = {} if confirmed is None else confirmed
-    rank_counts = {f"rank_{index}": count for index, count in enumerate(token_counts.values())}
+    rank_counts: dict[str, int] = {}
+    for token, count in token_counts.items():
+        if token in JOKER_RANKS:
+            rank = token
+        elif len(token) >= 2 and token[-1] in SUITS and token[:-1] in NORMAL_RANKS:
+            rank = token[:-1]
+        else:
+            continue
+        rank_counts[rank] = rank_counts.get(rank, 0) + count
     public_players = (
         PlayerPublicBelief(
             player_id=1,

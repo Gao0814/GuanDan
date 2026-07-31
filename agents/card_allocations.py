@@ -13,7 +13,7 @@ from math import factorial
 from types import MappingProxyType
 from typing import Mapping
 
-from agents.card_belief import CardBeliefState
+from agents.card_belief import CardBeliefState, JOKER_RANKS, NORMAL_RANKS, SUITS
 from agents.card_constraints import CardConstraintState
 
 
@@ -23,6 +23,26 @@ def _is_positive_int(value: object) -> bool:
 
 def _is_non_negative_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+_RANK_ORDER = NORMAL_RANKS + JOKER_RANKS
+_RANK_POSITION = {rank: position for position, rank in enumerate(_RANK_ORDER)}
+
+
+def _token_rank(token: object) -> str | None:
+    """Return the public rank for one exact physical token, if valid."""
+
+    if not isinstance(token, str):
+        return None
+    if token in JOKER_RANKS:
+        return token
+    if len(token) >= 2 and token[-1] in SUITS and token[:-1] in NORMAL_RANKS:
+        return token[:-1]
+    return None
+
+
+def _rank_sort_key(rank: str) -> int:
+    return _RANK_POSITION[rank]
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +60,12 @@ class PlayerAllocationBounds:
     copy_assignment_count_by_token: Mapping[str, int] = field(
         default_factory=lambda: MappingProxyType({})
     )
+    holding_assignment_count_by_rank: Mapping[str, int] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    copy_assignment_count_by_rank: Mapping[str, int] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -53,6 +79,12 @@ class PlayerAllocationBounds:
             ),
             "copy_assignment_count_by_token": dict(
                 self.copy_assignment_count_by_token
+            ),
+            "holding_assignment_count_by_rank": dict(
+                self.holding_assignment_count_by_rank
+            ),
+            "copy_assignment_count_by_rank": dict(
+                self.copy_assignment_count_by_rank
             ),
         }
 
@@ -149,12 +181,32 @@ def enumerate_card_allocations(
         if count:
             token_counts[token] = count
 
+    token_rank_counts: dict[str, int] = {}
+    for token, count in token_counts.items():
+        rank = _token_rank(token)
+        if rank is None:
+            diagnose(f"invalid_token_rank:{token}")
+            continue
+        token_rank_counts[rank] = token_rank_counts.get(rank, 0) + count
+
     rank_total = 0
+    public_rank_counts: dict[str, int] = {}
     for rank, count in card_belief.unseen_cards_by_rank.items():
         if not _is_non_negative_int(count):
             diagnose(f"invalid_rank_count:{rank}")
             continue
         rank_total += count
+        if count:
+            if rank not in _RANK_POSITION:
+                diagnose(f"rank_pool_mismatch:{rank}")
+            else:
+                public_rank_counts[rank] = count
+    for rank in sorted(
+        set(token_rank_counts) | set(public_rank_counts),
+        key=lambda value: _RANK_POSITION.get(value, len(_RANK_POSITION)),
+    ):
+        if token_rank_counts.get(rank, 0) != public_rank_counts.get(rank, 0):
+            diagnose(f"rank_pool_mismatch:{rank}")
     total_unseen = sum(token_counts.values())
 
     if not card_belief.token_pool_exact:
@@ -208,11 +260,12 @@ def enumerate_card_allocations(
                 diagnose(f"unknown_domain_owner:{token}:{owner}")
 
     invalid_input = bool(diagnostics)
-    if total_unseen > max_external_cards:
-        diagnose("too_many_external_cards")
+    # Invalid public pools fail closed even when they are also too large for
+    # the bounded search.  A size skip is only meaningful for exact input.
+    if invalid_input:
         return CardAllocationResult(
             phase=card_belief.phase,
-            status="skipped_too_many_cards",
+            status="invalid_input",
             total_unseen_cards=total_unseen,
             feasible_assignment_count=0,
             search_nodes=0,
@@ -222,12 +275,11 @@ def enumerate_card_allocations(
             diagnostics=tuple(diagnostics),
         )
 
-    # Count-limit skip is separate from malformed input.  Any other failed
-    # precondition does not begin recursion.
-    if invalid_input:
+    if total_unseen > max_external_cards:
+        diagnose("too_many_external_cards")
         return CardAllocationResult(
             phase=card_belief.phase,
-            status="invalid_input",
+            status="skipped_too_many_cards",
             total_unseen_cards=total_unseen,
             feasible_assignment_count=0,
             search_nodes=0,
@@ -244,6 +296,10 @@ def enumerate_card_allocations(
     player_index = {player_id: index for index, player_id in enumerate(player_ids)}
     tokens = tuple(sorted(token_counts))
     counts = tuple(token_counts[token] for token in tokens)
+    token_ranks = tuple(_token_rank(token) for token in tokens)
+    # Invalid token ranks have already fail-closed above, so each item is a
+    # concrete public rank here rather than an inferred string fragment.
+    ranks = tuple(sorted(token_rank_counts, key=_rank_sort_key))
     domains = tuple(
         tuple(player_index[owner] for owner in normalised_domains[token])
         for token in tokens
@@ -259,6 +315,8 @@ def enumerate_card_allocations(
     physical_assignment_count = 0
     holding_assignment_counts = [[0 for _ in tokens] for _ in player_ids]
     copy_assignment_counts = [[0 for _ in tokens] for _ in player_ids]
+    holding_assignment_counts_by_rank = [[0 for _ in ranks] for _ in player_ids]
+    copy_assignment_counts_by_rank = [[0 for _ in ranks] for _ in player_ids]
 
     def can_fill_remaining(token_index: int, remaining: tuple[int, ...]) -> bool:
         if sum(counts[token_index:]) != sum(remaining):
@@ -315,6 +373,19 @@ def enumerate_card_allocations(
                     holding_assignment_counts[player_position][token_position] += matrix_weight
                     copy_assignment_counts[player_position][token_position] += (
                         matrix_weight * assigned
+                    )
+            for rank_position, rank in enumerate(ranks):
+                rank_copy_count = sum(
+                    allocation[player_position][token_position]
+                    for token_position, token_rank in enumerate(token_ranks)
+                    if token_rank == rank
+                )
+                if rank_copy_count:
+                    holding_assignment_counts_by_rank[player_position][rank_position] += (
+                        matrix_weight
+                    )
+                    copy_assignment_counts_by_rank[player_position][rank_position] += (
+                        matrix_weight * rank_copy_count
                     )
         if min_counts is None or max_counts is None:
             min_counts = [row[:] for row in allocation]
@@ -422,6 +493,22 @@ def enumerate_card_allocations(
                 MappingProxyType({
                     token: copy_assignment_counts[player_position][token_position]
                     for token_position, token in enumerate(tokens)
+                })
+                if search_complete and feasible_assignment_count
+                else MappingProxyType({})
+            ),
+            holding_assignment_count_by_rank=(
+                MappingProxyType({
+                    rank: holding_assignment_counts_by_rank[player_position][rank_position]
+                    for rank_position, rank in enumerate(ranks)
+                })
+                if search_complete and feasible_assignment_count
+                else MappingProxyType({})
+            ),
+            copy_assignment_count_by_rank=(
+                MappingProxyType({
+                    rank: copy_assignment_counts_by_rank[player_position][rank_position]
+                    for rank_position, rank in enumerate(ranks)
                 })
                 if search_complete and feasible_assignment_count
                 else MappingProxyType({})

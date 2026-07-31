@@ -7,15 +7,30 @@ import json
 from types import MappingProxyType
 import unittest
 
-from agents.card_allocations import enumerate_card_allocations
-from agents.card_belief import CardBeliefState, PlayerPublicBelief
+from agents.card_allocations import PlayerAllocationBounds, enumerate_card_allocations
+from agents.card_belief import (
+    CardBeliefState,
+    JOKER_RANKS,
+    NORMAL_RANKS,
+    SUITS,
+    PlayerPublicBelief,
+)
 from agents.card_constraints import CardConstraintState, PlayerCardConstraints
 
 
 def _rank_counts(token_counts: dict[str, int]) -> dict[str, int]:
-    """A count-only rank view is sufficient for these allocation fixtures."""
+    """Build the exact public rank pool for valid physical token fixtures."""
 
-    return {f"rank_{index}": count for index, count in enumerate(token_counts.values())}
+    result: dict[str, int] = {}
+    for token, count in token_counts.items():
+        if token in JOKER_RANKS:
+            rank = token
+        elif len(token) >= 2 and token[-1] in SUITS and token[:-1] in NORMAL_RANKS:
+            rank = token[:-1]
+        else:
+            continue
+        result[rank] = result.get(rank, 0) + count
+    return result
 
 
 def _inputs(
@@ -157,6 +172,112 @@ class CardAllocationTests(unittest.TestCase):
         self.assertEqual(player_two.copy_assignment_count_by_token, {"3S": 4, "4H": 2})
         self.assertEqual(player_three.holding_assignment_count_by_token, {"3S": 2, "4H": 1})
         self.assertEqual(player_three.copy_assignment_count_by_token, {"3S": 2, "4H": 1})
+        self.assertEqual(player_two.holding_assignment_count_by_rank, {"3": 3, "4": 2})
+        self.assertEqual(player_two.copy_assignment_count_by_rank, {"3": 4, "4": 2})
+        self.assertEqual(player_three.holding_assignment_count_by_rank, {"3": 2, "4": 1})
+        self.assertEqual(player_three.copy_assignment_count_by_rank, {"3": 2, "4": 1})
+
+    def test_token_to_rank_mapping_handles_ten_and_jokers(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"10S": 1, "SJ": 1, "BJ": 1},
+            capacities={2: 3},
+            domains={"10S": (2,), "SJ": (2,), "BJ": (2,)},
+        )
+
+        result = enumerate_card_allocations(belief, constraints)
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(
+            _bounds(result, 2).copy_assignment_count_by_rank,
+            {"10": 1, "SJ": 1, "BJ": 1},
+        )
+
+    def test_invalid_token_rank_fails_closed_before_search(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"invalid": 1},
+            capacities={2: 1},
+            domains={"invalid": (2,)},
+        )
+
+        result = enumerate_card_allocations(belief, constraints)
+
+        self.assertEqual(result.status, "invalid_input")
+        self.assertEqual(result.search_nodes, 0)
+        self.assertIn("invalid_token_rank:invalid", result.diagnostics)
+        self.assertEqual(result.physical_assignment_count, 0)
+        self.assertEqual(result.players, ())
+
+    def test_rank_pool_mismatch_fails_closed_before_search(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"3S": 1, "3H": 1},
+            capacities={2: 2},
+            domains={"3S": (2,), "3H": (2,)},
+            rank_counts={"3": 1, "4": 1},
+        )
+
+        result = enumerate_card_allocations(belief, constraints)
+
+        self.assertEqual(result.status, "invalid_input")
+        self.assertEqual(result.search_nodes, 0)
+        self.assertIn("rank_pool_mismatch:3", result.diagnostics)
+        self.assertIn("rank_pool_mismatch:4", result.diagnostics)
+
+    def test_single_token_rank_marginals_match_token_marginals(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"3S": 2},
+            capacities={2: 1, 3: 1},
+            domains={"3S": (2, 3)},
+        )
+
+        result = enumerate_card_allocations(belief, constraints)
+
+        for player in result.players:
+            self.assertEqual(
+                player.holding_assignment_count_by_rank["3"],
+                player.holding_assignment_count_by_token["3S"],
+            )
+            self.assertEqual(
+                player.copy_assignment_count_by_rank["3"],
+                player.copy_assignment_count_by_token["3S"],
+            )
+
+    def test_same_rank_tokens_use_union_for_holding_marginal(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"3S": 1, "3H": 1, "4C": 1},
+            capacities={2: 2, 3: 1},
+            domains={"3S": (2, 3), "3H": (2, 3), "4C": (2, 3)},
+        )
+
+        result = enumerate_card_allocations(belief, constraints)
+        player_two = _bounds(result, 2)
+
+        self.assertEqual(result.feasible_assignment_count, 3)
+        self.assertEqual(result.physical_assignment_count, 3)
+        self.assertEqual(player_two.holding_assignment_count_by_rank["3"], 3)
+        self.assertEqual(player_two.copy_assignment_count_by_rank["3"], 4)
+        self.assertEqual(
+            player_two.holding_assignment_count_by_token["3S"]
+            + player_two.holding_assignment_count_by_token["3H"],
+            4,
+        )
+        self.assertLess(
+            player_two.holding_assignment_count_by_rank["3"],
+            player_two.holding_assignment_count_by_token["3S"]
+            + player_two.holding_assignment_count_by_token["3H"],
+        )
+
+    def test_rank_copy_marginals_obey_cross_player_conservation(self) -> None:
+        belief, constraints = _inputs(
+            token_counts={"3S": 1, "3H": 1, "4C": 1},
+            capacities={2: 2, 3: 1},
+        )
+        result = enumerate_card_allocations(belief, constraints)
+
+        for rank, count in belief.unseen_cards_by_rank.items():
+            self.assertEqual(
+                sum(player.copy_assignment_count_by_rank[rank] for player in result.players),
+                count * result.physical_assignment_count,
+            )
 
     def test_multi_token_matrix_weights_multiply(self) -> None:
         belief, constraints = _inputs(
@@ -267,6 +388,7 @@ class CardAllocationTests(unittest.TestCase):
         self.assertEqual(result.physical_assignment_count, 0)
         self.assertTrue(all(not player.holding_assignment_count_by_token for player in result.players))
         self.assertTrue(all(not player.copy_assignment_count_by_token for player in result.players))
+        self.assertTrue(all(not player.copy_assignment_count_by_rank for player in result.players))
 
     def test_inexact_belief_or_constraints_do_not_start_search(self) -> None:
         belief, constraints = _inputs(token_pool_exact=False)
@@ -340,6 +462,7 @@ class CardAllocationTests(unittest.TestCase):
         self.assertTrue(all(not player.confirmed_cards for player in result.players))
         self.assertEqual(result.physical_assignment_count, 0)
         self.assertTrue(all(not player.copy_assignment_count_by_token for player in result.players))
+        self.assertTrue(all(not player.holding_assignment_count_by_rank for player in result.players))
 
     def test_solution_limit_truncation_preserves_domains_and_confirms_nothing(self) -> None:
         belief, constraints = _inputs()
@@ -353,6 +476,7 @@ class CardAllocationTests(unittest.TestCase):
         self.assertTrue(all(not player.confirmed_cards for player in result.players))
         self.assertEqual(result.physical_assignment_count, 0)
         self.assertTrue(all(not player.holding_assignment_count_by_token for player in result.players))
+        self.assertTrue(all(not player.copy_assignment_count_by_rank for player in result.players))
 
     def test_solution_limit_remains_a_count_matrix_limit_not_physical_weight_limit(self) -> None:
         belief, constraints = _inputs(
@@ -392,6 +516,8 @@ class CardAllocationTests(unittest.TestCase):
             result.possible_owners_by_token["3S"] = ()  # type: ignore[index]
         with self.assertRaises(TypeError):
             _bounds(result, 2).copy_assignment_count_by_token["3S"] = 0  # type: ignore[index]
+        with self.assertRaises(TypeError):
+            _bounds(result, 2).copy_assignment_count_by_rank["3"] = 0  # type: ignore[index]
         self.assertEqual(belief.to_dict(), before_belief)
         self.assertEqual(constraints.to_dict(), before_constraints)
 
@@ -404,6 +530,18 @@ class CardAllocationTests(unittest.TestCase):
         self.assertNotIn("probability", serialized)
         self.assertNotIn("confidence", serialized)
         self.assertNotIn("ground_truth", serialized)
+
+    def test_legacy_player_bounds_construction_keeps_new_rank_defaults(self) -> None:
+        bounds = PlayerAllocationBounds(
+            player_id=2,
+            remaining_capacity=1,
+            min_count_by_token=MappingProxyType({"3S": 1}),
+            max_count_by_token=MappingProxyType({"3S": 1}),
+            confirmed_cards=("3S",),
+        )
+
+        self.assertEqual(bounds.holding_assignment_count_by_rank, {})
+        self.assertEqual(bounds.copy_assignment_count_by_rank, {})
 
     def test_invalid_limits_raise_value_error(self) -> None:
         belief, constraints = _inputs()

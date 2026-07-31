@@ -26,6 +26,7 @@
 - Step J-C3d1 撤销无条件 pass 扣分并恢复 hard-only neutral ranking。
 - Step J-C3d2 独立 corpus neutral baseline 封板。
 - Step J-D1a 完整分配的精确物理权重与 token 边际整数计数。
+- Step J-D1b 完整分配的逐玩家 rank 持有/副本精确整数边际。
 
 当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。
 
@@ -114,7 +115,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1a 已完成；下一步实施 J-D1b。
+状态：J-A 至 J-D1b 已完成；下一步实施 J-D1c1。
 
 目标：
 
@@ -124,7 +125,7 @@ AI 决策分为四层：
 - 所有推断带来源和置信度；
 - 只有逻辑唯一时才能标记 `confirmed`。
 
-当前阶段已包含确定性公开事实、硬约束、完整残局枚举和 token 级精确物理权重；排序已恢复 hard-only neutral baseline。仍不输出概率或置信度，也不做 MCTS 或蒙特卡洛搜索。
+当前阶段已包含确定性公开事实、硬约束、完整残局枚举和 token/rank 级精确物理权重；排序已恢复 hard-only neutral baseline。仍不输出经过校准的概率或置信度，也不做 MCTS 或蒙特卡洛搜索。
 
 验收：
 
@@ -152,9 +153,11 @@ AI 决策分为四层：
 12. J-C3d1：移除无条件 pass 负分并恢复零软分 hard-only ranking，已完成；
 13. J-C3d2：验证 neutral ranking 在 forced/战略 pass 轨迹下均不损失召回，已完成；
 14. J-D1a：聚合完整分配的精确物理权重和 token 边际整数计数，已完成；
-15. J-D1b：在完整 matrix 上聚合 rank 持有与副本数的精确整数边际，下一步；
-16. J-D1c：定义概率报告并做离线真值校准；
-17. 置信度和策略接入：仅在新证据通过独立验收后恢复。
+15. J-D1b：在完整 matrix 上聚合 rank 持有与副本数的精确整数边际，已完成；
+16. J-D1c1：建立单样本、evaluation-only 的概率评分与校准充分统计量，下一步；
+17. J-D1c2：接入独立多种子 corpus，聚合并分层检验组合边际校准；
+18. J-D1c3：预注册门槛并决定是否允许 runtime 置信度；
+19. 策略接入：仅在校准和独立策略收益验收后开始。
 
 J-A 验证结果：
 
@@ -262,6 +265,17 @@ J-D1a 验证结果：
 - token 副本数分子满足全局守恒；
 - 定向 132 项、全量 256 项测试通过；
 - 该步骤没有输出 rank 边际、概率、置信度或策略收益。
+
+J-D1b 验证结果：
+
+- 新增逐玩家 `holding_assignment_count_by_rank` 与 `copy_assignment_count_by_rank`；
+- rank 持有分子按同一 matrix 中同 rank token 的并集计一次；
+- rank 副本数分子等于对应 token 副本数分子之和，并满足跨玩家守恒；
+- `10S`、`SJ`、`BJ` 等 token 使用严格公开映射；
+- 非法 token 或 token/rank 牌池不一致会在搜索前 fail closed；
+- 非完整结果不泄露部分 rank 边际；
+- 定向 139 项、全量 263 项测试通过；
+- 该步骤尚未输出概率、置信度、校准结论或策略收益。
 
 ### Step K：中局策略路由与残局决策
 

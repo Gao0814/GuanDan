@@ -1,29 +1,32 @@
 # 下一步实施提示词
 
-## Step J-D1b：精确 rank 边际整数聚合
+## Step J-D1c1：单样本组合边际离线评分
 
-请在 GuanDan 项目中实现 Step J-D1b。目标是在 J-D1a 的完整物理分配权重基础上，聚合逐玩家、逐 rank 的精确整数边际。
+请在 GuanDan 项目中实现 Step J-D1c1。目标是为 J-D1b 的逐玩家 rank 整数边际建立 evaluation-only、真值隔离、可精确聚合的单样本评分契约。
 
-本步骤只建立 rank 级分子，不计算浮点概率、不命名置信度、不做离线校准，也不接入 RAG、DeepSeek 或策略主链。
+本步骤不向 runtime 输出概率或置信度，不运行正式多种子基准，不接入 RAG、DeepSeek、动作剪枝或策略主链。
 
 ## 一、开始前检查
 
 先阅读：
 
-- `agents/card_allocations.py`
 - `agents/card_belief.py`
-- `agents/card_constraints.py`
+- `agents/card_allocations.py`
+- `evaluation/belief_metrics.py`
+- `evaluation/ranking_metrics.py`
+- `tests/test_belief_metrics.py`
+- `tests/test_ranking_metrics.py`
 - `tests/test_card_allocations.py`
 - `docs/BELIEF_STATE.md`
 - `docs/PROJECT_STATUS.md`
 
-确认当前 J-D1a 契约存在：
+确认 J-D1b 当前契约：
 
-- `CardAllocationResult.physical_assignment_count`
-- `PlayerAllocationBounds.holding_assignment_count_by_token`
-- `PlayerAllocationBounds.copy_assignment_count_by_token`
-- 只有 `status="complete"`、`search_complete=True` 且至少有一个可行解时才暴露权重；
-- 截断、无效、跳过和无解结果的物理总数为 0，token 边际为空。
+- `CardAllocationResult.physical_assignment_count` 是完整物理分配总数；
+- `PlayerAllocationBounds.holding_assignment_count_by_rank` 是玩家至少持有该 rank 一张的物理分配权重和；
+- `PlayerAllocationBounds.copy_assignment_count_by_rank` 是玩家持有该 rank 副本数的加权和；
+- 只有 `status="complete"`、`search_complete=True` 且有可行解时输出边际；
+- rank 映射已严格支持 `10S -> 10`、`SJ` 和 `BJ`。
 
 开始前运行：
 
@@ -32,186 +35,287 @@ python -m unittest tests.test_card_allocations tests.test_belief_metrics tests.t
 python -m unittest discover -q
 ```
 
-当前已复核基线为定向 132 项、全量 256 项通过。若数量或结果不同，先报告实际状态，不要覆盖不明改动。
+当前独立复核基线为定向 139 项、全量 263 项通过。若结果不同，先报告实际状态，不要覆盖不明改动。
 
 ## 二、允许修改范围
 
-只修改：
+只新增：
 
-- `agents/card_allocations.py`
-- `tests/test_card_allocations.py`
+- `evaluation/marginal_metrics.py`
+- `tests/test_marginal_metrics.py`
 
 不要修改：
 
 - `engine/`
-- J-A/J-B1 数据契约
-- `agents/card_ranker.py`
-- `evaluation/`
+- `agents/`
+- J-A/J-B/J-D1a/J-D1b 契约
+- 现有 evaluation 模块和 benchmark
 - RAG、DeepSeek、CLI
 - docs
 - 依赖配置
 
-不要新增第三方依赖。
+使用标准库 `fractions.Fraction`，不要新增第三方依赖。
 
-## 三、核心语义
+## 三、模型解释边界
 
-J-D1a 已为每个完整 count matrix 计算物理权重：
+对玩家 `p` 和 rank `r`：
 
 ```text
-matrix_weight = product_t(c_t! / product_p(k_(p,t)!))
+holding marginal =
+    holding_assignment_count_by_rank[p][r]
+    / physical_assignment_count
+
+expected copy count =
+    copy_assignment_count_by_rank[p][r]
+    / physical_assignment_count
 ```
 
-对每个完整 matrix、每个玩家、每个 rank：
+这些值只表示：
 
-1. 先把该 rank 下所有 token 分配给该玩家的副本数相加，得到 `rank_copy_count`；
-2. 若 `rank_copy_count > 0`，则该玩家该 rank 的持有分子增加一次 `matrix_weight`；
-3. 该玩家该 rank 的副本数分子增加
-   `matrix_weight * rank_copy_count`。
+> 在满足当前公开硬约束的可行物理分配等权模型下的组合边际。
 
-必须区分两个量：
+不得称为已经校准的经验置信度，不得假设不同玩家/rank 事件相互独立，不得相乘得到整手牌概率。
 
-- rank 副本数分子可以等于同 rank 的 token 副本数分子之和；
-- rank“至少持有一张”的分子是多个 token 持有事件的并集，不能直接相加 token 持有分子。
+## 四、建议公开数据结构
 
-例如同一玩家在一个 matrix 中同时持有 `3S` 和 `3H` 时，rank `3` 的持有事件只计一次。
+在 `evaluation/marginal_metrics.py` 中定义冻结、slots dataclass。
 
-## 四、输出契约
+### 1. MarginalCalibrationBin
 
-在 `PlayerAllocationBounds` 中新增：
+至少包含：
 
 ```python
-holding_assignment_count_by_rank: Mapping[str, int]
-copy_assignment_count_by_rank: Mapping[str, int]
+bin_index: int
+prediction_count: int
+prediction_sum_numerator: int
+prediction_sum_denominator: int
+truth_positive_count: int
+```
+
+语义：
+
+- 固定 10 个桶，索引为 0..9；
+- 桶 0..8 为 `[i/10, (i+1)/10)`；
+- 桶 9 为 `[0.9, 1.0]`；
+- `prediction_sum_*` 是桶内所有持有边际概率之和的最简有理数；
+- 空桶使用 `0/1`。
+
+### 2. MarginalEvaluationReport
+
+至少包含：
+
+```python
+phase: str
+valid_input: bool
+prediction_source: str
+physical_assignment_count: int
+rank_pair_count: int
+truth_positive_pair_count: int
+certainty_error_count: int
+presence_brier_sum_numerator: int
+presence_brier_sum_denominator: int
+copy_squared_error_sum_numerator: int
+copy_squared_error_sum_denominator: int
+calibration_bins: tuple[MarginalCalibrationBin, ...]
+diagnostics: tuple[str, ...]
 ```
 
 要求：
 
-- 使用安全默认值，保持旧的手工 `PlayerAllocationBounds` 构造兼容；
-- complete 且有解时输出不可变整数 mapping；
-- key 只包含外部未见数量大于 0 的合法 rank；
-- `to_dict()` 输出普通 JSON 友好 dict；
-- 不改变现有字段名称、顺序语义或类型；
-- 不向 `CardAllocationResult` 新增概率字段。
+- valid 报告的 `prediction_source="j_d1b_physical_marginals"`；
+- invalid 报告的 `prediction_source="none"`；
+- 分数保存“误差和”的精确最简分数，不在本步骤计算平均值；
+- 分母始终为正，零误差表示为 `0/1`；
+- `to_dict()` 只输出 JSON 友好的整数、布尔值、字符串、列表和 dict；
+- 报告不包含逐玩家预测、逐 rank 预测、真实 token、真实 rank 列表或真实手牌。
 
-## 五、token 到 rank 的映射与校验
+可以增加实现所需的少量聚合字段，但不要输出真值明细。
 
-使用 J-A 已定义的公开常量语义：
+## 五、输入接口
 
-- 普通 token：末位是 `SUITS`，前缀属于 `NORMAL_RANKS`；
-- joker token：`SJ`、`BJ`，rank 与 token 相同。
+建议函数：
 
-不要按字符串首字符猜 rank，例如 `10S` 必须映射为 `10`。
+```python
+evaluate_rank_marginals(
+    card_belief: CardBeliefState,
+    allocation: CardAllocationResult,
+    ground_truth_hands: Mapping[object, Sequence[str]],
+) -> MarginalEvaluationReport
+```
 
-在搜索前校验：
+约束：
 
-- 每个正数 token 都能映射到合法 rank；
-- 按 token 聚合的逐 rank 副本数与
-  `card_belief.unseen_cards_by_rank` 的正数项完全一致；
-- 缺失 rank、多余 rank或数量不一致都 fail closed；
-- 非法 token 产生稳定诊断，例如 `invalid_token_rank:<token>`；
-- rank 牌池不一致产生稳定诊断，例如 `rank_pool_mismatch:<rank>`；
-- 这些情况返回既有 `invalid_input` 状态，不启动搜索，不输出任何 token/rank 权重。
+- ground truth 只能由离线调用方显式传入；
+- 模块不得读取 observation、`game._state`、引擎对象、文件或环境变量；
+- runtime `agents/`、CLI 和 RAG 不得导入 `evaluation`；
+- 不修改传入对象。
 
-可以复用 `agents.card_belief` 中的 rank/suit 常量，但不要让 J-B2 重新读取 observation，也不要访问引擎隐藏状态。
+## 六、fail-closed 校验
 
-现有测试夹具的 `unseen_cards_by_rank` 若使用虚构 rank，需要改为从真实 token 正确聚合；不要通过放宽生产校验保留错误夹具。
+以下任一情况返回 `valid_input=False` 的零化报告，不做部分评分：
 
-## 六、完整搜索聚合
+1. `card_belief.token_pool_exact=False`；
+2. allocation phase 与 belief 不一致；
+3. allocation 不是 complete，或 `search_complete=False`；
+4. `physical_assignment_count` 不是非 bool 正整数；
+5. allocation 总未见牌数与 belief 不一致；
+6. 活跃外部玩家集合不一致；
+7. allocation 玩家容量与公开剩余容量不一致；
+8. 正数公开 rank 集合与任一玩家两个 rank mapping 的 key 不完全一致；
+9. rank numerator 不是非 bool 非负整数；
+10. holding numerator 大于物理分母；
+11. copy numerator 大于 `rank_count * physical_assignment_count`；
+12. 任一 rank 的跨玩家 copy numerator 不满足守恒；
+13. ground truth 缺失或多出玩家；
+14. 真实手牌数量与公开容量不一致；
+15. truth token 非法；
+16. truth token multiset 与公开未见 token pool 不完全一致。
 
-rank 聚合必须与 J-D1a 使用完全相同的：
+诊断至少使用稳定类别：
 
-- count matrix；
-- `matrix_weight`；
-- 玩家容量；
-- token 域；
-- 完整搜索判定。
+- `token_pool_inexact`
+- `allocation_phase_mismatch`
+- `allocation_not_complete`
+- `invalid_physical_assignment_count`
+- `allocation_card_count_mismatch`
+- `missing_allocation_player`
+- `unexpected_allocation_player`
+- `allocation_capacity_mismatch`
+- `rank_marginal_key_mismatch`
+- `invalid_rank_marginal`
+- `rank_copy_conservation_mismatch`
+- `missing_truth_player`
+- `unexpected_truth_player`
+- `truth_hand_count_mismatch`
+- `invalid_truth_token`
+- `truth_pool_mismatch`
 
-推荐在 `record_solution()` 中完成 rank 聚合，因为此时：
+可附加公开标识诊断，但 `to_dict()` 不得泄露真实手牌明细。
 
-- 当前 matrix 完整；
-- 权重已精确计算；
-- 不会把部分搜索状态误当作边际。
+invalid 报告要求：
 
-不要：
+- 所有计数字段为 0；
+- 两个误差和为 `0/1`；
+- 固定输出 10 个空 calibration bin；
+- 不保留任何部分评分。
 
-- 二次枚举物理副本排列；
-- 将 `feasible_assignment_count` 当分母；
-- 从 J-D1a 的 token 持有分子直接推导 rank 持有分子；
-- 使用 pass、队伍关系、策略、随机数或 ground truth 改变权重；
-- 改变 `max_solutions` 按 count matrix 截断的语义。
+## 七、样本与评分定义
 
-## 七、必须保持的安全行为
+正数未见 rank 集合记为 `R`，活跃外部玩家集合记为 `P`。
 
-以下结果的两个 rank mapping 必须为空：
+对每个 `(player, rank) in P × R` 建立一个持有事件，不得只评估真值为正的 pair。
 
-- `truncated`
-- `invalid_input`
-- `skipped_too_many_cards`
-- `no_feasible_allocation`
+真实标签：
 
-即使部分遍历已经发现可行 matrix，也不能泄露部分 rank 边际。
+```text
+y_presence = 1  if truth copy count > 0 else 0
+y_copy = truth copy count
+```
 
-保持不变：
+预测：
 
-- `feasible_assignment_count`
-- `physical_assignment_count`
-- search node / solution limit
-- min/max token count
-- `confirmed_cards`
-- `possible_owners_by_token`
-- J-D1a token 持有和副本数边际
+```text
+p_presence = holding_numerator / physical_assignment_count
+e_copy = copy_numerator / physical_assignment_count
+```
 
-## 八、整数不变量
+### Presence Brier 误差和
 
-对每个 complete 且有解的结果验证：
+```text
+sum((p_presence - y_presence) ** 2)
+```
 
-1. `0 <= holding_rank <= physical_assignment_count`；
-2. `0 <= copy_rank <= rank_count * physical_assignment_count`；
-3. 所有玩家的某 rank 副本数分子之和等于
-   `rank_count * physical_assignment_count`；
-4. 某玩家某 rank 的副本数分子等于该玩家同 rank token 副本数分子之和；
-5. 单 token rank 的 rank 持有分子等于对应 token 持有分子；
-6. 当同 rank 多 token 持有事件重叠时，rank 持有分子小于 token 持有分子之和；
-7. 若玩家在所有物理分配中都至少持有该 rank，则持有分子等于全局物理分母。
+用 `Fraction` 精确累计，报告最简整数分子/分母。
 
-所有计算使用 Python 整数，不转 float，不做除法输出。
+### Copy 平方误差和
+
+```text
+sum((e_copy - y_copy) ** 2)
+```
+
+同样使用 `Fraction` 精确累计。
+
+### 确定性错误
+
+以下任一情况计入 `certainty_error_count`：
+
+- `p_presence == 0` 但 `y_presence == 1`；
+- `p_presence == 1` 但 `y_presence == 0`。
+
+确定性错误是有效评分结果，不要自动把报告改为 invalid。它表示组合模型或上游硬约束在该真值上发生严重错误。
+
+## 八、校准分桶
+
+使用整数算术确定桶：
+
+```python
+bin_index = min(9, holding_numerator * 10 // physical_assignment_count)
+```
+
+要求：
+
+- `p=0` 进入桶 0；
+- `p=0.1` 进入桶 1；
+- `p=0.9` 和 `p=1` 进入桶 9；
+- 每个 pair 恰好进入一个桶；
+- 所有桶的 `prediction_count` 之和等于 `rank_pair_count`；
+- 所有桶的 `truth_positive_count` 之和等于报告正例数；
+- 桶内预测和用 `Fraction` 精确累计，不转 float。
 
 ## 九、最低测试覆盖
 
-在 `tests/test_card_allocations.py` 至少覆盖：
+在 `tests/test_marginal_metrics.py` 至少覆盖：
 
-1. token 到 rank 的正常映射，包括 `10S`、`SJ`、`BJ`；
-2. 非法 token fail closed；
-3. token 聚合 rank 与 `unseen_cards_by_rank` 不一致时 fail closed；
-4. 单 token rank 的 rank/token 边际一致；
-5. 同 rank 多花色但事件不重叠；
-6. 同一玩家可能同时持有同 rank 多花色，证明 rank 持有分子不是 token 持有分子之和；
-7. 重复 token 与多 rank 混合时副本分子精确；
-8. 非对称容量和受限 domain；
-9. 每个 rank 的跨玩家副本守恒；
-10. complete 输出 mapping 不可变；
-11. `to_dict()` 可被 `json.dumps()` 序列化，值保持整数；
-12. 固定输入重复运行结果完全相等；
-13. node limit 截断不泄露 rank 边际；
-14. solution limit 截断不泄露 rank 边际；
-15. too many cards、invalid input、no feasible allocation 的 rank mapping 为空；
-16. 旧式手工 dataclass 构造仍可工作；
-17. J-D1a 的物理总数和 token 边际断言保持不变。
+1. 一个可手算的多玩家、多 rank 完整分配；
+2. Brier 误差和的精确分子/分母；
+3. copy 平方误差和的精确分子/分母；
+4. rank pair 数包含正例和负例；
+5. 固定 10 个 calibration bin；
+6. `p=0`、`0.1`、`0.9`、`1` 的边界归桶；
+7. 桶内预测和约分正确；
+8. 确定性错误计数但报告仍有效；
+9. `10S`、`SJ`、`BJ` truth 映射正确；
+10. belief token pool 不精确时 fail closed；
+11. phase 不一致时 fail closed；
+12. truncated/skipped/invalid/no-feasible allocation fail closed；
+13. 物理分母为 0、bool 或负数时 fail closed；
+14. allocation 玩家缺失、多余、容量不一致；
+15. rank key 缺失或多余；
+16. holding/copy numerator 类型、范围错误；
+17. rank copy 跨玩家守恒失败；
+18. truth 玩家缺失、多余；
+19. truth 手牌容量错误；
+20. truth token 非法或 multiset 不一致；
+21. invalid 报告所有指标零化且 10 个桶为空；
+22. dataclass 冻结、嵌套结构不可变；
+23. `to_dict()` 可被 `json.dumps(..., allow_nan=False)` 序列化；
+24. 报告 payload 不包含真实手牌、token 或 rank 明细；
+25. 固定输入重复执行报告完全相等；
+26. 旧式手工 J-D1a allocation 缺少 rank mapping 时 fail closed，而不是静默评分。
 
-建议重叠事件夹具：
+建议主要精确夹具：
 
-- token：`3S`、`3H`、`4C`，各 1 张；
+- token 为 `3S`、`3H`、`4C`，各 1 张；
 - 两位玩家容量分别为 2 和 1；
 - 三个 token 均可由两位玩家持有；
-- 对容量为 2 的玩家，rank `3` 在所有三个 matrix 中都出现；
-- 其两个 token 的持有分子之和大于 rank `3` 的持有分子。
+- 真值可取容量 2 玩家持有 `3S, 3H`，容量 1 玩家持有 `4C`；
+- 对四个玩家-rank pair 手工核算 presence 与 copy 平方误差和。
 
-## 十、验证命令
+## 十、真值隔离检查
+
+必须确认：
+
+- 只有测试和 `evaluation/marginal_metrics.py` 接触 `ground_truth_hands`；
+- `agents/`、CLI、RAG 不导入新模块；
+- 报告和 diagnostics 不保留真实手牌序列；
+- 不新增逐样本真值 dump 或日志。
+
+## 十一、验证命令
 
 先运行：
 
 ```bash
-python -m unittest tests.test_card_allocations tests.test_belief_metrics tests.test_card_ranker tests.test_pass_policy_benchmark tests.test_rank_benchmark tests.test_ranking_metrics tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q
+python -m unittest tests.test_marginal_metrics tests.test_card_allocations tests.test_belief_metrics tests.test_ranking_metrics tests.test_card_ranker tests.test_pass_policy_benchmark tests.test_rank_benchmark tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q
 ```
 
 再运行：
@@ -221,28 +325,39 @@ python -m unittest discover -q
 git diff --check
 ```
 
-## 十一、完成报告
+并检查：
+
+```bash
+rg -n "marginal_metrics|ground_truth_hands" agents cli rag
+```
+
+预期 runtime 目录没有对新 evaluation 模块的导入。
+
+## 十二、完成报告
 
 报告必须包含：
 
 - 修改文件；
-- 新增字段及整数语义；
-- token 到 rank 的映射和 fail-closed 规则；
-- rank 持有并集计数为何不能由 token 持有分子直接相加；
-- complete 与非 complete 输出边界；
+- 报告 dataclass 和字段语义；
+- 组合边际模型的解释边界；
+- fail-closed 校验；
+- Brier、copy 平方误差和校准桶的精确定义；
+- 真值隔离检查结果；
 - 定向和全量测试结果；
 - `git diff --check` 结果；
-- 明确说明 J-D1b 尚未输出概率、置信度、校准结论、策略接入或胜率提升。
+- 明确说明尚未运行多种子校准、未生成 runtime 置信度、未接入策略，也未证明胜率提升。
 
-## 十二、完成门槛
+## 十三、完成门槛
 
-只有同时满足以下条件，Step J-D1b 才能标记完成：
+只有同时满足以下条件，Step J-D1c1 才能标记完成：
 
-- rank 持有与副本数整数边际来自完整 matrix；
-- rank 持有事件正确处理同 rank token 重叠；
-- rank/token/容量守恒均有测试；
-- 非完整结果不泄露部分边际；
-- 旧 J-B2/J-D1a 契约无回归；
+- 仅完整、一致的 J-D1b 进入评分；
+- 所有玩家 × 正数 rank pair 均被计入；
+- Brier 与 copy 平方误差使用精确有理数；
+- 10 个校准桶边界确定且可精确聚合；
+- 真值只进入 evaluation；
+- 报告不泄露真值明细；
+- invalid 输入完全零化；
 - 全量测试通过；
-- 没有修改 `engine/`、runtime 策略、evaluation 或 docs；
-- 没有声称概率已经校准或策略已经提升。
+- 没有修改 runtime、engine、benchmark 或 docs；
+- 没有把组合边际描述为已校准置信度。

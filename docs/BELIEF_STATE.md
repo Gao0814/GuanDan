@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1a 已完成；neutral baseline 已封板，完整残局分配已具备精确物理权重与 token 边际整数计数。下一步为 Step J-D1b rank 边际整数聚合。
+当前状态：Step J-A 至 J-D1b 已完成；完整残局分配已具备精确物理权重与 token/rank 边际整数计数。下一步为 Step J-D1c1 单样本离线概率评分契约。
 
 ## 2. 数据来源
 
@@ -289,18 +289,37 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1b：rank 精确整数边际
 
+- 状态：已完成；
 - 在每个完整 count matrix 上先按玩家汇总同 rank 的 token 副本数；
 - rank 副本数分子可以汇总 token 副本分子，但 rank 持有分子必须按事件并集计数；
 - 对同一玩家、同一 rank、同一 matrix 最多增加一次持有权重；
 - 继续只输出 Python 整数，不计算 float、概率或置信度；
 - 不完整结果的 rank 边际必须为空；
 - 不再把 pass 本身解释为确定或默认的无牌证据。
+- 新增 `holding_assignment_count_by_rank` 与 `copy_assignment_count_by_rank`；
+- 定向 139 项、全量 263 项测试通过。
 
-### Step J-D1c：概率报告与离线校准
+### Step J-D1c1：单样本概率评分
 
-- 使用明确的物理分配总数作为分母，输出可审计的有理数语义；
-- 按阶段和外部未知牌数量分桶，与离线 ground truth 对照；
-- 校验覆盖、校准误差和过度自信，不只观察 Top-K；
+- 仅在 `evaluation/` 消费完整 J-D1b 与显式 ground truth；
+- 使用 `physical_assignment_count` 作为共同分母；
+- 对逐玩家/逐 rank 持有事件计算精确 Brier 和校准分桶充分统计量；
+- 对 rank 副本期望计算精确平方误差充分统计量；
+- 使用整数和 `fractions.Fraction` 聚合，报告 JSON 中只保留整数分子/分母；
+- 报告不得包含玩家-rank 真值明细、真实 token 或真实手牌；
+- 不完整或不一致的 allocation 必须 fail closed。
+
+### Step J-D1c2：多样本校准
+
+- 使用独立固定 seed 采集 near-open/critical 完整分配样本；
+- 按阶段和外部未知牌数量分桶聚合 Brier 与可靠性分桶；
+- 先建立 neutral 组合模型基线，不叠加 pass 或其他软信号；
+- 校验覆盖、校准误差和过度自信，不只观察 Top-K。
+
+### Step J-D1c3：runtime 准入判定
+
+- 在正式运行前预注册校准与安全门槛；
+- 只有独立语料通过后，才设计 runtime 置信度输出；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准
