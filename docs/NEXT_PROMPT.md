@@ -2,245 +2,214 @@
 
 ## 使用说明
 
-本提示词交给负责执行评测的代理。项目规划代理只维护 `docs/*.md`。
+本提示词交给负责源码和测试实现的代理。项目规划代理只维护 `docs/*.md`。
 
 ## 当前唯一任务
 
-执行 Step J-C3c2：在独立固定 seed 上，对 forced-only 与 25%/50%/100% 战略 pass 策略运行两次完整 rank 基准，并按预注册的 Top-K recall 护栏给出唯一判定。
+实现 Step J-C3d1：撤销已被正式策略分布验收拒绝的无条件 `opponent_single_pass` 负分，恢复 hard-only、零软分的安全 rank baseline。
 
-本轮不修改代码、不调权重、不筛选 seed，也不因 MRR 改善忽略真实 rank 召回损失。
+本轮不是调参，也不是设计新启发式。不要用 feature flag、隐藏参数或更小权重保留被拒绝逻辑。
 
 ## 提示词
 
 ```text
-请在 GuanDan 项目中执行 Step J-C3c2“战略性 pass 策略分布正式验收”。
+请在 GuanDan 项目中实现 Step J-C3d1“撤销无条件 pass 软扣分”。
 
-开始前阅读：
+开始前必须阅读：
 
 - AGENTS.md
 - docs/PROJECT_STATUS.md
 - docs/PLAN.md
 - docs/BELIEF_STATE.md
 - docs/TESTS.md
-- evaluation/pass_policy_benchmark.py
-- evaluation/rank_benchmark.py
-- evaluation/ranking_metrics.py
 - agents/card_ranker.py
-- agents/rule_based_ai.py
-- tests/test_pass_policy_benchmark.py
+- agents/card_signals.py
+- agents/card_constraints.py
+- agents/card_allocations.py
+- evaluation/ranking_metrics.py
+- evaluation/rank_benchmark.py
+- evaluation/pass_policy_benchmark.py
+- tests/test_card_ranker.py
+- tests/test_ranking_metrics.py
 - tests/test_rank_benchmark.py
+- tests/test_pass_policy_benchmark.py
 
-当前状态：
+已确认事实：
 
-- 已提交基线为 `49ef31e J-C3b`；
-- Step J-C3c1 已实现并通过 140 项定向、250 项全量测试；
-- J-C3c1 尚未形成可追溯提交时不得开始正式基准；
-- J-C3b seed 1000..1199 只覆盖 RuleBasedAI 被迫 pass；
-- seed 20..29 已用于 J-C3c1 开发容量试跑，禁止进入正式结论；
-- 开发试跑显示 25% 战略 pass 下 overall Top-3 recall delta 约为 -0.126899；
-- 该开发结果只用于预注册召回护栏，不能替代本轮独立 holdout。
+- HEAD `f1bfabd7ba136553c12ed61824b79f8e4b9ef446` 为 J-C3c1；
+- J-C3c1 定向 140 项、全量 250 项测试通过；
+- J-C3c2 使用 seed 2000..2099，四个 pass 策略各 100 局；
+- 两次正式报告完全一致，SHA-256 为
+  `83d3e96dbbb2e8765e5e906b24f6953c093d131af575e9c54b99aaa9198317ce`；
+- forced-only 轨迹仍显示小幅正收益；
+- 25% 战略 pass 下 overall Top-1 recall delta 为 -0.170742；
+- 25% 战略 pass 下 overall Top-3 recall delta 为 -0.092955；
+- near-open/critical Top-3 recall delta 分别为 -0.088401 / -0.099062；
+- 唯一判定为 `reject_unconditioned_pass_signal`；
+- MRR 上升不能抵消真实 rank 召回损失。
+
+任务目标：
+
+1. `build_card_rankings()` 继续从 J-B1 或完整 J-B2 生成 hard rank candidates；
+2. confirmed rank、confirmed_count、hard_source 和 owner-domain 收窄保持不变；
+3. 所有 possible candidate 固定 `soft_score=0`、`evidence=()`；
+4. 不再根据 pass、single、玩家队伍或 rank strength 修改分数；
+5. 保留通用 score/evidence 数据结构和离线 metric 校验能力；
+6. 明确删除 pass penalty 调参入口，避免调用方误以为该信号仍有效。
 
 范围：
 
-1. 不修改、创建、删除、格式化或提交任何文件。
-2. 不修改启发式、gate、pass rate、测试、docs、配置或依赖。
-3. 不访问网络，不调用 DeepSeek。
-4. 不写 JSON、日志、缓存或临时结果到仓库。
-5. 不运行权重搜索，不替换或追加 seed。
-6. 不实现 J-C3d、策略主链或 Step K。
+1. 修改 `agents/card_ranker.py`。
+2. 修改 `tests/test_card_ranker.py`。
+3. 如兼容测试确有必要，可对直接依赖旧参数的测试做最小调整。
+4. 不修改 `engine/`、`card_signals.py`、J-A/J-B 契约。
+5. 不修改 `evaluation/ranking_metrics.py` 的通用 soft ranking 消融能力。
+6. 不修改 `evaluation/rank_benchmark.py` 或
+   `evaluation/pass_policy_benchmark.py`。
+7. 不修改 DeepSeek、RAG、CLI、主决策链或 docs。
+8. 不新增依赖，不实现新概率、新软信号、置信度或 Step K。
+9. 不运行 J-C3d2 正式 neutral corpus。
 
-前置检查：
+必须删除的行为：
 
-1. 运行 `git status --short`。
-2. 确认以下文件均已被 Git 跟踪并包含在 HEAD：
-   - `evaluation/rank_benchmark.py`
-   - `evaluation/pass_policy_benchmark.py`
-   - `tests/test_pass_policy_benchmark.py`
-3. 记录 `git rev-parse HEAD`。
-4. 工作区必须干净。
-5. 如果 J-C3c1 未提交或工作区不干净：
-   - 停止正式基准；
-   - 不要 stash、还原、提交或清理；
-   - 报告 `precondition_failed`；
-   - 不输出策略信号判定。
+1. 删除 `build_card_rankings()` 的 keyword 参数：
+   - `pass_single_penalty`
+   - `max_pass_single_penalty`
+2. 删除这两个参数的校验。
+3. 删除遍历 pass event 并定位 response single 的评分路径。
+4. 删除 `opponent_single_pass` evidence 的生成。
+5. 删除只服务该评分路径且不再被使用的内部代码。
+6. 删除或停止产生以下 pass-scoring 专用 diagnostics：
+   - `missing_response_event`
+   - `invalid_response_link`
+   - `cross_round_response`
+   - `invalid_leading_single`
+   - `unknown_player_team`
+7. 不得用默认 false 的开关、环境变量或私有参数保留旧评分。
+8. 不得把 penalty 改成 0 后继续保留误导性的公开参数。
 
-回归检查：
+向后兼容边界：
 
-python -m unittest tests.test_pass_policy_benchmark tests.test_rank_benchmark tests.test_ranking_metrics tests.test_card_ranker tests.test_card_signals tests.test_belief_metrics tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q
+1. 保留 `build_card_rankings(card_belief, constraints, allocation, signals)`
+   四个核心参数。
+2. 继续校验 belief/constraints/allocation/signals 的 phase 一致性。
+3. signals 的公开事件仍可由 `card_signals.py` 生成和审计，但 ranker
+   不再把 pass 转换成持牌结论。
+4. `signal_diagnostics_present` 是否保留，应遵循当前 fail-closed 结构；
+   但它不能改变 candidate 分数或 hard domain。
+5. `RankScoreEvidence`、`PlayerRankCandidate.evidence`、
+   `PlayerRankCandidate.soft_score` 和 `score_tier` 字段保留，
+   供未来经过独立验收的新信号使用。
+6. `evaluation/ranking_metrics.py` 仍应能评估测试中人工构造的非零
+   soft ranking；不要把通用 evaluator 改成只接受零分。
+7. 旧调用若继续传 `pass_single_penalty` 或
+   `max_pass_single_penalty`，必须由 Python 签名显式抛出
+   `TypeError`，不能静默忽略。
+
+neutral ranking 规则：
+
+1. confirmed candidate：
+   - `hard_status="confirmed"`
+   - `confirmed_count > 0`
+   - `soft_score=0`
+   - `evidence=()`
+2. possible candidate：
+   - `hard_status="possible"`
+   - `confirmed_count=0`
+   - `soft_score=0`
+   - `evidence=()`
+3. 若某玩家存在 confirmed：
+   - 全部 confirmed 为 tier 1；
+   - 全部 possible 为 tier 2。
+4. 若不存在 confirmed：
+   - 全部 possible 为 tier 1。
+5. 同一 hard status 内按现有稳定 rank 顺序序列化。
+6. 稳定顺序不表达概率、置信度或额外优先级。
+7. pass 事件数量、领先 rank、敌我关系和 round 数不得改变
+   candidates、soft score、evidence 或 tier。
+
+测试要求：
+
+更新 `tests/test_card_ranker.py`，至少覆盖：
+
+1. J-B1 rank domain 聚合保持不变；
+2. 完整 J-B2 收窄和 confirmed 保持不变；
+3. 截断/无效 J-B2 回退行为保持不变；
+4. self、完赛和零容量过滤保持不变；
+5. enemy single 后一次 pass 不改变任何 possible score；
+6. 多次、跨多个 round 的 enemy single pass 仍全部为零分；
+7. teammate pass、非 single 和孤立 pass 同样不影响 ranking；
+8. pass response 链变化不改变 candidate 玩家结果；
+9. confirmed candidate 始终为零分、空 evidence、tier 1；
+10. 有 confirmed 时 possible 全部为 tier 2；
+11. 无 confirmed 时 possible 全部为 tier 1；
+12. 所有 possible candidate `soft_score=0`、`evidence=()`；
+13. 不生成 `opponent_single_pass` evidence；
+14. candidate 集合、hard status 和 confirmed count 与撤销前 hard
+    source 完全一致；
+15. 调换同 tier rank 的稳定输入顺序不改变 tier；
+16. 固定输入重复运行输出完全一致；
+17. 输出不可变且 `to_dict()` 可 JSON 序列化；
+18. `inspect.signature(build_card_rankings)` 不再包含两个 penalty 参数；
+19. 显式传旧 penalty keyword 时抛出 `TypeError`；
+20. ranker 源码不再包含字符串 `opponent_single_pass`；
+21. ranker 源码不再包含 pass penalty 参数名；
+22. signal diagnostics 不得修改 hard candidates 或产生分数；
+23. `tests/test_ranking_metrics.py` 中人工构造的通用 soft ranking
+    仍可评估；
+24. J-C3a/J-C3c1 benchmark API 继续运行；
+25. runtime 模块没有新增对 `evaluation` 的反向导入。
+
+不要简单删除原测试后降低覆盖率。将原有 pass-penalty 测试改写为
+“pass 对 neutral ranking 无影响”的回归测试。
+
+兼容要求：
+
+- `tests/test_card_ranker.py` 必须通过；
+- `tests/test_pass_policy_benchmark.py` 必须通过；
+- `tests/test_rank_benchmark.py` 必须通过；
+- `tests/test_ranking_metrics.py` 必须通过；
+- `tests/test_card_signals.py` 必须通过；
+- `tests/test_belief_metrics.py` 必须通过；
+- `tests/test_card_allocations.py` 必须通过；
+- `tests/test_card_constraints.py` 必须通过；
+- `tests/test_card_belief.py` 必须通过；
+- `tests/test_card_tracker.py` 必须通过；
+- `tests/test_game_phase.py` 必须通过；
+- 全量 unittest 必须无回归。
+
+完成后运行：
+
+python -m unittest tests.test_card_ranker tests.test_pass_policy_benchmark tests.test_rank_benchmark tests.test_ranking_metrics tests.test_card_signals tests.test_belief_metrics tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_card_tracker tests.test_game_phase -q
 python -m unittest discover -q
-
-任何测试失败时停止，判定为 `benchmark_invalid`。
-
-正式参数一次性锁定：
-
-- seeds：`tuple(range(2000, 2100))`
-- requested games per policy：100
-- strategic pass rates：`(0, 25, 50, 100)`
-- policy names：
-  - `forced_only`
-  - `strategic_pass_25`
-  - `strategic_pass_50`
-  - `strategic_pass_100`
-- `current_level_rank="2"`
-- `max_steps=5000`
-- `max_samples_per_game=512`
-- `max_external_cards=12`
-- `max_search_nodes=1_000_000`
-- `max_solutions=100_000`
-
-不得修改、筛选、重排或补充 seed/rate。每个策略必须使用完全相同的输入参数。
-
-运行要求：
-
-1. 在同一个 Python 进程内，用上述参数调用
-   `run_pass_policy_benchmark()` 两次。
-2. 分别记录两次耗时，耗时不进入 hash。
-3. 断言两个 `PassPolicyBenchmarkReport` 完全相等。
-4. 对每次 `report.to_dict()` 使用 canonical JSON：
-
-   `json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)`
-
-5. 对 canonical JSON UTF-8 字节计算 SHA-256。
-6. 两次 SHA-256 必须完全一致。
-7. 只在标准输出打印：
-   - 两次耗时；
-   - 两次 SHA-256；
-   - 第二次报告的格式化聚合 JSON。
-8. 不把结果重定向到仓库文件。
-
-数据完整性门槛：
-
-以下任一条件不满足，唯一判定为 `benchmark_invalid`：
-
-1. 两次完整报告不相等；
-2. 两次 SHA-256 不一致；
-3. `requested_policy_count != 4`；
-4. by_policy 名称或顺序与锁定策略不一致；
-5. 任一策略 `requested_game_count != 100`；
-6. 任一策略 `completed_game_count != 100`；
-7. 任一策略 `incomplete_game_count != 0`；
-8. 任一策略 `eligible != evaluated`；
-9. 任一策略 `evaluated != valid`；
-10. 任一策略 `invalid != 0`；
-11. 任一策略 `sample_limit_skipped_count != 0`；
-12. 任一策略顶层或阶段 diagnostics 非空；
-13. 任一策略 near-open 有效样本少于 500；
-14. 任一策略 critical 有效样本少于 500；
-15. 报告存在 NaN、Infinity 或不可 JSON 序列化值。
-
-策略行为完整性：
-
-以下任一条件不满足，判定为 `benchmark_invalid`：
-
-1. 每个策略 `strategic_pass_opportunity_count > 0`；
-2. forced-only `strategic_pass_count == 0`；
-3. strategic-pass-25 满足
-   `0 < pass_count < opportunity_count`；
-4. strategic-pass-50 满足
-   `0 < pass_count < opportunity_count`；
-5. strategic-pass-100 满足
-   `pass_count == opportunity_count`；
-6. 所有策略都满足
-   `0 <= pass_count <= opportunity_count`。
-
-不同策略会改变后续轨迹，因此不要求机会数相同，也不要求 25%/50%
-的实际 pass 比例精确等于名义 rate。
-
-硬候选安全门槛：
-
-对四个策略的 overall、near-open、critical 分别要求：
-
-1. baseline candidate recall 为 1.0；
-2. soft candidate recall 为 1.0；
-3. candidate recall delta 为 0.0。
-
-允许绝对浮点误差 `1e-12`。任一不满足判定为
-`benchmark_invalid`，因为软信号不应改变硬候选覆盖。
-
-forced-only 复验门槛：
-
-forced-only 必须同时满足：
-
-1. 三个桶 Top-1 recall delta 均不小于 `-1e-12`；
-2. 三个桶 Top-3 recall delta 均不小于 `-1e-12`；
-3. overall Top-1 precision delta 至少 `0.002`；
-4. overall Top-3 precision delta 至少 `0.002`；
-5. overall worst-case MRR delta 至少 `0.001`；
-6. near-open/critical 的 Top-1 precision delta 均大于 0；
-7. near-open/critical 的 Top-3 precision delta 均大于 0；
-8. near-open/critical 的 MRR delta 均大于 0。
-
-forced-only 未通过时，判定为 `reject_unconditioned_pass_signal`。
-
-战略 pass recall 护栏：
-
-分别对 strategic-pass-25、50、100 的 overall、near-open、critical
-检查：
-
-1. Top-1 recall delta 不得低于 `-0.03`；
-2. Top-3 recall delta 不得低于 `-0.02`；
-3. Top-1 precision delta 不得低于 `-0.002`；
-4. Top-3 precision delta 不得低于 `-0.002`。
-
-MRR 和 average selection size 仍需完整报告，但不能抵消上述任一护栏失败。
-
-唯一判定顺序：
-
-1. 前置、测试、可重复性、数据完整性、策略行为或硬候选安全失败：
-   `benchmark_invalid`
-2. forced-only 复验失败：
-   `reject_unconditioned_pass_signal`
-3. strategic-pass-25 任一桶任一 recall/precision 护栏失败：
-   `reject_unconditioned_pass_signal`
-4. strategic-pass-25 全部通过，但 50 或 100 任一护栏失败：
-   `retain_with_policy_conditioning`
-5. forced-only 和 25/50/100 全部通过：
-   `retain_for_confidence_calibration`
-
-不得新增第五种结论，不得因 MRR 为正而覆盖 Top-K recall 失败。
-
-结论含义：
-
-- `reject_unconditioned_pass_signal`：
-  当前把 enemy-single pass 无条件作为负向持牌信号的方式不能进入置信度校准或 runtime；下一步应重新设计为策略条件化证据，或撤销该软扣分。
-- `retain_with_policy_conditioning`：
-  低主动 pass 压力可接受，但必须先建立对手 pass 倾向或上下文条件，不能直接校准当前无条件信号。
-- `retain_for_confidence_calibration`：
-  只允许进入 J-C3d 离线校准，仍不代表可接入策略或提升胜率。
+git diff --check
 
 最终报告必须包含：
 
-1. 前置检查结果与 HEAD SHA；
-2. 两条测试命令及 140/250 结果；
-3. 正式参数；
-4. 两次运行耗时和 SHA-256；
-5. 每个策略的 opportunity/pass count 和实际比例；
-6. 每个策略的 requested/completed/incomplete；
-7. 每个策略的 eligible/evaluated/valid/invalid/skipped；
-8. 每个策略的 diagnostics；
-9. 每个策略 overall、near-open、critical 的：
-   - sample count
-   - baseline/soft candidate recall
-   - baseline/soft Top-1 recall、precision、average selection size
-   - baseline/soft Top-3 recall、precision、average selection size
-   - baseline/soft worst-case MRR
-   - 全部 delta
-10. 对每条完整性、forced-only 和战略 pass 护栏逐项给出 pass/fail；
-11. 最终唯一判定；
-12. 未解决风险；
-13. 运行前后 `git status --short` 一致且本任务未修改文件。
+- 修改文件；
+- 被删除的参数、评分路径和 diagnostics；
+- hard candidate/confirmed 契约如何保持；
+- neutral tier 规则；
+- 通用 evidence/metrics 为何保留；
+- 旧 keyword 如何显式失败；
+- 定向和全量测试数量；
+- 未解决风险；
+- 明确说明 J-C3d1 只撤销被拒绝信号并恢复安全基线，
+  尚未完成 J-C3d2 正式 neutral 回归、新概率证据、置信度、
+  策略接入或胜率提升。
 ```
 
 ## 完成判定
 
-Step J-C3c2 只有在以下条件满足时才算执行完成：
+只有同时满足以下条件，Step J-C3d1 才能标记完成：
 
-- J-C3c1 已提交且工作区干净；
-- 140/250 回归通过；
-- 4 个策略各 100 局完整运行两次；
-- 两次报告和 SHA-256 一致；
-- 未更改 seed、rate、gate 或其他参数；
-- Top-K recall 护栏优先于 MRR；
-- 按顺序给出唯一判定；
-- 没有修改任何文件；
-- 没有把离线策略分布结果表述为置信度、策略集成或胜率提升。
+- `opponent_single_pass` 不再影响 rank；
+- 所有 possible candidate 为零软分、空 evidence；
+- hard candidates、confirmed 和 J-B2 收窄不变；
+- penalty 参数已从签名删除且旧调用显式失败；
+- 没有 feature flag 或隐藏路径保留旧逻辑；
+- 通用 evidence 和 ranking metrics 能力仍保留；
+- card signals 与策略压力基准继续可用；
+- 未修改 engine、RAG、DeepSeek、CLI、docs 或主决策链；
+- 现有 250 项测试无回归；
+- 实施代理报告实际测试结果。

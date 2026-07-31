@@ -4,8 +4,8 @@
 
 ## 1. 当前基线
 
-- 已提交 Git 基线：`49ef31e J-C3b`
-- 当前工作状态：Step J-C3c1 已实现并验证；对应三个源码/测试文件尚未提交
+- 已提交 Git 基线：`f1bfabd J-C3c1`
+- 当前工作状态：Step J-C3c2 正式策略分布验收已完成；工作区干净，无源码改动
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：250 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -28,7 +28,7 @@
 
 ### 当前优化愿景
 
-完成度：约 82%
+完成度：约 85%
 
 目标愿景包括：
 
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、离线评测、公开事件、最小软排序、单样本消融、多种子采集器、RuleBasedAI 正式基准及战略性 pass 策略分布载体。当前信号尚未通过独立策略分布正式验收，也未完成置信度校准或策略路由。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、离线评测、公开事件、多种子采集器及 forced/战略性 pass 正式对照。J-C3c2 已证明当前无条件 pass 软扣分不安全，因此暂停置信度校准；下一步先恢复零软分安全基线，再研究可由残局组合计数支持的新证据。
 
 ## 3. 分模块状态
 
@@ -55,10 +55,10 @@
 | 残局精确分配 | Step J-B2 完成 | 不超过 12 张时枚举完整分配、聚合上下界、保护截断结果 | 尚未接入主链，真实域缩减效果待批量样本 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
-| rank 软排序 | Step J-C2b1 完成 | 硬域候选、敌方 single pass 弱负分、证据和 score tier | 仅在 RuleBasedAI 轨迹通过保留门槛 |
+| rank 软排序 | J-C3c2 判定拒绝 | 硬域候选、敌方 single pass 弱负分、证据和 score tier | 战略 pass 下 Top-K recall 严重回退，必须撤销默认扣分 |
 | rank 排序评测 | Step J-C2b2 完成 | 真值隔离、并列安全 Top-K、零软分基线和单样本 delta | 尚未支持策略分布分层结论 |
 | rank 离线基准 | Step J-C3a/J-C3b 完成 | 固定种子采集、微聚合、阶段桶、可重复正式验收 | RuleBasedAI 不覆盖有牌可压时的战略性 pass |
-| pass 策略分布基准 | Step J-C3c1 完成 | 0/25/50/100% 确定性主动 pass、机会计数、隔离多策略报告 | 尚未运行独立 seed 正式验收 |
+| pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | 未完成 | 主要依赖模型和经验提示 | 没有结构化策略路由 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
@@ -249,6 +249,45 @@ RuleBasedAI 只在不存在非 pass 合法动作时 pass，因此 J-C3b 测到�
 - 三者 MRR 虽为正增量，但残局真实 rank 召回明显下降，不能用 MRR 抵消；
 - 正式 J-C3c2 必须将 Top-K recall 设为首要护栏。
 
+### 已解决：无条件 pass 信号是否可泛化（Step J-C3c2）
+
+正式参数：
+
+- HEAD `f1bfabd7ba136553c12ed61824b79f8e4b9ef446`；
+- seed `2000..2099`，0/25/50/100% 四个策略各 100 局；
+- 两次完整报告相同，SHA-256 均为 `83d3e96dbbb2e8765e5e906b24f6953c093d131af575e9c54b99aaa9198317ce`；
+- 四个策略全部完成，无 invalid、skip、diagnostics 或硬候选覆盖变化。
+
+关键结果：
+
+- forced-only 再次通过：Top-1/Top-3 recall 无回退，overall precision 与 MRR 为正增量；
+- 25% 战略 pass 的 overall Top-1 recall delta 为 `-0.170742`；
+- 25% 战略 pass 的 overall Top-3 recall delta 为 `-0.092955`；
+- near-open Top-3 recall delta 为 `-0.088401`；
+- critical Top-3 recall delta 为 `-0.099062`；
+- 50%/100% 战略 pass 的召回退化进一步扩大；
+- MRR 上升来自排序更集中，不能抵消真实 rank 被错误降级。
+
+唯一判定：`reject_unconditioned_pass_signal`。
+
+含义：
+
+- 当前 `opponent_single_pass` 不得进入置信度校准或 runtime；
+- 不能仅凭公开 pass 判断对方缺少更高 rank；
+- RuleBasedAI 轨迹上的小幅收益是策略分布偏差，不构成泛化证据；
+- 硬候选、公开事件层、离线评测和策略压力测试仍然有效。
+
+### P1：撤销已拒绝的默认软扣分
+
+下一步 J-C3d1 应恢复安全基线：
+
+- `build_card_rankings()` 只投影 J-B1/J-B2 的 hard candidates；
+- 所有 possible candidate 默认 `soft_score=0`、`evidence=()`；
+- confirmed/possible tier 和稳定 rank 顺序保留；
+- 不再解析 pass 事件生成 `opponent_single_pass` 负分；
+- 保留通用 evidence/metric 数据结构，供未来经过验收的新信号使用；
+- 不以 feature flag 或隐藏参数保留被拒绝逻辑。
+
 ### P1：RAG 不能单独承担策略路由
 
 RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
@@ -292,7 +331,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-C3c1 已完成并核验，下一步实施 J-C3c2。
+状态：J-A 至 J-C3c2 已完成并核验，下一步实施 J-C3d1。
 
 拆分为：
 
@@ -306,8 +345,11 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-C3a：固定种子离线样本采集与阶段聚合，已完成；
 - Step J-C3b：预注册并运行 RuleBasedAI 独立种子正式基准，已完成；
 - Step J-C3c1：实现 evaluation-only 战略性 pass 策略与多策略基准载体，已完成；
-- Step J-C3c2：使用独立种子运行策略分布稳健性验收，下一步；
-- Step J-C3d：仅对通过前述验收的信号做置信度校准与策略接入前验收。
+- Step J-C3c2：使用独立种子运行策略分布稳健性验收，已完成，判定拒绝；
+- Step J-C3d1：撤销无条件 pass 软扣分，恢复零软分安全基线，下一步；
+- Step J-C3d2：固定种子验证 neutral ranking 在所有 pass 策略下无召回差异；
+- Step J-D1：研究基于完整残局分配计数的概率候选，不再用 pass 直接代表无牌；
+- 置信度校准：暂停，直到新信号通过独立策略分布验收。
 
 设计见 `docs/BELIEF_STATE.md`。
 
@@ -324,7 +366,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 1. 同时改阶段、猜牌、RAG 和策略会导致无法判断收益来源。
 2. pass 是策略行为，不能作为“对方没有可压牌”的硬证据。
-3. RuleBasedAI 从不在存在非 pass 动作时战略性 pass；J-C3b 的正收益不能直接外推到 DeepSeek 或真实玩家。
+3. 已确认无条件 pass 扣分无法泛化；撤销前不得接入任何 runtime 决策。
 4. RAG 条目增加会扩大提示词，必须同步控制 token。
 5. 当前没有 A/B 对局工具，策略增强暂时只能声明“已接入”，不能声明“已提升”。
 

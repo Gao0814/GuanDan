@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-C3c1 已完成；战略性 pass 策略分布载体通过 140 项定向和 250 项全量测试。下一步为 Step J-C3c2 独立种子稳健性验收。
+当前状态：Step J-A 至 J-C3c2 已完成；正式策略分布验收判定为 `reject_unconditioned_pass_signal`。下一步为 Step J-C3d1 撤销默认 pass 软扣分并恢复零软分安全基线。
 
 ## 2. 数据来源
 
@@ -246,12 +246,37 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-C3c2：策略分布稳健性验收
 
+状态：已完成，判定拒绝无条件 pass 信号。
+
 - 固定独立 seed、四种 pass rate 和运行参数；
 - Top-1/Top-3 recall 是首要护栏，MRR 改善不能抵消真实 rank 召回损失；
 - 使用独立于 J-C3b 的样本验证方向和召回护栏；
 - 未通过时不得用 RuleBasedAI 结果校准 runtime 置信度。
 
-### Step J-C3d：置信度校准
+正式结果显示 25% 战略 pass 已使 overall Top-3 recall 降低约 9.30 个百分点，near-open/critical 均明显失败。MRR 上升不改变拒绝结论。
+
+### Step J-C3d1：恢复零软分安全基线
+
+- 移除 `opponent_single_pass` 默认负分；
+- hard candidates、confirmed 和 score tier 契约保持稳定；
+- possible candidates 的 soft score 归零且 evidence 为空；
+- pass 事件继续保留在公开事实层，但不直接转成持牌结论；
+- 通用软证据数据结构保留给未来经过独立验收的新信号。
+
+### Step J-C3d2：neutral ranking 回归
+
+- forced-only 与战略 pass 轨迹的 soft/baseline 指标应完全一致；
+- candidate 和 Top-K recall delta 均为 0；
+- 确认撤销后不再存在策略分布导致的错误降级。
+
+### Step J-D1：新证据研究
+
+- 优先研究完整残局分配的组合计数和边际归属；
+- 概率定义必须明确相同 token 副本的权重；
+- 任何概率或置信度都必须经过独立真值校准；
+- 不再把 pass 本身解释为确定或默认的无牌证据。
+
+### 暂停：置信度校准
 
 - 用离线样本校准置信度区间；
 - 做无软信号、分信号和组合信号消融；

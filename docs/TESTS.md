@@ -210,11 +210,11 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 每种策略使用独立新对局和新 agent，不共享状态；
 - 报告包含策略名、机会数、主动 pass 数和聚合 rank 报告；
 - 报告不包含 seed、逐样本动作、真实牌、token 或 rank 明细；
-- 默认 J-C3a API 与既有 240 项测试保持兼容。
+- 默认 J-C3a API 与 J-C3c1 前的 240 项基线保持兼容。
 
 #### J-C3c2：策略分布正式验收
 
-状态：下一步。该步骤只运行已实现基准，不修改实现。
+状态：已完成。四策略各 100 局双运行结果一致，唯一判定为 `reject_unconditioned_pass_signal`。
 
 - J-C3c1 必须先形成可追溯提交，工作区保持干净；
 - 正式 seed 与 J-C3b、J-C3c1 开发试跑完全独立；
@@ -228,9 +228,32 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - MRR 改善不能抵消 Top-K recall 护栏失败；
 - 不在正式 seed 上调参或重新筛选样本。
 
-#### J-C3d：校准
+#### J-C3d1：撤销无条件 pass 软扣分
 
-- pass 只作为软信号，不作为确定无牌；
+状态：下一步。
+
+- enemy single pass 不再改变任何 possible candidate 的 soft score；
+- 单次、重复、不同 round 的 pass 均不生成 `opponent_single_pass` evidence；
+- confirmed candidate、hard owner domain 和 J-B2 收窄结果保持不变；
+- 所有 possible candidate `soft_score=0`、`evidence=()`；
+- 无 confirmed 时所有 possible rank 属于同一 tier；
+- 有 confirmed 时 confirmed/possible 仍分成两个 tier；
+- 稳定 rank 顺序只用于序列化，不表达额外置信；
+- 删除 pass penalty 参数，旧调用必须显式失败，不能静默忽略；
+- `card_signals.py` 的公开 pass 事件继续保留；
+- `ranking_metrics.py` 的通用 soft ranking 校验和合成消融能力继续保留；
+- J-C3a/J-C3c1 基准运行器保持可用；
+- 全量测试无回归。
+
+#### J-C3d2/J-D1：neutral 回归与新证据
+
+- neutral ranker 在 forced/战略 pass 策略下 soft 与 baseline 完全一致；
+- pass 只作为公开行为事实，不作为默认持牌负证据；
+- 新概率信号必须定义样本空间、权重和校准方式。
+
+#### 暂停：校准
+
+- pass 只保留为公开行为事实，不作为默认软持牌证据或确定无牌；
 - 所有 `likely` 结论带置信度和证据来源；
 - 软信号不能覆盖 J-A 公开事实或 J-B 硬约束。
 
