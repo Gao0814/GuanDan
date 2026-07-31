@@ -540,7 +540,7 @@ J-D1c3c1a 已补测：
 
 #### J-D1c3c2b2：默认关闭的 confidence prompt 消费
 
-状态：下一步。允许最小修改 agent、client 与对应测试，不修改配置、RAG、剪枝或 engine。
+状态：已完成。只修改 agent、client 与对应测试，配置、RAG、剪枝和 engine 未修改。
 
 - `card_confidence_prompt_enabled` 默认 False；prompt=True 且 shadow=False 时构造失败；
 - 每次决策同时重置 confidence state 与 prompt payload 审计字段；
@@ -557,6 +557,28 @@ J-D1c3c1a 已补测：
 - local shortcuts 不计算 state 或 payload；
 - 不修改 AppConfig、环境变量、CLI 或默认运行行为；
 - 定向、相关和全量测试以及 `git diff --check` 必须通过。
+
+验证结果：confidence/pipeline/DeepSeek 定向 54 项、RAG/剪枝/开局/DeepSeek 相关 48 项、全量 345 项通过；禁止引用扫描和 `git diff --check` 通过。
+
+#### J-D1c3c2c1：配对 prompt 覆盖与成本开发基准
+
+状态：下一步。只新增 evaluation collector 与测试，不修改 runtime。
+
+- 使用公开 game observation、legal actions 和统一 phase；
+- 只采集 `critical_endgame`，按 external 0..4、5..8、9..12 分桶；
+- 复用 0/25/50/100 strategic-pass evaluation agent，四策略对局隔离；
+- 每个样本只运行一次 runtime confidence pipeline 和 formatter；
+- off/on 共用相同 my_info、current_round、other_players、history、pruned actions 和 phase；
+- 不调用 `suggest_action_id()`、HTTP transport 或真实 DeepSeek；
+- confidence available/unavailable 与 payload ready/omitted 计数守恒；
+- ready 时 on prompt 必须等于向 off prompt单次插入固定章节；
+- omitted 时 on prompt 必须与 off prompt 完全相同；
+- 记录 payload char 和 prompt delta 的 sum/min/max，不平均单样本均值；
+- diagnostics 按冒号前类别聚合，同一样本同类只计一次；
+- 报告 frozen/slots、mapping 不可变且 JSON 友好；
+- 报告不含 seed、样本 ID、observation、prompt、手牌或玩家明细；
+- 同参数双运行报告与 canonical JSON hash 必须一致；
+- 开发试验只验证容量和覆盖，不形成动作质量或胜率结论。
 
 #### 暂停：校准
 

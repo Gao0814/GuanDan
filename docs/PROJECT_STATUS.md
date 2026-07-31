@@ -5,7 +5,7 @@
 ## 1. 当前基线
 
 - J-D1c3b2 执行基线：`b2491a8 Document J-D1c3b invalid benchmark`
-- 当前工作状态：Step J-D1c3c2b1 已完成但八个 confidence/shadow/formatter 文件尚未提交；相关 22 项、DeepSeek/RAG/剪枝 52 项、全量 338 项通过
+- 当前工作状态：Step J-D1c3c2b2 已完成但九个 confidence/prompt 实现文件尚未提交；定向 54 项、相关 48 项、全量 345 项通过
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：311 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence 契约、shadow 装配和有界 prompt payload。J-D1c3c2b1 已将 available confidence 稳定序列化为不超过 2400 字符的精确分数文本，超限或 malformed 整体 omitted。下一步增加第二个默认关闭的 prompt 消费开关；默认关闭和 omitted 路径必须保持现有行为。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence 契约、shadow、formatter 和默认关闭的 DeepSeek prompt 接线。J-D1c3c2b2 已证明 off/shadow/omitted 兼容，ready 只新增一个类型化 payload 和固定章节。下一步先建立 evaluation-only 配对 prompt 基准，量化覆盖与上下文成本，不调用真实 DeepSeek。
 
 ## 3. 分模块状态
 
@@ -52,7 +52,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c2b1 完成 | shadow 审计和 2400 字符精确 prompt payload 已封板 | 尚未接入 DeepSeek prompt，未做动作消融 |
+| 残局精确分配 | Step J-D1c3c2b2 完成 | 默认关闭的 DeepSeek prompt 接线已完成，off/omitted 完全兼容 | 尚无配对 prompt 覆盖基准或动作消融 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -556,17 +556,30 @@ J-D1c3c2b1 已完成独立序列化契约：
 - 相关 22 项、DeepSeek/RAG/剪枝 52 项、全量 338 项测试通过；
 - 现有 agent/client/RAG/CLI/engine 仍未引用 formatter。
 
-### P1：prompt 消费尚未受控接入
+### 已解决：默认关闭的 prompt 消费接入（Step J-D1c3c2b2）
 
-J-D1c3c2b2 只允许在现有 shadow 之上增加第二个显式开关：
+J-D1c3c2b2 已完成：
 
-- `card_confidence_prompt_enabled=False`，不得接 AppConfig、环境变量或 CLI；
-- prompt 开启必须要求 shadow 同时开启，非法组合在构造时显式报错；
-- 只有 `ready` payload 才传给 DeepSeekClient 并插入固定章节；
-- omitted/unavailable 不传新 keyword，client kwargs 与纯 shadow 完全一致；
-- 关闭态 `_build_structured_prompt()` 必须逐字不变；
-- 新章节不得影响 legal action、剪枝或 RAG；
-- 本步骤只验证接线和兼容性，不判断动作收益。
+- 新增严格 bool prompt 开关，非法类型和 prompt-only 组合显式报错；
+- 每步重置 state/payload 审计，三个 local shortcut 跳过 pipeline 与 formatter；
+- ready 是唯一新增 `card_confidence_prompt` keyword 的路径；
+- client 再次复核 payload 类型、source/scope、文本和预算；
+- omitted、pipeline/formatter 异常不改变模型调用或 fallback；
+- 新章节仅位于记牌信息与场景标签之间，payload 原文只出现一次；
+- config、CLI、engine、RAG、evaluation 未引用 prompt 开关或 formatter；
+- 定向 54 项、相关 48 项、全量 345 项测试通过。
+
+### P1：缺少 prompt 准入覆盖与成本基准
+
+单元测试证明接线正确，但还不知道真实 critical 轨迹上：
+
+- pipeline available 与 payload ready 的比例；
+- unavailable/omitted 的主要诊断；
+- payload 与完整 prompt 的字符增量；
+- 四种 strategic-pass 轨迹是否都能稳定覆盖三个 external bucket；
+- ready 章节是否在每个样本上都等于对 off prompt 的单一精确插入。
+
+J-D1c3c2c1 先建立不调用 DeepSeek API 的 evaluation-only 配对 prompt collector，并运行小规模双次开发语料。只有覆盖、预算和配对一致性通过后，才预注册真实模型动作 A/B。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -611,7 +624,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3c2b1 已完成；有界 payload 已封板但模型尚未消费。下一步为 J-D1c3c2b2 默认关闭的 prompt 接入。
+状态：J-A 至 J-D1c3c2b2 已完成；默认关闭的 prompt 接线通过兼容性回归。下一步为 J-D1c3c2c1 配对 prompt 覆盖与成本基准。
 
 拆分为：
 
@@ -641,8 +654,11 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3c1a：严格校验布尔标志、完整玩家集合并消除 malformed copy 求和异常，已完成；
 - Step J-D1c3c2a：新增默认关闭的 runtime pipeline 与 DeepSeek shadow 审计，不改变 prompt 或动作，已完成；
 - Step J-D1c3c2b1：建立独立、有界、确定、精确分数的 prompt 序列化契约，已完成；
-- Step J-D1c3c2b2：增加默认关闭的 DeepSeek prompt 消费开关并验证兼容性，下一步；
-- 策略接入：继续暂停，直到 J-D1c3c2b2 显式消费和 J-D1c3c2c 动作消融单独验收。
+- Step J-D1c3c2b2：增加默认关闭的 DeepSeek prompt 消费开关并验证兼容性，已完成；
+- Step J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算和精确插入基准并运行开发语料，下一步；
+- Step J-D1c3c2c2：开发容量通过后预注册独立覆盖基准，尚未开始；
+- Step J-D1c3c2c3：覆盖正式通过后再运行真实 DeepSeek 动作 A/B，尚未开始；
+- 策略接入：继续暂停，直到 J-D1c3c2c3 动作消融验收。
 
 设计见 `docs/BELIEF_STATE.md`。
 

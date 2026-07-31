@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2b1 已完成；2400 字符精确 prompt payload 已通过 338 项全量测试。下一步为 J-D1c3c2b2 默认关闭的 prompt 接入；默认策略消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2b2 已完成；默认关闭的 DeepSeek prompt 接线已通过 345 项全量测试。下一步为 J-D1c3c2c1 配对 prompt 覆盖与成本基准；默认策略消费继续暂停。
 
 ## 2. 数据来源
 
@@ -450,18 +450,35 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2b2：默认关闭的 prompt 消费
 
-- 状态：下一步；
+- 状态：已完成；
 - 新 prompt 开关默认 False，且依赖 shadow 开关；
 - 只有 ready payload 进入 DeepSeekClient；
 - omitted/unavailable 与纯 shadow prompt 完全相同；
 - 固定章节位于记牌信息之后，不改变候选动作、RAG 或输出格式；
 - 本步骤只验证接线和兼容性，不形成动作质量结论。
 
+验证结果：
+
+- off、shadow-only、prompt 三态和非法组合已覆盖；
+- ready 只新增一个类型化 client keyword 和固定章节；
+- omitted/unavailable 与 shadow-only 等价；
+- 定向 54 项、相关 48 项、全量 345 项测试通过。
+
+### Step J-D1c3c2c1：配对 prompt 覆盖与成本基准
+
+- 状态：下一步；
+- evaluation-only，不调用 DeepSeek API；
+- 四策略 critical 样本分别构建 off/on prompt；
+- 统计 confidence available、payload ready/omitted 和规范诊断；
+- 统计 payload 字符数和 on-off prompt 字符增量；
+- ready 样本必须证明 on prompt 等于 off prompt 的一次固定章节插入；
+- 报告只含聚合统计和哈希，不含 prompt 或 observation。
+
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有 J-D1c3c2b2 显式消费和 J-D1c3c2c 动作消融依次通过，才允许默认策略读取；
+- 只有 J-D1c3c2c1 开发覆盖、J-D1c3c2c2 正式覆盖和 J-D1c3c2c3 动作消融依次通过，才允许默认策略读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准

@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2b1 已完成；有界精确 payload 已封板。下一步完成 J-D1c3c2b2 默认关闭的 DeepSeek prompt 接入。
+状态：J-A 至 J-D1c3c2b2 已完成；默认关闭的 prompt 接线通过兼容性回归。下一步完成 J-D1c3c2c1 evaluation-only 配对 prompt 基准。
 
 目标：
 
@@ -170,9 +170,11 @@ AI 决策分为四层：
 24. J-D1c3c1a：严格布尔标志、玩家集合和非法分子守恒路径，已完成；
 25. J-D1c3c2a：建立默认关闭的 pipeline 和 DeepSeek shadow 审计，证明动作与 prompt 等价，已完成；
 26. J-D1c3c2b1：建立有界、确定、精确分数的 prompt payload，不接入模型，已完成；
-27. J-D1c3c2b2：增加默认关闭的 prompt 消费开关并保持关闭态完全兼容，下一步；
-28. J-D1c3c2c：使用固定残局 observation corpus 做 confidence-on/off 动作消融；
-29. 策略接入：仅在 J-D1c3c2c 独立验收后开始。
+27. J-D1c3c2b2：增加默认关闭的 prompt 消费开关并保持关闭态完全兼容，已完成；
+28. J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算与精确插入基准并运行开发试验，下一步；
+29. J-D1c3c2c2：使用独立 seed 正式验收 prompt readiness 与成本；
+30. J-D1c3c2c3：在固定配对 corpus 上运行真实 DeepSeek confidence-off/on 动作消融；
+31. 策略接入：仅在 J-D1c3c2c3 独立验收后开始。
 
 J-A 验证结果：
 
@@ -474,6 +476,25 @@ J-D1c3c2b2 设计边界：
 - DeepSeekClient 只接受合法 ready payload，并在记牌信息之后插入固定 `【残局牌面信念】` 章节；
 - 关闭态和 omitted 态 prompt/client kwargs 保持原样；
 - 不修改 RAG、剪枝、legal actions、fallback 或默认配置。
+
+J-D1c3c2b2 实现结果：
+
+- agent 增加默认关闭的 prompt 开关和 payload 审计字段；
+- 只允许 off、shadow-only、prompt 三种严格 bool 模式；
+- ready payload 是 client kwargs 的唯一差异；
+- omitted/unavailable 与 shadow-only kwargs、prompt、动作和 fallback 相同；
+- client 对 malformed payload 整体忽略；
+- 新章节只插入一次且不改变其他 prompt 段落；
+- 定向 54 项、相关 48 项、全量 345 项测试通过。
+
+J-D1c3c2c1 设计边界：
+
+- evaluation-only collector，不发出 DeepSeek 网络请求；
+- 复用 strategic-pass 0/25/50/100 四种独立轨迹；
+- critical 样本构建同一份 off/on prompt，唯一差异应为封板 confidence 章节；
+- 聚合 ready/omitted、诊断、payload 字符和 prompt 字符 delta；
+- 报告不保留 seed、observation、prompt、手牌、玩家或逐样本内容；
+- 开发 seed 只验证容量、确定性、覆盖和成本，不形成动作质量结论。
 
 ### Step K：中局策略路由与残局决策
 

@@ -1,250 +1,270 @@
 # 下一步实施提示词
 
-## Step J-D1c3c2b2：默认关闭的 DeepSeek confidence prompt 接入
+## Step J-D1c3c2c1：四策略配对 prompt 覆盖与成本开发基准
 
-请在 GuanDan 项目中实现 Step J-D1c3c2b2。任务是在现有 shadow 装配之上增加第二个默认关闭的 prompt 消费开关，并让 DeepSeekClient 只接受已经封板的类型化 `CardConfidencePromptPayload`。
+请在 GuanDan 项目中实现 Step J-D1c3c2c1。任务是建立 evaluation-only、无网络的配对 prompt collector，在 forced-only 与 25/50/100% strategic-pass 四种轨迹上量化 confidence ready 覆盖、omitted 原因、字符成本和 off/on 精确插入一致性。
 
-本步骤只验证接线、边界和默认兼容性，不做动作收益结论，不开启默认配置。
+本步骤不调用真实 DeepSeek，不选择模型动作，不修改 runtime，也不形成动作质量或胜率结论。
 
 ## 一、前置状态
 
-J-D1c3c2b1 已完成：
+J-D1c3c2b2 已完成：
 
-- `CardConfidencePromptPayload` 为 frozen/slots；
-- formatter 只消费 `CardConfidenceState`；
-- ready 文本使用约分精确分数；
-- 固定 2400 字符预算，超限或 malformed 整体 omitted；
-- formatter/confidence 相关 22 项、DeepSeek/RAG/剪枝 52 项、全量 338 项测试通过；
-- 当前 agent、client、RAG、CLI、engine 尚未引用 formatter。
+- off、shadow-only、prompt 三态开关严格；
+- ready payload 是 client kwargs 的唯一差异；
+- omitted/unavailable 与 shadow-only kwargs、prompt、动作和 fallback 相同；
+- DeepSeekClient 只插入一次固定 `【残局牌面信念】` 章节；
+- 定向 54 项、相关 48 项、全量 345 项测试通过。
 
-现有 confidence/shadow/formatter 文件可能尚未提交。保留所有已有改动，不要删除、还原或重写。
+现有 confidence/prompt 文件可能尚未提交。保留全部已有改动，不要删除、还原或重写。
 
 ## 二、修改范围
 
-只允许修改：
+只允许新增：
 
-- `agents/deepseek_ai.py`
-- `agents/deepseek_client.py`
-- `tests/test_deepseek_prompt_step_h.py`
-- `tests/test_card_confidence_prompt.py`
+- `evaluation/confidence_prompt_benchmark.py`
+- `tests/test_confidence_prompt_benchmark.py`
 
-不要修改：
+不要修改任何现有文件，包括 runtime agents、DeepSeekClient、evaluation 既有模块、CLI、RAG、engine、config 或 docs。
 
-- confidence contract、pipeline 或 formatter 实现
-- config.py、`.env.example`、CLI
-- RAG、opening、剪枝、engine、evaluation 或 docs
+不得新增依赖，不扩展到 J-D1c3c2c2/c3。
 
-不得新增文件或依赖，不扩展到 J-D1c3c2c。
+## 三、禁止边界
 
-## 三、三态开关契约
+新 benchmark：
 
-在 `DeepSeekAIAgent` 增加：
+- 不得调用 `DeepSeekClient.suggest_action_id()`；
+- 不得调用 HTTP transport；
+- 不得读取 API key；
+- 不得读取 `game._state` 或 ground truth；
+- 不得导入 `evaluation.benchmark_truth`；
+- 不得保留 observation、prompt、手牌、玩家边际或逐样本报告；
+- 不得影响生成轨迹的 evaluation agent。
+
+只允许使用：
+
+- `GuanDanGame.observe()` 与 `legal_actions()`；
+- `classify_game_phase()`；
+- `build_runtime_card_confidence()`；
+- `build_card_confidence_prompt_payload()`；
+- `DeepSeekClient._prune_legal_actions()`；
+- `DeepSeekClient._build_structured_prompt()`；
+- evaluation-only `StrategicPassAIAgent`。
+
+## 四、报告结构
+
+新增 frozen、slots dataclass：
+
+### `ConfidencePromptCoverageBucket`
+
+至少包含：
+
+- `sample_count`
+- `confidence_available_count`
+- `confidence_unavailable_count`
+- `payload_ready_count`
+- `payload_omitted_count`
+- `budget_omitted_count`
+- `ready_exact_insertion_count`
+- `omitted_prompt_equal_count`
+- `pair_mismatch_count`
+- `payload_char_sum`
+- `payload_char_min`
+- `payload_char_max`
+- `prompt_delta_char_sum`
+- `prompt_delta_char_min`
+- `prompt_delta_char_max`
+- `diagnostic_counts`
+
+### `PolicyConfidencePromptReport`
+
+至少包含：
+
+- `policy_name`
+- `strategic_pass_rate`
+- `strategic_pass_opportunity_count`
+- `strategic_pass_count`
+- requested/completed/incomplete games
+- eligible/evaluated/valid/invalid/skipped samples
+- `overall`
+- `by_external_count`
+- `prompt_pair_sha256`
+- 顶层 `diagnostic_counts`
+
+### `ConfidencePromptBenchmarkReport`
+
+至少包含：
+
+- `requested_policy_count`
+- caller 顺序的不可变 `by_policy` mapping
+
+全部报告必须 frozen/slots、JSON 友好，mapping 使用不可变副本。
+
+报告不得包含 seed 列表、样本 ID、observation、legal actions、prompt 文本、confidence/payload 明细、玩家或手牌。
+
+## 五、运行入口
+
+提供：
 
 ```python
-card_confidence_prompt_enabled: bool = False
-last_card_confidence_prompt: "CardConfidencePromptPayload | None" = field(
-    default=None,
-    init=False,
-    repr=False,
-)
+run_confidence_prompt_benchmark(
+    seeds: Sequence[int],
+    *,
+    strategic_pass_rates: Sequence[int] = (0, 25, 50, 100),
+    current_level_rank: str = "2",
+    max_steps: int = 5000,
+    max_samples_per_game: int = 128,
+    max_external_cards: int = 12,
+    max_search_nodes: int = 1_000_000,
+    max_solutions: int = 100_000,
+) -> ConfidencePromptBenchmarkReport
 ```
 
-保留现有：
+输入验证沿用既有 benchmark 风格：
 
-```python
-card_confidence_shadow_enabled: bool = False
-last_card_confidence: CardConfidenceState | None
-```
+- seeds 为非空、唯一、非 `bool` 整数序列；
+- rates 为非空、唯一、0..100 非 `bool` 整数序列；
+- current level rank 合法；
+- 所有上限为非 `bool` 正整数；
+- `max_external_cards <= 12`。
 
-有效模式只有：
+无效调用参数显式抛 `ValueError`。
 
-| shadow | prompt | 模式 |
-|---|---|---|
-| False | False | off |
-| True | False | shadow-only |
-| True | True | prompt |
+## 六、采集流程
 
-要求：
+每个 rate 必须创建独立：
 
-- 两个开关都必须是实际 `bool`，拒绝 `1`、字符串等值；
-- `prompt=True, shadow=False` 在 `__post_init__` 显式抛 `ValueError`；
-- 不增加 AppConfig 字段；
-- 不读取环境变量；
-- CLI 不暴露该开关；
-- 默认构造仍为 off。
+- game；
+- agent；
+- strategic-pass counter；
+- sample set；
+- aggregate；
+- prompt pair hasher。
 
-## 四、Agent 接线
+每步：
 
-每次 `select_action()` 开始：
+1. 读取公开 observation；
+2. 只在 `critical_endgame` 进入采集；
+3. sample ID 仅在内存中使用 `(seed, step_no, observer_player_id)` 去重；
+4. 按 external unknown count 分到互斥桶：`external_0_4`、`external_5_8`、`external_9_12`；
+5. 每局超过样本上限只计 skipped 与规范诊断；
+6. 获取本步 legal actions；
+7. 使用同一个 phase context 构建 runtime confidence；
+8. 对 confidence 构建一次 prompt payload；
+9. 按 DeepSeek agent 当前逻辑计算 pruned actions；
+10. 使用完全相同的公开参数构建 off prompt；
+11. 使用相同参数并传入 payload 构建 on prompt；
+12. 聚合状态、字符成本和配对一致性；
+13. 使用该策略 agent 从原始 legal actions 选择动作并推进游戏。
 
-- `last_card_confidence = None`；
-- `last_card_confidence_prompt = None`。
+off/on prompt 的可选上下文固定为空：
 
-local only-pass、一次出完和 opening formula 命中时：
+- `rag_context=None`
+- `hand_evaluation=None`
+- `card_tracking_summary=None`
 
-- 不运行 pipeline；
-- 不运行 formatter；
-- 两个审计字段保持 None。
+这保证本步骤只测 confidence 章节增量，不评估其他功能。
 
-模型路径：
+## 七、配对一致性
 
-1. shadow=False：不导入 pipeline 或 formatter；
-2. shadow=True：保持 J-D1c3c2a pipeline 行为；
-3. prompt=False：不导入、不调用 formatter；
-4. prompt=True：仅对本步 `last_card_confidence` 调用一次 `build_card_confidence_prompt_payload()`；
-5. formatter 返回值写入 `last_card_confidence_prompt`；
-6. 只有 `status == "ready"` 时才向 client 传入新 keyword；
-7. omitted、unavailable、pipeline 异常或 formatter 异常时不传新 keyword；
-8. formatter 异常不得中断原模型调用或 fallback。
+### ready payload
 
-继续使用 lazy import，默认 off 路径不加载 confidence pipeline/formatter。
-
-## 五、Client 类型化参数
-
-为以下方法增加末尾可选参数：
-
-```python
-card_confidence_prompt: CardConfidencePromptPayload | None = None
-```
-
-- `DeepSeekClient._build_structured_prompt()`
-- `DeepSeekClient.suggest_action_id()`
-
-旧调用不传参数时，输出必须逐字不变。
-
-DeepSeekClient 必须再次复核 payload：
-
-- 实例类型正确；
-- `status == "ready"`；
-- `source == "physical_assignment_marginal_v1"`；
-- `calibration_scope == "critical_endgame_policy_diverse_v1"`；
-- diagnostics 为空 tuple；
-- text 为非空字符串；
-- char_count 为非 `bool` 正整数；
-- `char_count == len(text)`；
-- `char_count <= CARD_CONFIDENCE_PROMPT_MAX_CHARS`。
-
-任一不满足时整体忽略 payload，不抛异常，不输出部分文本。
-
-client 不得重新计算、约分、截断或修改 payload text。
-
-## 六、Prompt 章节
-
-合法 ready payload 新增且只新增：
+必须构造预期 on prompt：在 off prompt 的唯一 `【场景标签】` 标题前插入：
 
 ```text
 【残局牌面信念】
-<payload.text 原文>
-```
+<payload.text>
 
-章节位置严格为：
-
-```text
-【记牌信息】
-...
-
-【残局牌面信念】
-...
-
-【场景标签】
-...
 ```
 
 要求：
 
-- payload text 原样插入；
-- 不添加第二份解释；
-- 不改变【任务与硬约束】、【候选动作】、RAG 或【输出格式】；
-- 章节最多出现一次；
-- None、omitted 或 malformed payload 不出现该标题。
+- 实际 on prompt 与预期文本完全相等；
+- 新标题恰好出现一次；
+- payload text 恰好出现一次；
+- `delta = len(on_prompt) - len(off_prompt) > 0`；
+- `ready_exact_insertion_count` 增加。
 
-## 七、关闭态与 omitted 等价性
+### omitted payload
 
-### off 与历史默认
+要求：
 
-shadow=False、prompt=False 时：
+- on prompt 与 off prompt 完全相等；
+- delta = 0；
+- `omitted_prompt_equal_count` 增加。
 
-- client kwargs 键集合与 J-D1c3c2a 前完全一致；
-- `_build_structured_prompt()` 文本逐字一致；
-- action ID、fallback 和 decision source 一致。
+任一不满足：
 
-### shadow-only 与 J-D1c3c2a
+- `pair_mismatch_count` 增加；
+- 记录规范诊断 `prompt_pair_mismatch`；
+- 不保留实际 prompt。
 
-shadow=True、prompt=False 时：
+## 八、聚合规则
 
-- 不调用 formatter；
-- 不传 `card_confidence_prompt` keyword；
-- client kwargs、prompt、action 和 decision source 与 J-D1c3c2a 一致。
+- `sample_count = available + unavailable`；
+- `sample_count = ready + omitted`；
+- `evaluated = valid + invalid`，只有结构完整且完成配对检查的样本计入 valid；
+- ready 样本才计 payload char 与正 prompt delta；
+- min/max 在没有 ready 样本时稳定为 0；
+- `budget_omitted_count` 只统计含 `prompt_budget_exceeded` 的 payload；
+- confidence 和 payload diagnostics 按冒号前类别聚合；
+- 同一样本同一类别只计一次；
+- overall 必须直接聚合原始样本统计，不能平均三个桶；
+- 三桶合计必须与 overall 每个可加计数一致；
+- strategic pass 必须满足 `0 <= pass <= opportunity`。
 
-### prompt omitted
+## 九、prompt pair hash
 
-shadow=True、prompt=True，但 payload omitted/unavailable 时：
+每个策略维护一个 SHA-256 hasher。
 
-- 允许 `last_card_confidence_prompt` 保存 omitted 审计对象；
-- 不传新 keyword；
-- client kwargs、prompt、action、fallback 与 shadow-only 完全一致。
+按样本采集顺序，将以下 canonical JSON 编码后加入 hasher：
 
-### prompt ready
+```text
+[external_bucket_name, off_prompt, on_prompt]
+```
 
-只有 ready 时：
+要求：
 
-- client kwargs 相比 shadow-only 只新增 `card_confidence_prompt`；
-- legal actions、prompt actions、RAG、hand evaluation、tracker 和 phase 参数完全相同；
-- 允许模型动作因新增文本而变化，但本步骤不评估好坏。
+- `ensure_ascii=False`
+- `sort_keys=True`
+- `separators=(",", ":")`
+- 不把 sample ID 或 seed 写入 hash payload；
+- 最终报告只保留十六进制 digest，不保留 prompt。
 
-## 八、测试要求
+相同参数双运行时 digest 和完整报告必须一致。
+
+## 十、测试要求
 
 至少覆盖：
 
-### 开关与审计
+- 输入参数严格验证；
+- 默认四策略顺序与自定义 rate 顺序；
+- 每个 `(seed, player_id)` 创建独立 agent；
+- forced active pass=0，100% active pass=opportunity；
+- 只采 critical，三个 external bucket 互斥；
+- duplicate/sample-limit/max-steps 诊断；
+- ready 精确插入与正 delta；
+- omitted prompt 完全相等与零 delta；
+- mismatch 只计诊断，不泄露 prompt；
+- available/unavailable、ready/omitted 守恒；
+- overall 与三桶原始计数守恒；
+- payload/prompt delta sum/min/max；
+- 没有 ready 样本时 min/max 为 0；
+- diagnostics 规范化和同样本去重；
+- report frozen、mapping 不可变、JSON 序列化；
+- 同参数报告与 digest 可重复；
+- 报告没有 seed、样本 ID、observation、prompt、玩家或手牌字段；
+- 源码不调用 `suggest_action_id`、transport、API key、ground truth 或 `game._state`。
 
-- 默认 off；
-- 两个字段传 `1` 或字符串均 `ValueError`；
-- prompt=True/shadow=False 为 `ValueError`；
-- 每步重置两个审计字段；
-- 三个 local shortcut 均不调用 pipeline/formatter；
-- shadow-only 不调用 formatter；
-- prompt 模式 formatter 恰好调用一次。
+测试不得进行网络请求。
 
-### ready / omitted / 异常
-
-- ready payload 保存并传给 client；
-- unavailable confidence 产生 omitted，且不传 client keyword；
-- formatter 返回 omitted 时不传 keyword；
-- formatter 抛异常时审计 payload 为 None，模型与 fallback 继续；
-- pipeline 抛异常时不调用 formatter。
-
-### Client 参数和 prompt
-
-- 捕获 off、shadow-only、prompt-omitted、prompt-ready 四种 client kwargs；
-- off 与 shadow-only kwargs 相同；
-- prompt-omitted 与 shadow-only kwargs 相同；
-- prompt-ready 只多一个类型化 payload；
-- 旧 `_build_structured_prompt()` 固定 snapshot 逐字不变；
-- ready 新章节位置、标题次数和 payload 原文 snapshot；
-- None/omitted/malformed payload 不出现章节；
-- malformed 覆盖错误类型、status、source、scope、diagnostics、空 text、char_count 类型/不一致/超限。
-
-### Client 请求链
-
-- `suggest_action_id()` 把 ready payload 传给 `_build_structured_prompt()`；
-- omitted payload 被 client 忽略；
-- HTTP body 中 ready prompt 只出现一次新章节；
-- 不进行真实网络请求。
-
-### 隔离
-
-- RAG、剪枝、legal actions 和输出格式 snapshot 不变；
-- config、CLI、engine、evaluation 不引用 prompt 开关；
-- 更新 formatter 测试中的旧隔离断言，只允许本步骤约定的 agent/client 消费，继续禁止 RAG/CLI/engine。
-
-## 九、验证命令
+## 十一、验证命令
 
 运行：
 
 ```bash
-python -m unittest tests.test_card_confidence_prompt tests.test_card_confidence_pipeline tests.test_card_confidence tests.test_deepseek_prompt_step_h -q
-python -m unittest tests.test_rag_step_h tests.test_action_pruning tests.test_opening_strategy tests.test_deepseek_step_e -q
+python -m unittest tests.test_confidence_prompt_benchmark tests.test_card_confidence_prompt tests.test_card_confidence_pipeline tests.test_card_confidence -q
+python -m unittest tests.test_deepseek_prompt_step_h tests.test_pass_policy_benchmark tests.test_marginal_policy_corpus tests.test_rag_step_h tests.test_action_pruning -q
 python -m unittest discover -q
 git diff --check
 ```
@@ -252,39 +272,68 @@ git diff --check
 边界扫描：
 
 ```bash
-rg -n "card_confidence_prompt_enabled" config.py cli engine agents/rag_advisor.py
-rg -n "card_confidence_prompt" agents/rag_advisor.py cli engine evaluation
+rg -n "suggest_action_id|_post_json|api_key|ground_truth|game\._state|benchmark_truth" evaluation/confidence_prompt_benchmark.py
+rg -n "confidence_prompt_benchmark" agents cli rag engine
 ```
 
-两条均不得出现实际引用。
+两条均不得出现实际调用或反向导入。
 
-## 十、验收标准
+## 十二、开发容量试验
 
-完成后必须同时满足：
+单元测试全部通过后运行两次：
 
-- 只修改四个约定文件；
-- 三态开关组合严格；
-- 默认 off 和 shadow-only 完全兼容；
-- omitted/unavailable 不改变 client kwargs 或 prompt；
-- ready payload 类型化传递且只新增一个固定章节；
-- client 对 malformed payload fail-closed；
-- 不修改配置、CLI、RAG、剪枝、engine 或默认行为；
-- 定向、相关和全量测试通过；
-- `git diff --check` 通过。
+```text
+seeds = 80..89
+rates = 0,25,50,100
+games per policy = 10
+current_level_rank = 2
+max_steps = 5000
+max_samples_per_game = 128
+max_external_cards = 12
+max_search_nodes = 1,000,000
+max_solutions = 100,000
+```
 
-## 十一、输出要求
+开发门槛：
+
+- 两次报告、`to_dict()` 和 canonical JSON hash 完全一致；
+- 四策略各 10/10 局完成，无 incomplete；
+- invalid/duplicate/sample-limit/pair mismatch 均为 0；
+- 四策略三个 external bucket 均有样本；
+- 每个策略每个 bucket 至少有一个 ready 样本；
+- `budget_omitted_count=0`；
+- `ready_exact_insertion_count=payload_ready_count`；
+- `omitted_prompt_equal_count=payload_omitted_count`；
+- 所有 ready delta 为正且不超过 payload 字符数加固定章节开销；
+- 所有报告 JSON 可序列化且无 prompt/observation 明细。
+
+若通过，唯一开发判定为：
+
+```text
+confidence_prompt_coverage_capacity_verified
+```
+
+否则：
+
+```text
+development_capacity_failed
+```
+
+开发结果不能作为动作质量、模型收益或胜率结论。
+
+## 十三、输出要求
 
 最终报告必须包含：
 
 1. 修改文件；
-2. 三态开关和非法组合行为；
-3. formatter 调用与审计字段生命周期；
-4. client payload 复核规则；
-5. 新章节 snapshot 与位置；
-6. off/shadow/omitted/ready kwargs 等价性结果；
-7. 定向、相关和全量测试结果；
-8. 边界扫描结果；
-9. 明确说明默认运行仍不消费 confidence；
-10. 明确说明未形成动作质量或胜率结论。
+2. 报告 dataclass 和运行入口；
+3. 配对 prompt 构建与 exact insertion 规则；
+4. 聚合、诊断与 hash 规则；
+5. 定向和全量测试结果；
+6. 边界扫描结果；
+7. 双次开发运行耗时与 hash；
+8. 四策略行为、样本、ready/omitted、字符成本和各桶覆盖；
+9. 唯一开发判定；
+10. 明确说明没有调用 DeepSeek、没有动作质量或胜率结论。
 
-完成后停止，不扩展到 J-D1c3c2c，不修改 docs。
+完成后停止，不扩展到 J-D1c3c2c2/c3，不修改 docs。
