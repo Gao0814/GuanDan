@@ -1,26 +1,29 @@
 # 下一步实施提示词
 
-## Step J-D1c3c1：最小 runtime confidence 数据契约
+## Step J-D1c3c1a：runtime confidence fail-closed 边界封板
 
-请在 GuanDan 项目中实现 Step J-D1c3c1。任务是把已经通过多策略正式校准的 J-D1b 精确整数边际转换为一个最小、不可变、可审计、fail-closed 的 runtime confidence 状态。
+请在 GuanDan 项目中完成 Step J-D1c3c1a。J-D1c3c1 的正常路径和多数异常路径已经通过测试，但代码审阅发现三个 malformed 输入边界不满足原预注册的整体 fail-closed 契约。本步骤只修复这些边界并补回归测试，不接入任何决策消费者。
 
-本步骤只建立数据契约和单元测试，不接入 DeepSeek、RAG、提示词、动作剪枝、策略路由或动作选择。
+## 一、当前基线
 
-## 一、前置结论
+当前 J-D1c3c1 已新增：
 
-J-D1c3b2 已完成：
+- `agents/card_confidence.py`
+- `tests/test_card_confidence.py`
 
-- HEAD `b2491a810f81eb6dc20f1732efd89b6705f56458`；
-- seed `8000..8119`，forced/25/50/100 四策略各 120 局；
-- 双运行报告完全一致，SHA-256 为 `425bf197c7642894ebb6a0293383b94c160bdddb9dc44c180216278e200e113e`；
-- 16 个策略/范围全部通过完整性、支持度、certainty、ECE、Brier skill 和 supported MCE 护栏；
-- 唯一判定 `policy_diverse_calibration_verified`。
+已验证：
 
-该结论只授权建立 runtime 数据契约，不授权影响动作决策，也不证明胜率提升。
+- 定向 76 项通过；
+- 全量 318 项通过；
+- `git diff --check` 通过；
+- 新模块不读取 evaluation、ground truth、engine state、observation/history、DeepSeek 或 RAG；
+- 现有 decision path 未引用 `card_confidence`。
+
+这两个实现文件当前可能仍未提交或未跟踪。不要因此删除、还原或重写已有实现；在现有内容上做最小修复。
 
 ## 二、修改范围
 
-只允许新增：
+只允许修改：
 
 - `agents/card_confidence.py`
 - `tests/test_card_confidence.py`
@@ -28,196 +31,160 @@ J-D1c3b2 已完成：
 不要修改：
 
 - `engine/`
-- 现有 J-A、J-B1、J-B2/J-D1b 数据结构或搜索逻辑
+- 其他 `agents/` 模块
 - `evaluation/`
-- `agents/deepseek_ai.py`
-- `agents/deepseek_client.py`
-- `agents/rag_advisor.py`
-- opening strategy、动作剪枝、CLI、RAG corpus
+- CLI、RAG、DeepSeek、提示词或动作剪枝
 - docs
 
-不得新增第三方依赖。
+不得新增依赖，不扩展到 J-D1c3c2。
 
-## 三、输入边界
+## 三、必须修复的问题
 
-提供纯函数：
+### 1. 布尔语义必须严格
 
-```python
-build_card_confidence(
-    card_belief: CardBeliefState,
-    constraints: CardConstraintState,
-    allocation: CardAllocationResult,
-) -> CardConfidenceState
+当前 `bool(getattr(...))` 会让 `1`、非空字符串或其他 truthy 非布尔值通过。
+
+以下字段只有值为实际 `True` 时才可通过：
+
+- `card_belief.token_pool_exact`
+- `constraints.token_constraints_exact`
+- `constraints.is_consistent`
+- `allocation.search_complete`
+
+使用严格判断，例如 `value is True`，不要使用 `bool(value)`。
+
+沿用既有诊断：
+
+- 非严格 true 的 `token_pool_exact` -> `token_pool_inexact`
+- 非严格 true 的 `token_constraints_exact` -> `constraints_inexact`
+- 非严格 true 的 `is_consistent` -> `constraints_inconsistent`
+- 非严格 true 的 `search_complete` -> `allocation_not_complete`
+
+### 2. 玩家集合必须严格一致
+
+当前 constraint 玩家遍历会忽略不在公开 active external 集合中的额外玩家。
+
+必须满足：
+
+- belief active external 玩家集合；
+- `constraints.players` 玩家集合；
+- `allocation.players` 玩家集合；
+
+三者严格一致。
+
+以下情况都必须诊断 `player_set_mismatch` 并整体 unavailable：
+
+- 额外 constraint 玩家；
+- 额外 allocation 玩家；
+- 缺失玩家；
+- 重复玩家 ID；
+- 不可哈希玩家 ID；
+- constraint 玩家不是公开 active external 玩家。
+
+容量不一致继续使用 `capacity_mismatch`。不要静默过滤额外玩家后再比较集合。
+
+### 3. 非法 copy 分子不得进入原始求和
+
+当前 copy 守恒直接对 allocation 原始 mapping 求和。若值为字符串或 `None`，可能抛出 `TypeError`。
+
+必须：
+
+- 在任何加法前验证每个 copy 分子；
+- 只接受非 `bool` 非负整数；
+- 同时验证玩家容量/rank 总副本上界；
+- 守恒求和只使用已经规范化并验证通过的整数；
+- 若任一 copy 值非法，诊断 `invalid_copy_numerator` 并整体 unavailable；
+- 不得抛出由 malformed copy mapping 导致的 `TypeError`、`ValueError` 或部分输出。
+
+可以在进入守恒检查前对已发现的结构/类型诊断提前返回 unavailable，也可以保存独立的验证后整数表；不要再次读取未经验证的原始值参与 `sum()`。
+
+## 四、保持不变的契约
+
+- available 仍只覆盖 `critical_endgame`；
+- 外部未知牌仍必须为 1..12；
+- source 仍为 `physical_assignment_marginal_v1`；
+- calibration scope 仍为 `critical_endgame_policy_diverse_v1`；
+- presence/copy 仍使用精确整数分子和共同物理分母；
+- 玩家顺序仍沿用 allocation；
+- rank 仍使用 canonical 顺序；
+- unavailable 仍为零分母、空 players，且不保留部分边际；
+- 合法输入的 `CardConfidenceState.to_dict()` 输出必须与 J-D1c3c1 完全一致。
+
+不要改字段名、状态名、来源字符串或校准范围字符串。
+
+## 五、测试要求
+
+在 `tests/test_card_confidence.py` 增加至少以下测试：
+
+### 严格布尔
+
+分别将四个布尔语义字段替换为：
+
+- `1`
+- 非空字符串
+
+每种情况都必须：
+
+- 不抛异常；
+- `status == "unavailable"`；
+- `physical_assignment_count == 0`；
+- `players == ()`；
+- 包含对应既有诊断。
+
+### 玩家集合
+
+覆盖：
+
+- constraints 额外合法形状玩家；
+- allocation 额外合法形状玩家；
+- constraints/allocation 重复玩家；
+- constraint 玩家 ID 不在 belief active external 集合；
+- 不可哈希玩家 ID。
+
+全部必须 fail-closed，至少包含 `player_set_mismatch`。
+
+### malformed copy
+
+分别把一个 rank 的 copy 分子替换为：
+
+- 字符串；
+- `None`；
+- float；
+- `True`；
+- 负整数；
+- 超过容量/rank 上界的整数。
+
+每项都必须：
+
+- 调用不抛异常；
+- 返回整体 unavailable；
+- 包含 `invalid_copy_numerator`；
+- 不输出部分玩家或部分 rank。
+
+### 回归不变性
+
+- 保存一个合法输入在修复前已有的完整 `to_dict()` 期望；
+- 修复后 snapshot 必须逐字段相同；
+- 现有 certainty、impossible、rank 顺序、JSON 和不可变测试继续通过；
+- decision path 继续不引用 `card_confidence`。
+
+测试名称不要依赖执行顺序。
+
+## 六、验证命令
+
+先运行：
+
+```bash
+python -m unittest tests.test_card_confidence -q
 ```
 
-函数只能消费传入的三个不可变公开推断对象：
-
-- J-A `CardBeliefState`
-- J-B1 `CardConstraintState`
-- 完整 J-D1b `CardAllocationResult`
-
-禁止：
-
-- 读取 observation 或 history；
-- 读取 `game._state` 或任何隐藏手牌；
-- 导入 `evaluation/`；
-- 调用游戏引擎；
-- 重新枚举分配；
-- 使用 pass、牌型或其他行为信号修正边际。
-
-## 四、输出契约
-
-在 `agents/card_confidence.py` 新增 frozen、slots dataclass：
-
-### `RankMarginalConfidence`
-
-至少包含：
-
-- `rank: str`
-- `presence_numerator: int`
-- `expected_copy_numerator: int`
-- `denominator: int`
-
-提供只读派生语义：
-
-- `is_certain` 仅在 `presence_numerator == denominator` 时为真；
-- `is_impossible` 仅在 `presence_numerator == 0` 时为真。
-
-不要输出 float、百分比、四舍五入值或 high/medium/low 标签。
-
-### `PlayerCardConfidence`
-
-至少包含：
-
-- `player_id`
-- `remaining_capacity: int`
-- `ranks: tuple[RankMarginalConfidence, ...]`
-
-### `CardConfidenceState`
-
-至少包含：
-
-- `phase: str`
-- `status: str`，只能是 `available` 或 `unavailable`
-- `source: str`，available 时固定为 `physical_assignment_marginal_v1`
-- `calibration_scope: str`，available 时固定为 `critical_endgame_policy_diverse_v1`
-- `external_unknown_count: int`
-- `physical_assignment_count: int`
-- `players: tuple[PlayerCardConfidence, ...]`
-- `diagnostics: tuple[str, ...]`
-
-三个 dataclass 都提供 JSON 友好的 `to_dict()`。
-
-available 状态中的概率解释为：
-
-```text
-rank presence = presence_numerator / physical_assignment_count
-expected rank copies = expected_copy_numerator / physical_assignment_count
-```
-
-这只是公开硬约束下等权物理分配模型的组合边际，不是独立牌概率，也不是整手牌概率。
-
-## 五、available 的必要条件
-
-只有以下条件全部满足时才能输出 `status=available`：
-
-1. 三个输入的 phase 完全一致且为 `critical_endgame`；
-2. `card_belief.token_pool_exact=True`；
-3. `card_belief.diagnostics` 为空；
-4. `constraints.token_constraints_exact=True`；
-5. `constraints.is_consistent=True`；
-6. `constraints.diagnostics` 为空；
-7. `allocation.status == "complete"`；
-8. `allocation.search_complete=True`；
-9. `allocation.diagnostics` 为空；
-10. `physical_assignment_count` 为非 `bool` 正整数；
-11. `external_unknown_count` 为 1 至 12 的非 `bool` 整数；
-12. `allocation.total_unseen_cards == external_unknown_count`；
-13. 候选玩家集合、玩家 ID、剩余容量和容量总和一致；
-14. 每位 allocation 玩家都对应未完赛、剩余容量大于 0 的公开玩家；
-15. 每位玩家的 rank mapping key 与所有正数 `unseen_cards_by_rank` 完全一致；
-16. 所有 rank count、presence 分子和 copy 分子均为合法非 `bool` 整数；
-17. 对每个玩家/rank，`0 <= presence_numerator <= denominator`；
-18. 对每个玩家/rank，copy 分子不为负，且不超过该玩家容量和该 rank 总副本数允许的上界；
-19. 对每个 rank，跨玩家 copy 分子之和严格等于 `rank_count * denominator`。
-
-不要假设手工构造的 dataclass 一定合法；所有运行时边界都必须显式校验。
-
-## 六、fail-closed 行为
-
-任一必要条件失败时：
-
-- 返回 `status=unavailable`；
-- `physical_assignment_count=0`；
-- `players=()`；
-- 不保留任何部分 rank 边际；
-- diagnostics 使用稳定、去重、可审计的类别；
-- 不抛出由 malformed mapping、玩家 ID 或整数值导致的意外异常。
-
-diagnostics 至少覆盖：
-
-- `unsupported_phase`
-- `phase_mismatch`
-- `token_pool_inexact`
-- `belief_diagnostics_present`
-- `constraints_inexact`
-- `constraints_inconsistent`
-- `constraint_diagnostics_present`
-- `allocation_not_complete`
-- `allocation_diagnostics_present`
-- `invalid_external_unknown_count`
-- `external_count_mismatch`
-- `invalid_physical_assignment_count`
-- `player_set_mismatch`
-- `capacity_mismatch`
-- `rank_key_mismatch`
-- `invalid_rank_count`
-- `invalid_presence_numerator`
-- `invalid_copy_numerator`
-- `copy_conservation_mismatch`
-
-可以增加必要诊断，但不要把异常原始对象、手牌或隐藏信息写入诊断。
-
-## 七、稳定性与顺序
-
-- 玩家顺序沿用 `allocation.players`；
-- rank 使用项目 canonical 顺序：`3..10,J,Q,K,A,2,SJ,BJ`，只输出公开未见数量为正的 rank；
-- 输出只含不可变 tuple 或 frozen dataclass；
-- `to_dict()` 每次调用结果稳定；
-- 输入 mapping 的插入顺序不同不得改变语义输出；
-- `bool` 不得被当成整数接受。
-
-## 八、测试要求
-
-`tests/test_card_confidence.py` 至少覆盖：
-
-1. 一个小型完整分配的 presence 与 expected-copy 精确分子/分母；
-2. 同 rank 多 token 的 presence 使用 J-D1b 已聚合并集分子，不重新相加 token presence；
-3. `is_certain` 与 `is_impossible` 边界；
-4. 多玩家 copy 分子守恒；
-5. canonical rank 顺序与稳定玩家顺序；
-6. frozen/slots、不可变输出和 JSON 序列化；
-7. near-open、普通 endgame、opening、midgame 全部 unavailable；
-8. token pool 不精确、constraints 不精确或不一致；
-9. allocation truncated、invalid、skipped、无解或 search 不完整；
-10. phase、外部牌数、玩家集合、容量和 rank key 不一致；
-11. 分母为 0、负数、`bool` 或非法类型；
-12. presence/copy 分子越界、`bool`、非法类型或守恒失败；
-13. 任一失败时零分母、空 players，且不泄露部分结果；
-14. `agents/card_confidence.py` 不导入 `evaluation`、engine、DeepSeek 或 RAG；
-15. 现有 decision path 不导入或调用新模块。
-
-不要使用 ground truth 测试 runtime 输出；真值校准已经在 J-D1c3b2 完成。
-
-## 九、验证命令
-
-先运行定向测试：
+再运行相关回归：
 
 ```bash
 python -m unittest tests.test_card_confidence tests.test_card_allocations tests.test_card_constraints tests.test_card_belief tests.test_game_phase -q
 ```
 
-再运行全量测试：
+最后运行：
 
 ```bash
 python -m unittest discover -q
@@ -231,32 +198,33 @@ rg -n "evaluation|ground_truth|game\._state|observation|history|deepseek|rag" ag
 rg -n "card_confidence" agents/deepseek_ai.py agents/deepseek_client.py agents/rag_advisor.py cli engine
 ```
 
-第一条只允许 docstring 或注释中对禁止边界的说明，不允许实际导入或读取；第二条必须无匹配。
+第二条必须无匹配。第一条不允许出现实际导入或读取。
 
-## 十、验收标准
+## 七、验收标准
 
 完成后必须同时满足：
 
-- 只新增两个约定文件；
-- available 仅覆盖已正式验证的 critical、<=12 外部未知牌范围；
-- 所有概率量保持精确整数分子/分母；
-- malformed 或不完整输入整体 unavailable；
-- 不读取真值或引擎内部状态；
-- 不修改现有动作选择和合法动作集合；
-- 定向和全量测试通过；
-- `git diff --check` 通过。
+- 只改两个约定文件；
+- 四个布尔语义字段严格拒绝 truthy 非布尔值；
+- 三层玩家集合严格一致；
+- malformed copy 分子不会触发异常；
+- copy 守恒只使用验证后整数；
+- 所有失败整体 unavailable；
+- 合法输入输出完全不变；
+- 定向、相关和全量测试通过；
+- `git diff --check` 通过；
+- 现有决策路径仍未接入新模块。
 
-## 十一、输出要求
+## 八、输出要求
 
 最终报告必须包含：
 
 1. 修改文件；
-2. 输出 dataclass 与 builder 的实际字段；
-3. available 的完整前置条件；
-4. fail-closed diagnostics；
-5. 定向与全量测试结果；
-6. 边界扫描结果；
-7. 明确说明未接入 DeepSeek、RAG、提示词、剪枝或动作决策；
-8. 明确说明这不是策略收益或胜率结论。
+2. 三类修复的实际实现方式；
+3. 新增 malformed 测试矩阵；
+4. 单文件、相关和全量测试结果；
+5. `git diff --check` 与边界扫描结果；
+6. 明确说明合法 available 输出未变；
+7. 明确说明未接入 DeepSeek、RAG、提示词、剪枝或动作决策。
 
 完成后停止，不扩展到 J-D1c3c2，不修改 docs。

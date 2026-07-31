@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3b2 已完成；四策略扩容正式校准判定 `policy_diverse_calibration_verified`。下一步为 J-D1c3c1 最小 runtime confidence 数据契约；决策接入继续暂停。
+当前状态：Step J-A 至 J-D1c3b2 已完成；J-D1c3c1 runtime confidence 数据契约已实现并通过 318 项全量测试，但封板前发现三个 malformed 输入边界。下一步为 J-D1c3c1a fail-closed 硬化；决策接入继续暂停。
 
 ## 2. 数据来源
 
@@ -380,7 +380,7 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c1：runtime confidence 数据契约
 
-- 状态：下一步；
+- 状态：已实现，待 J-D1c3c1a 边界封板；
 - 新模块只消费 J-A/J-B1/J-D1b 不可变结果，不重新解析 observation 或 history；
 - 只在 `critical_endgame`、精确一致牌池、完整搜索、正物理分母和外部未知牌不超过 12 张时 available；
 - 对逐玩家逐 rank 输出 presence 与 expected-copy 的整数分子/分母；
@@ -389,11 +389,28 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 - runtime 模块不得导入 `evaluation/`，ground truth 不得进入 API；
 - 本步骤不接入策略、RAG、DeepSeek、提示词、剪枝或动作选择。
 
+实现验证：
+
+- 新增三层 frozen/slots runtime dataclass 和纯 builder；
+- 正常 available 与已覆盖异常路径符合整数分数和整体 unavailable 契约；
+- 定向 76 项、全量 318 项测试通过；
+- runtime 与 evaluation/ground truth/engine state/decision path 边界扫描通过。
+
+### Step J-D1c3c1a：fail-closed 边界硬化
+
+- 状态：下一步；
+- 所有布尔语义字段只接受实际 `True`，拒绝 truthy 非布尔值；
+- constraints/allocation 玩家集合必须与公开 active external 玩家集合严格一致；
+- 所有 copy 分子完成类型和范围校验后才能参与守恒求和；
+- malformed copy 值不得触发 `TypeError` 或泄露部分边际；
+- 不改变合法输入输出、公开字段或校准范围；
+- 不接入任何决策消费者。
+
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有契约和后续显式开关消融通过，才允许决策消费者读取；
+- 只有 J-D1c3c1a 封板和后续显式开关消融通过，才允许决策消费者读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准

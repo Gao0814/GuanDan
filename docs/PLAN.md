@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3b2 已完成；多策略扩容正式校准判定 `policy_diverse_calibration_verified`。下一步实现 J-D1c3c1 runtime confidence 数据契约。
+状态：J-A 至 J-D1c3b2 已完成；J-D1c3c1 已实现但存在三个 fail-closed 边界缺口。下一步完成 J-D1c3c1a 契约硬化。
 
 目标：
 
@@ -166,9 +166,10 @@ AI 决策分为四层：
 20. J-D1c3a：建立 forced/25/50/100 strategic-pass marginal corpus 载体并运行开发试验，已完成；
 21. J-D1c3b：使用独立 seed 运行多策略正式校准，已完成但支持度不足，判定 `benchmark_invalid`；
 22. J-D1c3b2：不改模型、分桶或阈值，使用全新 seed 扩大独立样本并重新正式验收，已完成并通过；
-23. J-D1c3c1：建立 critical-endgame-only、fail-closed 的 runtime confidence 数据契约，下一步；
-24. J-D1c3c2：通过显式开关接入候选消费端并做等轨迹消融与策略收益验收；
-25. 策略接入：仅在 J-D1c3c2 独立验收后开始。
+23. J-D1c3c1：建立 critical-endgame-only 的 runtime confidence 数据契约，已实现，待 malformed 边界封板；
+24. J-D1c3c1a：严格布尔标志、玩家集合和非法分子守恒路径，下一步；
+25. J-D1c3c2：通过显式开关接入候选消费端并做等轨迹消融与策略收益验收；
+26. 策略接入：仅在 J-D1c3c2 独立验收后开始。
 
 J-A 验证结果：
 
@@ -395,6 +396,24 @@ J-D1c3c1 设计边界：
 - 任一前置条件或守恒校验失败时返回无玩家、零分母的 unavailable 状态；
 - 不导入 `evaluation/`，不读取 observation、history 或 ground truth；
 - 本步骤不修改 DeepSeek、RAG、剪枝、提示词或动作选择。
+
+J-D1c3c1 实现结果：
+
+- 新增 `agents/card_confidence.py` 与 `tests/test_card_confidence.py`；
+- available 仅限已验证 critical 范围，输出精确 presence/copy 整数边际；
+- 已覆盖阶段、精确性、搜索、外部数量、分母、玩家、容量、rank 和多数分子异常；
+- 定向 76 项、全量 318 项测试通过；
+- 新模块无 evaluation、ground truth、engine state、observation/history、DeepSeek 或 RAG 引用；
+- 现有决策路径未导入新模块。
+
+J-D1c3c1a 硬化范围：
+
+- exact、consistent、search-complete 标志必须是实际 `True`，不能接受 `1` 或 truthy 字符串；
+- constraints 与 allocation 不得包含公开 active external 集合之外的额外玩家；
+- copy 守恒只能使用已验证整数，不得对 malformed 原始值直接求和；
+- 字符串、`None`、float、`bool` 等非法 copy 分子必须稳定返回 unavailable，不能抛异常；
+- 正常 available 输出和所有现有测试保持不变；
+- 完成前不进入 J-D1c3c2。
 
 ### Step K：中局策略路由与残局决策
 

@@ -461,7 +461,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-D1c3c1：runtime confidence 数据契约
 
-状态：下一步。只新增独立 runtime 转换模块和对应单元测试，不接入任何决策消费者。
+状态：已实现，定向 76 项、全量 318 项通过；尚需 J-D1c3c1a malformed 边界封板。未接入任何决策消费者。
 
 - available 只允许 `critical_endgame`、精确牌池、精确一致约束和完整有解 allocation；
 - `physical_assignment_count` 必须为非 `bool` 正整数；
@@ -477,6 +477,26 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - `agents/card_confidence.py` 不得导入 `evaluation/`，也不得读取 observation、history 或 ground truth；
 - `deepseek_ai.py`、`deepseek_client.py`、RAG、CLI、剪枝和动作选择在本步骤保持不变；
 - 先运行 `tests.test_card_confidence` 及 J-A/J-B/J-D1 allocation 相关定向测试，再运行全量 `python -m unittest discover -q`。
+
+当前补测缺口：
+
+- exact/consistent/search-complete 字段为 `1`、字符串或其他 truthy 非布尔值；
+- constraints 中存在公开 active external 集合之外的额外玩家；
+- copy mapping 值为字符串、`None`、float 或 `bool` 时不得在守恒求和中抛异常。
+
+#### J-D1c3c1a：fail-closed 边界封板
+
+状态：下一步。只修改 `agents/card_confidence.py` 与 `tests/test_card_confidence.py`。
+
+- `token_pool_exact`、`token_constraints_exact`、`is_consistent`、`search_complete` 必须用严格布尔检查；
+- truthy 非布尔值必须 unavailable 并输出对应既有诊断；
+- 额外、重复、不可哈希或缺失的 constraint/allocation 玩家必须 `player_set_mismatch`；
+- copy 原始值在进入加法前必须验证为非 `bool` 非负整数；
+- 字符串、`None`、float、`bool`、负数和越界 copy 均返回 `invalid_copy_numerator`；
+- 非法 copy mapping 不得抛 `TypeError`，不得输出部分 players；
+- copy 守恒只基于全部通过类型/范围校验的规范化整数；
+- 合法输入的 `to_dict()` snapshot 与 J-D1c3c1 保持一致；
+- 定向和全量回归通过，decision path 仍无 `card_confidence` 引用。
 
 #### 暂停：校准
 

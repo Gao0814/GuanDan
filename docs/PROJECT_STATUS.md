@@ -5,7 +5,7 @@
 ## 1. 当前基线
 
 - J-D1c3b2 执行基线：`b2491a8 Document J-D1c3b invalid benchmark`
-- 当前工作状态：Step J-D1c3b2 正式扩容双运行已完成，唯一判定 `policy_diverse_calibration_verified`；未修改代码，工作区干净
+- 当前工作状态：Step J-D1c3c1 已实现但尚未提交；定向 76 项、全量 318 项通过；封板前发现三个 fail-closed 边界需硬化
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：311 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、精确校准链和四策略 critical corpus 正式验收。J-D1c3b2 的四策略 16 个范围全部通过可重复性、完整性、支持度、certainty、ECE、Brier skill 和 supported MCE 护栏。下一步只设计最小、fail-closed、可消融的 runtime confidence 数据契约，暂不接入动作决策。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、精确校准链和四策略 critical corpus 正式验收。J-D1c3c1 已新增独立 runtime confidence 数据契约，正常与已覆盖异常路径通过测试，且未接入任何决策消费者。代码审阅发现 truthy 非布尔标志、额外 constraint 玩家和非法 copy 分子守恒求和三个边界尚未完全 fail-closed，下一步先完成 J-D1c3c1a 硬化。
 
 ## 3. 分模块状态
 
@@ -52,7 +52,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3b2 完成 | forced/25/50/100 四策略的 16 个范围完成独立扩容校准并全部通过 | 尚无 runtime 数据契约或策略接入 |
+| 残局精确分配 | Step J-D1c3c1 已实现，待硬化 | 四策略校准通过；已提供 critical-only 精确整数 runtime confidence 契约 | 三个 malformed 边界待补测，尚无策略接入 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -503,15 +503,24 @@ J-D1c3b2 保持模型、十档分桶和全部护栏不变，使用全新 seed �
 
 唯一判定：`policy_diverse_calibration_verified`。该结论只允许设计 runtime confidence 契约，不授权接入策略主链，也不证明动作质量或胜率提升。
 
-### P1：runtime confidence 尚无安全数据契约
+### P1：runtime confidence 契约需完成 fail-closed 硬化
 
-当前 `CardAllocationResult` 已提供完整物理分配总数，以及逐玩家 rank presence/copy 的精确整数分子，但 runtime 尚无独立、可审计的输出类型。下一步必须先建立：
+J-D1c3c1 已新增 `agents/card_confidence.py` 与 `tests/test_card_confidence.py`：
 
-- 只在 `critical_endgame` 生效的范围限制；
-- 只消费 J-A、J-B1 和完整 J-D1b 输出的纯转换层；
-- 以整数分子/分母表达 rank presence 与 expected copies，不输出浮点伪精度；
-- 阶段、牌池、约束、搜索、玩家、容量、rank 或守恒任一异常时整体 unavailable；
-- 不读取 ground truth，不导入 `evaluation/`，不进入 DeepSeek、RAG、提示词、剪枝或动作选择。
+- `RankMarginalConfidence`、`PlayerCardConfidence`、`CardConfidenceState` 均为 frozen/slots；
+- builder 只消费 J-A/J-B1/J-D1b，不读取 observation、history、ground truth 或 engine state；
+- available 限于 `critical_endgame`、1..12 张外部未知牌和完整精确 allocation；
+- presence/copy 使用整数分子/分母；失败返回零分母、空玩家的 unavailable；
+- 定向 76 项、全量 318 项和 `git diff --check` 通过；
+- DeepSeek、RAG、CLI、engine 均未引用新模块。
+
+封板前审阅发现：
+
+- `bool(getattr(...))` 会让 `1`、非空字符串等 truthy 非布尔值通过 exact/consistent/search-complete 标志；
+- constraint 玩家遍历会静默忽略不属于公开外部玩家集合的额外玩家；
+- copy mapping 含字符串、`None` 等非法值时，后续直接 `sum()` 原始 mapping 可能抛出 `TypeError`，而不是返回 unavailable。
+
+J-D1c3c1a 只修复这些 malformed 输入边界并补测试，不改变正常 available 输出，不接入任何消费者。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -556,7 +565,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3b2 已完成并核验；多策略扩容正式校准通过。下一步实现 J-D1c3c1 runtime confidence 数据契约，不接入决策主链。
+状态：J-A 至 J-D1c3b2 已完成并核验；J-D1c3c1 已实现但需完成 fail-closed 硬化。下一步为 J-D1c3c1a，不接入决策主链。
 
 拆分为：
 
@@ -582,8 +591,9 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3a：建立 forced/战略 pass 多策略 marginal corpus 载体并运行开发容量试验，已完成，判定 `policy_diversity_capacity_verified`；
 - Step J-D1c3b：预注册并运行独立多策略正式校准，已完成，判定 `benchmark_invalid`；
 - Step J-D1c3b2：保持模型、分桶和阈值不变，使用全新 seed 扩大样本后重新正式验收，已完成，判定 `policy_diverse_calibration_verified`；
-- Step J-D1c3c1：新增最小、fail-closed 的 runtime confidence 数据契约和单元测试，下一步；
-- Step J-D1c3c2：在契约稳定后设计显式开关、决策链集成和消融验收，尚未开始；
+- Step J-D1c3c1：新增最小 runtime confidence 数据契约和单元测试，已实现，待边界封板；
+- Step J-D1c3c1a：严格校验布尔标志、完整玩家集合并消除 malformed copy 求和异常，下一步；
+- Step J-D1c3c2：仅在 J-D1c3c1a 通过后设计显式开关、决策链集成和消融验收，尚未开始；
 - 策略接入：继续暂停，直到 J-D1c3c2 单独验收。
 
 设计见 `docs/BELIEF_STATE.md`。
