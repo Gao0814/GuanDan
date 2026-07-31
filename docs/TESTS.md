@@ -181,7 +181,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-C3b：预注册正式基准
 
-状态：下一步。该步骤运行现有评测器，不修改实现。
+状态：已完成。200 局双运行结果和 SHA-256 一致，8719 个样本全部有效，唯一判定为 `retain_for_policy_diverse_validation`。
 
 - J-C3a 必须先形成可追溯 Git 提交；
 - 固定 seed `1000..1199`，不得替换、筛选或删除不利种子；
@@ -196,7 +196,23 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 两个阶段的 precision 和 MRR delta 均大于 0；
 - 结果只代表 RuleBasedAI 轨迹，不外推到战略性 pass、DeepSeek 或胜率。
 
-#### J-C3c/J-C3d：策略分布验收与校准
+#### J-C3c1：战略性 pass 策略基准载体
+
+状态：下一步。
+
+- evaluation-only 策略只读取公开 observation 和合法动作；
+- 只有当前敌方 single、pass 合法且至少存在一个非 pass 合法动作时，才计为战略性 pass 机会；
+- 队友领出、非 single、孤立桌面、仅 pass 或无 pass 均不计机会；
+- 0% 策略与现有 RuleBasedAI 的动作轨迹和 rank 报告完全一致；
+- 25%、50%、100% 策略使用稳定整数门控，固定 seed 可重复；
+- 100% 策略在每个合格机会选择合法 pass；
+- 未命中门控时完全回退现有 RuleBasedAI，不复制其动作排序；
+- 每种策略使用独立新对局和新 agent，不共享状态；
+- 报告包含策略名、机会数、主动 pass 数和聚合 rank 报告；
+- 报告不包含 seed、逐样本动作、真实牌、token 或 rank 明细；
+- 默认 J-C3a API 与既有 240 项测试保持兼容。
+
+#### J-C3c2/J-C3d：策略分布验收与校准
 
 - pass 只作为软信号，不作为确定无牌；
 - 所有 `likely` 结论带置信度和证据来源；

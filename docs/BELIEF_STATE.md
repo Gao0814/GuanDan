@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-C3a 已完成；J-C3a 通过 130 项定向测试和 240 项全量测试。下一步为 Step J-C3b 预注册正式基准。
+当前状态：Step J-A 至 J-C3b 已完成；正式 RuleBasedAI 基准判定为 `retain_for_policy_diverse_validation`。下一步为 Step J-C3c1 战略性 pass 策略基准载体。
 
 ## 2. 数据来源
 
@@ -218,16 +218,32 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-C3b：预注册正式基准与启发式验收
 
+状态：已完成。
+
 - 固定独立 seed `1000..1199` 和全部运行参数；
 - 在运行前定义主指标、护栏和保留门槛；
 - 同一输入运行两次并校验报告和 canonical JSON hash 一致；
 - 根据结果决定保留、调整或撤销 `opponent_single_pass`；
 - 不用同一批样本反复调参并宣称泛化提升。
 
-### Step J-C3c：策略分布稳健性
+正式结果：
+
+- 200 局全部完成，8719 个样本全部有效；
+- near-open 3260 样本，critical 5459 样本；
+- candidate recall 与 Top-1/Top-3 recall 无回退；
+- overall Top-1/Top-3 precision 分别增加 `0.007357` / `0.006385`；
+- overall worst-case MRR 增加 `0.003233`；
+- 判定为保留进入策略分布验证，不代表 runtime 可用。
+
+### Step J-C3c1：策略分布基准载体
 
 - 增加存在合法压制动作但选择战略性 pass 的公开轨迹；
 - 区分规则 AI 的被迫 pass 与其他策略的主动 pass；
+- 输出每种策略的机会数、主动 pass 数和安全聚合 rank 指标；
+- 保持 J-C3a 默认 RuleBasedAI 行为与报告不变。
+
+### Step J-C3c2：策略分布稳健性验收
+
 - 使用独立于 J-C3b 的样本验证方向和召回护栏；
 - 未通过时不得用 RuleBasedAI 结果校准 runtime 置信度。
 
