@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, replace
+import inspect
 import json
+from pathlib import Path
 from types import MappingProxyType
 import unittest
 
 from agents.card_allocations import CardAllocationResult, PlayerAllocationBounds
 from agents.card_belief import CardBeliefState, PlayerPublicBelief
 from agents.card_constraints import CardConstraintState, PlayerCardConstraints
-from agents.card_ranker import _rank_strength, build_card_rankings
+from agents.card_ranker import build_card_rankings
 from agents.card_signals import PublicBehaviorEvent, PublicSignalState
 
 
@@ -183,7 +185,7 @@ class CardRankerTests(unittest.TestCase):
 
         self.assertEqual([player.player_id for player in state.players], [2])
 
-    def test_confirmed_rank_is_first_and_ignores_pass_penalty(self) -> None:
+    def test_confirmed_rank_is_first_and_all_candidates_are_neutral(self) -> None:
         events = (
             _event(0, 3, "lead", pattern="single", rank="3"),
             _event(1, 2, "pass", response=0),
@@ -201,9 +203,12 @@ class CardRankerTests(unittest.TestCase):
         self.assertEqual(candidates[0].rank, "A")
         self.assertEqual(candidates[0].soft_score, 0)
         self.assertEqual(candidates[0].evidence, ())
-        self.assertEqual(_candidate(state, "5").soft_score, -1)
+        self.assertEqual(candidates[0].score_tier, 1)
+        self.assertEqual(_candidate(state, "5").soft_score, 0)
+        self.assertEqual(_candidate(state, "5").evidence, ())
+        self.assertEqual(_candidate(state, "5").score_tier, 2)
 
-    def test_opponent_single_pass_penalizes_only_strictly_higher_possible_ranks(self) -> None:
+    def test_enemy_single_pass_does_not_change_possible_candidates(self) -> None:
         events = (
             _event(0, 3, "lead", pattern="single", rank="5"),
             _event(1, 2, "pass", response=0),
@@ -218,14 +223,12 @@ class CardRankerTests(unittest.TestCase):
 
         state = build_card_rankings(belief, constraints, None, signals)
 
-        self.assertEqual(_candidate(state, "3").soft_score, 0)
-        self.assertEqual(_candidate(state, "5").soft_score, 0)
-        two = _candidate(state, "2")
-        self.assertEqual(two.soft_score, -1)
-        self.assertEqual(two.evidence[0].code, "opponent_single_pass")
-        self.assertEqual(two.evidence[0].response_action_index, 0)
+        self.assertEqual([item.rank for item in _ranking(state).candidates], ["3", "5", "2"])
+        self.assertTrue(all(item.soft_score == 0 for item in _ranking(state).candidates))
+        self.assertTrue(all(item.evidence == () for item in _ranking(state).candidates))
+        self.assertEqual({item.score_tier for item in _ranking(state).candidates}, {1})
 
-    def test_teammate_and_invalid_single_links_do_not_penalize(self) -> None:
+    def test_pass_context_variants_do_not_change_neutral_ranking(self) -> None:
         teammate_events = (
             _event(0, 1, "lead", pattern="single", rank="3"),
             _event(1, 3, "pass", response=0),
@@ -244,10 +247,11 @@ class CardRankerTests(unittest.TestCase):
         belief, constraints, signals = _inputs(token_counts={"AS": 1}, domains={"AS": (2,)}, events=invalid_events)
         state = build_card_rankings(belief, constraints, None, signals)
         self.assertEqual(_candidate(state, "A").soft_score, 0)
-        self.assertIn("invalid_leading_single", state.diagnostics)
-        self.assertIn("invalid_response_link", state.diagnostics)
+        self.assertEqual(_candidate(state, "A").evidence, ())
+        self.assertNotIn("invalid_leading_single", state.diagnostics)
+        self.assertNotIn("invalid_response_link", state.diagnostics)
 
-    def test_pass_after_follow_uses_the_follow_response(self) -> None:
+    def test_pass_response_chain_does_not_change_candidate_result(self) -> None:
         events = (
             _event(0, 3, "lead", pattern="single", rank="3"),
             _event(1, 1, "follow", pattern="single", rank="5", response=0),
@@ -262,19 +266,10 @@ class CardRankerTests(unittest.TestCase):
 
         state = build_card_rankings(belief, constraints, None, signals)
 
-        evidence = _candidate(state, "A").evidence
-        self.assertEqual(evidence[0].response_action_index, 1)
-        self.assertEqual(evidence[0].leading_rank, "5")
+        self.assertEqual(_candidate(state, "A").soft_score, 0)
+        self.assertEqual(_candidate(state, "A").evidence, ())
 
-    def test_rank_strength_boundaries_and_level_rank(self) -> None:
-        for index, rank in enumerate(("3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"), start=3):
-            self.assertEqual(_rank_strength(rank, "5"), 16 if rank == "5" else index)
-        self.assertEqual(_rank_strength("2", "5"), 15)
-        self.assertEqual(_rank_strength("5", "5"), 16)
-        self.assertEqual(_rank_strength("SJ", "5"), 17)
-        self.assertEqual(_rank_strength("BJ", "5"), 18)
-
-    def test_penalties_accumulate_to_cap_without_zero_delta_evidence(self) -> None:
+    def test_multiple_enemy_passes_across_rounds_remain_neutral(self) -> None:
         events = (
             _event(0, 3, "lead", pattern="single", rank="3"),
             _event(1, 2, "pass", response=0),
@@ -285,12 +280,12 @@ class CardRankerTests(unittest.TestCase):
         )
         belief, constraints, signals = _inputs(token_counts={"AS": 1}, domains={"AS": (2,)}, events=events)
 
-        state = build_card_rankings(belief, constraints, None, signals, max_pass_single_penalty=2)
+        state = build_card_rankings(belief, constraints, None, signals)
         candidate = _candidate(state, "A")
 
-        self.assertEqual(candidate.soft_score, -2)
-        self.assertEqual(len(candidate.evidence), 2)
-        self.assertEqual([item.delta for item in candidate.evidence], [-1, -1])
+        self.assertEqual(candidate.soft_score, 0)
+        self.assertEqual(candidate.evidence, ())
+        self.assertEqual(candidate.score_tier, 1)
 
     def test_score_tiers_preserve_same_score_groups_and_stable_rank_order(self) -> None:
         belief, constraints, signals = _inputs(
@@ -304,11 +299,14 @@ class CardRankerTests(unittest.TestCase):
         self.assertEqual([item.rank for item in candidates], ["3", "4", "A"])
         self.assertEqual({item.score_tier for item in candidates}, {1})
 
-    def test_invalid_parameters_and_invalid_hard_inputs_return_no_scoring(self) -> None:
+    def test_legacy_penalty_keywords_are_removed_and_invalid_hard_inputs_return_empty(self) -> None:
         belief, constraints, signals = _inputs()
-        for keyword, value in (("pass_single_penalty", 0), ("max_pass_single_penalty", True)):
+        signature = inspect.signature(build_card_rankings)
+        self.assertNotIn("pass_single_penalty", signature.parameters)
+        self.assertNotIn("max_pass_single_penalty", signature.parameters)
+        for keyword, value in (("pass_single_penalty", 1), ("max_pass_single_penalty", 1)):
             with self.subTest(keyword=keyword):
-                with self.assertRaises(ValueError):
+                with self.assertRaises(TypeError):
                     build_card_rankings(belief, constraints, None, signals, **{keyword: value})
 
         cases = (
@@ -326,7 +324,7 @@ class CardRankerTests(unittest.TestCase):
                 self.assertEqual(state.players, ())
                 self.assertIn(diagnostic, state.diagnostics)
 
-    def test_phase_invalid_level_unknown_team_and_signal_diagnostics_are_safe(self) -> None:
+    def test_phase_and_signal_diagnostics_are_safe_and_neutral(self) -> None:
         belief, constraints, signals = _inputs(signal_phase="midgame")
         state = build_card_rankings(belief, constraints, None, signals)
         self.assertEqual(state.players, ())
@@ -337,7 +335,7 @@ class CardRankerTests(unittest.TestCase):
         state = build_card_rankings(belief, constraints, None, signals)
         self.assertTrue(state.players)
         self.assertEqual(_candidate(state, "A").soft_score, 0)
-        self.assertIn("invalid_level_rank", state.diagnostics)
+        self.assertEqual(_candidate(state, "A").evidence, ())
         self.assertIn("signal_diagnostics_present", state.diagnostics)
 
         altered_players = tuple(
@@ -347,7 +345,14 @@ class CardRankerTests(unittest.TestCase):
         belief = replace(belief, players=altered_players)
         signals = replace(signals, current_level_rank="5", diagnostics=())
         state = build_card_rankings(belief, constraints, None, signals)
-        self.assertIn("unknown_player_team", state.diagnostics)
+        self.assertTrue(state.players)
+        self.assertEqual(_candidate(state, "A").soft_score, 0)
+
+    def test_ranker_source_contains_no_rejected_pass_scoring_path(self) -> None:
+        source = Path("agents/card_ranker.py").read_text(encoding="utf-8")
+        self.assertNotIn("opponent_single_pass", source)
+        self.assertNotIn("pass_single_penalty", source)
+        self.assertNotIn("max_pass_single_penalty", source)
 
     def test_output_is_serializable_immutable_and_does_not_modify_inputs(self) -> None:
         belief, constraints, signals = _inputs()

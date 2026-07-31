@@ -1,8 +1,8 @@
-"""Minimal, auditable rank ordering from hard domains and public pass events.
+"""Neutral rank ordering projected from J-B1/J-B2 hard ownership facts.
 
-J-C2b1 is a view over existing hard facts.  It never alters ownership domains
-or confirmations; a pass to an opponent's single can only lower an already
-possible rank's ordering with an explicit public-event record.
+The previously evaluated enemy-single pass signal was rejected by the
+strategy-distribution benchmark.  This module therefore emits the safe
+hard-only baseline: it never converts public pass events into rank scoring.
 """
 
 from __future__ import annotations
@@ -18,16 +18,10 @@ from agents.card_signals import PublicSignalState
 
 _RANK_ORDER = NORMAL_RANKS + JOKER_RANKS
 _RANK_SORT_INDEX = {rank: index for index, rank in enumerate(_RANK_ORDER)}
-_BASE_STRENGTH = {rank: index + 3 for index, rank in enumerate(NORMAL_RANKS)}
-_BASE_STRENGTH.update({"SJ": 17, "BJ": 18})
 
 
 def _is_positive_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
-
-
-def _is_non_negative_int(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _token_rank(token: str) -> str | None:
@@ -36,14 +30,6 @@ def _token_rank(token: str) -> str | None:
     if len(token) >= 2 and token[-1] in SUITS and token[:-1] in NORMAL_RANKS:
         return token[:-1]
     return None
-
-
-def _rank_strength(rank: str, current_level_rank: str) -> int:
-    """Public rank-strength mirror used only for the soft ordering rule."""
-
-    if rank == current_level_rank:
-        return 16
-    return _BASE_STRENGTH[rank]
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,18 +105,8 @@ def build_card_rankings(
     constraints: CardConstraintState,
     allocation: CardAllocationResult | None,
     signals: PublicSignalState,
-    *,
-    pass_single_penalty: int = 1,
-    max_pass_single_penalty: int = 4,
 ) -> CardRankRankingState:
-    """Build a deterministic soft ordering without changing any hard fact."""
-
-    for name, value in (
-        ("pass_single_penalty", pass_single_penalty),
-        ("max_pass_single_penalty", max_pass_single_penalty),
-    ):
-        if not _is_positive_int(value):
-            raise ValueError(f"{name} must be a positive integer")
+    """Build deterministic neutral tiers without changing hard facts."""
 
     diagnostics: list[str] = []
 
@@ -276,91 +252,6 @@ def build_card_rankings(
     if signals.diagnostics:
         diagnose("signal_diagnostics_present")
 
-    current_level_rank = signals.current_level_rank
-    level_is_valid = current_level_rank in NORMAL_RANKS
-    if not level_is_valid:
-        diagnose("invalid_level_rank")
-
-    event_by_index: dict[int, object] = {}
-    for event in signals.events:
-        if event.action_index in event_by_index:
-            diagnose("invalid_response_link", event.action_index)
-            continue
-        event_by_index[event.action_index] = event
-
-    facts_by_player = {player.player_id: player for player in card_belief.players}
-    if level_is_valid:
-        for event in signals.events:
-            if event.event_type != "pass":
-                continue
-            response_index = event.response_to_action_index
-            if not isinstance(response_index, int) or isinstance(response_index, bool):
-                diagnose("invalid_response_link", event.action_index)
-                continue
-            response = event_by_index.get(response_index)
-            if response is None:
-                diagnose("missing_response_event", event.action_index)
-                continue
-            if response.action_index >= event.action_index:
-                diagnose("invalid_response_link", event.action_index)
-                continue
-            if (
-                not _is_non_negative_int(event.round_no)
-                or not _is_non_negative_int(response.round_no)
-                or event.round_no != response.round_no
-            ):
-                diagnose("cross_round_response", event.action_index)
-                continue
-            if response.event_type not in {"lead", "follow"}:
-                diagnose("invalid_response_link", event.action_index)
-                continue
-            if (
-                response.declared_pattern != "single"
-                or len(response.declared_ranks) != 1
-                or response.declared_ranks[0] not in _RANK_SORT_INDEX
-            ):
-                diagnose("invalid_leading_single", event.action_index)
-                continue
-
-            pass_player = facts_by_player.get(event.player_id)
-            response_player = facts_by_player.get(response.player_id)
-            if (
-                pass_player is None
-                or response_player is None
-                or not pass_player.team
-                or not response_player.team
-            ):
-                diagnose("unknown_player_team", event.action_index)
-                continue
-            if pass_player.team == response_player.team:
-                continue
-            if event.player_id not in candidate_state:
-                continue
-
-            leading_rank = response.declared_ranks[0]
-            leading_strength = _rank_strength(leading_rank, current_level_rank)
-            for rank in sorted(candidate_state[event.player_id], key=_RANK_SORT_INDEX.__getitem__):
-                candidate = candidate_state[event.player_id][rank]
-                if candidate["confirmed_count"]:
-                    continue
-                if _rank_strength(rank, current_level_rank) <= leading_strength:
-                    continue
-                old_score = candidate["score"]
-                new_score = max(-max_pass_single_penalty, old_score - pass_single_penalty)
-                delta = new_score - old_score
-                if not delta:
-                    continue
-                candidate["score"] = new_score
-                candidate["evidence"].append(
-                    RankScoreEvidence(
-                        code="opponent_single_pass",
-                        action_index=event.action_index,
-                        response_action_index=response_index,
-                        leading_rank=leading_rank,
-                        delta=delta,
-                    )
-                )
-
     rankings: list[PlayerRankRanking] = []
     for player_id, player in eligible_players.items():
         raw_candidates = candidate_state[player_id]
@@ -368,7 +259,6 @@ def build_card_rankings(
             raw_candidates,
             key=lambda rank: (
                 0 if raw_candidates[rank]["confirmed_count"] else 1,
-                -raw_candidates[rank]["score"],
                 _RANK_SORT_INDEX[rank],
             ),
         )
@@ -378,7 +268,7 @@ def build_card_rankings(
         for rank in ordered:
             raw = raw_candidates[rank]
             status = "confirmed" if raw["confirmed_count"] else "possible"
-            group = (status, raw["score"])
+            group = (status, 0)
             if group != previous_group:
                 tier += 1
                 previous_group = group
@@ -387,9 +277,9 @@ def build_card_rankings(
                     rank=rank,
                     hard_status=status,
                     confirmed_count=raw["confirmed_count"],
-                    soft_score=0 if status == "confirmed" else raw["score"],
+                    soft_score=0,
                     score_tier=tier,
-                    evidence=tuple(raw["evidence"]) if status == "possible" else (),
+                    evidence=(),
                 )
             )
         rankings.append(

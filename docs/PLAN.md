@@ -23,6 +23,7 @@
 - Step J-C3b RuleBasedAI 独立种子正式基准，判定为保留进入策略分布验证。
 - Step J-C3c1 evaluation-only 战略性 pass 策略分布基准载体。
 - Step J-C3c2 独立种子策略分布验收，判定拒绝无条件 pass 信号。
+- Step J-C3d1 撤销无条件 pass 扣分并恢复 hard-only neutral ranking。
 
 当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。
 
@@ -111,7 +112,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-C3c2 已完成；下一步实施 J-C3d1。
+状态：J-A 至 J-C3d1 已完成；下一步实施 J-C3d2。
 
 目标：
 
@@ -146,8 +147,8 @@ AI 决策分为四层：
 9. J-C3b：用独立固定种子和预注册门槛运行 RuleBasedAI 正式基准，已完成；
 10. J-C3c1：实现 evaluation-only 战略性 pass 策略和策略分层报告，已完成；
 11. J-C3c2：用独立固定种子运行策略分布稳健性验收，已完成，判定拒绝；
-12. J-C3d1：移除无条件 pass 负分并恢复零软分 hard-only ranking，下一步；
-13. J-C3d2：验证 neutral ranking 在 forced/战略 pass 轨迹下均不损失召回；
+12. J-C3d1：移除无条件 pass 负分并恢复零软分 hard-only ranking，已完成；
+13. J-C3d2：验证 neutral ranking 在 forced/战略 pass 轨迹下均不损失召回，下一步；
 14. J-D1：设计完整残局分配的概率计数与离线校准；
 15. 置信度和策略接入：仅在新证据通过独立验收后恢复。
 
@@ -228,6 +229,15 @@ J-C3c2 正式结果：
 - 唯一判定：`reject_unconditioned_pass_signal`；
 - MRR 正增量不能覆盖 Top-K 真实 rank 召回失败；
 - 当前 pass 负分必须撤销，不能进入置信度校准或 runtime。
+
+J-C3d1 验证结果：
+
+- `agents/card_ranker.py` 已删除 pass penalty 参数、评分路径和 evidence；
+- hard candidates、confirmed、J-B2 收窄和通用 metrics 保持稳定；
+- 所有 possible candidate 恢复零软分、空 evidence；
+- 定向 140 项、全量 250 项测试通过；
+- seed `30..34` 开发试跑中，四种 pass 策略的全部 overall delta 严格为 0；
+- 下一步只做独立 seed neutral 封板，不恢复被拒绝信号。
 
 ### Step K：中局策略路由与残局决策
 

@@ -4,8 +4,8 @@
 
 ## 1. 当前基线
 
-- 已提交 Git 基线：`f1bfabd J-C3c1`
-- 当前工作状态：Step J-C3c2 正式策略分布验收已完成；工作区干净，无源码改动
+- 已提交 Git 基线：`9a44c07 J-C3c2`
+- 当前工作状态：Step J-C3d1 已实现并验证；`agents/card_ranker.py` 与对应测试尚未提交
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：250 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -28,7 +28,7 @@
 
 ### 当前优化愿景
 
-完成度：约 85%
+完成度：约 87%
 
 目标愿景包括：
 
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、离线评测、公开事件、多种子采集器及 forced/战略性 pass 正式对照。J-C3c2 已证明当前无条件 pass 软扣分不安全，因此暂停置信度校准；下一步先恢复零软分安全基线，再研究可由残局组合计数支持的新证据。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、离线评测、公开事件、多种子采集器、forced/战略性 pass 正式对照，并已撤销被拒绝的无条件 pass 软扣分。下一步用独立 corpus 封板验证 neutral baseline，再研究可由残局组合计数支持的新证据。
 
 ## 3. 分模块状态
 
@@ -55,7 +55,7 @@
 | 残局精确分配 | Step J-B2 完成 | 不超过 12 张时枚举完整分配、聚合上下界、保护截断结果 | 尚未接入主链，真实域缩减效果待批量样本 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
-| rank 软排序 | J-C3c2 判定拒绝 | 硬域候选、敌方 single pass 弱负分、证据和 score tier | 战略 pass 下 Top-K recall 严重回退，必须撤销默认扣分 |
+| rank 排序 | Step J-C3d1 neutral 完成 | 只投影硬域与 confirmed；possible 均为零软分、空 evidence | 待 J-C3d2 独立 corpus 封板 |
 | rank 排序评测 | Step J-C2b2 完成 | 真值隔离、并列安全 Top-K、零软分基线和单样本 delta | 尚未支持策略分布分层结论 |
 | rank 离线基准 | Step J-C3a/J-C3b 完成 | 固定种子采集、微聚合、阶段桶、可重复正式验收 | RuleBasedAI 不覆盖有牌可压时的战略性 pass |
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
@@ -277,9 +277,9 @@ RuleBasedAI 只在不存在非 pass 合法动作时 pass，因此 J-C3b 测到�
 - RuleBasedAI 轨迹上的小幅收益是策略分布偏差，不构成泛化证据；
 - 硬候选、公开事件层、离线评测和策略压力测试仍然有效。
 
-### P1：撤销已拒绝的默认软扣分
+### 实施要求：撤销已拒绝的默认软扣分（J-C3d1）
 
-下一步 J-C3d1 应恢复安全基线：
+J-C3d1 按以下要求恢复安全基线：
 
 - `build_card_rankings()` 只投影 J-B1/J-B2 的 hard candidates；
 - 所有 possible candidate 默认 `soft_score=0`、`evidence=()`；
@@ -287,6 +287,33 @@ RuleBasedAI 只在不存在非 pass 合法动作时 pass，因此 J-C3b 测到�
 - 不再解析 pass 事件生成 `opponent_single_pass` 负分；
 - 保留通用 evidence/metric 数据结构，供未来经过验收的新信号使用；
 - 不以 feature flag 或隐藏参数保留被拒绝逻辑。
+
+### 已解决：撤销已拒绝的默认软扣分（Step J-C3d1）
+
+已完成：
+
+- 从 `build_card_rankings()` 签名删除两个 pass penalty 参数；
+- 删除 pass event、single response、队伍和 rank strength 评分路径；
+- 删除 `opponent_single_pass` evidence 及专用 diagnostics；
+- hard candidates、J-B2 收窄、confirmed count 和 hard source 保持不变；
+- 所有 possible candidate 固定 `soft_score=0`、`evidence=()`；
+- 有 confirmed 时 confirmed/possible 分为 tier 1/2，无 confirmed 时 possible 全部 tier 1；
+- 通用 `RankScoreEvidence` 和 ranking metrics 继续支持人工 soft ranking；
+- 旧 penalty keyword 由 Python 签名显式抛出 `TypeError`。
+
+验证：定向 140 项、全量 250 项测试通过；`git diff --check` 通过。
+
+开发试跑 seed `30..34` 只用于确认 J-C3d2 口径：四种 pass 策略均无 invalid/skip，overall 的 candidate、Top-1、Top-3、选择规模和 MRR delta 全部严格为 0。
+
+### P1：neutral baseline 尚未正式封板
+
+下一步 J-C3d2 使用独立 seed `3000..3049`，要求四种策略：
+
+- 两次完整报告和 canonical JSON hash 一致；
+- 每个策略 50 局全部完成，无 invalid、skip 或 diagnostics；
+- overall、near-open、critical 的 baseline snapshot 与 neutral snapshot 完全相同；
+- 所有 delta 严格为 0；
+- 通过后将 J-C3 分支封板，转入 J-D1 残局分配概率设计。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -331,7 +358,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-C3c2 已完成并核验，下一步实施 J-C3d1。
+状态：J-A 至 J-C3d1 已完成并核验，下一步实施 J-C3d2。
 
 拆分为：
 
@@ -346,8 +373,8 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-C3b：预注册并运行 RuleBasedAI 独立种子正式基准，已完成；
 - Step J-C3c1：实现 evaluation-only 战略性 pass 策略与多策略基准载体，已完成；
 - Step J-C3c2：使用独立种子运行策略分布稳健性验收，已完成，判定拒绝；
-- Step J-C3d1：撤销无条件 pass 软扣分，恢复零软分安全基线，下一步；
-- Step J-C3d2：固定种子验证 neutral ranking 在所有 pass 策略下无召回差异；
+- Step J-C3d1：撤销无条件 pass 软扣分，恢复零软分安全基线，已完成；
+- Step J-C3d2：固定种子验证 neutral ranking 在所有 pass 策略下无召回差异，下一步；
 - Step J-D1：研究基于完整残局分配计数的概率候选，不再用 pass 直接代表无牌；
 - 置信度校准：暂停，直到新信号通过独立策略分布验收。
 

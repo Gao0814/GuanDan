@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-C3c2 已完成；正式策略分布验收判定为 `reject_unconditioned_pass_signal`。下一步为 Step J-C3d1 撤销默认 pass 软扣分并恢复零软分安全基线。
+当前状态：Step J-A 至 J-C3d1 已完成；被拒绝的 pass 软扣分已撤销，ranker 恢复 hard-only neutral baseline。下一步为 Step J-C3d2 独立 corpus 封板。
 
 ## 2. 数据来源
 
@@ -257,6 +257,8 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-C3d1：恢复零软分安全基线
 
+状态：已完成。
+
 - 移除 `opponent_single_pass` 默认负分；
 - hard candidates、confirmed 和 score tier 契约保持稳定；
 - possible candidates 的 soft score 归零且 evidence 为空；
@@ -265,6 +267,8 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-C3d2：neutral ranking 回归
 
+- 使用独立 seed `3000..3049` 和四种 pass 策略；
+- 同一参数完整运行两次并校验 canonical JSON hash；
 - forced-only 与战略 pass 轨迹的 soft/baseline 指标应完全一致；
 - candidate 和 Top-K recall delta 均为 0；
 - 确认撤销后不再存在策略分布导致的错误降级。

@@ -230,7 +230,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-C3d1：撤销无条件 pass 软扣分
 
-状态：下一步。
+状态：已完成。J-C3d1 与兼容测试共 140 项通过，全量 250 项通过。
 
 - enemy single pass 不再改变任何 possible candidate 的 soft score；
 - 单次、重复、不同 round 的 pass 均不生成 `opponent_single_pass` evidence；
@@ -245,9 +245,24 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - J-C3a/J-C3c1 基准运行器保持可用；
 - 全量测试无回归。
 
-#### J-C3d2/J-D1：neutral 回归与新证据
+#### J-C3d2：neutral corpus 封板
 
+状态：下一步。该步骤只运行已有 benchmark，不修改实现。
+
+- J-C3d1 必须先形成可追溯提交，工作区干净；
+- 固定独立 seed `3000..3049`，四种策略各 50 局；
+- 两次完整报告和 canonical JSON SHA-256 一致；
+- 每个策略无 incomplete、invalid、skip 或 diagnostics；
+- 每个策略 near-open/critical 均至少 500 个有效样本；
+- 策略机会数与主动 pass 数满足既有 rate 约束；
+- 每个策略、每个阶段的 baseline 与 neutral snapshot 完全相等；
+- 所有 candidate/Top-K/选择规模/MRR delta 严格为 0；
 - neutral ranker 在 forced/战略 pass 策略下 soft 与 baseline 完全一致；
+- 通过后判定 `neutral_baseline_verified`，否则 `benchmark_invalid`；
+- 不在正式 seed 上修改实现、参数或筛选样本。
+
+#### J-D1：新证据
+
 - pass 只作为公开行为事实，不作为默认持牌负证据；
 - 新概率信号必须定义样本空间、权重和校准方式。
 
