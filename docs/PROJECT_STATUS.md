@@ -4,8 +4,8 @@
 
 ## 1. 当前基线
 
-- 已提交 Git 基线：`750ab56 J-D1c2c`
-- 当前工作状态：Step J-D1c3a 已完成并独立复核；多策略 wrapper 与测试尚未提交
+- J-D1c3b 执行基线：`2fc902d J-D1c3b preregistration`
+- 当前工作状态：Step J-D1c3b 正式双运行已完成，唯一判定 `benchmark_invalid`；未修改代码，工作区干净
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：311 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、精确校准链和四策略 critical corpus 载体。J-D1c3a 的策略隔离、行为梯度、桶覆盖与双运行确定性已通过，下一步进入 J-D1c3b 独立多策略正式校准。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、精确校准链和四策略 critical corpus 载体。J-D1c3b 的双运行、数据完整性和 15/16 个范围的数值护栏通过，但 `strategic_pass_100 / external_0_4` 只有一个达到支持阈值的 calibration bin，因此正式基准无效。下一步使用全新 seed 扩大独立语料，不修改模型、分桶或阈值。
 
 ## 3. 分模块状态
 
@@ -52,7 +52,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3a 完成 | forced/25/50/100 strategic-pass 均可独立采集和精确聚合，开发容量已验证 | 尚无多策略正式校准或 runtime 准入 |
+| 残局精确分配 | Step J-D1c3b 已运行但无效 | forced/25/50/100 strategic-pass 可独立采集；正式双运行可重复且数值护栏基本通过 | 一个范围支持度不足，尚无 runtime 准入 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -437,7 +437,7 @@ J-D1c2b 已完成 fixed-seed collector 与开发容量验证：
 
 唯一判定：`retain_for_policy_diverse_calibration`。
 
-### P1：正式校准仍只覆盖单一策略轨迹分布
+### P1：有效正式校准仍只覆盖单一策略轨迹分布
 
 当前正式 corpus 来自默认 RuleBasedAI。虽然组合边际不使用 pass 软信号，但不同策略会改变到达 critical 局面的牌池、容量和历史分布。因此当前结论不能外推到：
 
@@ -446,7 +446,7 @@ J-D1c2b 已完成 fixed-seed collector 与开发容量验证：
 - runtime confidence；
 - 动作质量或胜率。
 
-J-D1c3a 需要复用现有 0/25/50/100% strategic-pass agent 与 marginal collector，建立隔离的多策略报告并先运行开发容量试验。
+J-D1c3a 已建立隔离的多策略报告；J-D1c3b 也已执行，但因单一范围支持度不足而无效。因此可引用的正式校准结论仍只覆盖默认 RuleBasedAI，必须等待 J-D1c3b2 的全新独立语料。
 
 ### 已解决：策略分布多样性载体缺失（Step J-D1c3a）
 
@@ -466,6 +466,26 @@ J-D1c3a 需要复用现有 0/25/50/100% strategic-pass agent 与 marginal collec
 - 定向 187 项、全量 311 项测试通过。
 
 唯一开发判定：`policy_diversity_capacity_verified`。该判定只允许预注册正式多策略校准。
+
+### 当前阻塞：多策略正式校准支持度不足（Step J-D1c3b）
+
+正式结果：
+
+- HEAD `2fc902dee07d59056a4c84770c5222f2947affe2`，运行前后工作区干净；
+- seed `7000..7049`，四策略各 50 局，完整运行两次；
+- 两次耗时约 322.8s / 321.9s，报告与 canonical JSON 完全相同；
+- SHA-256 均为 `67ed39e3b39b22dd7f2b660c70dc66eb5f6add3c11c0e3dc8315a1a8ca6a7eee`；
+- 定向 187 项、全量 311 项测试通过；
+- 四策略均 50/50 局完成，invalid、skip、diagnostics 全为 0；
+- 每个策略的三个 external bucket 均至少 350 个有效样本；
+- 策略行为边界和实际主动 pass 比例递增关系通过；
+- 其余 15 个策略/范围的 certainty、ECE、Brier skill、supported MCE 和支持度要求通过；
+- `strategic_pass_100 / external_0_4` 有 436 个有效样本、1201 个 rank pair，但十档 prediction count 为 `[0, 0, 60, 25, 0, 40, 26, 36, 2, 1012]`；
+- 该范围只有 bin 9 达到 external bucket 的 count>=100 支持阈值，少于预注册的至少两个支持 bin。
+
+唯一判定：`benchmark_invalid`。失败属于验收数据支持度不足，不可解释为模型数值失败，也不可被其余范围抵消。当前组合边际不得进入通用 runtime confidence。
+
+下一步为 J-D1c3b2：冻结现有模型、十档分桶和全部数值护栏，永久排除 seed `7000..7049`，使用 seed `8000..8119` 对四策略各运行 120 局并完整双运行。该扩容只修复支持度，不允许根据 J-D1c3b 调参或放宽阈值。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -510,7 +530,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3a 已完成并核验，下一步运行 J-D1c3b。
+状态：J-A 至 J-D1c3a 已完成并核验；J-D1c3b 已运行但因单一范围支持度不足判定 `benchmark_invalid`；下一步运行 J-D1c3b2 独立扩容复验。
 
 拆分为：
 
@@ -534,8 +554,9 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c2b：实现固定 seed 采集器并运行开发容量试验，已完成，判定 `development_capacity_verified`；
 - Step J-D1c2c：预注册并运行独立语料正式校准，已完成，判定 `retain_for_policy_diverse_calibration`；
 - Step J-D1c3a：建立 forced/战略 pass 多策略 marginal corpus 载体并运行开发容量试验，已完成，判定 `policy_diversity_capacity_verified`；
-- Step J-D1c3b：预注册并运行独立多策略正式校准，下一步；
-- Step J-D1c3c：根据策略分布正式结果决定 runtime confidence 准入；
+- Step J-D1c3b：预注册并运行独立多策略正式校准，已完成，判定 `benchmark_invalid`；
+- Step J-D1c3b2：保持模型、分桶和阈值不变，使用全新 seed 扩大样本后重新正式验收，下一步；
+- Step J-D1c3c：仅在 J-D1c3b2 有效通过后决定 runtime confidence 准入；
 - 置信度校准：暂停，直到新信号通过独立策略分布验收。
 
 设计见 `docs/BELIEF_STATE.md`。

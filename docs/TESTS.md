@@ -402,7 +402,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 
 #### J-D1c3b：多策略正式校准
 
-状态：下一步。只运行锁定参数，不修改代码、测试或 docs。
+状态：已完成，唯一判定 `benchmark_invalid`。运行中未修改代码、测试、docs、策略、参数、分桶或阈值。
 
 - HEAD 必须包含 J-D1c3a，运行前后工作区干净；
 - seed `7000..7049`，四策略各 50 局，完整运行两次；
@@ -417,6 +417,35 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - overall 中 count≥200 的支持桶 MCE ≤0.10；external 桶中 count≥100 的支持桶 MCE ≤0.15；
 - 每个策略、每个聚合范围至少两个 calibration bin 达到对应支持度；
 - 不计算跨策略平均指标，不用其他策略通过抵消单策略失败。
+
+正式结果：
+
+- 双运行耗时约 322.8s / 321.9s，报告完全相等；
+- SHA-256 均为 `67ed39e3b39b22dd7f2b660c70dc66eb5f6add3c11c0e3dc8315a1a8ca6a7eee`；
+- 定向 187 项、全量 311 项测试通过；
+- 四策略各 50/50 局完成，无 invalid、skip 或 diagnostics；
+- 每个策略的三个 external bucket 均至少 350 个有效样本；
+- 行为边界、行为比例梯度、样本守恒和双运行确定性全部通过；
+- `strategic_pass_100 / external_0_4` 有 436 个有效样本和 1201 个 rank pair；
+- 该范围 prediction count 为 `[0, 0, 60, 25, 0, 40, 26, 36, 2, 1012]`，只有 bin 9 达到 count>=100；
+- 其余 15 个范围通过全部数值与支持度护栏，但不能抵消该失败。
+
+#### J-D1c3b2：支持度扩容复验
+
+状态：下一步。只运行锁定参数，不修改实现、测试、docs、策略、分桶、支持阈值或数值护栏。
+
+- seed `8000..8119`，四策略各 120 局，完整运行两次；
+- seed `7000..7049` 只用于样本量规划，不进入新报告或判定；
+- 运行前后工作区必须干净；
+- 定向 187 项、全量 311 项测试和 `git diff --check` 必须通过；
+- 两次报告、`to_dict()` 和 canonical JSON SHA-256 必须完全一致；
+- 每个策略 120/120 局完成，无 incomplete、invalid、skip 或 diagnostics；
+- 每个策略三个 external bucket 各至少 800 个 valid 样本；
+- 策略行为边界和实际主动 pass 比例严格递增；
+- certainty、ECE、Brier skill、supported MCE 门槛与 J-D1c3b 完全相同；
+- overall 仍以 count>=200、external 仍以 count>=100 定义支持 bin；
+- 每个策略、每个聚合范围仍至少需要两个支持 bin；
+- 任一完整性或支持度失败判定 `benchmark_invalid`；有效 benchmark 的任一数值护栏失败判定 `reject_runtime_confidence`；全部通过才判定 `policy_diverse_calibration_verified`。
 
 #### 暂停：校准
 
