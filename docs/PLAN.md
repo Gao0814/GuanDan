@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c2a 已完成；恢复正式验收判定 `confidence_prompt_coverage_verified`。下一步实现 J-D1c3c2c3a 无网络成对动作消融载体。
+状态：J-A 至 J-D1c3c2c3a 已完成；无网络 harness 判定 `confidence_action_ablation_harness_verified`。下一步在明确授权后运行 J-D1c3c2c3b 小规模真实 DeepSeek 响应安全试验。
 
 目标：
 
@@ -174,8 +174,8 @@ AI 决策分为四层：
 28. J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算与精确插入基准并运行开发试验，已完成；
 29. J-D1c3c2c2：使用独立 seed 正式验收 prompt readiness 与成本，双运行完成但完整审计证据未留存，判定 `benchmark_invalid`；
 30. J-D1c3c2c2a：使用仓库外 canonical JSON 审计文件和全新 seed 恢复正式验收，已完成并通过；
-31. J-D1c3c2c3a：建立 evaluation-only、provider 可注入的固定配对动作消融载体，下一步；
-32. J-D1c3c2c3b：预注册并运行小规模真实 DeepSeek 响应安全与动作变化验收；
+31. J-D1c3c2c3a：建立 evaluation-only、provider 可注入的固定配对动作消融载体，已完成并通过；
+32. J-D1c3c2c3b：经用户授权后预注册并运行小规模真实 DeepSeek 响应安全与动作变化验收，下一步；
 33. J-D1c3c2c3c：在响应安全后评估固定种子、轮换座位的对局质量与胜率；
 34. 策略接入：仅在动作响应和对局质量独立验收后开始。
 
@@ -529,16 +529,26 @@ J-D1c3c2c2a 恢复方向：
 
 J-D1c3c2c3a 设计方向：
 
-- 只新增 evaluation 动作消融模块与对应测试，不修改 runtime、engine、client、RAG、CLI 或配置；
-- 从公开 observation/legal actions 采集 critical 且 confidence ready、不会命中本地 shortcut 的局面；
-- 使用固定 SHA-256 优先级从每策略/每 external bucket 选择固定数量样本，样本只在内存存在；
-- 对每个样本构造 off/on 两个 provider kwargs，除 on 增加 `card_confidence_prompt` 外逐字段相同；
-- 在每个桶内平衡 AB/BA 调用顺序，单次异常不能阻止配对另一侧调用；
-- 严格校验 provider 返回类型、action_id 是否在传入 prompt candidates 和完整 legal actions 中；
-- 聚合 off/on 有效响应、异常、无法解析、非法候选、同动作/变更动作、pass/pressure 选择和调用顺序；
-- report 不保留 seed、样本 ID、observation、prompt、action_id、reasoning 或 provider 原始响应；
-- 开发阶段只使用确定性假 provider，验证双运行相等与容量，不读取 `.env`、API key 或网络；
-- c3a 只证明消融载体可信，不宣称 confidence 改善动作。
+- 已只新增 evaluation 动作消融模块与对应测试，未修改 runtime、engine、client、RAG、CLI 或配置；
+- critical 合格样本按固定 SHA-256 优先级选择，only-pass、一次出完和 unavailable/omitted/mismatch 不调用 provider；
+- off/on kwargs 只差 confidence payload，每桶 AB/BA 平衡，一侧异常仍调用另一侧；
+- provider 结果按异常、malformed、no-action、类型、legal/prompt 域严格分类，不使用 fallback；
+- seed `120..129` 四策略每桶 4 个样本双运行，report 完全相等，SHA-256 为 `ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095`；
+- 每轮 48 pair / 96 次假 provider 调用全部 valid，每桶 AB/BA 各 2；
+- 判定 `confidence_action_ablation_harness_verified`，不宣称 confidence 改善动作。
+
+J-D1c3c2c3b live pilot 方向：
+
+- 先提交 c3a 的两个文件并确保工作区干净；
+- 读取配置前不修改 `.env`，只确认 key 是否存在，绝不输出 key；
+- 在显示实际 base URL host、model、固定 timeout=60、max_retries=0 和最多 48 次请求后，必须获得用户明确授权；
+- 使用全新 seed `13000..13009`，四策略每桶 2 个样本，共 24 pair / 48 个逻辑与物理请求；
+- 每桶 off-first/on-first 各 1，沿用 c3a 固定样本和合法性分类；
+- 仓库外逐调用 JSONL 在每次请求后 flush/fsync，最终 aggregate canonical JSON 原子落盘；
+- ledger 不保留 prompt、observation、action ID、reasoning、响应原文或密钥；
+- 传输/审计中断不得重跑或补采；完整响应失败与观察到的 changed rate 分开判定；
+- changed 只作为描述性结果，不能排除 temperature=0 下的服务非确定性；
+- live pilot 通过最多允许进入动作质量评估，不允许默认开启。
 
 ### Step K：中局策略路由与残局决策
 

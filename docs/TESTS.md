@@ -627,21 +627,44 @@ J-D1c3c1a 已补测：
 
 #### J-D1c3c2c3a：无网络成对动作消融载体
 
-状态：下一步。开发测试不得调用真实 API。
+状态：已完成。唯一开发判定 `confidence_action_ablation_harness_verified`。
 
-- 严格校验 seeds、策略 rates、每桶样本上限和搜索参数，拒绝 bool 冒充整数；
-- 只采集 critical、confidence available、payload ready 且不会命中 only-pass/一次出完 shortcut 的公开局面；
-- 使用固定 SHA-256 优先级从每策略/每 external bucket 选取样本，不使用 `hash()`、随机数或时间；
-- 同一样本 off/on provider kwargs 除 `card_confidence_prompt` 外完全一致，prompt candidate ID 集合一致；
-- 每桶 AB/BA 数量差不超过 1，异常一侧不阻止另一侧被调用；
-- provider 必须为显式注入且无默认网络实现；
-- 对返回类型、非 bool 整数 action_id、完整 legal ID 和 prompt candidate ID 分层校验；
-- 聚合 attempted、valid、none、exception、malformed、outside legal、outside prompt、both valid、same/changed、pass/pressure 和调用顺序；
-- overall 必须由三个桶原始计数相加，不平均比例；
-- 报告 frozen/slots、mapping 不可变、JSON 友好且双运行相等；
-- 报告不得包含 seed、样本 ID、observation、prompt、legal actions、action_id、reasoning 或 provider 原始响应；
-- 边界扫描禁止 `.env`、API key、HTTP、ground truth、`game._state` 和 runtime 对 evaluation 的反向导入；
-- 先使用确定性假 provider 运行小型开发双验收，只形成 harness/capacity 结论，不形成动作质量或胜率结论。
+- 只新增 `evaluation/confidence_action_ablation.py` 和对应测试；
+- 单文件 6 项、相关 76 项、全量 357 项通过，`git diff --check` 通过；
+- provider 显式注入，无默认 client、配置、环境或网络读取；
+- critical/public-only、SHA-256 固定样本、shortcut 排除、off/on 唯一差异、AB/BA 平衡和 fail-closed 分类均已覆盖；
+- 报告 frozen/slots、不可变、JSON 友好且只含聚合数据；
+- 边界扫描未发现 runtime 反向导入、配置、`.env`、API key、网络、ground truth 或 `game._state`。
+
+开发双运行：seed `120..129`、四策略、每桶 4 个样本：
+
+- 两次耗时 39.795s / 40.446s；
+- report、`to_dict()` 完全相等，canonical SHA-256 为 `ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095`；
+- 四策略均 10/10/0 games、零 diagnostics；
+- 每策略 12 selected/both-valid，三个桶各 4，AB/BA 各 2；
+- 每轮 off/on 各 48 次，异常、malformed、no-action、错误类型、outside legal/prompt 均为 0；
+- 每策略 same=0、changed=12；该结果由假 provider 首/末候选规则刻意构造，只验证载体；
+- off pass 分别为 7/9/11/9，on pass 与双方 pressure 均为 0。
+
+#### J-D1c3c2c3b：真实 DeepSeek 响应安全 live pilot
+
+状态：下一步。网络调用前必须获得用户明确授权。
+
+- 先将 c3a 两个文件单独提交并确认工作区干净；
+- 回归必须保持单文件 6、相关 76、全量 357 项通过；
+- 只检查 API key 是否存在，不输出、散列或持久化 key；
+- 显示并记录实际 base URL host、model、timeout=60、max_retries=0 和最大 48 次请求，等待用户授权；
+- 使用 seed `13000..13009`、四策略、每桶 2 个样本，共 24 pair；
+- 每桶 off-first/on-first 各 1，off/on 各 24 次；
+- 外部 JSONL 每次调用后 flush/fsync，记录序号、condition、耗时和非敏感 outcome，不含 prompt、action ID、reasoning 或响应原文；
+- aggregate canonical JSON 和门槛摘要写入仓库外目录并重新解析、哈希；
+- max retries=0，逻辑与物理请求都不得超过 48；
+- 任一传输异常、中断、审计缺口或 corpus 不完整均不得重跑/补采；
+- 完整数据要求四策略 10/10/0、每桶 2 selected、零 diagnostics，24 pair/48 calls 守恒；
+- 响应安全要求 exception/malformed/no-action/错误类型/outside legal/prompt 均为 0，24 pair 全部 both-valid；
+- same/changed、pass/pressure 仅报告，不设置事后收益阈值；
+- changed=0 表示该 pilot 未观察到动作差异；changed>0 只允许进入质量评估，不构成 confidence 因果效果；
+- 不运行完整 DeepSeek 对局，不形成胜率结论。
 
 #### 暂停：校准
 

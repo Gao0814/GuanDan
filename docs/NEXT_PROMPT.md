@@ -1,67 +1,177 @@
 # 下一步实施提示词
 
-## Step J-D1c3c2c3a：无网络成对动作消融载体
+## Step J-D1c3c2c3b：真实 DeepSeek 响应安全 live pilot
 
-请在 GuanDan 项目中实现 Step J-D1c3c2c3a。任务是新增一个 evaluation-only、provider 可注入、固定样本、顺序平衡的 confidence-off/on 动作消融载体，并用确定性假 provider 完成单元测试和小型开发双运行。
+请在 GuanDan 项目中执行 Step J-D1c3c2c3b。任务是先提交已完成的 J-D1c3c2c3a harness 检查点，然后在用户明确授权当前 DeepSeek endpoint/model 和最多 48 次无重试外部请求后，使用全新固定语料运行一次小规模 confidence-off/on 真实响应安全试验。
 
-本步骤不得调用真实 DeepSeek、HTTP 或其他网络，不得读取 `.env` / API key，不得评价动作质量或胜率。它只证明后续真实 API 实验的采样、配对、合法性分类和聚合载体可信。
+本步骤只验证真实模型响应是否可解析、是否严格落在相同 prompt candidates 中，以及观察到的 same/changed、pass/pressure 行为。它不运行完整 DeepSeek 对局，不评价动作优劣或胜率，不启用默认 confidence。
 
 ## 一、前置结论
 
-J-D1c3c2c2a 已正式通过：
+J-D1c3c2c3a 已完成，唯一开发判定：
 
-- 运行 HEAD `6b62156a98cfb97dd11e30df5f95a62dba99accd`；
-- 实现检查点 `bc689a37f462672033d754cce7060897d70c7612`；
-- seed `11000..11049`，四策略各 50 局；
-- 两份 9218-byte JSON 逐字节一致；
-- SHA-256 为 `679f1f4b7f33fc821cdda4725681abbf86a3204c3b03775c0b2858ce2df9d37b`；
-- 四策略共 5733 个 critical 样本；
-- 16 个范围全部 available、ready、exact insertion，零 omitted/mismatch/diagnostics；
-- payload 最大 683 字符，全部满足 2400 预算和固定 +11 字符关系；
-- 唯一判定 `confidence_prompt_coverage_verified`。
+```text
+confidence_action_ablation_harness_verified
+```
 
-原 seed `10000..10049` 的 J-D1c3c2c2 仍保持 `benchmark_invalid`，不得改写历史结论。
-
-## 二、允许修改范围
-
-只允许新增：
+当前尚未提交的文件应仅为：
 
 - `evaluation/confidence_action_ablation.py`
 - `tests/test_confidence_action_ablation.py`
 
-不得修改：
+已验证：
 
-- `agents/`
-- `engine/`
-- `cli/`
-- `rag/`
-- `config.py`
-- `.env` / `.env.example`
-- 既有 `evaluation/` 文件
-- 既有测试
-- `docs/`
+- 单文件 6 项、相关 76 项、全量 357 项通过；
+- seed `120..129` 四策略每桶 4 样本双运行；
+- 两份 report 完全相等；
+- canonical SHA-256：`ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095`；
+- 每轮 48 pair / 96 次假 provider 调用全部 valid；
+- 未读取配置、密钥、网络、ground truth 或 `game._state`。
 
-不要扩展到真实 API、默认开关、策略接入、RAG、剪枝或对局胜率评测。
+假 provider 的 changed=48 是刻意选择首/末候选的接线结果，不得用于真实模型结论。
 
-## 三、核心公开 API
+## 二、c3a 实现检查点
 
-在 `evaluation/confidence_action_ablation.py` 中新增：
+首先：
 
-- `ActionAblationBucket`
-- `PolicyActionAblationReport`
-- `ConfidenceActionAblationReport`
-- 必要的 provider Protocol/类型别名
-- `run_confidence_action_ablation(...)`
+1. 运行 `git status --short`；
+2. 确认除上述两个未跟踪文件外无其他改动；
+3. 运行：
 
-建议函数签名至少包含：
+```bash
+python -m unittest tests.test_confidence_action_ablation -q
+python -m unittest tests.test_confidence_action_ablation tests.test_confidence_prompt_benchmark tests.test_card_confidence_prompt tests.test_card_confidence_pipeline tests.test_card_confidence tests.test_deepseek_prompt_step_h tests.test_pass_policy_benchmark -q
+python -m unittest discover -q
+git diff --check
+```
+
+4. 预期 6 / 76 / 357 项通过；
+5. 只暂存上述两个文件；
+6. 提交名：`J-D1c3c2c3a paired action ablation harness`；
+7. 记录完整提交 SHA；
+8. 确认 `git status --short` 为空。
+
+若存在其他无法归属的改动，停止并报告 `precondition_failed`。不要 stash、还原、清理或混入提交。
+
+## 三、网络授权门槛
+
+提交和回归通过后，只读取非敏感配置元数据：
+
+- API key 是否存在，仅输出 yes/no；
+- `DEEPSEEK_BASE_URL` 的 scheme 与 host，不输出 query、userinfo 或 key；
+- `DEEPSEEK_MODEL`；
+- 本步骤固定 `timeout_seconds=60`；
+- 本步骤固定 `max_retries=0`；
+- 最大 logical/physical HTTP requests = 48；
+- 完整最坏超时窗口为 48 x 60 秒，不包含本地采集时间。
+
+要求：
+
+- 不输出、散列、复制或持久化 API key；
+- base URL 必须为 HTTPS 且 host 非空，否则停止 `precondition_failed`；
+- model 必须非空；
+- key 不存在时停止 `precondition_failed`；
+- 在发出任何请求前，把 host、model、timeout、retries 和 48 次上限报告给用户；
+- 明确询问用户是否授权本次外部网络调用及调用上限；
+- 只有用户在当前任务中明确同意后才可继续；不得把本提示词本身视为授权。
+
+未获得授权时，停止并输出唯一状态：
+
+```text
+authorization_required
+```
+
+此时不要创建 live runner，不要发起探测请求或“测试连接”。
+
+## 四、允许的运行边界
+
+获得授权后：
+
+- 不修改任何仓库文件；
+- 不修改 `.env`、config、timeout、model 或 base URL；
+- 不调用 `DeepSeekAIAgent.select_action()`；
+- 不启用 CLI 或完整 DeepSeek 对局；
+- 只在仓库外创建临时 runner、ledger、aggregate report 和 summary；
+- provider 必须包装一个 `DeepSeekClient(..., timeout_seconds=60, max_retries=0).suggest_action_id`；
+- wrapper 每次只调用底层 provider 一次；
+- provider 返回后立即丢弃 reasoning，只向 harness 返回相同 action_id 和 `reasoning=None`；
+- `verbose=False`，不得打印请求 prompt、模型 reasoning、响应正文或 action ID。
+
+网络命令如需沙箱外权限，必须使用正常审批流程，不得绕过。
+
+## 五、仓库外审计目录
+
+创建全新的仓库外目录，例如：
+
+```text
+%TEMP%\guandan-confidence-action-live-c3b-<HEAD前12位>
+```
+
+若目录已存在且非空，不得覆盖或删除旧证据，改用新的明确目录。
+
+目录至少包含：
+
+- `run_live_action_ablation.py`
+- `call_ledger.jsonl`
+- `report.json`
+- `audit_summary.json`
+
+记录 runner 的绝对路径、字节数和 SHA-256。runner 文件不得包含 API key 或其散列。
+
+正式运行前用 sentinel 文件验证 UTF-8 写入、flush、`os.fsync()`、原子替换、重新读取和 SHA-256。sentinel 失败时停止，不得发起请求。
+
+## 六、逐调用 ledger
+
+audited provider 在每个逻辑调用结束或抛异常后，立即向 `call_ledger.jsonl` 追加一行并执行 flush + `os.fsync()`。
+
+每行只允许包含：
+
+- schema version；
+- 从 1 开始的连续 call index；
+- condition：`off` 或 `on`，通过 kwargs 是否含 `card_confidence_prompt` 判定；
+- elapsed milliseconds；
+- outcome：`returned` 或 `exception`；
+- returned action 是否为严格非 bool 整数；
+- exception class 名称，成功时为空。
+
+ledger 不得包含：
+
+- seed、step、player 或样本 ID；
+- observation、history、hand；
+- prompt、legal/prompt actions；
+- action ID；
+- reasoning、响应正文或 SSE chunk；
+- URL、Authorization header、API key；
+- ground truth。
+
+若进程中断，保留 ledger 作为失败证据，不得续跑、重跑或补采。
+
+## 七、锁定 corpus 与请求参数
+
+只运行一次：
+
+```text
+seeds = 13000..13009
+strategic_pass_rates = 0,25,50,100
+samples_per_bucket = 2
+current_level_rank = 2
+max_steps = 5000
+max_samples_per_game = 128
+max_external_cards = 12
+max_search_nodes = 1,000,000
+max_solutions = 100,000
+timeout_seconds = 60
+max_retries = 0
+```
+
+调用：
 
 ```python
 run_confidence_action_ablation(
-    seeds,
-    *,
-    suggestion_provider,
+    tuple(range(13000, 13010)),
+    suggestion_provider=audited_provider,
     strategic_pass_rates=(0, 25, 50, 100),
-    samples_per_bucket=4,
+    samples_per_bucket=2,
     current_level_rank="2",
     max_steps=5000,
     max_samples_per_game=128,
@@ -71,271 +181,140 @@ run_confidence_action_ablation(
 )
 ```
 
-`suggestion_provider` 必须显式传入，无默认实现。载体不得创建 `DeepSeekClient`、读取环境配置或自行发网络请求。后续真实实验可以显式传入 `client.suggest_action_id`，但本步骤不这样做。
+预期选择：4 策略 x 3 桶 x 2 = 24 pair；每 pair off/on 各一次，共 48 请求。每策略每桶必须 off-first=1、on-first=1。
 
-## 四、输入校验
+不得第二次运行、补采、替换失败样本、调整 seed、增加重试或更换 model。
 
-沿用现有 benchmark 的严格风格：
+## 八、aggregate 持久化
 
-- seeds 必须为非空、唯一、非 bool 整数序列；
-- rates 必须为非空、唯一、0..100 的非 bool 整数序列；
-- `samples_per_bucket`、`max_steps`、`max_samples_per_game`、搜索上限必须为非 bool 正整数；
-- `max_external_cards` 不得超过 12；
-- current level rank 必须为合法普通 rank；
-- provider 必须 callable；
-- 不得静默纠正非法参数。
+`run_confidence_action_ablation()` 返回后立即：
 
-非法输入显式抛出 `ValueError`。
+1. 调用 `report.to_dict()`；
+2. 使用 `ensure_ascii=False`、`sort_keys=True`、`separators=(",", ":")`、`allow_nan=False` 生成 canonical JSON；
+3. 写临时文件、flush、`os.fsync()`，再原子替换为 `report.json`；
+4. 重新读取并验证 UTF-8、JSON 结构、字节数和 SHA-256；
+5. 不向 stdout 输出完整 report 或 JSON。
 
-## 五、公开样本采集
+策略与 external bucket 必须按显式 name/rate 解析，不得依赖 canonical JSON 键顺序表达业务顺序。
 
-复用现有公开轨迹边界：
+## 九、数据完整性门槛
 
-- 每个 strategic-pass rate 创建独立游戏和 `StrategicPassAIAgent`；
-- 只读取 `game.observe()` 与 `game.legal_actions()`；
-- 只采集统一阶段为 `critical_endgame` 的局面；
-- 按 `external_0_4`、`external_5_8`、`external_9_12` 三个互斥桶处理；
-- 样本身份仅在内存使用 `(seed, step_no, observer_player_id)`；
-- 重复样本、步数上限、每局样本上限和异常 external count 都必须诊断；
-- 不读取 ground truth、`game._state` 或任何隐藏手牌。
+必须满足：
 
-仅保留符合真实模型调用路径的样本：
+- 四策略顺序/映射为 forced-only、25、50、100；
+- 每策略 requested/completed/incomplete = 10/10/0；
+- forced active pass = 0；
+- 25/50 满足 `0 < pass < opportunity`；
+- 100 满足 `pass = opportunity > 0`；
+- 实际 active-pass rate 严格递增；
+- 每策略三个桶 qualified candidate 均至少 2；
+- 每策略每桶 selected=2、off-first=1、on-first=1；
+- overall selected=6；
+- 四策略总 selected=24；
+- 每策略和每桶 diagnostics 为空；
+- duplicate、sample-limit、unexpected external 均为 0；
+- ledger 恰好 48 行，index 连续 1..48；
+- ledger off/on 各 24；
+- aggregate off/on attempted 各 24；
+- logical/physical requests 均不超过 48；
+- report、ledger、runner 和 summary 均可重新读取和哈希；
+- 运行后工作区干净。
 
-- legal actions 非空；
-- 不是 only-pass；
-- 不存在可一次出完的非 pass action；
-- phase 为 critical，因此不得额外运行 opening formula；
-- `build_runtime_card_confidence()` 返回 available；
-- `build_card_confidence_prompt_payload()` 返回 ready；
-- off/on prompt 精确满足已封板的单章节插入关系；
-- pruned prompt candidates 非空。
+任一失败均为 `live_benchmark_invalid`，不得重跑。
 
-only-pass、一次出完、confidence unavailable、payload omitted 和 prompt mismatch 必须分别计数，不得调用 provider。
+## 十、真实响应安全门槛
 
-## 六、固定样本选择
+完整数据上必须满足：
 
-不能简单取每桶最早 N 个样本。为每个内部样本计算固定优先级：
+- off/on exception = 0；
+- off/on malformed result = 0；
+- off/on no-action = 0；
+- off/on invalid action type = 0；
+- off/on outside legal = 0；
+- off/on outside prompt = 0；
+- 四策略总 both-valid pair = 24；
+- only-off-valid / only-on-valid / neither-valid = 0；
+- same-action + changed-action = 24；
+- pass/pressure 计数满足各自不超过 valid response count。
 
-```text
-SHA-256(policy_name | bucket_name | seed | step_no | observer_player_id)
-```
+这些门槛只验证模型响应和候选边界。不得把 fallback 结果计为模型 valid；harness 不使用 fallback。
 
-要求：
+## 十一、描述性动作结果
 
-- 不使用 Python `hash()`、随机数或时间；
-- 每策略/每桶选择优先级最小的 `samples_per_bucket` 个合格样本；
-- 先完成该策略公开轨迹采集，再按 `(priority_digest, step_no, observer_player_id)` 稳定排序；
-- 只在内存保留被选中的公开 observation、legal actions、phase 和 ready payload；
-- report 不输出 priority、seed、step/player 或样本内容；
-- 样本不足时保留实际数量并诊断 `sample_quota_not_reached`。
+完整报告以下指标，但不设置事后收益阈值：
 
-## 七、off/on 请求配对
-
-为每个选中样本构造一个共同 kwargs mapping，至少包括：
-
-- `observation`
-- 完整 `legal_actions`
-- 同一份 `prompt_actions`
-- `rag_context=None`
-- `hand_evaluation=None`
-- `card_tracking_summary=None`
-- 同一 `phase_context`
-- `verbose=False`
-- 稳定且不含样本身份的 `debug_prefix`
-
-off 调用使用共同 mapping；on 调用只额外增加：
-
-```python
-card_confidence_prompt=ready_payload
-```
-
-硬性要求：
-
-- off/on kwargs 的键差只能是 `card_confidence_prompt`；
-- 所有共同值逐字段相等；
-- 完整 legal IDs 和 prompt candidate IDs 完全相同；
-- off/on 结构化 prompt 必须精确满足已验证的固定章节插入关系；
-- 对 prompt pair 做 SHA-256 聚合，但 report 不保留 prompt 文本。
-
-## 八、AB/BA 顺序
-
-真实服务即使 `temperature=0` 也不能假设完全确定，因此调用顺序不能与条件绑定。
-
-- 在每个策略/每个 external bucket 内按选中样本稳定序列交替 `off->on` 与 `on->off`；
-- 每桶两种顺序数量差不得超过 1；
-- 记录 off-first / on-first pair count；
-- 一侧 provider 抛异常、返回 malformed 或无 action 时，仍必须调用另一侧；
-- harness 本身不重试，provider 内部行为由后续正式步骤另行锁定。
-
-## 九、provider 结果校验
-
-provider 返回值按 `DeepSeekSuggestion` 契约处理，但必须 fail-closed：
-
-- provider 抛异常：计入对应 condition exception；
-- 返回对象类型错误：计入 malformed result；
-- `action_id is None`：计入 no-action；
-- bool、字符串、float 等非严格整数：计入 invalid action type；
-- 不在完整 legal IDs：计入 outside legal；
-- 在完整 legal IDs 但不在 prompt candidate IDs：计入 outside prompt；
-- 只有严格非 bool 整数且同时属于 legal/prompt candidate 才是 valid response；
-- reasoning 不评分、不序列化、不保留。
-
-不得调用 fallback RuleBasedAI 替换失败结果。该实验评估模型响应本身，fallback 会掩盖失败率。
-
-## 十、聚合指标
-
-每个策略先聚合 requested/completed/incomplete games、strategic-pass opportunity/active pass，以及 eligible critical、duplicate、sample-limit、unexpected external 等轨迹完整性计数。
-
-每个策略的 overall 和三个 external bucket 至少聚合：
-
-- only-pass skip、finish-action skip；
-- confidence unavailable、payload omitted、prompt mismatch；
-- qualified candidate 与 quota-not-selected count；
-- selected sample count；
-- off-first / on-first pair count；
-- off/on attempted call count；
-- off/on valid response count；
-- off/on no-action count；
-- off/on exception count；
-- off/on malformed result count；
-- off/on invalid action type count；
-- off/on outside-legal count；
-- off/on outside-prompt count；
-- both-valid pair count；
-- only-off-valid / only-on-valid / neither-valid count；
-- same-action / changed-action count；
-- off/on pass selection count；
-- off/on pressure selection count，pressure 为 bomb/straight_flush/joker_bomb；
+- 四策略和三个 external bucket 的 same/changed；
+- off/on pass selection；
+- off/on pressure selection；
 - prompt pair digest；
-- 规范化 diagnostics。
+- off/on ledger latency sum/min/max；
+- condition 与调用顺序分布。
 
-overall 必须由三个桶的原始整数计数相加，不能平均比例。所有计数必须满足守恒，例如：
+解释边界：
 
-- attempted = selected samples；
-- off-first + on-first = selected samples；
-- both-valid + only-off-valid + only-on-valid + neither-valid = selected samples；
-- same-action + changed-action = both-valid；
-- 各结果类别不能重复计入同一 condition。
+- changed=0：当前 pilot 未观察到 confidence 改变动作；
+- changed>0：只说明不同 prompt 条件下观察到不同动作；
+- 单次 off/on 不能排除服务非确定性，即使 `temperature=0`；
+- pass/pressure 变化不等于动作更优或更差；
+- 不读取 ground truth，不运行后续对局，因此没有胜率结论。
 
-## 十一、报告安全
+## 十二、audit summary
 
-所有报告对象使用 frozen/slots dataclass；mapping 使用不可变副本；`to_dict()` 可被 `json.dumps(..., allow_nan=False)` 序列化。
+从落盘 `report.json` 和 `call_ledger.jsonl` 生成 `audit_summary.json`，至少包含：
 
-报告不得包含：
+- schema/version；
+- 完整 HEAD 和 c3a commit；
+- sanitized host、model、timeout、retries 和锁定参数；
+- runner/report/ledger 的路径、字节数和 SHA-256；
+- 实际请求数和耗时聚合；
+- 四策略行为与 corpus 完整性；
+- 四策略/三桶全部响应分类、same/changed、pass/pressure；
+- 每项门槛 pass/fail；
+- 唯一判定。
 
-- seed 或 seed 列表；
-- 样本 ID、step/player；
-- observation、history、hand；
-- prompt 文本；
-- legal actions、prompt actions；
-- 具体 action_id；
-- reasoning 或 provider 原始响应；
-- API key、URL、model response；
-- ground truth。
+原子写入后重新解析并记录 summary 字节数与 SHA-256。不得包含逐样本或模型文本。
 
-策略和 external bucket 必须按显式名称/rate 验证，不得依赖 canonical JSON 的 mapping 键顺序表达业务顺序。
+## 十三、运行后回归
 
-## 十二、测试要求
-
-`tests/test_confidence_action_ablation.py` 至少覆盖：
-
-1. 全部严格输入校验；
-2. external bucket 边界；
-3. SHA-256 样本优先级和稳定选择；
-4. duplicate、sample limit、max steps 和 quota 诊断；
-5. only-pass / 一次出完不调用 provider；
-6. unavailable / omitted / mismatch 不调用 provider；
-7. off/on kwargs 只差 confidence key；
-8. AB/BA 每桶平衡且双运行顺序稳定；
-9. 第一侧异常后第二侧仍被调用；
-10. malformed、None、bool、字符串、float、outside legal、outside prompt 分类；
-11. valid same/changed action 聚合；
-12. pass/pressure 计数；
-13. 三桶到 overall 的整数守恒；
-14. quota 不足 fail-closed 诊断；
-15. frozen/slots、mapping 不可变、JSON 序列化与报告快照；
-16. report 不含敏感逐样本字段；
-17. 源码边界扫描不含 AppConfig、`.env`、API key、HTTP、ground truth 或 `game._state`；
-18. `agents/`、CLI、RAG、engine 不导入新 evaluation 模块。
-
-测试中只使用确定性假 provider。禁止 monkeypatch 真实网络。
-
-## 十三、开发容量双运行
-
-单元测试通过后，使用纯内存确定性假 provider 运行：
-
-```text
-seeds = 120..129
-strategic_pass_rates = 0,25,50,100
-samples_per_bucket = 4
-current_level_rank = 2
-max_steps = 5000
-max_samples_per_game = 128
-max_external_cards = 12
-max_search_nodes = 1,000,000
-max_solutions = 100,000
-```
-
-假 provider 行为必须纯函数化：
-
-- off 从 prompt candidates 选择第一个合法 action；
-- on 从同一 prompt candidates 选择最后一个合法 action；
-- 不读取时间、随机数、seed 或隐藏状态；
-- 不模拟网络异常；
-- 不保留 reasoning。
-
-完整运行两次并要求：
-
-- 两份 report 和 `to_dict()` 完全相等；
-- canonical JSON SHA-256 相同；
-- 四策略均 10/10/0 games；
-- 每策略每桶恰好选择 4 个样本，如不足则不得给出通过判定；
-- 总样本 48、provider 逻辑调用 96 次；
-- off/on attempted 均等于 48；
-- 每桶 AB/BA 各 2；
-- exception/malformed/invalid/outside/no-action 均为 0；
-- 所有 pair both-valid；
-- 所有 diagnostics 为空；
-- 运行前后工作区除本任务两个新文件外无其他变化。
-
-开发双运行不调用真实 DeepSeek，不设置真实 API 门槛，也不形成动作质量或胜率结论。
-
-## 十四、验证命令
-
-至少运行：
+正式运行后再次运行：
 
 ```bash
 python -m unittest tests.test_confidence_action_ablation -q
 python -m unittest tests.test_confidence_action_ablation tests.test_confidence_prompt_benchmark tests.test_card_confidence_prompt tests.test_card_confidence_pipeline tests.test_card_confidence tests.test_deepseek_prompt_step_h tests.test_pass_policy_benchmark -q
 python -m unittest discover -q
 git diff --check
+git status --short
 ```
 
-并运行边界扫描，确认没有 runtime 反向导入或网络/真值访问。
+必须仍为 6 / 76 / 357 项通过且工作区干净，否则判定 `live_benchmark_invalid`。
 
-## 十五、唯一开发判定
+## 十四、唯一判定
 
-严格输出一个结论：
+严格按顺序只输出一个：
 
-1. 实现、测试、守恒、双运行、容量、隐私或边界任一失败：`confidence_action_ablation_harness_invalid`；
-2. 全部通过：`confidence_action_ablation_harness_verified`。
+1. 未获网络/调用上限授权：`authorization_required`；
+2. 提交、回归、配置、HTTPS、审计、传输、请求上限、corpus 或工作区完整性失败：`live_benchmark_invalid`；
+3. 数据完整但任一真实响应安全门槛失败：`reject_confidence_prompt_live_response`；
+4. 响应安全全部通过且 changed=0：`no_observed_confidence_action_effect`；
+5. 响应安全全部通过且 changed>0：`retain_for_action_quality_evaluation`。
 
-该判定只授权下一步预注册小规模真实 DeepSeek 响应实验，不授权默认启用 confidence，不代表动作质量或胜率提升。
+`retain_for_action_quality_evaluation` 只授权下一步设计动作质量评估。它不证明 confidence 导致动作变化，不授权默认开启，也不代表胜率提升。
 
-## 十六、最终报告
+## 十五、最终报告
 
-完成后报告：
+最终必须报告：
 
-1. 修改文件；
-2. 核心数据契约与 provider 边界；
-3. 样本选择、shortcut 排除和 AB/BA 顺序规则；
-4. 响应分类与所有守恒；
-5. 定向、相关、全量测试和 `git diff --check`；
-6. 开发双运行参数、耗时、报告相等性和 SHA-256；
-7. 四策略/三桶样本、调用和顺序计数；
-8. valid/异常/非法/same/changed/pass/pressure 聚合；
-9. 边界扫描结果；
-10. 唯一开发判定；
-11. 明确说明未调用 DeepSeek、未形成动作质量或胜率结论。
+1. c3a 提交 SHA 和提交范围；
+2. 运行前后工作区、回归与 `git diff --check`；
+3. 用户授权的 host/model/timeout/retries/请求上限，不含 key；
+4. 审计目录和 runner/report/ledger/summary 的路径、字节数、SHA-256；
+5. 实际耗时和逻辑/物理请求数；
+6. 四策略 games、strategic-pass 行为和 qualified/selected；
+7. 每策略/每桶 AB/BA、响应分类和守恒；
+8. same/changed、pass/pressure 与 latency；
+9. 所有完整性和响应安全门槛；
+10. 唯一判定；
+11. 明确说明未输出密钥、prompt、action ID、reasoning 或响应原文；
+12. 明确说明未运行完整 DeepSeek 对局、未形成动作质量或胜率结论。
 
-完成后停止，不修改 docs，不扩展到 J-D1c3c2c3b。
+完成后停止，不修改 docs，不扩展到 J-D1c3c2c3c。

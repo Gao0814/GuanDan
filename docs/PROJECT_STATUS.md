@@ -6,7 +6,7 @@
 
 - 当前实现检查点：`bc689a37f462672033d754cce7060897d70c7612 J-D1c3c2c1 confidence prompt coverage benchmark`
 - 验收运行 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
-- 当前工作状态：Step J-D1c3c2c2a 可持久化恢复验收通过，唯一判定 `confidence_prompt_coverage_verified`；工作区干净
+- 当前工作状态：Step J-D1c3c2c3a 已完成但两个 harness/test 文件尚未提交；唯一开发判定 `confidence_action_ablation_harness_verified`
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：351 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -39,7 +39,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、默认关闭的 prompt 接线，以及跨四策略的正式 prompt coverage 验收。J-D1c3c2c2a 在 5733 个 critical 样本上证明全部 confidence available、payload ready、精确插入且无 mismatch，16 个范围均满足 2400 字符预算和固定 +11 字符关系。下一步先建立无网络、可注入、聚合式的成对动作消融载体，再预注册真实 DeepSeek 调用。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、默认关闭的 prompt 接线、正式 prompt coverage，以及无网络成对动作消融载体。J-D1c3c2c3a 已证明固定采样、off/on 唯一差异、AB/BA 顺序、provider fail-closed 分类和聚合守恒可用。下一步在明确网络与最多 48 次请求授权后，运行小规模真实 DeepSeek 响应安全试验；默认策略继续关闭。
 
 ## 3. 分模块状态
 
@@ -53,7 +53,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c2c2a 正式通过 | 四策略 16 个范围全 ready、精确插入、预算和成本关系已验证 | 尚无真实模型动作消融或胜率结论 |
+| 残局精确分配 | Step J-D1c3c2c3a 开发通过 | 正式 prompt coverage 和无网络成对动作载体已验证 | 尚无真实模型响应安全、动作质量或胜率结论 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -625,9 +625,33 @@ J-D1c3c2c2a 在不修改实现和门槛的前提下完成：
 
 唯一判定：`confidence_prompt_coverage_verified`。原 seed `10000..10049` 的 J-D1c3c2c2 仍保持 `benchmark_invalid`。
 
-### P1：真实模型动作消融尚无安全载体
+### 已解决：无网络成对动作消融载体（Step J-D1c3c2c3a）
 
-coverage 通过只证明提示词可用，不证明模型能稳定解析、动作会改善或胜率提升。J-D1c3c2c3a 必须先建立 evaluation-only 成对动作载体，用同一公开局面和候选动作构造 off/on 两次调用，唯一输入差异为 confidence payload；开发阶段只使用注入的假 provider，不读取密钥或发起网络请求。
+J-D1c3c2c3a 只新增 `evaluation/confidence_action_ablation.py` 和对应测试：
+
+- provider 必须显式注入，模块不创建 client、不读取配置或环境；
+- 只采集 critical 的公开 observation/legal actions；
+- 每策略和 external bucket 使用 SHA-256 固定优先级选择样本；
+- only-pass、一次出完、confidence unavailable、payload omitted、prompt mismatch 均不会调用 provider；
+- off/on kwargs 唯一差异为类型化 `card_confidence_prompt`；
+- 每桶稳定交替 AB/BA，一侧异常不阻止另一侧；
+- 异常、malformed、no-action、错误类型、outside legal/prompt 分层计数，不使用 fallback；
+- 报告只保留聚合计数和 digest，不保留逐样本 observation、prompt、action ID 或 reasoning；
+- 单文件 6 项、相关 76 项、全量 357 项通过，`git diff --check` 和禁止边界扫描通过。
+
+开发双运行使用 seed `120..129`、四策略、每桶 4 个样本：
+
+- 两次耗时 39.795s / 40.446s；
+- report 与 `to_dict()` 完全相等，canonical SHA-256 为 `ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095`；
+- 四策略均 10/10/0 局、零 diagnostics，每策略 12 pair、每桶 AB/BA 各 2；
+- 每轮 off/on 各 48 次，96 次 provider 调用全部 valid；
+- 假 provider 固定 off 选首候选、on 选末候选，因此每策略 12 个 changed 只证明接线，不代表真实模型效果。
+
+唯一开发判定：`confidence_action_ablation_harness_verified`。
+
+### P1：尚无真实 DeepSeek 响应安全结论
+
+J-D1c3c2c3b 必须先提交 c3a 检查点，在用户明确授权当前 base URL/model 和最多 48 次无重试外部请求后，使用全新固定语料运行一次 24-pair live pilot。该步骤只验证响应可解析性、候选合法性和观察到的动作变化；单次 off/on 变化仍不能排除服务非确定性，也不能证明动作更优。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -672,7 +696,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3c2c2a 已完成；prompt coverage 正式通过。下一步为 J-D1c3c2c3a 无网络成对动作消融载体。
+状态：J-A 至 J-D1c3c2c3a 已完成；无网络 harness 开发通过。下一步为 J-D1c3c2c3b 小规模真实 DeepSeek 响应安全试验。
 
 拆分为：
 
@@ -706,8 +730,8 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算和精确插入基准并运行开发语料，已完成，判定 `confidence_prompt_coverage_capacity_verified`；
 - Step J-D1c3c2c2：使用 seed `10000..10049` 完成正式双运行，但完整门槛输出未留存，已完成，判定 `benchmark_invalid`；
 - Step J-D1c3c2c2a：使用仓库外审计文件和全新 seed `11000..11049` 恢复正式验收，已完成，判定 `confidence_prompt_coverage_verified`；
-- Step J-D1c3c2c3a：建立无网络、provider 可注入、顺序平衡的成对动作消融载体，下一步；
-- Step J-D1c3c2c3b：在 c3a 通过后预注册小规模真实 DeepSeek 动作响应验收，尚未开始；
+- Step J-D1c3c2c3a：建立无网络、provider 可注入、顺序平衡的成对动作消融载体，已完成，判定 `confidence_action_ablation_harness_verified`；
+- Step J-D1c3c2c3b：在用户授权最多 48 次无重试请求后运行小规模真实 DeepSeek 动作响应验收，下一步；
 - Step J-D1c3c2c3c：动作响应安全后再评估对局质量与胜率，尚未开始；
 - 策略接入：继续暂停，直到动作响应与对局质量验收均通过。
 

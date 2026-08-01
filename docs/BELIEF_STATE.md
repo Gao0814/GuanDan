@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2c2a 已完成；四策略 16 个范围的 prompt coverage 正式通过，判定 `confidence_prompt_coverage_verified`。下一步为 J-D1c3c2c3a 无网络成对动作消融载体；默认策略消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2c3a 已完成；无网络成对动作 harness 判定 `confidence_action_ablation_harness_verified`。下一步为 J-D1c3c2c3b 小规模真实 DeepSeek 响应安全试验；默认策略消费继续暂停。
 
 ## 2. 数据来源
 
@@ -506,14 +506,27 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2c3a：无网络成对动作消融载体
 
-- 状态：下一步；
+- 状态：已完成，唯一开发判定 `confidence_action_ablation_harness_verified`；
 - 只消费公开 observation、legal actions、统一 phase、confidence state 与 prompt payload；
 - 固定选择 critical 且 payload ready、不会命中本地 shortcut 的局面；
 - 同一局面的 off/on provider kwargs 只能相差 `card_confidence_prompt`；
 - 每桶平衡 AB/BA 顺序，防止调用时间顺序与条件绑定；
 - 聚合响应有效性、候选合法性、动作相同/变化、动作类别和异常，不保留逐样本内容；
-- 开发阶段必须注入确定性假 provider，不读取 API key 或发网络请求；
-- 本步骤只证明实验载体，不形成模型动作质量结论。
+- 开发双运行 seed `120..129`、四策略每桶 4 样本，canonical SHA-256 为 `ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095`；
+- 每轮 48 pair / 96 次假 provider 调用全部 valid，每策略每桶 AB/BA 各 2；
+- 全量 357 项测试通过，未读取 API key 或发网络请求；
+- 假 provider 的全部 changed 是刻意构造的接线结果，不形成模型动作质量结论。
+
+### Step J-D1c3c2c3b：小规模真实 DeepSeek 响应安全试验
+
+- 状态：下一步，必须先获得用户对当前 endpoint/model 和最多 48 次无重试请求的明确授权；
+- 先提交 c3a 两个文件并保持工作区干净；
+- 使用全新 seed `13000..13009`，四策略每桶 2 个样本，共 24 pair；
+- timeout 固定 60 秒，max retries 固定 0，物理请求上限 48；
+- 每次调用只向仓库外 JSONL 写入非敏感状态、条件和耗时，不保留 prompt、action ID 或模型文本；
+- 完成后原子持久化 aggregate canonical JSON；
+- 只验收解析、候选合法性、off/on 响应安全和描述性 changed rate；
+- 单次 changed 不能排除模型非确定性，也不能证明动作更优。
 
 ### Step J-D1c3：runtime 准入判定
 
