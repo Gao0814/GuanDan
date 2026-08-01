@@ -6,10 +6,10 @@
 
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
-- 当前实现检查点：`e0065c6a3da70b3d4ded4b394817bfab3351c113 J-D1c3c2c3a harness`
-- 当前工作状态：Step J-D1c3c2c3b 真实响应安全 live pilot 已完成，唯一判定 `retain_for_action_quality_evaluation`；工作区干净
+- 当前已提交实现检查点：`e0065c6a3da70b3d4ded4b394817bfab3351c113 J-D1c3c2c3a harness`
+- 当前工作状态：Step J-D1c3c2c3c1 已完成，唯一开发判定 `confidence_action_quality_harness_verified`；对应 implementation/test 文件尚未提交
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：357 项测试全部通过
+- 实际验证结果：362 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -40,7 +40,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、正式 prompt coverage、成对动作载体和真实 DeepSeek 响应安全试验。J-D1c3c2c3b 的 48 次请求全部返回合法 prompt candidate，24 对全部 both-valid，并观察到 11 对动作不同。下一步建立确定性分支续局质量代理，评估 off/on 动作在相同状态、相同 RuleBased 后续下的团队结果；默认策略继续关闭。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、正式 prompt coverage、成对动作载体、真实 DeepSeek 响应安全试验和确定性分支续局质量代理。J-D1c3c2c3c1 的 24 对开发样本全部 both-valid、quality-evaluable 且 rollout 完成，固定 RuleBased 后续下汇总为 on-better/off-better/tie = 3/1/20。下一步使用全新语料运行有界、可审计的真实模型动作质量验收；默认策略继续关闭。
 
 ## 3. 分模块状态
 
@@ -54,7 +54,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c2c3b live pilot 通过 | 正式 coverage、成对载体和 48 次真实响应候选安全已验证 | 尚无动作质量或胜率结论 |
+| 残局精确分配 | Step J-D1c3c2c3c1 开发载体通过 | 正式 coverage、真实响应候选安全和确定性分支续局质量载体已验证 | 尚无真实模型动作质量或胜率结论 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -64,7 +64,7 @@
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | 未完成 | 主要依赖模型和经验提示 | 没有结构化策略路由 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
-| 策略评测 | 部分完成 | 已有信念校准、策略分布和 prompt coverage 正式指标 | 没有真实模型动作质量与胜率指标 |
+| 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和确定性质量代理 | 没有真实模型动作质量与完整对局胜率指标 |
 
 ## 4. 已确认问题
 
@@ -673,9 +673,32 @@ J-D1c3c2c3b 在用户授权后使用 `https://api.deepseek.com`、`deepseek-v4-p
 
 唯一判定：`retain_for_action_quality_evaluation`。11 个 changed 仍可能包含服务非确定性，不证明 confidence 导致变化。
 
-### P1：尚无动作质量代理或对局收益结论
+### 已解决：确定性分支续局质量载体（Step J-D1c3c2c3c1）
 
-J-D1c3c2c3c1 必须先建立 evaluation-only 的确定性分支续局质量载体：在同一公开局面复制 `GuanDanGame`，分别应用 off/on 动作，再由 RuleBasedAI 推进到终局。质量只按观察者团队结果和团队完赛名次的预注册字典序比较。开发阶段继续使用假 provider，不调用网络；该代理只表示“在固定 RuleBased 后续下的反事实结果”，不等于真实玩家或 DeepSeek 对局胜率。
+J-D1c3c2c3c1 只新增 `evaluation/confidence_action_quality.py` 和对应测试，保持 c3a 公开 API、默认值和开发 canonical hash 不变：
+
+- 仅为 SHA-256 固定优先级最终入选的 critical 样本保留内存 `deepcopy(game)`；
+- clone 前后只通过 `observe()` 和 `legal_actions()` 验证公开等价，不读取或写入 `game._state`；
+- off/on both-valid 后在独立 clone 执行动作，再由独立 `RuleBasedAIAgent` 仅使用公开接口推进到终局；
+- same action 只 rollout 一次并复用，changed action 运行两个独立分支；
+- 终局只使用 `step()` 结果和公开 `history.finish_order`，三人顺序补入唯一末游；
+- 质量字典序固定为观察者团队 win/draw/loss 分数，其次为团队两人完赛位置和，其余为 tie；
+- 新模块 5 项、相关 81 项、全量 362 项测试通过，`git diff --check` 和禁止边界扫描通过；
+- c3a seed `120..129` 兼容哈希仍为 `ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095`。
+
+开发双运行使用 seed `140..149`、四策略、每桶 2 个样本、`max_rollout_steps=5000`：
+
+- 两次耗时 27.158s / 27.252s，report、`to_dict()` 和 canonical JSON 完全相等；
+- canonical SHA-256 为 `3a989255412180b293afcd9f99a8a32d6d399c891d829bd16d37e94b5f64eaa6`；
+- 24 pair 全部 both-valid、quality-evaluable，48 个 changed-action 分支全部完成，零 diagnostics；
+- forced/25/50/100 的 on-better/off-better/tie 分别为 1/1/4、1/0/5、0/0/6、1/0/5；
+- 总计 on-better/off-better/tie = 3/1/20，但假 provider 的动作差异是刻意构造，只验证载体。
+
+唯一开发判定：`confidence_action_quality_harness_verified`。
+
+### P1：尚无真实模型动作质量或完整对局收益结论
+
+下一步 J-D1c3c2c3c2 必须使用全新独立语料和真实 DeepSeek provider 运行相同成对质量代理。联网前必须再次取得用户对 endpoint、model、timeout、重试和最多请求数的明确授权；质量结果只代表固定 RuleBased 后续下的局部反事实代理，即使通过也只能进入完整对局评估，不能直接启用默认 confidence 或宣称胜率提升。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -691,9 +714,9 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
   -> 本地策略或 DeepSeek 选择合法动作
 ```
 
-### P1：没有策略质量基准
+### P1：没有完整策略收益基准
 
-351 项测试证明当前实现满足已有功能契约，但不能证明：
+362 项测试和确定性分支代理证明当前实现满足已有功能契约且可比较局部反事实结果，但不能证明：
 
 - 公式开局提高胜率；
 - RAG 改善动作质量；
@@ -720,7 +743,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3c2c3b 已完成；真实响应安全通过并观察到动作差异。下一步为 J-D1c3c2c3c1 确定性分支续局质量载体。
+状态：J-A 至 J-D1c3c2c3c1 已完成；确定性质量代理开发验收通过。下一步为 J-D1c3c2c3c2 真实模型动作质量验收。
 
 拆分为：
 
@@ -756,8 +779,8 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3c2c2a：使用仓库外审计文件和全新 seed `11000..11049` 恢复正式验收，已完成，判定 `confidence_prompt_coverage_verified`；
 - Step J-D1c3c2c3a：建立无网络、provider 可注入、顺序平衡的成对动作消融载体，已完成，判定 `confidence_action_ablation_harness_verified`；
 - Step J-D1c3c2c3b：在用户授权最多 48 次无重试请求后运行小规模真实 DeepSeek 动作响应验收，已完成，判定 `retain_for_action_quality_evaluation`；
-- Step J-D1c3c2c3c1：建立同状态 off/on 动作的确定性 RuleBased 分支续局质量载体，下一步；
-- Step J-D1c3c2c3c2：c3c1 通过后再预注册真实模型动作质量评估，尚未开始；
+- Step J-D1c3c2c3c1：建立同状态 off/on 动作的确定性 RuleBased 分支续局质量载体，已完成，判定 `confidence_action_quality_harness_verified`；
+- Step J-D1c3c2c3c2：使用全新独立语料运行真实模型动作质量验收，下一步；
 - 策略接入：继续暂停，直到动作响应与对局质量验收均通过。
 
 设计见 `docs/BELIEF_STATE.md`。

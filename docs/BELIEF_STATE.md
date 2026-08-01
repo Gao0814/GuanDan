@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2c3b 已完成；真实响应安全 live pilot 判定 `retain_for_action_quality_evaluation`。下一步为 J-D1c3c2c3c1 确定性分支续局质量载体；默认策略消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2c3c1 已完成；确定性质量载体判定 `confidence_action_quality_harness_verified`。下一步为 J-D1c3c2c3c2 真实模型动作质量验收；默认策略消费继续暂停。
 
 ## 2. 数据来源
 
@@ -530,14 +530,23 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2c3c1：确定性分支续局质量载体
 
+- 状态：已完成，唯一开发判定 `confidence_action_quality_harness_verified`；
+- 对固定优先级入选局面建立彼此独立的 `GuanDanGame` 深拷贝，不修改 engine、不访问 `game._state`；
+- 分别执行 off/on 动作，后续使用独立 RuleBasedAI 推进到终局；same action 单分支复用，changed action 双分支运行；
+- 只从公开终局结果和 finish order 计算观察者团队结果与团队名次和；比较优先级固定为 team win/draw/loss，其次团队名次和；
+- c3a 兼容 canonical SHA-256 保持 `ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095`；
+- seed `140..149` 双运行 canonical SHA-256 为 `3a989255412180b293afcd9f99a8a32d6d399c891d829bd16d37e94b5f64eaa6`；
+- 24 pair 全部可评估且 rollout 完成，on-better/off-better/tie = 3/1/20，零 diagnostics；
+- 全量 362 项测试通过；假 provider 结果只验证载体，不等于真实玩家或 DeepSeek 对局胜率。
+
+### Step J-D1c3c2c3c2：真实模型动作质量验收
+
 - 状态：下一步；
-- 对同一候选局面建立彼此独立的 `GuanDanGame` 深拷贝，不修改 engine；
-- 分别执行 off/on 动作，后续使用 RuleBasedAI 推进到终局；
-- same action 只续局一次并复用，changed action 各自独立续局；
-- 只从公开终局结果和 finish order 计算观察者团队结果与团队名次和；
-- 比较优先级固定为 team win/draw/loss，其次团队名次和；
-- 报告只含聚合的 on-better/off-better/tie 和续局完整性，不含状态、手牌或 action ID；
-- 开发阶段只使用假 provider，不联网；该代理不等于真实玩家或 DeepSeek 对局胜率。
+- 使用全新独立 seed 和真实 DeepSeek provider 运行 c3c1 的固定 RuleBased 续局代理；
+- 联网前重新取得 endpoint、model、timeout、重试和最多请求数的明确授权；
+- 响应合法性、质量 rollout 和仓库外审计证据分别 fail-closed；
+- 报告只保留聚合质量计数，不持久化 prompt、action ID、reasoning、响应正文或密钥；
+- 通过只允许进入完整对局收益评估，不允许默认开启 confidence。
 
 ### Step J-D1c3：runtime 准入判定
 

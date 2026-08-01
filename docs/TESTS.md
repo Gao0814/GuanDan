@@ -675,23 +675,35 @@ overall prompt-pair digests：forced `c45e7241a3c37066065c49e3c73d4b33a93d5b7b11
 
 #### J-D1c3c2c3c1：确定性分支续局质量载体
 
-状态：下一步。开发测试不调用真实 API。
+状态：已完成。唯一开发判定 `confidence_action_quality_harness_verified`。
 
-- c3a 的公开 API、默认 report 和既有 seed `120..129` canonical hash 必须保持不变；
-- `copy.deepcopy(game)` 后 observation/legal actions 必须相等，状态对象和后续推进互相独立；
-- 质量模块不得直接读取或写入 `game._state`，不得修改 engine；
-- provider off/on kwargs 和 AB/BA 规则继续沿用 c3a；
-- 非 both-valid pair 不运行质量比较，只计 fail-closed 分类；
-- same action 只运行一个分支并复用相同结果；changed action 运行两个独立分支；
-- 每个分支先执行模型 action，再由四个独立 RuleBasedAIAgent 仅用公开 payload 推进；
-- rollout 必须有正整数步数上限，超限、clone mismatch、非法 action、异常和终局字段错误分别诊断；
-- terminal finish order 只含三游时，补入唯一未出现玩家为末游；非法、重复或缺失多名玩家 fail-closed；
-- 观察者团队结果按 win=2、draw=1、loss=0；相同时用团队两人名次和，越小越优；其余为 tie；
-- 聚合 branch complete/error、off/on win/draw/loss、same reuse、changed、on-better/off-better/tie、团队名次差和、rollout steps；
-- 所有 pair 与 branch 计数必须守恒，overall 由三个桶原始计数相加；
-- report frozen/slots、不可变、JSON 友好，不含 seed、样本 ID、observation、prompt、action ID、手牌、clone 或逐分支结果；
-- 开发双运行只用确定性假 provider，报告和 canonical JSON 必须相等；
-- 该结果只验证质量代理载体，不形成真实模型动作质量或胜率结论。
+- 只新增 `evaluation/confidence_action_quality.py` 和对应测试，未修改 c3a；
+- 新模块 5 项、相关 81 项、全量 362 项通过，`git diff --check` 通过；
+- c3a 原开发 canonical SHA-256 仍为 `ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095`；
+- clone 公开等价、状态独立、same 单分支复用、changed 双分支和 RuleBased 公开接口续局均已覆盖；
+- terminal 三游补末游、非法 finish order、win/draw/loss 和 placement 字典序均已覆盖；
+- 报告 frozen/slots、不可变、JSON 友好，不含 seed、样本 ID、observation、prompt、action ID、手牌、clone 或逐分支结果；
+- 边界扫描未发现网络、配置、ground truth、`game._state` 或 runtime 反向导入。
+
+开发双运行：seed `140..149`、四策略、每桶 2 个样本、`max_rollout_steps=5000`：
+
+- 两次耗时 27.158s / 27.252s；
+- report、`to_dict()` 和 canonical JSON 完全相等，SHA-256 为 `3a989255412180b293afcd9f99a8a32d6d399c891d829bd16d37e94b5f64eaa6`；
+- 每策略三个桶各 selected=2，全部 24 pair both-valid、quality-evaluable；
+- same/changed = 0/24，共 48 个分支全部 complete，零 diagnostics；
+- forced/25/50/100 的 on-better/off-better/tie 为 1/1/4、1/0/5、0/0/6、1/0/5；
+- 结果来自确定性假 provider，只验证质量载体，不形成真实模型动作质量或胜率结论。
+
+#### J-D1c3c2c3c2：真实模型动作质量验收
+
+状态：下一步。联网前必须重新取得用户明确授权。
+
+- 先提交且只提交 c3c1 的 implementation/test 检查点，确认回归与工作区干净；
+- 使用全新独立 seed、四策略、每桶 2 个样本，最多 24 pair / 48 次真实请求，timeout=60、retries=0；
+- 真实请求、响应分类、本地 rollout 和仓库外证据分别审计；不得保留 prompt、action ID、reasoning、正文或密钥；
+- 所有 pair 必须 both-valid、quality-evaluable，所有 rollout complete，且 diagnostics 为零，否则判 benchmark invalid；
+- 质量判定只使用预注册的 on-better/off-better/tie 和 team win/draw/loss 聚合；
+- 通过只允许进入完整对局评估，不代表 confidence 因果效果或胜率提升。
 
 #### 暂停：校准
 

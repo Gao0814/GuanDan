@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3b 已完成；live pilot 判定 `retain_for_action_quality_evaluation`。下一步实现 J-D1c3c2c3c1 确定性分支续局质量载体。
+状态：J-A 至 J-D1c3c2c3c1 已完成；质量载体判定 `confidence_action_quality_harness_verified`。下一步运行 J-D1c3c2c3c2 真实模型动作质量验收。
 
 目标：
 
@@ -176,8 +176,8 @@ AI 决策分为四层：
 30. J-D1c3c2c2a：使用仓库外 canonical JSON 审计文件和全新 seed 恢复正式验收，已完成并通过；
 31. J-D1c3c2c3a：建立 evaluation-only、provider 可注入的固定配对动作消融载体，已完成并通过；
 32. J-D1c3c2c3b：经用户授权后预注册并运行小规模真实 DeepSeek 响应安全与动作变化验收，已完成并保留；
-33. J-D1c3c2c3c1：建立同状态动作分支和确定性 RuleBased 续局质量代理，下一步；
-34. J-D1c3c2c3c2：用独立语料运行真实模型动作质量验收；
+33. J-D1c3c2c3c1：建立同状态动作分支和确定性 RuleBased 续局质量代理，已完成并通过；
+34. J-D1c3c2c3c2：用独立语料运行真实模型动作质量验收，下一步；
 35. 策略接入：仅在动作质量与后续对局收益独立验收后开始。
 
 J-A 验证结果：
@@ -547,18 +547,26 @@ J-D1c3c2c3b live pilot 方向：
 - 总耗时 1411.005 秒，审计文件均已仓库外持久化并哈希；
 - 判定 `retain_for_action_quality_evaluation`；动作差异仅为描述性结果，不排除服务非确定性。
 
-J-D1c3c2c3c1 设计方向：
+J-D1c3c2c3c1 实现与开发结果：
 
-- 只修改 evaluation/test，不修改 engine、runtime、DeepSeek client、RAG、CLI 或配置；
-- 保持 c3a 公开 API、默认报告和 seed `120..129` 开发 canonical hash 完全不变；
-- 为质量载体采集候选时保存 evaluation-only 的 `copy.deepcopy(GuanDanGame)` 状态分支，不直接读取或写入 `game._state`；
-- clone 后必须证明 observation 与 legal actions 相等、状态推进互相独立；
-- 对 provider 的 off/on 合法动作分别在 clone 上 `step(action_id)`，后续所有玩家使用 `RuleBasedAIAgent` 和公开 payload 推进到终局；
-- same action 只运行一次并复用结果，changed action 运行两个独立分支；
-- 终局只读取公开 step result 和 terminal observation 的 finish order；若只记录三游，补入唯一未出现玩家为末游；
-- 质量字典序固定为：观察者团队结果 win > draw > loss；若相同，团队两位玩家完赛名次和更小者更优；否则 tie；
-- 聚合 on-better/off-better/tie、双方 win/draw/loss、团队名次差和续局步数，不保留逐样本、动作 ID、手牌或隐藏状态；
-- 开发双运行只用假 provider，不调用网络；结果只表示固定 RuleBased 后续下的反事实代理，不是实际胜率。
+- 只新增 `evaluation/confidence_action_quality.py` 和对应测试，未修改 c3a、engine、runtime、DeepSeek client、RAG、CLI 或配置；
+- c3a seed `120..129` canonical SHA-256 仍为 `ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095`；
+- 仅为固定优先级入选样本保留内存 clone，公开等价校验、分支执行和 RuleBased 续局均不访问 `game._state`；
+- same action 单分支复用，changed action 双分支独立运行；终局和质量字典序按预注册公开契约执行；
+- seed `140..149` 双运行完全一致，canonical SHA-256 为 `3a989255412180b293afcd9f99a8a32d6d399c891d829bd16d37e94b5f64eaa6`；
+- 24 pair 全部 both-valid、quality-evaluable，全部 rollout 完成，零 diagnostics；
+- 四策略 on-better/off-better/tie 为 1/1/4、1/0/5、0/0/6、1/0/5；
+- 新模块 5 项、相关 81 项、全量 362 项测试通过；
+- 判定 `confidence_action_quality_harness_verified`，不形成真实模型动作质量或胜率结论。
+
+J-D1c3c2c3c2 正式方向：
+
+- 先只提交 c3c1 的 implementation/test 检查点并确认工作区干净；
+- 只读取非敏感配置元数据，联网前重新报告 endpoint、model、timeout、retries 和请求上限并取得用户明确授权；
+- 使用全新 seed、四策略和每桶 2 个样本运行一次真实 provider 成对质量评估，最多 24 pair / 48 次零重试请求；
+- 请求与本地 RuleBased rollout 分层审计，任一响应、合法性、clone、rollout、终局或证据持久化门槛失败均判 benchmark invalid；
+- 只将 on-better/off-better/tie 和双方 team outcome 作为预注册描述性门槛，不读取 reasoning 或逐样本动作；
+- 即使保留，也只允许进入完整 DeepSeek 对局收益评估，不默认开启 confidence。
 
 ### Step K：中局策略路由与残局决策
 

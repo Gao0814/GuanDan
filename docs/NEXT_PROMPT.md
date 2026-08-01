@@ -1,302 +1,123 @@
 # 下一步实施提示词
 
-## Step J-D1c3c2c3c1：确定性分支续局质量载体
+## Step J-D1c3c2c3c2：真实 DeepSeek 动作质量验收
 
-请在 GuanDan 项目中实现 Step J-D1c3c2c3c1。任务是建立 evaluation-only 的动作质量代理：对同一个 critical 局面复制独立游戏分支，分别执行 confidence-off/on 的合法动作，再用 RuleBasedAIAgent 推进到终局，以预注册的团队结果和团队完赛名次字典序比较两个动作。
+请在 GuanDan 项目中执行 Step J-D1c3c2c3c2。任务是使用已完成的 evaluation-only 质量载体，在全新 critical-endgame 语料上成对请求 confidence-off/on 动作，并用固定 RuleBased 后续推进到终局，形成有界、可审计的动作质量代理结论。
 
-本步骤只使用确定性假 provider，不调用 DeepSeek、HTTP 或其他网络，不读取 `.env` / API key，不修改规则引擎。它只证明质量评估载体可重复、可审计，不形成真实模型动作质量或胜率结论。
+本步骤不修改 runtime、engine、prompt、confidence、RAG 或策略逻辑。它不是完整 DeepSeek 对局，也不能证明 confidence 的因果效果或胜率提升。
 
 ## 一、前置结论
 
-c3a 实现检查点：
+c3a 检查点：
 
 ```text
 e0065c6a3da70b3d4ded4b394817bfab3351c113
 J-D1c3c2c3a harness
 ```
 
-c3b live pilot 唯一判定：
+c3b 唯一判定：
 
 ```text
 retain_for_action_quality_evaluation
 ```
 
-c3b 关键事实：
+c3c1 唯一开发判定：
 
-- endpoint/model：`https://api.deepseek.com` / `deepseek-v4-pro`；
-- seed `13000..13009`，四策略每桶 2 个样本；
-- 24 pair / 48 logical/physical requests；
-- 48 响应全部 valid，24 pair 全部 both-valid；
-- same/changed = 13/11；
-- off/on pass 均为 6，pressure 均为 0；
-- 未运行完整 DeepSeek 对局；
-- 11 个 changed 不能排除服务非确定性，不代表 confidence 导致变化或动作更优。
+```text
+confidence_action_quality_harness_verified
+```
 
-本步骤不得复用 c3b 的模型 action ID；这些 ID 没有被持久化。不要读取、恢复或推断逐样本模型选择。
+c3c1 关键事实：
 
-## 二、允许修改范围
+- 仅新增 `evaluation/confidence_action_quality.py` 和 `tests/test_confidence_action_quality.py`；
+- c3a seed `120..129` 兼容 SHA-256 仍为 `ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095`；
+- c3c1 seed `140..149` 双运行 SHA-256 为 `3a989255412180b293afcd9f99a8a32d6d399c891d829bd16d37e94b5f64eaa6`；
+- 24 pair 全部 both-valid、quality-evaluable，48 个分支全部完成；
+- 假 provider 下 on-better/off-better/tie = 3/1/20，只验证载体；
+- 新模块 5 项、相关 81 项、全量 362 项测试通过。
 
-允许：
+## 二、先建立 c3c1 检查点
 
-- 最小修改 `evaluation/confidence_action_ablation.py`
-- 最小修改 `tests/test_confidence_action_ablation.py`
-- 新增 `evaluation/confidence_action_quality.py`
-- 新增 `tests/test_confidence_action_quality.py`
+开始前检查工作区，只允许存在以下两个 c3c1 文件：
 
-不得修改：
+```text
+evaluation/confidence_action_quality.py
+tests/test_confidence_action_quality.py
+```
 
-- `engine/`
-- 其他 `agents/`
-- `agents/deepseek_client.py`
-- `agents/deepseek_ai.py`
-- `config.py`
-- CLI、RAG
-- `.env` / `.env.example`
-- 其他 evaluation/test 文件
-- `docs/`
-
-对 c3a 的修改只能用于复用固定样本和成对 provider 执行逻辑。不得改变现有公开 API、默认参数、报告字段或默认行为。
-
-## 三、c3a 向后兼容硬门槛
-
-修改前先运行并记录：
+先运行：
 
 ```bash
-python -m unittest tests.test_confidence_action_ablation -q
+python -m unittest tests.test_confidence_action_quality -q
+python -m unittest tests.test_confidence_action_quality tests.test_confidence_action_ablation tests.test_confidence_prompt_benchmark tests.test_card_confidence_prompt tests.test_card_confidence_pipeline tests.test_card_confidence tests.test_deepseek_prompt_step_h tests.test_pass_policy_benchmark -q
 python -m unittest discover -q
 git diff --check
 ```
 
-修改后必须证明：
-
-- `run_confidence_action_ablation()` 签名和默认值不变；
-- 三个现有 public report dataclass 的字段、`to_dict()` 和语义不变；
-- 现有六项 c3a 测试继续通过；
-- 使用原开发参数 seed `120..129`、四策略、每桶 4 样本和同一确定性假 provider，report 与 `to_dict()` 快照不变；
-- canonical SHA-256 仍精确为：
+确认结果仍为 5 / 81 / 362 项通过，并重验两个 canonical SHA-256。然后只暂存并提交这两个文件，提交名：
 
 ```text
-ce3262ad0e8f3e3baf0e885ad75f3a11fcc57d5b035599fdce06fe9c7d7a9095
+J-D1c3c2c3c1 confidence action quality harness
 ```
 
-任一不兼容都判定本任务失败，不得用新 hash 替代旧基线。
+不得把 `docs/` 或其他文件带入该提交。提交后确认工作区干净，并记录完整 HEAD。
 
-## 四、新模块公开 API
+若文件范围、测试、兼容 hash 或工作区任一不满足，停止并输出 `precondition_failed`，不得联网。
 
-在 `evaluation/confidence_action_quality.py` 中新增：
+## 三、授权门槛
 
-- `RuleRolloutOutcome`
-- `ActionQualityBucket`
-- `PolicyActionQualityReport`
-- `ConfidenceActionQualityReport`
-- `run_confidence_action_quality(...)`
+只读取非敏感配置元数据，确认：
 
-建议函数签名：
+- API key 是否存在，只报告存在/缺失；
+- endpoint；
+- model；
+- timeout；
+- retries；
+- 本次 logical/physical request 上限。
 
-```python
-run_confidence_action_quality(
-    seeds,
-    *,
-    suggestion_provider,
-    strategic_pass_rates=(0, 25, 50, 100),
-    samples_per_bucket=2,
-    current_level_rank="2",
-    max_steps=5000,
-    max_samples_per_game=128,
-    max_external_cards=12,
-    max_search_nodes=1_000_000,
-    max_solutions=100_000,
-    max_rollout_steps=5000,
-)
-```
-
-provider 必须显式注入，无默认 client 或网络实现。严格输入校验沿用 c3a，新增 `max_rollout_steps` 为非 bool 正整数。
-
-## 五、候选采集与状态分支
-
-复用 c3a 已封板规则：
-
-- 每策略独立 `GuanDanGame` 和 `StrategicPassAIAgent`；
-- 只采集 critical/public observation/legal actions；
-- external 0-4、5-8、9-12 三桶；
-- 排除 only-pass、一次出完、confidence unavailable、payload omitted 和 prompt mismatch；
-- 每桶按同一 SHA-256 优先级选择最小 N 个样本；
-- off/on kwargs 只差 `card_confidence_prompt`；
-- 每桶稳定交替 AB/BA；
-- provider 结果按 c3a 的严格类型、legal/prompt candidate 域分类；
-- 非 both-valid pair 不进入 rollout，只保留 fail-closed 计数。
-
-质量模式需要在选中局面的动作执行前保留 evaluation-only 游戏快照。可使用 `copy.deepcopy(game)`，但必须满足：
-
-- 不直接读取或写入 `game._state`；
-- 不修改 `GuanDanGame` 或 engine API；
-- clone 前后原 game observation/legal actions 不变；
-- clone 的 observation 与 legal actions 和原 game 完全相等；
-- clone 与原 game 的后续 step 互不影响；
-- action ID 在 clone 的当前 legal actions 中仍对应同一 public action；
-- 只为最终入选 reservoir 的样本保留 clone，避免保存所有合格局面；
-- clone 仅存在于内存，不进入 report。
-
-如果无法在不读 `_state` 的情况下满足上述契约，停止并报告 blocker，不要修改 engine。
-
-## 六、确定性 RuleBased rollout
-
-对每个 both-valid pair：
-
-1. 校验 observer player ID 为 1..4；
-2. 若 off/on action 相同，只复制并运行一个分支，结果同时复用于 off/on；
-3. 若动作不同，创建两个彼此独立的 snapshot clone；
-4. 每个分支先执行对应模型 action ID；
-5. 若未终局，为玩家 1..4 创建该分支独立的 `RuleBasedAIAgent`；
-6. 每步只调用 clone 的 `observe()`、`legal_actions()`、agent `select_action()` 和 `step()`；
-7. 每个动作都通过 `require_legal_action_id()`；
-8. 最多执行 `max_rollout_steps`，包含最初模型动作；
-9. 达到终局后只读取最终 `step()` 结果和 terminal public observation；
-10. rollout 不使用 DeepSeek、confidence、RAG、ground truth 或隐藏状态。
-
-一条分支失败不能抛出并丢失整个 report；按类别记录：
-
-- `clone_mismatch`
-- `initial_action_invalid`
-- `rollout_action_invalid`
-- `rollout_exception`
-- `rollout_step_limit_reached`
-- `invalid_terminal_winner`
-- `invalid_finish_order`
-
-失败分支不输出部分质量结论。
-
-## 七、终局公开结果规范化
-
-winner 只允许：
-
-- `team_13`
-- `team_24`
-- `draw`
-
-finish order 从 terminal public observation 的 `history.finish_order` 读取：
-
-- 玩家 ID 必须为严格非 bool 整数 1..4；
-- 不得重复；
-- 长度为 4 时直接使用；
-- 长度为 3 时补入唯一未出现玩家为末游；
-- 其他长度、多个缺失或非法玩家均 fail-closed；
-- 不读取引擎内部 final order。
-
-`RuleRolloutOutcome` 至少包含聚合所需的：
-
-- observer team outcome：win/draw/loss；
-- observer team outcome score：2/1/0；
-- team placement sum；
-- rollout step count；
-- complete 状态与 diagnostics。
-
-该对象不得包含整手牌、隐藏状态或逐步轨迹。
-
-## 八、质量比较规则
-
-只对 off/on 两个 rollout 都 complete 的 pair 比较，固定字典序：
-
-1. observer team outcome score 更高者更优；
-2. outcome score 相同时，observer team 两位玩家 finish positions 之和更小者更优；
-3. 两者仍相同则 tie。
-
-不得使用以下内容作为事后 tie-break：
-
-- rollout 步数；
-- 是否 pass；
-- 是否 pressure；
-- 手牌张数；
-- 模型 reasoning；
-- 人工主观评分。
-
-same action 且 rollout complete 必须得到 tie；不能重复运行制造差异。
-
-## 九、聚合报告
-
-每个策略 overall 和三个 external bucket 至少聚合：
-
-- selected pair、provider off/on attempted 与 valid；
-- both-valid、same/changed；
-- rollout branch attempted/completed/failed；
-- same-action reused rollout count；
-- quality evaluable / unevaluable pair count；
-- on-better / off-better / tie；
-- changed-on-better / changed-off-better / changed-tie；
-- off/on team win/draw/loss；
-- off/on team placement sum total；
-- off/on rollout step total；
-- clone/initial/rollout/terminal diagnostics；
-- corpus/prompt-pair digest；
-- provider 和 strategic-pass 完整性计数。
-
-守恒至少包括：
-
-- same + changed = both-valid；
-- quality evaluable + unevaluable = both-valid；
-- on-better + off-better + tie = quality evaluable；
-- changed 三种比较结果合计 = complete changed pairs；
-- off win + draw + loss = quality evaluable；
-- on win + draw + loss = quality evaluable；
-- branch attempted = changed * 2 + same；
-- branch completed + branch failed = branch attempted；
-- overall 为三桶原始计数之和，不平均比例。
-
-若 same action 复用一次 rollout，off/on outcome 和 placement/steps 聚合仍各计一次，以保持 condition 对称；实际 branch attempted 只计一次。
-
-## 十、报告安全边界
-
-所有 report 使用 frozen/slots dataclass；mapping 不可变；`to_dict()` 可由 `json.dumps(..., allow_nan=False)` 序列化。
-
-报告不得包含：
-
-- seed 或 seed 列表；
-- 样本 ID、step/player；
-- observation、history、prompt；
-- legal/prompt actions 或 action ID；
-- game/clone/state；
-- 手牌或 ground truth；
-- provider 响应或 reasoning；
-- 逐分支 winner/finish order；
-- API key、URL 或模型配置。
-
-runtime agents、CLI、RAG 和 engine 不得导入新 evaluation 模块。
-
-## 十一、测试要求
-
-`tests/test_confidence_action_quality.py` 至少覆盖：
-
-1. 新参数严格校验，包括 bool；
-2. deepcopy 后 observation/legal actions 相等且状态推进独立；
-3. clone action ID/public action 对应一致；
-4. same action 只运行一次并复用；
-5. changed action 运行两个独立分支；
-6. 四个 RuleBased agent 每分支独立；
-7. rollout max steps 边界；
-8. clone mismatch、非法初始动作、后续非法动作和异常 fail-closed；
-9. winner 三种合法值与非法值；
-10. finish order 长度 3 补末游、长度 4、重复、非法和缺失；
-11. observer 为 team 13 / team 24 的 win/draw/loss 映射；
-12. team outcome 优先于 placement sum；
-13. outcome 相同时 placement sum 比较；
-14. 完全相同为 tie，步数不得打破 tie；
-15. provider 非 both-valid 不 rollout；
-16. 三桶到 overall 的全部守恒；
-17. report frozen/slots、mapping 不可变、JSON 和隐私扫描；
-18. 双运行报告确定性；
-19. 源码不含 `game._state`、ground truth、AppConfig、`.env`、API key、HTTP/urlopen；
-20. runtime 不反向导入 evaluation。
-
-测试可使用小型真实 seed 游戏、preset hands 或测试替身，但不得为通过测试修改 engine。
-
-## 十二、开发双运行
-
-使用确定性假 provider：off 选 prompt candidates 第一个，on 选最后一个。
-
-锁定参数：
+预期锁定值：
 
 ```text
-seeds = 140..149
+endpoint = https://api.deepseek.com
+model = deepseek-v4-pro
+timeout = 60 seconds
+retries = 0
+max logical requests = 48
+max physical HTTP requests = 48
+```
+
+不得输出、复制、散列或持久化 API key。不得发送探测请求。
+
+必须向用户明确询问是否授权本次最多 48 次、60 秒 timeout、零重试的外部请求。以前 c3b 的授权不自动延续到本步骤。未得到明确授权时停止，唯一状态为 `authorization_required`。
+
+## 四、仓库边界
+
+授权后不得修改任何仓库文件。live runner、ledger、report 和 audit summary 必须写入仓库外新目录，例如：
+
+```text
+%TEMP%\guandan-confidence-action-quality-c3c2-<checkpoint-prefix>
+```
+
+不得修改：
+
+- `engine/`
+- `agents/`
+- `evaluation/`
+- `tests/`
+- `cli/`
+- `rag/`
+- `config.py`
+- `.env` / `.env.example`
+- `docs/`
+
+不得安装依赖，不得调整模型、prompt、采样逻辑、质量字典序或门槛。
+
+## 五、正式锁定参数
+
+只运行一次正式语料，不做双运行，不补采，不替换失败样本：
+
+```text
+seeds = 15000..15009
 strategic_pass_rates = 0,25,50,100
 samples_per_bucket = 2
 current_level_rank = 2
@@ -306,63 +127,137 @@ max_external_cards = 12
 max_search_nodes = 1,000,000
 max_solutions = 100,000
 max_rollout_steps = 5000
+timeout = 60 seconds
+retries = 0
 ```
 
-完整运行两次，要求：
+调用 `run_confidence_action_quality(...)`，provider 使用现有 `DeepSeekClient.suggest_action_id()`。不得创建完整 DeepSeek 对局；只有入选的 24 pair 调用模型，后续分支只用 `RuleBasedAIAgent`。
 
-- report、`to_dict()` 和 canonical JSON 完全相等；
-- canonical SHA-256 相同；
-- 四策略均 10/10/0 games；
-- 每策略每桶 selected=2，overall=6，总计 24 pair；
-- off/on provider attempted 各 24；
-- provider 异常、malformed、no-action、非法类型、outside legal/prompt 均为 0；
+每策略每桶固定选择 2 个样本，共 4 策略 × 3 桶 × 2 = 24 pair。off/on 各请求一次，因此最多 48 次 logical/physical HTTP 请求。达到上限后 fail-closed，禁止额外请求。
+
+## 六、配对和质量契约
+
+必须原样沿用 c3a/c3c1：
+
+- 只采集 `critical_endgame` 和公开 observation/legal actions；
+- external 0-4、5-8、9-12 三个互斥桶；
+- SHA-256 固定样本优先级；
+- only-pass、一次出完、confidence unavailable、payload omitted、prompt mismatch 不调用 provider；
+- off/on kwargs 唯一差异为类型化 `card_confidence_prompt`；
+- 每桶 AB/BA 各 1，第一侧失败仍调用另一侧；
+- 不使用 fallback；响应按 exception、malformed、no-action、类型、outside legal/prompt 分类；
+- 非 both-valid pair 不 rollout；
+- same action 单分支复用，changed action 双分支独立运行；
+- rollout 只使用 clone 的公开接口和独立 RuleBased agents；
+- 终局只使用公开 winner 和 `history.finish_order`；
+- 比较顺序固定为团队 outcome score，其次团队完赛位置和，其余 tie；
+- 步数、pass、pressure、reasoning 不得打破 tie。
+
+不得读取或写入 `game._state`，不得读取 ground truth，不得保存逐样本 action ID。
+
+## 七、仓库外审计证据
+
+至少持久化：
+
+1. `run_live_action_quality.py`：本次固定 runner；
+2. `call_ledger.jsonl`：连续请求账本；
+3. `report.json`：`ConfidenceActionQualityReport.to_dict()`；
+4. `audit_summary.json`：参数、完整性门槛、质量判定和文件哈希。
+
+ledger 每行只允许包含：
+
+- 连续 request index；
+- condition：off/on；
+- AB/BA 调用位置；
+- latency milliseconds；
+- success/failure 分类。
+
+不得持久化或输出：
+
+- API key；
+- prompt、observation、history；
+- action ID、legal/prompt action 内容；
+- reasoning、响应正文；
+- seed 列表、样本 ID、step/player；
+- 手牌、ground truth、clone 或逐分支 winner/finish order。
+
+对 runner、ledger、report、summary 报告 bytes 与完整 SHA-256。JSON 使用 canonical `sort_keys=True`、紧凑分隔符和 `allow_nan=False`。业务策略顺序按固定策略名/rate 映射复核，不依赖 JSON 键迭代顺序。
+
+即使请求或 rollout 失败，也必须先尽可能写完 ledger 和失败摘要，再停止；不得通过重跑覆盖证据。
+
+## 八、完整性硬门槛
+
+以下全部满足才进入质量判定：
+
+- checkpoint 后、正式运行前后工作区均干净；
+- 四策略名称/rate 映射正确，均为 10/10/0 games；
+- 每策略三个桶各 selected=2，overall=6，总计 24 pair；
+- 每桶 off-first/on-first 各 1；
+- ledger index 连续 1..48，off/on 各 24；
+- logical/physical requests = 48/48，retries=0；
+- provider exception、malformed、no-action、非法类型、outside legal/prompt 全部为 0；
 - 24 pair 全部 both-valid；
-- 所有 rollout complete，无 clone/step/terminal diagnostics；
-- quality evaluable=24；
-- on-better + off-better + tie = 24；
-- 所有整数守恒通过；
-- 不要求 on-better 大于 off-better；
-- 运行前后无本任务范围外改动。
+- quality-evaluable=24、unevaluable=0；
+- branch attempted = `changed * 2 + same`；
+- 所有 attempted branch complete，failed=0；
+- clone、initial action、rollout、step limit、terminal diagnostics 全部为 0；
+- `same + changed = 24`；
+- `on_better + off_better + tie = 24`；
+- off/on win+draw+loss 各为 24；
+- overall 与三个桶、四策略原始整数守恒；
+- report/summary 可 canonical JSON 序列化且无 NaN/Infinity；
+- 审计文件存在、非空、哈希可复核且无敏感内容。
 
-同时重跑 c3a 原 seed `120..129` 开发基线，确认 canonical hash 仍为 `ce3262ad...a9095`。
+任一失败，唯一判定 `quality_benchmark_invalid`。不得用部分样本形成质量结论，不得重跑或补采。
 
-## 十三、验证命令
+## 九、预注册质量判定
 
-至少运行：
+完整性全部通过后，只使用 overall 聚合，按以下顺序给出唯一判定：
+
+1. 若 `on team win count < off team win count`，或 `on_better < off_better`：`reject_confidence_action_quality`；
+2. 否则若 `on_better == off_better`：`no_observed_action_quality_gain`；
+3. 否则，即 `on_better > off_better` 且 `on team win count >= off team win count`：`retain_for_full_game_evaluation`。
+
+同时报告四策略和三个 external bucket 的 on-better/off-better/tie、off/on win/draw/loss、placement totals 和 rollout steps，但不得事后增加分桶否决或改变 overall 门槛。
+
+样本仅 24 对，且 off/on 是两次独立模型请求，服务非确定性仍是混杂因素。因此：
+
+- `reject` 只表示该固定代理下不应继续接入；
+- `no_observed` 只表示未观察到净质量增益；
+- `retain` 只授权设计完整 DeepSeek 对局评估；
+- 任何判定都不证明 confidence 因果效果或胜率变化，不允许默认开启 confidence。
+
+## 十、运行后验证
+
+正式运行后再次执行：
 
 ```bash
 python -m unittest tests.test_confidence_action_quality -q
 python -m unittest tests.test_confidence_action_quality tests.test_confidence_action_ablation tests.test_confidence_prompt_benchmark tests.test_card_confidence_prompt tests.test_card_confidence_pipeline tests.test_card_confidence tests.test_deepseek_prompt_step_h tests.test_pass_policy_benchmark -q
 python -m unittest discover -q
 git diff --check
+git status --short
 ```
 
-并运行边界扫描，确认没有 engine 修改、runtime 反向导入、网络、配置、真值或直接 `_state` 访问。
+并扫描确认仓库中没有新增 live runner、ledger、report、key、prompt、响应或反向依赖。
 
-## 十四、唯一开发判定
-
-严格只输出一个：
-
-1. c3a 兼容性、clone 独立性、rollout、终局规范化、质量比较、守恒、双运行、隐私或边界任一失败：`confidence_action_quality_harness_invalid`；
-2. 全部通过：`confidence_action_quality_harness_verified`。
-
-通过只授权下一步预注册真实模型动作质量评估，不授权默认开启 confidence，不代表真实动作质量或胜率提升。
-
-## 十五、最终报告
+## 十一、最终报告
 
 完成后报告：
 
-1. 修改文件；
-2. c3a 兼容性与原 canonical hash；
-3. clone 捕获、独立性与仅公开接口续局边界；
-4. terminal finish order 规范化和固定质量字典序；
-5. provider、rollout 与质量计数守恒；
-6. 定向、相关、全量测试和 `git diff --check`；
-7. 开发双运行参数、耗时、相等性和 SHA-256；
-8. 四策略/三桶 selected、same/changed、branch complete；
-9. on-better/off-better/tie、win/draw/loss、placement/steps 聚合；
-10. 边界扫描；
-11. 唯一开发判定；
-12. 明确说明未调用 DeepSeek、未形成真实动作质量或胜率结论。
+1. c3c1 检查点完整 HEAD 和提交范围；
+2. 运行前后工作区、5/81/362 回归、两个兼容 hash；
+3. 实际 endpoint/model/timeout/retries 和授权边界；
+4. 正式参数、总耗时、logical/physical request 数；
+5. 仓库外证据目录、各文件 bytes 与完整 SHA-256；
+6. 四策略 opportunity/active pass、games、qualified 和 selected；
+7. ledger 连续性、off/on 请求数、延迟 sum/min/max；
+8. provider 合法性和 pair 完整性；
+9. same/changed、branch complete/failed 和 rollout diagnostics；
+10. overall、四策略、三桶的 on-better/off-better/tie；
+11. off/on win/draw/loss、placement totals 和 rollout steps；
+12. 所有守恒与隐私扫描；
+13. 唯一判定；
+14. 明确说明未运行完整 DeepSeek 对局、未证明因果效果或胜率提升、未默认开启 confidence。
 
-完成后停止，不修改 docs，不扩展到 J-D1c3c2c3c2。
+完成后停止，不修改 docs，不扩展到完整对局评估。
