@@ -714,15 +714,38 @@ overall prompt-pair digests：forced `c45e7241a3c37066065c49e3c73d4b33a93d5b7b11
 
 #### J-D1c3c2c3c2a：耐久后台恢复验收
 
-状态：下一步。联网前必须重新取得用户明确授权。
+状态：已完成。唯一判定 `quality_recovery_invalid`。
 
-- 全新 seed `16000..16009`，旧 45 条记录不得补采、恢复或参与统计；
-- 四策略、每桶 2、最多 24 pair / 48 次请求，timeout=60、retries=0；
-- 唯一后台进程在仓库外写 PID、心跳、ledger、report、summary 和原子完成标记；
-- 外层持续轮询同一 PID，30 分钟工具时限不得触发重启；最长 65 分钟后才允许终止；
-- 完整性仍要求 48/48 请求、24 pair both-valid/quality-evaluable、全部 rollout complete 和零 diagnostics；
-- 任一失败判 `quality_recovery_invalid`，不得用部分数据形成质量结论；
-- 完整性通过后沿用 c3c2 的 overall 质量判定，不改变门槛。
+- run ID `6999cb8cde244f0c96a95601c504062f`，PID 8728 正常退出，耗时 1890.133 秒；
+- ledger 1..48 连续，off/on=24/24，全部 returned；
+- 四策略均 10/10/0，每策略每桶 selected=2，24 pair 全部 both-valid；
+- provider 全部 valid，所有 rollout complete，diagnostics 为空；
+- 正式 summary 因 canonical JSON 键顺序检查错误令 `integrity_pass=false`；
+- 未重写 summary/completion、未重跑、未形成质量结论；
+- 回归 5 / 81 / 362 项、兼容 hash、`git diff --check` 和工作区检查通过。
+
+证据 hashes：
+
+- runner `c020860c67c2663c9ed87adda974774697c396d186b82c4f7547bbccebc33a5c`；
+- state `4a4ff3d487f3257fbc7d0a82392c04d3c9f5df9cabb667fa534a2be5359c2adc`；
+- heartbeat `33bba4c0a966dd88e0e9c1293dc783be346cba0c65e5744acb8de28269d3d6e3`；
+- ledger `c60f5d35d9ee907efd926c7e3f03ba5fdb918c463892da3f1abab6a6c2ee49df`；
+- report `57df2cd1826f3e5226ab66cf2a7590f7158ec88c4843e0f7839672b3f3bb090f`；
+- summary `9d9522155bea9d3c0dc24d40c33d6b0f3872d4e5ed75c8788a8d154cc0f1a2ab`；
+- completion `cfed3329699e822a84313c0e92b0c3a1dbec2dd08956f3ae0e126d9fea0b25c6`；
+- explicit-mapping addendum `52bab7e2de283b48d76839be4926fd75597d66046078512d8c04c94c9c5d3229`。
+
+#### J-D1c3c2c3c2b：只读恢复审计
+
+状态：下一步。不需要网络授权。
+
+- 原 c3c2a 文件必须只读且前后 hashes 完全不变；
+- 验证器按固定策略名查找并核对 rate，不比较 mapping 迭代顺序；
+- 原 summary 的失败项必须只有可解释的键序假阴性；
+- 独立重算 48 请求、24 pair、三桶、四策略、rollout 和质量计数守恒；
+- 两次验证输出的 canonical recovered summary 必须完全相同；
+- 任一其他失败判 `recovered_audit_invalid`；
+- 完整性恢复后才应用原预注册 overall 质量门槛。
 
 #### 暂停：校准
 

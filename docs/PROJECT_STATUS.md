@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - 当前实现检查点：`ad85662a47f126991e8ebe0360dc0c6c4a2f1be6 J-D1c3c2c3c1 confidence action quality harness`
-- 当前工作状态：Step J-D1c3c2c3c2 正式运行在 45/48 请求后被外层时限中断，唯一判定 `quality_benchmark_invalid`；工作区干净
+- 当前工作状态：Step J-D1c3c2c3c2a 已完成 48/48 请求，但正式审计错误依赖 canonical JSON 键顺序，唯一判定 `quality_recovery_invalid`；工作区干净
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：362 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -40,7 +40,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、正式 prompt coverage、成对动作载体、真实 DeepSeek 响应安全试验和确定性分支续局质量代理。首次正式动作质量运行只落盘 45/48 条请求记录，因外层 30 分钟时限中断且没有完整 report，严格判为 invalid，不产生 same/changed 或质量结论。下一步使用全新语料和可持续轮询的单一后台进程恢复验收；默认策略继续关闭。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、正式 prompt coverage、成对动作载体、真实 DeepSeek 响应安全试验和确定性分支续局质量代理。c3c2a 已完整执行 48/48 请求、24 对配对和全部 rollout，但正式 `audit_summary.json` 把 canonical JSON 键顺序误当业务策略顺序，导致 `integrity_pass=false`，因此不形成质量结论。下一步只读复核不可变证据并用显式策略映射恢复审计，不再调用模型；默认策略继续关闭。
 
 ## 3. 分模块状态
 
@@ -54,7 +54,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c2c3c2 正式运行 invalid | 正式 coverage、真实响应候选安全和确定性分支续局质量载体已验证 | 真实质量运行未完成，尚无动作质量或胜率结论 |
+| 残局精确分配 | Step J-D1c3c2c3c2a 审计 invalid | 48/48 请求、24 对和 rollout 已完成，正式审计因键序假阴性失败 | 尚无正式动作质量或胜率结论 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -715,9 +715,36 @@ J-D1c3c2c3c2 在检查点 `ad85662a47f126991e8ebe0360dc0c6c4a2f1be6` 上使用 s
 
 唯一判定：`quality_benchmark_invalid`。旧 seed 与 45 条部分记录永久只作为失败审计，不能补全或进入后续质量统计。
 
+### 已确认：耐久运行完成但正式键序审计假阴性（Step J-D1c3c2c3c2a）
+
+J-D1c3c2c3c2a 使用 seed `16000..16009` 和持久后台进程完成：
+
+- run ID `6999cb8cde244f0c96a95601c504062f`，PID 8728 正常退出，耗时 1890.133 秒；
+- 48 条 ledger 连续，off/on=24/24，全部 returned 且为严格整数；
+- off/on 延迟和为 590242 / 1247160 ms；
+- 四策略均 10/10/0 games，主动 pass 为 0、40/102、59/98、111/111，比例严格递增；
+- 每策略每桶 selected=2、overall=6，provider 全部 valid，24 pair 全部 both-valid；
+- 所有 rollout 分支完成，diagnostics 为空；
+- 正式 `audit_summary.json` 错误依赖 canonical JSON 的键迭代顺序，令 `integrity_pass=false`；
+- 原 summary/completion 未重写，未重跑，也未使用 report 形成质量结论；
+- 只读 addendum 记录键序假阴性，但不覆盖正式 completion。
+
+审计目录：`C:\Users\86166\AppData\Local\Temp\guandan-confidence-action-quality-c3c2a-ad85662a47f1-699cabeb8ea448878a510de9c2fec30f`。
+
+- runner：9708 bytes / `c020860c67c2663c9ed87adda974774697c396d186b82c4f7547bbccebc33a5c`；
+- process state：508 bytes / `4a4ff3d487f3257fbc7d0a82392c04d3c9f5df9cabb667fa534a2be5359c2adc`；
+- heartbeat：219 bytes / `33bba4c0a966dd88e0e9c1293dc783be346cba0c65e5744acb8de28269d3d6e3`；
+- ledger：10263 bytes / `c60f5d35d9ee907efd926c7e3f03ba5fdb918c463892da3f1abab6a6c2ee49df`；
+- report：15623 bytes / `57df2cd1826f3e5226ab66cf2a7590f7158ec88c4843e0f7839672b3f3bb090f`；
+- audit summary：21345 bytes / `9d9522155bea9d3c0dc24d40c33d6b0f3872d4e5ed75c8788a8d154cc0f1a2ab`；
+- completion：916 bytes / `cfed3329699e822a84313c0e92b0c3a1dbec2dd08956f3ae0e126d9fea0b25c6`；
+- 显式映射 addendum：`52bab7e2de283b48d76839be4926fd75597d66046078512d8c04c94c9c5d3229`。
+
+唯一判定：`quality_recovery_invalid`。完整数据存在不等于正式审计通过。
+
 ### P1：尚无真实模型动作质量或完整对局收益结论
 
-下一步 J-D1c3c2c3c2a 使用全新独立语料恢复正式验收。模型、请求上限、采样、质量字典序和判定门槛保持不变，只将执行方式改为仓库外单一后台进程、PID/心跳/完成标记和最长 65 分钟持续轮询。联网前必须重新取得明确授权；即使通过也只能进入完整对局评估，不能直接启用默认 confidence 或宣称胜率提升。
+下一步 J-D1c3c2c3c2b 仅对 c3c2a 不可变文件进行独立、只读恢复审计。验证器必须按显式 `策略名 -> rate` 映射复核全部内容和原预注册质量门槛，原 summary/completion 及其 invalid 判定保持不变。该步骤不读取 API key、不联网、不发送请求；即使恢复后判定保留，也只能进入完整对局评估。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -762,7 +789,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3c2c3c1 已完成；J-D1c3c2c3c2 正式运行未完成并判 invalid。下一步为 J-D1c3c2c3c2a 独立语料恢复验收。
+状态：J-A 至 J-D1c3c2c3c1 已完成；c3c2 与 c3c2a 均保持 invalid，后者数据完整但正式键序审计失败。下一步为 J-D1c3c2c3c2b 只读恢复审计。
 
 拆分为：
 
@@ -800,7 +827,8 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3c2c3b：在用户授权最多 48 次无重试请求后运行小规模真实 DeepSeek 动作响应验收，已完成，判定 `retain_for_action_quality_evaluation`；
 - Step J-D1c3c2c3c1：建立同状态 off/on 动作的确定性 RuleBased 分支续局质量载体，已完成，判定 `confidence_action_quality_harness_verified`；
 - Step J-D1c3c2c3c2：使用 seed `15000..15009` 运行真实模型动作质量验收，45/48 请求后中断，已完成失败审计，判定 `quality_benchmark_invalid`；
-- Step J-D1c3c2c3c2a：保持模型、请求和质量门槛不变，以全新 seed 和耐久后台执行恢复正式验收，下一步；
+- Step J-D1c3c2c3c2a：使用全新 seed 和耐久后台完成 48/48 请求，但正式 summary 因 JSON 键序假阴性失败，已完成，判定 `quality_recovery_invalid`；
+- Step J-D1c3c2c3c2b：不联网、不改原证据，以显式策略映射运行独立只读恢复审计，下一步；
 - 策略接入：继续暂停，直到动作响应与对局质量验收均通过。
 
 设计见 `docs/BELIEF_STATE.md`。

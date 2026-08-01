@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3c1 已完成；J-D1c3c2c3c2 因 45/48 请求后外层时限中断而判 `quality_benchmark_invalid`。下一步运行 J-D1c3c2c3c2a 独立语料恢复验收。
+状态：J-A 至 J-D1c3c2c3c1 已完成；c3c2a 完成 48/48 请求但正式审计因 JSON 键序假阴性判 `quality_recovery_invalid`。下一步运行 J-D1c3c2c3c2b 只读恢复审计。
 
 目标：
 
@@ -178,8 +178,9 @@ AI 决策分为四层：
 32. J-D1c3c2c3b：经用户授权后预注册并运行小规模真实 DeepSeek 响应安全与动作变化验收，已完成并保留；
 33. J-D1c3c2c3c1：建立同状态动作分支和确定性 RuleBased 续局质量代理，已完成并通过；
 34. J-D1c3c2c3c2：用独立语料运行真实模型动作质量验收，已执行但未完成，判定 invalid；
-35. J-D1c3c2c3c2a：用全新 seed 和耐久后台进程恢复同一正式验收，下一步；
-36. 策略接入：仅在动作质量与后续对局收益独立验收后开始。
+35. J-D1c3c2c3c2a：用全新 seed 和耐久后台进程恢复同一正式验收，运行完整但正式键序审计失败，判定 invalid；
+36. J-D1c3c2c3c2b：只读复核 c3c2a 不可变证据并显式映射策略，下一步；
+37. 策略接入：仅在动作质量与后续对局收益独立验收后开始。
 
 J-A 验证结果：
 
@@ -570,15 +571,24 @@ J-D1c3c2c3c2 正式结果：
 - 失败证据已在仓库外持久化并哈希；
 - 判定 `quality_benchmark_invalid`。
 
-J-D1c3c2c3c2a 恢复方向：
+J-D1c3c2c3c2a 正式结果：
 
-- 旧 seed 和 45 条记录只保留审计，不补采、不恢复、不参与统计；
-- 使用全新 seed `16000..16009`，保持 endpoint/model、60 秒 timeout、零重试、48 请求上限、采样和质量门槛不变；
-- 联网前重新取得用户明确授权；
-- runner 作为唯一后台子进程启动，仓库外记录 PID、心跳和原子完成标记；
-- 外层每 30-60 秒轮询同一 PID，工具返回或 30 分钟界面时限不构成终止理由；最长 65 分钟仍未结束才终止并判 invalid；
-- 不得因状态不明启动第二个进程；完成后只从完整 report 进入预注册质量判定；
-- 即使保留，也只允许进入完整 DeepSeek 对局收益评估，不默认开启 confidence。
+- seed `16000..16009`，48/48 请求、24 pair、全部 rollout 和零 diagnostics 均完成；
+- 四策略均 10/10/0，主动 pass 比例严格递增；
+- 持久后台进程正常退出，完整 ledger/report/summary/completion 均已落盘并哈希；
+- 正式 summary 错误依赖 canonical JSON 键顺序，`integrity_pass=false`；
+- 原证据未改写，未重跑，未形成质量结论；
+- 判定 `quality_recovery_invalid`。
+
+J-D1c3c2c3c2b 恢复方向：
+
+- 不联网、不读 key、不发送请求，不修改任何原审计文件；
+- 在新仓库外目录运行只读验证器，先复核全部源文件 hashes；
+- 以显式 `forced_only=0`、`strategic_pass_25=25`、`strategic_pass_50=50`、`strategic_pass_100=100` 映射校验策略，不依赖 mapping 迭代顺序；
+- 独立重算 ledger、策略、分桶、pair、rollout、diagnostics、JSON 和隐私守恒；
+- 原 summary 除键序检查外若存在任何其他失败，恢复审计立即 invalid；
+- 两次只读验证必须生成完全相等的 canonical recovered summary；
+- 完整性恢复后才按 c3c2 原预注册 overall 门槛形成质量判定，原 c3c2a invalid 不被覆盖。
 
 ### Step K：中局策略路由与残局决策
 

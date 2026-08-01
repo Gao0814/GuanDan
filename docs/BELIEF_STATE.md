@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2c3c1 已完成；J-D1c3c2c3c2 正式运行因 45/48 请求后外层时限中断而判 `quality_benchmark_invalid`。下一步为 J-D1c3c2c3c2a 独立语料恢复验收；默认策略消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2c3c1 已完成；c3c2a 已完成 48/48 请求，但正式 summary 因 JSON 键序假阴性判 `quality_recovery_invalid`。下一步为 J-D1c3c2c3c2b 只读恢复审计；默认策略消费继续暂停。
 
 ## 2. 数据来源
 
@@ -550,18 +550,27 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2c3c2a：耐久执行恢复验收
 
+- 状态：已完成，唯一判定 `quality_recovery_invalid`；
+- seed `16000..16009`，48/48 请求、24 pair、全部 rollout 和零 diagnostics 均完成；
+- 持久后台进程正常退出，完整 report、summary 和 completion 已落盘；
+- 正式 summary 因错误依赖 canonical JSON 键迭代顺序而 `integrity_pass=false`；
+- 原证据未改写、未重跑，addendum 不覆盖正式 completion；
+- 未形成动作质量、因果效果或胜率结论。
+
+### Step J-D1c3c2c3c2b：不可变证据只读恢复审计
+
 - 状态：下一步；
-- 使用全新 seed `16000..16009`，不复用或补全旧语料；
-- 保持 DeepSeek 配置、48 请求上限、采样规则、RuleBased 续局和质量门槛不变；
-- 联网前重新取得明确授权；
-- 使用单一后台进程和仓库外 PID/心跳/完成标记，持续轮询最多 65 分钟；
-- 完整性通过后才读取聚合质量结果；通过只允许进入完整对局收益评估。
+- 不联网、不读取 key、不调用模型，不修改 c3c2a 原目录；
+- 显式按策略名映射 rate，不使用 JSON mapping 顺序；
+- 独立复核全部 hashes、计数、守恒、诊断、JSON 和隐私边界；
+- 只有键序是假阴性的唯一完整性失败时才允许恢复；
+- 恢复成功后沿用原 quality gate，只授权后续完整对局评估。
 
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有 J-D1c3c2c3c2 真实动作质量和后续完整对局收益依次通过，才允许默认策略读取；
+- 只有 J-D1c3c2c3c2b 恢复出有效真实动作质量判定、且后续完整对局收益通过，才允许默认策略读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准
