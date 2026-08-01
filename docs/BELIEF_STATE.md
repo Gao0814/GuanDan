@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2c1 已完成；四策略 prompt coverage 开发语料 1084 个样本全部 ready，判定 `confidence_prompt_coverage_capacity_verified`。下一步为 J-D1c3c2c2 独立正式覆盖；默认策略消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2c1 已完成；J-D1c3c2c2 正式双运行可重复，但完整分桶审计输出未留存，判定 `benchmark_invalid`。下一步为 J-D1c3c2c2a 可持久化恢复验收；默认策略消费继续暂停。
 
 ## 2. 数据来源
 
@@ -485,10 +485,21 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2c2：独立正式 prompt coverage
 
-- 状态：下一步；
-- 提交实现检查点并保持正式运行前后工作区干净；
+- 状态：已完成但无效，唯一判定 `benchmark_invalid`；
+- 检查点为 `bc689a37f462672033d754cce7060897d70c7612`；
 - seed `10000..10049` 四策略各 50 局，完整双运行；
-- 冻结 collector、formatter、2400 字符预算、分桶与全部门槛；
+- report、`to_dict()` 与 canonical JSON 两次完全一致，SHA-256 为 `1d6506250def487c16d4da2c4fcf1aed2cdfd13231a6096347b768e0c8680a8f`；
+- stdout 被工具层截断，完整四策略分桶聚合和字符成本证据未保留；
+- 按预注册约束未第三次运行、补采或改参；
+- 失败属于审计完整性，不证明 coverage 通过或失败。
+
+### Step J-D1c3c2c2a：可持久化恢复验收
+
+- 状态：下一步；
+- 保持实现、测试、collector、formatter、2400 字符预算、分桶与全部门槛不变；
+- 使用全新 seed `11000..11049` 四策略各 50 局完整双运行；
+- 每次 canonical JSON 先写入仓库外临时审计文件，再做哈希和门槛解析；
+- 两份文件必须可解析、字节一致，且完整报告 16 个范围的聚合值；
 - 每策略每桶至少 350 个 valid/ready 样本；
 - 全样本 ready、零 omitted/mismatch/diagnostics，固定开销仍为 11；
 - 仅通过后允许进入真实 DeepSeek 动作 A/B 设计。
@@ -497,7 +508,7 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有 J-D1c3c2c2 正式覆盖和 J-D1c3c2c3 动作消融依次通过，才允许默认策略读取；
+- 只有 J-D1c3c2c2a 恢复正式覆盖和 J-D1c3c2c3 动作消融依次通过，才允许默认策略读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准

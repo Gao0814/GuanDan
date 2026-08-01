@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c1 已完成；prompt coverage 开发判定 `confidence_prompt_coverage_capacity_verified`。下一步运行 J-D1c3c2c2 独立正式覆盖双验收。
+状态：J-A 至 J-D1c3c2c1 已完成；J-D1c3c2c2 双运行可重复，但完整聚合输出未留存，判定 `benchmark_invalid`。下一步运行 J-D1c3c2c2a 可持久化恢复验收。
 
 目标：
 
@@ -172,9 +172,10 @@ AI 决策分为四层：
 26. J-D1c3c2b1：建立有界、确定、精确分数的 prompt payload，不接入模型，已完成；
 27. J-D1c3c2b2：增加默认关闭的 prompt 消费开关并保持关闭态完全兼容，已完成；
 28. J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算与精确插入基准并运行开发试验，已完成；
-29. J-D1c3c2c2：使用独立 seed 正式验收 prompt readiness 与成本，下一步；
-30. J-D1c3c2c3：在固定配对 corpus 上运行真实 DeepSeek confidence-off/on 动作消融；
-31. 策略接入：仅在 J-D1c3c2c3 独立验收后开始。
+29. J-D1c3c2c2：使用独立 seed 正式验收 prompt readiness 与成本，双运行完成但完整审计证据未留存，判定 `benchmark_invalid`；
+30. J-D1c3c2c2a：使用仓库外 canonical JSON 审计文件和全新 seed 恢复正式验收，下一步；
+31. J-D1c3c2c3：在固定配对 corpus 上运行真实 DeepSeek confidence-off/on 动作消融；
+32. 策略接入：仅在 J-D1c3c2c3 独立验收后开始。
 
 J-A 验证结果：
 
@@ -509,12 +510,21 @@ J-D1c3c2c1 实现与开发结果：
 
 J-D1c3c2c2 正式方向：
 
-- 先提交 J-D1c3c1 至 c2c1 全部实现检查点并确保工作区干净；
-- 使用独立 seed `10000..10049`，四策略各 50 局，完整运行两次；
-- 不修改实现、预算、采样、分桶、策略 gate 或门槛；
-- 每个策略每个 external bucket 至少 350 个 valid/ready 样本；
+- 已在检查点 `bc689a37f462672033d754cce7060897d70c7612` 使用 seed `10000..10049` 完成四策略各 50 局双运行；
+- report、`to_dict()`、canonical JSON 和 SHA-256 两次相等，哈希为 `1d6506250def487c16d4da2c4fcf1aed2cdfd13231a6096347b768e0c8680a8f`；
+- stdout 被工具层截断，未保留四策略全部分桶聚合，无法审计完整性、coverage 和字符成本门槛；
+- 按预注册约束没有第三次运行、补采或调整参数；
+- 唯一判定 `benchmark_invalid`，不得进入 J-D1c3c2c3。
+
+J-D1c3c2c2a 恢复方向：
+
+- 不修改实现、测试、预算、采样、分桶、策略 gate 或门槛；
+- 使用全新 seed `11000..11049`，四策略各 50 局，完整运行两次；
+- 每次完成后立即将 canonical JSON 写入仓库外临时审计目录，不向 stdout 打印完整 report；
+- 两份 JSON 必须可重新解析、字节一致、SHA-256 一致，并保留绝对路径、大小和哈希；
+- 从持久化文件生成 16 个范围的完整门槛摘要；每个策略每个 external bucket 至少 350 个 valid/ready 样本；
 - 全部样本 ready、零 omitted/mismatch/diagnostics，固定章节开销保持 11；
-- 通过后才允许设计 J-D1c3c2c3 真实 DeepSeek 动作 A/B。
+- 只有恢复验收通过后才允许设计 J-D1c3c2c3 真实 DeepSeek 动作 A/B。
 
 ### Step K：中局策略路由与残局决策
 

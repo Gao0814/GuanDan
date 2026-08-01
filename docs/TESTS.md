@@ -586,11 +586,26 @@ J-D1c3c1a 已补测：
 
 #### J-D1c3c2c2：独立正式 prompt coverage
 
-状态：下一步。只运行锁定测试和 benchmark，不修改任何文件。
+状态：已完成但无效。唯一判定 `benchmark_invalid`；不是 coverage 数值失败，而是完整聚合证据未留存。
 
-- HEAD 必须包含 J-D1c3c1 至 c2c1 全部实现，运行前后工作区干净；
+- HEAD `bc689a37f462672033d754cce7060897d70c7612`；运行前后工作区干净；
+- 提交前后定向 28 项、相关 77 项、全量 351 项通过，`git diff --check` 通过；
 - seed `10000..10049`，四策略各 50 局，完整运行两次；
-- 两份报告、`to_dict()`、每策略 pair digest 和 canonical JSON SHA-256 完全一致；
+- 两次耗时 344.621s / 342.153s；
+- 两份 report、`to_dict()`、canonical JSON 完全一致，SHA-256 均为 `1d6506250def487c16d4da2c4fcf1aed2cdfd13231a6096347b768e0c8680a8f`；
+- 边界扫描未发现网络、DeepSeek、ground truth 或 `game._state`；
+- 工具层截断 stdout，未保留 4 策略 x 4 范围的完整数据；
+- 按预注册约束未第三次运行、补采或改参；局部 `strategic_pass_50` 输出不参与正式通过判定。
+
+#### J-D1c3c2c2a：可持久化恢复验收
+
+状态：下一步。只运行锁定回归和 benchmark，不修改仓库文件。
+
+- `bc689a37f462672033d754cce7060897d70c7612` 必须是当前 HEAD 的祖先，且之后除规划 docs 外无源码/测试变化；运行前后工作区干净；
+- 使用全新 seed `11000..11049`，四策略各 50 局，完整运行两次；
+- 每次 report 完成后立即序列化 canonical JSON 到仓库外临时审计目录，禁止向 stdout 打印完整 report/JSON；
+- 两份文件必须存在、非空、UTF-8 可解析、字节完全一致，SHA-256 相同；
+- 从已落盘 JSON 生成独立的完整门槛摘要，保留两个报告路径、文件大小、哈希和每策略 pair digest；
 - 四策略各 50/50/0 games，eligible=evaluated=valid，invalid/skipped=0；
 - forced pass=0，100% pass=opportunity，实际比例严格递增；
 - 顶层、overall 和三个 external bucket diagnostics 均为空；
@@ -600,8 +615,8 @@ J-D1c3c1a 已补测：
 - payload char min>0、max<=2400；
 - prompt delta sum=`payload char sum + 11 * ready count`；
 - prompt delta min=`payload char min + 11`，max=`payload char max + 11`；
-- 任一数据完整性或可重复性失败判定 `benchmark_invalid`；
-- benchmark 有效但任一覆盖/预算/插入门槛失败判定 `reject_confidence_prompt_action_ablation`；
+- 任一前置、文件持久化、可解析性、完整性或可重复性失败判定 `benchmark_invalid`；
+- benchmark 有效但任一 coverage/预算/插入门槛失败判定 `reject_confidence_prompt_action_ablation`；
 - 全部通过判定 `confidence_prompt_coverage_verified`。
 
 #### 暂停：校准

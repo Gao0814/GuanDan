@@ -4,8 +4,8 @@
 
 ## 1. 当前基线
 
-- 上一已提交规划基线：`f4575f4 Plan J-D1c3c2c1 prompt coverage benchmark`
-- 当前工作状态：Step J-D1c3c2c1 已完成但十一个 confidence/prompt/benchmark 文件尚未提交；定向 28 项、相关 77 项、全量 351 项通过
+- 当前实现检查点：`bc689a37f462672033d754cce7060897d70c7612 J-D1c3c2c1 confidence prompt coverage benchmark`
+- 当前工作状态：Step J-D1c3c2c2 双运行完成且结果一致，但完整门槛报告未留存，唯一判定 `benchmark_invalid`；工作区干净
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：351 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、默认关闭的 prompt 接线和配对 prompt 开发基准。J-D1c3c2c1 在四策略 1084 个 critical 样本上全部 ready、零 omitted、零 mismatch，并证明固定章节开销为每样本 11 字符。下一步提交实现检查点后，使用全新 seed 运行正式覆盖双验收。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、默认关闭的 prompt 接线和配对 prompt 开发基准。J-D1c3c2c2 的两次正式运行可重复，但 stdout 在工具层截断，未保留四策略全部分桶聚合，不能逐项审计门槛，因此判定 `benchmark_invalid`。下一步不复用原 seed，而是在结果先落盘的前提下，用全新 seed 做恢复性正式验收。
 
 ## 3. 分模块状态
 
@@ -52,7 +52,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c2c1 完成 | 四策略配对 prompt 开发容量、全 ready 和固定成本已验证 | 尚无独立正式覆盖结论或动作消融 |
+| 残局精确分配 | Step J-D1c3c2c2 已运行但无效 | 开发容量、全 ready 和固定成本已验证；首次正式双运行可重复 | 完整正式门槛证据未留存，尚无动作消融 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -587,9 +587,24 @@ J-D1c3c2c1 已建立 evaluation-only collector 并完成开发双运行：
 
 唯一开发判定：`confidence_prompt_coverage_capacity_verified`。该结论只允许使用独立 seed 正式验收 prompt coverage，仍不允许动作收益或胜率结论。
 
-### P1：prompt coverage 尚无独立正式结论
+### 已完成但无效：首次 prompt coverage 正式运行（Step J-D1c3c2c2）
 
-J-D1c3c2c2 必须冻结代码、collector、formatter、预算和门槛，使用 seed `10000..10049` 四策略各 50 局完整双运行。任一策略或 external bucket 的数据完整性、ready 覆盖、预算或精确插入失败都不能被跨策略平均抵消。
+J-D1c3c2c2 在检查点 `bc689a37f462672033d754cce7060897d70c7612` 上完成：
+
+- seed `10000..10049`，四策略各 50 局，完整运行两次；
+- 两次耗时 344.621s / 342.153s；
+- report、`to_dict()` 和 canonical JSON 两次完全相等；
+- SHA-256 两次均为 `1d6506250def487c16d4da2c4fcf1aed2cdfd13231a6096347b768e0c8680a8f`；
+- 提交前后回归 28 / 77 / 351 项通过，`git diff --check` 通过；
+- 运行前后工作区干净，边界扫描未发现网络、DeepSeek、ground truth 或 `game._state`；
+- 已确认的 `strategic_pass_50` 片段为 50/50/0 局、1533 个有效 critical 样本、零 invalid/skip/diagnostics、主动 pass 313/577，overall 全部 ready 且无 mismatch；
+- 工具层截断 stdout，未保留四策略 x overall/三桶的完整聚合与字符成本数据；按预注册约束未第三次运行、补采或改参数。
+
+唯一判定：`benchmark_invalid`。失败原因是审计证据不完整，不是 coverage 数值门槛失败；任何局部片段均不得外推为正式通过。
+
+### P1：prompt coverage 需要可持久化的恢复验收
+
+J-D1c3c2c2a 必须冻结实现、预算、分桶和门槛，使用全新 seed `11000..11049` 四策略各 50 局完整双运行。每次 report 的 canonical JSON 必须在运行结束后立即写入仓库外临时审计目录；只有两份完整文件可重新解析、哈希相同，且 16 个范围逐项通过，才能判定 `confidence_prompt_coverage_verified`。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -607,7 +622,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### P1：没有策略质量基准
 
-311 项测试证明当前实现满足已有功能契约，但不能证明：
+351 项测试证明当前实现满足已有功能契约，但不能证明：
 
 - 公式开局提高胜率；
 - RAG 改善动作质量；
@@ -634,7 +649,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3c2c1 已完成；prompt coverage 开发容量通过。下一步为 J-D1c3c2c2 独立正式覆盖双运行。
+状态：J-A 至 J-D1c3c2c1 已完成；J-D1c3c2c2 已运行但因完整审计输出未留存判定 `benchmark_invalid`。下一步为 J-D1c3c2c2a 可持久化恢复验收。
 
 拆分为：
 
@@ -666,7 +681,8 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3c2b1：建立独立、有界、确定、精确分数的 prompt 序列化契约，已完成；
 - Step J-D1c3c2b2：增加默认关闭的 DeepSeek prompt 消费开关并验证兼容性，已完成；
 - Step J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算和精确插入基准并运行开发语料，已完成，判定 `confidence_prompt_coverage_capacity_verified`；
-- Step J-D1c3c2c2：使用全新 seed 正式验收四策略 prompt coverage 与成本，下一步；
+- Step J-D1c3c2c2：使用 seed `10000..10049` 完成正式双运行，但完整门槛输出未留存，已完成，判定 `benchmark_invalid`；
+- Step J-D1c3c2c2a：使用仓库外审计文件和全新 seed `11000..11049` 恢复正式验收，下一步；
 - Step J-D1c3c2c3：覆盖正式通过后再运行真实 DeepSeek 动作 A/B，尚未开始；
 - 策略接入：继续暂停，直到 J-D1c3c2c3 动作消融验收。
 
