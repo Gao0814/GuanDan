@@ -1,7 +1,10 @@
+from dataclasses import replace
 import json
 import unittest
 from unittest import mock
 
+from agents.card_confidence import CardConfidenceState
+from agents.card_confidence_prompt import CardConfidencePromptPayload
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import (
     PROMPT_MAX_CANDIDATE_ACTIONS,
@@ -106,6 +109,65 @@ class CountingRAGAdvisor:
     def get_rag_context(self, **_kwargs):
         self.calls += 1
         return _rag_context()
+
+
+class RecordingClient:
+    def __init__(self, action_id: int | None = 1, *, raises: bool = False) -> None:
+        self.action_id = action_id
+        self.raises = raises
+        self.calls: list[dict[str, object]] = []
+
+    def suggest_action_id(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.raises:
+            raise RuntimeError("client failure")
+        return DeepSeekSuggestion(action_id=self.action_id, reasoning="test")
+
+
+def _shadow_state(*, phase: str = "critical_endgame") -> CardConfidenceState:
+    return CardConfidenceState(
+        phase=phase,
+        status="unavailable",
+        source="none",
+        calibration_scope="none",
+        external_unknown_count=0,
+        physical_assignment_count=0,
+        players=(),
+        diagnostics=("unsupported_phase",),
+    )
+
+
+def _ready_confidence_prompt() -> CardConfidencePromptPayload:
+    text = "范围：critical_endgame_policy_diverse_v1\n玩家2（余1张）：3[P=1,E=1]"
+    return CardConfidencePromptPayload(
+        status="ready",
+        text=text,
+        char_count=len(text),
+        source="physical_assignment_marginal_v1",
+        calibration_scope="critical_endgame_policy_diverse_v1",
+        diagnostics=(),
+    )
+
+
+def _omitted_confidence_prompt() -> CardConfidencePromptPayload:
+    return CardConfidencePromptPayload(
+        status="omitted",
+        text="",
+        char_count=0,
+        source="none",
+        calibration_scope="none",
+        diagnostics=("prompt_budget_exceeded",),
+    )
+
+
+def _critical_observation() -> dict[str, object]:
+    observation = _observation(hand_count=20, step_no=9)
+    observation["other_players"] = [
+        {"player_id": 2, "team": "2&4", "hand_count": 4, "finished": False, "finish_rank": None},
+        {"player_id": 3, "team": "1&3", "hand_count": 4, "finished": False, "finish_rank": None},
+        {"player_id": 4, "team": "2&4", "hand_count": 4, "finished": False, "finish_rank": None},
+    ]
+    return observation
 
 
 class TestDeepSeekPromptStepH(unittest.TestCase):
@@ -571,6 +633,340 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
         self.assertNotEqual(chosen, 999)
         self.assertEqual(client.calls, 1)
         self.assertEqual(rag.calls, 1)
+
+    def test_card_confidence_shadow_defaults_off_and_is_reset_for_each_decision(self) -> None:
+        client = RecordingClient()
+        agent = DeepSeekAIAgent(
+            1,
+            client,
+            hand_evaluation_enabled=False,
+            opening_formula_enabled=False,
+        )
+        self.assertFalse(agent.card_confidence_shadow_enabled)
+        self.assertFalse(agent.card_confidence_prompt_enabled)
+        self.assertIsNone(agent.last_card_confidence)
+        self.assertIsNone(agent.last_card_confidence_prompt)
+        agent.last_card_confidence = _shadow_state()
+        agent.last_card_confidence_prompt = _omitted_confidence_prompt()
+
+        with mock.patch(
+            "agents.card_confidence_pipeline.build_runtime_card_confidence",
+            side_effect=AssertionError("shadow must remain off"),
+        ) as pipeline:
+            chosen = agent.select_action(
+                _observation(),
+                [_action(1, "single", ["9"], ["9S"]), _action(2, "single", ["10"], ["10S"])],
+            )
+
+        self.assertEqual(chosen, 1)
+        self.assertIsNone(agent.last_card_confidence)
+        self.assertIsNone(agent.last_card_confidence_prompt)
+        pipeline.assert_not_called()
+
+    def test_card_confidence_shadow_skips_all_local_shortcuts(self) -> None:
+        client = RecordingClient()
+        agent = DeepSeekAIAgent(
+            1,
+            client,
+            hand_evaluation_enabled=False,
+            opening_formula_enabled=True,
+            card_confidence_shadow_enabled=True,
+            card_confidence_prompt_enabled=True,
+        )
+        with mock.patch(
+            "agents.card_confidence_pipeline.build_runtime_card_confidence",
+            side_effect=AssertionError("shortcut must not run the shadow"),
+        ) as pipeline, mock.patch(
+            "agents.card_confidence_prompt.build_card_confidence_prompt_payload",
+            side_effect=AssertionError("shortcut must not format confidence"),
+        ) as formatter:
+            self.assertEqual(agent.select_action(_observation(), [_action(1, "pass", [])]), 1)
+            self.assertEqual(
+                agent.select_action(
+                    _observation(hand_count=2),
+                    [_action(1, "single", ["9"], ["9S"]), _action(2, "pair", ["9", "9"], ["9S", "9H"])],
+                ),
+                2,
+            )
+            self.assertEqual(
+                agent.select_action(
+                    _observation(hand_count=20, step_no=0),
+                    [_action(1, "single", ["3"], ["3S"]), _action(2, "single", ["9"], ["9S"])],
+                ),
+                2,
+            )
+
+        pipeline.assert_not_called()
+        formatter.assert_not_called()
+        self.assertIsNone(agent.last_card_confidence)
+        self.assertIsNone(agent.last_card_confidence_prompt)
+
+    def test_card_confidence_shadow_is_audited_but_off_on_model_calls_are_identical(self) -> None:
+        observation = _critical_observation()
+        legal_actions = [_action(1, "single", ["9"], ["9S"]), _action(2, "single", ["10"], ["10S"])]
+        off_client = RecordingClient()
+        on_client = RecordingClient()
+        off = DeepSeekAIAgent(1, off_client, hand_evaluation_enabled=False, opening_formula_enabled=False)
+        on = DeepSeekAIAgent(
+            1,
+            on_client,
+            hand_evaluation_enabled=False,
+            opening_formula_enabled=False,
+            card_confidence_shadow_enabled=True,
+        )
+        audit = _shadow_state()
+
+        with mock.patch(
+            "agents.card_confidence_pipeline.build_runtime_card_confidence",
+            return_value=audit,
+        ) as pipeline:
+            self.assertEqual(off.select_action(observation, legal_actions), on.select_action(observation, legal_actions))
+
+        pipeline.assert_called_once()
+        self.assertIs(on.last_card_confidence, audit)
+        self.assertEqual(off.last_decision_source, on.last_decision_source)
+        self.assertEqual(off_client.calls, on_client.calls)
+
+    def test_card_confidence_shadow_unavailable_or_exception_does_not_change_fallback(self) -> None:
+        observation = _critical_observation()
+        legal_actions = [_action(1, "single", ["9"], ["9S"]), _action(2, "single", ["10"], ["10S"])]
+        off_client = RecordingClient(raises=True)
+        on_client = RecordingClient(raises=True)
+        off = DeepSeekAIAgent(1, off_client, hand_evaluation_enabled=False, opening_formula_enabled=False)
+        on = DeepSeekAIAgent(
+            1,
+            on_client,
+            hand_evaluation_enabled=False,
+            opening_formula_enabled=False,
+            card_confidence_shadow_enabled=True,
+        )
+
+        with mock.patch(
+            "agents.card_confidence_pipeline.build_runtime_card_confidence",
+            side_effect=RuntimeError("pipeline failure"),
+        ):
+            self.assertEqual(off.select_action(observation, legal_actions), on.select_action(observation, legal_actions))
+
+        self.assertIsNone(on.last_card_confidence)
+        self.assertEqual(off.last_decision_source, on.last_decision_source)
+        self.assertEqual(off_client.calls, on_client.calls)
+
+    def test_enabled_noncritical_shadow_returns_unavailable_without_starting_allocation(self) -> None:
+        client = RecordingClient()
+        agent = DeepSeekAIAgent(
+            1,
+            client,
+            hand_evaluation_enabled=False,
+            opening_formula_enabled=False,
+            card_confidence_shadow_enabled=True,
+        )
+        with mock.patch(
+            "agents.card_confidence_pipeline.enumerate_card_allocations",
+            side_effect=AssertionError("non-critical shadow must not allocate"),
+        ) as allocation:
+            agent.select_action(
+                _observation(),
+                [_action(1, "single", ["9"], ["9S"]), _action(2, "single", ["10"], ["10S"])],
+            )
+
+        allocation.assert_not_called()
+        self.assertIsNotNone(agent.last_card_confidence)
+        self.assertEqual(agent.last_card_confidence.status, "unavailable")
+
+    def test_confidence_prompt_switches_are_strict_and_prompt_requires_shadow(self) -> None:
+        client = RecordingClient()
+        for keyword in ("card_confidence_shadow_enabled", "card_confidence_prompt_enabled"):
+            for value in (1, "yes"):
+                with self.subTest(keyword=keyword, value=value):
+                    with self.assertRaises(ValueError):
+                        DeepSeekAIAgent(1, client, **{keyword: value})  # type: ignore[arg-type]
+        with self.assertRaises(ValueError):
+            DeepSeekAIAgent(1, client, card_confidence_prompt_enabled=True)
+
+    def test_confidence_prompt_modes_preserve_or_add_only_the_typed_keyword(self) -> None:
+        observation = _critical_observation()
+        legal_actions = [_action(1, "single", ["9"], ["9S"]), _action(2, "single", ["10"], ["10S"])]
+        clients = [RecordingClient() for _ in range(4)]
+        off = DeepSeekAIAgent(1, clients[0], hand_evaluation_enabled=False, opening_formula_enabled=False)
+        shadow = DeepSeekAIAgent(
+            1, clients[1], hand_evaluation_enabled=False, opening_formula_enabled=False,
+            card_confidence_shadow_enabled=True,
+        )
+        omitted = DeepSeekAIAgent(
+            1, clients[2], hand_evaluation_enabled=False, opening_formula_enabled=False,
+            card_confidence_shadow_enabled=True, card_confidence_prompt_enabled=True,
+        )
+        ready = DeepSeekAIAgent(
+            1, clients[3], hand_evaluation_enabled=False, opening_formula_enabled=False,
+            card_confidence_shadow_enabled=True, card_confidence_prompt_enabled=True,
+        )
+        with mock.patch(
+            "agents.card_confidence_pipeline.build_runtime_card_confidence",
+            return_value=_shadow_state(),
+        ) as pipeline, mock.patch(
+            "agents.card_confidence_prompt.build_card_confidence_prompt_payload",
+            return_value=_omitted_confidence_prompt(),
+        ) as formatter:
+            self.assertEqual(off.select_action(observation, legal_actions), 1)
+            self.assertEqual(shadow.select_action(observation, legal_actions), 1)
+            self.assertEqual(omitted.select_action(observation, legal_actions), 1)
+
+        self.assertEqual(pipeline.call_count, 2)
+        formatter.assert_called_once()
+        self.assertEqual(off.last_decision_source, shadow.last_decision_source)
+        self.assertEqual(off.last_decision_source, omitted.last_decision_source)
+        self.assertEqual(clients[0].calls, clients[1].calls)
+        self.assertEqual(clients[1].calls, clients[2].calls)
+        self.assertIsNotNone(omitted.last_card_confidence_prompt)
+        self.assertEqual(omitted.last_card_confidence_prompt.status, "omitted")
+
+        ready_payload = _ready_confidence_prompt()
+        with mock.patch(
+            "agents.card_confidence_pipeline.build_runtime_card_confidence",
+            return_value=_shadow_state(),
+        ), mock.patch(
+            "agents.card_confidence_prompt.build_card_confidence_prompt_payload",
+            return_value=ready_payload,
+        ) as ready_formatter:
+            self.assertEqual(ready.select_action(observation, legal_actions), 1)
+
+        ready_formatter.assert_called_once()
+        self.assertIs(ready.last_card_confidence_prompt, ready_payload)
+        shadow_kwargs = clients[1].calls[0]
+        ready_kwargs = clients[3].calls[0]
+        self.assertEqual(set(ready_kwargs) - set(shadow_kwargs), {"card_confidence_prompt"})
+        self.assertEqual(
+            {key: value for key, value in ready_kwargs.items() if key != "card_confidence_prompt"},
+            shadow_kwargs,
+        )
+        self.assertIs(ready_kwargs["card_confidence_prompt"], ready_payload)
+
+    def test_confidence_prompt_exceptions_and_pipeline_errors_leave_model_path_alive(self) -> None:
+        observation = _critical_observation()
+        legal_actions = [_action(1, "single", ["9"], ["9S"]), _action(2, "single", ["10"], ["10S"])]
+        agent = DeepSeekAIAgent(
+            1, RecordingClient(), hand_evaluation_enabled=False, opening_formula_enabled=False,
+            card_confidence_shadow_enabled=True, card_confidence_prompt_enabled=True,
+        )
+        with mock.patch(
+            "agents.card_confidence_pipeline.build_runtime_card_confidence",
+            side_effect=RuntimeError("pipeline failure"),
+        ), mock.patch(
+            "agents.card_confidence_prompt.build_card_confidence_prompt_payload",
+            side_effect=AssertionError("must not run without confidence"),
+        ) as formatter:
+            self.assertEqual(agent.select_action(observation, legal_actions), 1)
+        formatter.assert_not_called()
+        self.assertIsNone(agent.last_card_confidence_prompt)
+
+    def test_unavailable_confidence_is_audited_as_omitted_without_client_keyword(self) -> None:
+        client = RecordingClient()
+        agent = DeepSeekAIAgent(
+            1, client, hand_evaluation_enabled=False, opening_formula_enabled=False,
+            card_confidence_shadow_enabled=True, card_confidence_prompt_enabled=True,
+        )
+        with mock.patch(
+            "agents.card_confidence_pipeline.build_runtime_card_confidence",
+            return_value=_shadow_state(),
+        ):
+            self.assertEqual(
+                agent.select_action(
+                    _critical_observation(),
+                    [_action(1, "single", ["9"], ["9S"]), _action(2, "single", ["10"], ["10S"])],
+                ),
+                1,
+            )
+        self.assertEqual(agent.last_card_confidence_prompt.status, "omitted")
+        self.assertNotIn("card_confidence_prompt", client.calls[0])
+
+        observation = _critical_observation()
+        legal_actions = [_action(1, "single", ["9"], ["9S"]), _action(2, "single", ["10"], ["10S"])]
+        with mock.patch(
+            "agents.card_confidence_pipeline.build_runtime_card_confidence",
+            return_value=_shadow_state(),
+        ), mock.patch(
+            "agents.card_confidence_prompt.build_card_confidence_prompt_payload",
+            side_effect=RuntimeError("formatter failure"),
+        ):
+            self.assertEqual(agent.select_action(observation, legal_actions), 1)
+        self.assertIsNone(agent.last_card_confidence_prompt)
+
+    def test_omitted_confidence_preserves_shadow_only_fallback(self) -> None:
+        observation = _critical_observation()
+        legal_actions = [_action(1, "single", ["9"], ["9S"]), _action(2, "single", ["10"], ["10S"])]
+        shadow_client = RecordingClient(raises=True)
+        omitted_client = RecordingClient(raises=True)
+        shadow = DeepSeekAIAgent(
+            1, shadow_client, hand_evaluation_enabled=False, opening_formula_enabled=False,
+            card_confidence_shadow_enabled=True,
+        )
+        omitted = DeepSeekAIAgent(
+            1, omitted_client, hand_evaluation_enabled=False, opening_formula_enabled=False,
+            card_confidence_shadow_enabled=True, card_confidence_prompt_enabled=True,
+        )
+        with mock.patch(
+            "agents.card_confidence_pipeline.build_runtime_card_confidence",
+            return_value=_shadow_state(),
+        ), mock.patch(
+            "agents.card_confidence_prompt.build_card_confidence_prompt_payload",
+            return_value=_omitted_confidence_prompt(),
+        ):
+            self.assertEqual(shadow.select_action(observation, legal_actions), omitted.select_action(observation, legal_actions))
+        self.assertEqual(shadow.last_decision_source, omitted.last_decision_source)
+        self.assertEqual(shadow_client.calls, omitted_client.calls)
+        self.assertNotIn("card_confidence_prompt", omitted_client.calls[0])
+
+    def test_client_adds_ready_confidence_section_once_and_ignores_malformed_payloads(self) -> None:
+        kwargs = {
+            "my_info": _observation()["my_info"],
+            "current_round": _observation()["current_round"],
+            "other_players": _observation()["other_players"],
+            "history": _observation()["history"],
+            "legal_actions": [_action(1, "single", ["9"], ["9S"])],
+            "rag_context": _rag_context(),
+        }
+        baseline = DeepSeekClient._build_structured_prompt(**kwargs)
+        self.assertEqual(baseline, DeepSeekClient._build_structured_prompt(**kwargs, card_confidence_prompt=None))
+        ready = _ready_confidence_prompt()
+        prompt = DeepSeekClient._build_structured_prompt(**kwargs, card_confidence_prompt=ready)
+        self.assertEqual(prompt.count("【残局牌面信念】"), 1)
+        self.assertIn(ready.text, prompt)
+        self.assertLess(prompt.index("【记牌信息】"), prompt.index("【残局牌面信念】"))
+        self.assertLess(prompt.index("【残局牌面信念】"), prompt.index("【场景标签】"))
+
+        malformed = (
+            object(), _omitted_confidence_prompt(), replace(ready, status="omitted"), replace(ready, source="bad"),
+            replace(ready, calibration_scope="bad"), replace(ready, diagnostics=("bad",)),
+            replace(ready, text=""), replace(ready, char_count=True), replace(ready, char_count=1.5),
+            replace(ready, char_count=len(ready.text) - 1), replace(ready, char_count=2401),
+        )
+        for payload in malformed:
+            with self.subTest(payload=payload):
+                self.assertEqual(
+                    DeepSeekClient._build_structured_prompt(**kwargs, card_confidence_prompt=payload),
+                    baseline,
+                )
+
+    def test_client_request_forwards_ready_payload_without_network(self) -> None:
+        captured: dict[str, object] = {}
+
+        def transport(request, _timeout: float) -> str:
+            captured["body"] = json.loads(request.data.decode("utf-8"))
+            return "data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"action_id\\\": 1}\"}}]}\ndata: [DONE]\n"
+
+        client = DeepSeekClient("test-key", "https://api.deepseek.com", "deepseek-chat", transport=transport)
+        ready = _ready_confidence_prompt()
+        suggestion = client.suggest_action_id(
+            observation=_observation(),
+            legal_actions=[_action(1, "single", ["9"], ["9S"])],
+            card_confidence_prompt=ready,
+        )
+        body = captured["body"]
+        assert isinstance(body, dict)
+        prompt = body["messages"][1]["content"]
+        self.assertEqual(prompt.count("【残局牌面信念】"), 1)
+        self.assertIn(ready.text, prompt)
+        self.assertEqual(suggestion.action_id, 1)
 
 
 if __name__ == "__main__":

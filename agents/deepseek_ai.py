@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 import json
+from typing import TYPE_CHECKING
 
 from config import AppConfig
 from agents.base import BaseAgent, require_legal_action_id
@@ -20,6 +21,10 @@ from agents.hand_evaluator import evaluate_hand
 from agents.opening_strategy import OpeningFormulaStrategy
 from agents.rag_advisor import RAGAdvisor, RAGEvidence
 from agents.rule_based_ai import RuleBasedAIAgent
+
+if TYPE_CHECKING:
+    from agents.card_confidence import CardConfidenceState
+    from agents.card_confidence_prompt import CardConfidencePromptPayload
 
 
 _OPENING_RANK_ORDER: tuple[str, ...] = (
@@ -399,10 +404,28 @@ class DeepSeekAIAgent(BaseAgent):
     verbose: bool = False
     hand_evaluation_enabled: bool | None = None
     opening_formula_enabled: bool | None = None
+    card_confidence_shadow_enabled: bool = False
+    card_confidence_prompt_enabled: bool = False
     last_decision_source: str | None = field(default=None, init=False, repr=False)
     card_tracker: object | None = field(default=None, init=False, repr=False)
+    last_card_confidence: "CardConfidenceState | None" = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    last_card_confidence_prompt: "CardConfidencePromptPayload | None" = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
+        if not isinstance(self.card_confidence_shadow_enabled, bool):
+            raise ValueError("card_confidence_shadow_enabled must be a bool")
+        if not isinstance(self.card_confidence_prompt_enabled, bool):
+            raise ValueError("card_confidence_prompt_enabled must be a bool")
+        if self.card_confidence_prompt_enabled and not self.card_confidence_shadow_enabled:
+            raise ValueError("card_confidence_prompt_enabled requires shadow mode")
         config = AppConfig.from_env()
         if self.hand_evaluation_enabled is None:
             self.hand_evaluation_enabled = config.hand_evaluation_enabled
@@ -417,6 +440,8 @@ class DeepSeekAIAgent(BaseAgent):
         observation: dict[str, object],
         legal_actions: list[dict[str, object]],
     ) -> int:
+        self.last_card_confidence = None
+        self.last_card_confidence_prompt = None
         if not legal_actions:
             raise ValueError("legal_actions must not be empty")
 
@@ -457,6 +482,30 @@ class DeepSeekAIAgent(BaseAgent):
                     display = _action_display_cn(action) if action is not None else "(unknown)"
                     print(f"[DeepSeek 思考] 开局公式策略：{display}", flush=True)
                 return chosen
+
+        card_confidence_prompt: "CardConfidencePromptPayload | None" = None
+        if self.card_confidence_shadow_enabled:
+            try:
+                from agents.card_confidence_pipeline import build_runtime_card_confidence
+
+                self.last_card_confidence = build_runtime_card_confidence(
+                    observation,
+                    phase_context,
+                )
+            except Exception:
+                self.last_card_confidence = None
+
+            if self.card_confidence_prompt_enabled and self.last_card_confidence is not None:
+                try:
+                    from agents.card_confidence_prompt import build_card_confidence_prompt_payload
+
+                    self.last_card_confidence_prompt = build_card_confidence_prompt_payload(
+                        self.last_card_confidence,
+                    )
+                    if self.last_card_confidence_prompt.status == "ready":
+                        card_confidence_prompt = self.last_card_confidence_prompt
+                except Exception:
+                    self.last_card_confidence_prompt = None
 
         current_round = dict(observation.get("current_round", {}))
         display_constraint = str(current_round.get("constraint", "free"))
@@ -599,6 +648,7 @@ class DeepSeekAIAgent(BaseAgent):
                 hand_evaluation=hand_evaluation,
                 card_tracking_summary=card_tracking_summary,
                 phase_context=phase_context,
+                card_confidence_prompt=card_confidence_prompt,
             )
             payload = {
                 "model": self.client._model,
@@ -625,16 +675,21 @@ class DeepSeekAIAgent(BaseAgent):
         failure_reason: str | None = None
         reasoning: str | None = None
         try:
+            suggestion_kwargs: dict[str, object] = {
+                "observation": observation,
+                "legal_actions": legal_actions,
+                "prompt_actions": pruned,
+                "rag_context": rag_context,
+                "hand_evaluation": hand_evaluation,
+                "card_tracking_summary": card_tracking_summary,
+                "phase_context": phase_context,
+                "verbose": False,
+                "debug_prefix": f"[DeepSeek] 玩家{player_id}",
+            }
+            if card_confidence_prompt is not None:
+                suggestion_kwargs["card_confidence_prompt"] = card_confidence_prompt
             suggestion = self.client.suggest_action_id(
-                observation=observation,
-                legal_actions=legal_actions,
-                prompt_actions=pruned,
-                rag_context=rag_context,
-                hand_evaluation=hand_evaluation,
-                card_tracking_summary=card_tracking_summary,
-                phase_context=phase_context,
-                verbose=False,  # agent handles all printing
-                debug_prefix=f"[DeepSeek] 玩家{player_id}",
+                **suggestion_kwargs,
             )
         except Exception as exc:
             suggestion = DeepSeekSuggestion(action_id=None, reasoning=None)

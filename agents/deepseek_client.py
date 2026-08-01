@@ -11,10 +11,13 @@ from collections import Counter
 from dataclasses import dataclass
 import json
 import time
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from urllib import request as urllib_request
 
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
+
+if TYPE_CHECKING:
+    from agents.card_confidence_prompt import CardConfidencePromptPayload
 
 _SUIT_DISPLAY: dict[str, str] = {"S": "♠", "H": "♥", "C": "♣", "D": "♦"}
 
@@ -827,6 +830,38 @@ class DeepSeekClient:
         return [compact] if compact else ["（无）"]
 
     @staticmethod
+    def _validated_card_confidence_prompt(
+        payload: object,
+    ) -> "CardConfidencePromptPayload | None":
+        if payload is None:
+            return None
+        try:
+            from agents.card_confidence_prompt import (
+                CARD_CONFIDENCE_PROMPT_MAX_CHARS,
+                CardConfidencePromptPayload,
+            )
+        except Exception:
+            return None
+        if not isinstance(payload, CardConfidencePromptPayload):
+            return None
+        if (
+            payload.status != "ready"
+            or payload.source != "physical_assignment_marginal_v1"
+            or payload.calibration_scope != "critical_endgame_policy_diverse_v1"
+            or not isinstance(payload.diagnostics, tuple)
+            or payload.diagnostics
+            or not isinstance(payload.text, str)
+            or not payload.text
+            or not isinstance(payload.char_count, int)
+            or isinstance(payload.char_count, bool)
+            or payload.char_count <= 0
+            or payload.char_count != len(payload.text)
+            or payload.char_count > CARD_CONFIDENCE_PROMPT_MAX_CHARS
+        ):
+            return None
+        return payload
+
+    @staticmethod
     def _build_structured_prompt(
         my_info: dict[str, object],
         current_round: dict[str, object],
@@ -837,6 +872,7 @@ class DeepSeekClient:
         hand_evaluation: dict[str, object] | None = None,
         card_tracking_summary: str | None = None,
         phase_context: GamePhaseContext | None = None,
+        card_confidence_prompt: "CardConfidencePromptPayload | None" = None,
     ) -> str:
         """Build the final Step-H structured prompt from public payloads."""
         lines: list[str] = []
@@ -913,6 +949,12 @@ class DeepSeekClient:
         lines.append("【记牌信息】")
         lines.extend(DeepSeekClient._format_card_tracking_summary(card_tracking_summary))
         lines.append("")
+
+        validated_confidence = DeepSeekClient._validated_card_confidence_prompt(card_confidence_prompt)
+        if validated_confidence is not None:
+            lines.append("【残局牌面信念】")
+            lines.append(validated_confidence.text)
+            lines.append("")
 
         lines.append("【场景标签】")
         lines.extend(DeepSeekClient._format_scene_tags(rag_context))
@@ -1015,6 +1057,7 @@ class DeepSeekClient:
         phase_context: GamePhaseContext | None = None,
         verbose: bool = False,
         debug_prefix: str = "[DeepSeek]",
+        card_confidence_prompt: "CardConfidencePromptPayload | None" = None,
     ) -> DeepSeekSuggestion:
         current_round = dict(observation.get("current_round", {}))
         step_no = self._coerce_int(current_round.get("step_no"), default=0)
@@ -1049,6 +1092,7 @@ class DeepSeekClient:
             hand_evaluation=hand_evaluation,
             card_tracking_summary=card_tracking_summary,
             phase_context=phase_context,
+            card_confidence_prompt=card_confidence_prompt,
         )
 
         if verbose:
