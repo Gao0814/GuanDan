@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2b2 已完成；默认关闭的 prompt 接线通过兼容性回归。下一步完成 J-D1c3c2c1 evaluation-only 配对 prompt 基准。
+状态：J-A 至 J-D1c3c2c1 已完成；prompt coverage 开发判定 `confidence_prompt_coverage_capacity_verified`。下一步运行 J-D1c3c2c2 独立正式覆盖双验收。
 
 目标：
 
@@ -171,8 +171,8 @@ AI 决策分为四层：
 25. J-D1c3c2a：建立默认关闭的 pipeline 和 DeepSeek shadow 审计，证明动作与 prompt 等价，已完成；
 26. J-D1c3c2b1：建立有界、确定、精确分数的 prompt payload，不接入模型，已完成；
 27. J-D1c3c2b2：增加默认关闭的 prompt 消费开关并保持关闭态完全兼容，已完成；
-28. J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算与精确插入基准并运行开发试验，下一步；
-29. J-D1c3c2c2：使用独立 seed 正式验收 prompt readiness 与成本；
+28. J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算与精确插入基准并运行开发试验，已完成；
+29. J-D1c3c2c2：使用独立 seed 正式验收 prompt readiness 与成本，下一步；
 30. J-D1c3c2c3：在固定配对 corpus 上运行真实 DeepSeek confidence-off/on 动作消融；
 31. 策略接入：仅在 J-D1c3c2c3 独立验收后开始。
 
@@ -495,6 +495,26 @@ J-D1c3c2c1 设计边界：
 - 聚合 ready/omitted、诊断、payload 字符和 prompt 字符 delta；
 - 报告不保留 seed、observation、prompt、手牌、玩家或逐样本内容；
 - 开发 seed 只验证容量、确定性、覆盖和成本，不形成动作质量结论。
+
+J-D1c3c2c1 实现与开发结果：
+
+- 新增 `evaluation/confidence_prompt_benchmark.py` 与对应测试；
+- 四策略独立采集 critical 样本并按三个 external bucket 聚合；
+- off/on prompt 只在内存配对，报告不保留 prompt、observation 或玩家明细；
+- seed `80..89` 双运行报告完全一致，SHA-256 为 `15370d48a49a8067d9790bbd89b54431c54e6a4dd5d5403a3b2ec23d10ccfd6b`；
+- 四策略共 1084 个样本全部 ready，零 omitted、budget omitted、pair mismatch 和 diagnostics；
+- 每个样本 delta 精确为 payload chars + 11；
+- 定向 28 项、相关 77 项、全量 351 项测试通过；
+- 判定 `confidence_prompt_coverage_capacity_verified`。
+
+J-D1c3c2c2 正式方向：
+
+- 先提交 J-D1c3c1 至 c2c1 全部实现检查点并确保工作区干净；
+- 使用独立 seed `10000..10049`，四策略各 50 局，完整运行两次；
+- 不修改实现、预算、采样、分桶、策略 gate 或门槛；
+- 每个策略每个 external bucket 至少 350 个 valid/ready 样本；
+- 全部样本 ready、零 omitted/mismatch/diagnostics，固定章节开销保持 11；
+- 通过后才允许设计 J-D1c3c2c3 真实 DeepSeek 动作 A/B。
 
 ### Step K：中局策略路由与残局决策
 

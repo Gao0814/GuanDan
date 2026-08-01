@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2b2 已完成；默认关闭的 DeepSeek prompt 接线已通过 345 项全量测试。下一步为 J-D1c3c2c1 配对 prompt 覆盖与成本基准；默认策略消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2c1 已完成；四策略 prompt coverage 开发语料 1084 个样本全部 ready，判定 `confidence_prompt_coverage_capacity_verified`。下一步为 J-D1c3c2c2 独立正式覆盖；默认策略消费继续暂停。
 
 ## 2. 数据来源
 
@@ -466,7 +466,7 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2c1：配对 prompt 覆盖与成本基准
 
-- 状态：下一步；
+- 状态：已完成，判定 `confidence_prompt_coverage_capacity_verified`；
 - evaluation-only，不调用 DeepSeek API；
 - 四策略 critical 样本分别构建 off/on prompt；
 - 统计 confidence available、payload ready/omitted 和规范诊断；
@@ -474,11 +474,30 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 - ready 样本必须证明 on prompt 等于 off prompt 的一次固定章节插入；
 - 报告只含聚合统计和哈希，不含 prompt 或 observation。
 
+开发结果：
+
+- seed `80..89` 四策略各 10 局完整双运行；
+- 双运行 SHA-256 均为 `15370d48a49a8067d9790bbd89b54431c54e6a4dd5d5403a3b2ec23d10ccfd6b`；
+- 四策略 1084 个样本全部 ready，零 omitted、预算超限、pair mismatch 或 diagnostics；
+- 三个 external bucket 在每个策略中均有 ready 样本；
+- 每样本固定章节开销为 11 字符；
+- 定向 28 项、相关 77 项、全量 351 项测试通过。
+
+### Step J-D1c3c2c2：独立正式 prompt coverage
+
+- 状态：下一步；
+- 提交实现检查点并保持正式运行前后工作区干净；
+- seed `10000..10049` 四策略各 50 局，完整双运行；
+- 冻结 collector、formatter、2400 字符预算、分桶与全部门槛；
+- 每策略每桶至少 350 个 valid/ready 样本；
+- 全样本 ready、零 omitted/mismatch/diagnostics，固定开销仍为 11；
+- 仅通过后允许进入真实 DeepSeek 动作 A/B 设计。
+
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有 J-D1c3c2c1 开发覆盖、J-D1c3c2c2 正式覆盖和 J-D1c3c2c3 动作消融依次通过，才允许默认策略读取；
+- 只有 J-D1c3c2c2 正式覆盖和 J-D1c3c2c3 动作消融依次通过，才允许默认策略读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准

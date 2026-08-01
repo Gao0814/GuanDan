@@ -1,13 +1,13 @@
 # 项目状态看板
 
-更新时间：2026-07-31
+更新时间：2026-08-01
 
 ## 1. 当前基线
 
-- J-D1c3b2 执行基线：`b2491a8 Document J-D1c3b invalid benchmark`
-- 当前工作状态：Step J-D1c3c2b2 已完成但九个 confidence/prompt 实现文件尚未提交；定向 54 项、相关 48 项、全量 345 项通过
+- 上一已提交规划基线：`f4575f4 Plan J-D1c3c2c1 prompt coverage benchmark`
+- 当前工作状态：Step J-D1c3c2c1 已完成但十一个 confidence/prompt/benchmark 文件尚未提交；定向 28 项、相关 77 项、全量 351 项通过
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：311 项测试全部通过
+- 实际验证结果：351 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -38,7 +38,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence 契约、shadow、formatter 和默认关闭的 DeepSeek prompt 接线。J-D1c3c2b2 已证明 off/shadow/omitted 兼容，ready 只新增一个类型化 payload 和固定章节。下一步先建立 evaluation-only 配对 prompt 基准，量化覆盖与上下文成本，不调用真实 DeepSeek。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、默认关闭的 prompt 接线和配对 prompt 开发基准。J-D1c3c2c1 在四策略 1084 个 critical 样本上全部 ready、零 omitted、零 mismatch，并证明固定章节开销为每样本 11 字符。下一步提交实现检查点后，使用全新 seed 运行正式覆盖双验收。
 
 ## 3. 分模块状态
 
@@ -52,7 +52,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c2b2 完成 | 默认关闭的 DeepSeek prompt 接线已完成，off/omitted 完全兼容 | 尚无配对 prompt 覆盖基准或动作消融 |
+| 残局精确分配 | Step J-D1c3c2c1 完成 | 四策略配对 prompt 开发容量、全 ready 和固定成本已验证 | 尚无独立正式覆盖结论或动作消融 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -569,17 +569,27 @@ J-D1c3c2b2 已完成：
 - config、CLI、engine、RAG、evaluation 未引用 prompt 开关或 formatter；
 - 定向 54 项、相关 48 项、全量 345 项测试通过。
 
-### P1：缺少 prompt 准入覆盖与成本基准
+### 已解决：prompt 覆盖与成本开发基准（Step J-D1c3c2c1）
 
-单元测试证明接线正确，但还不知道真实 critical 轨迹上：
+J-D1c3c2c1 已建立 evaluation-only collector 并完成开发双运行：
 
-- pipeline available 与 payload ready 的比例；
-- unavailable/omitted 的主要诊断；
-- payload 与完整 prompt 的字符增量；
-- 四种 strategic-pass 轨迹是否都能稳定覆盖三个 external bucket；
-- ready 章节是否在每个样本上都等于对 off prompt 的单一精确插入。
+- seed `80..89`，四策略各 10 局，完整运行两次；
+- 两次耗时约 60.44s / 60.30s；
+- 报告与 canonical JSON 完全一致，SHA-256 为 `15370d48a49a8067d9790bbd89b54431c54e6a4dd5d5403a3b2ec23d10ccfd6b`；
+- 四策略均 10/10 局完成，无 invalid、duplicate、sample-limit、mismatch 或 diagnostics；
+- forced/25/50/100 样本分别为 264 / 279 / 295 / 246；
+- 四策略三个 external bucket 均有 78 至 114 个样本；
+- 1084 个样本全部 confidence available、payload ready，omitted 与 budget omitted 均为 0；
+- ready exact insertion 等于 ready 总数，所有 delta 为正；
+- 每样本 prompt delta 精确等于 payload char count + 11；
+- 定向 28 项、相关 77 项、全量 351 项测试通过；
+- 未调用 DeepSeek 请求、网络、真值或 `game._state`。
 
-J-D1c3c2c1 先建立不调用 DeepSeek API 的 evaluation-only 配对 prompt collector，并运行小规模双次开发语料。只有覆盖、预算和配对一致性通过后，才预注册真实模型动作 A/B。
+唯一开发判定：`confidence_prompt_coverage_capacity_verified`。该结论只允许使用独立 seed 正式验收 prompt coverage，仍不允许动作收益或胜率结论。
+
+### P1：prompt coverage 尚无独立正式结论
+
+J-D1c3c2c2 必须冻结代码、collector、formatter、预算和门槛，使用 seed `10000..10049` 四策略各 50 局完整双运行。任一策略或 external bucket 的数据完整性、ready 覆盖、预算或精确插入失败都不能被跨策略平均抵消。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -624,7 +634,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3c2b2 已完成；默认关闭的 prompt 接线通过兼容性回归。下一步为 J-D1c3c2c1 配对 prompt 覆盖与成本基准。
+状态：J-A 至 J-D1c3c2c1 已完成；prompt coverage 开发容量通过。下一步为 J-D1c3c2c2 独立正式覆盖双运行。
 
 拆分为：
 
@@ -655,8 +665,8 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3c2a：新增默认关闭的 runtime pipeline 与 DeepSeek shadow 审计，不改变 prompt 或动作，已完成；
 - Step J-D1c3c2b1：建立独立、有界、确定、精确分数的 prompt 序列化契约，已完成；
 - Step J-D1c3c2b2：增加默认关闭的 DeepSeek prompt 消费开关并验证兼容性，已完成；
-- Step J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算和精确插入基准并运行开发语料，下一步；
-- Step J-D1c3c2c2：开发容量通过后预注册独立覆盖基准，尚未开始；
+- Step J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算和精确插入基准并运行开发语料，已完成，判定 `confidence_prompt_coverage_capacity_verified`；
+- Step J-D1c3c2c2：使用全新 seed 正式验收四策略 prompt coverage 与成本，下一步；
 - Step J-D1c3c2c3：覆盖正式通过后再运行真实 DeepSeek 动作 A/B，尚未开始；
 - 策略接入：继续暂停，直到 J-D1c3c2c3 动作消融验收。
 

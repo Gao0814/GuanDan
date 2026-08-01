@@ -562,7 +562,7 @@ J-D1c3c1a 已补测：
 
 #### J-D1c3c2c1：配对 prompt 覆盖与成本开发基准
 
-状态：下一步。只新增 evaluation collector 与测试，不修改 runtime。
+状态：已完成。只新增 evaluation collector 与测试，runtime 未修改。
 
 - 使用公开 game observation、legal actions 和统一 phase；
 - 只采集 `critical_endgame`，按 external 0..4、5..8、9..12 分桶；
@@ -579,6 +579,30 @@ J-D1c3c1a 已补测：
 - 报告不含 seed、样本 ID、observation、prompt、手牌或玩家明细；
 - 同参数双运行报告与 canonical JSON hash 必须一致；
 - 开发试验只验证容量和覆盖，不形成动作质量或胜率结论。
+
+验证结果：collector/formatter/pipeline 28 项、DeepSeek/策略/RAG/剪枝 77 项、全量 351 项通过；边界扫描和 `git diff --check` 通过。
+
+开发双运行：seed `80..89`，四策略各 10 局；报告完全一致，SHA-256 为 `15370d48a49a8067d9790bbd89b54431c54e6a4dd5d5403a3b2ec23d10ccfd6b`；1084 个样本全部 ready，零 omitted/mismatch/diagnostics；判定 `confidence_prompt_coverage_capacity_verified`。
+
+#### J-D1c3c2c2：独立正式 prompt coverage
+
+状态：下一步。只运行锁定测试和 benchmark，不修改任何文件。
+
+- HEAD 必须包含 J-D1c3c1 至 c2c1 全部实现，运行前后工作区干净；
+- seed `10000..10049`，四策略各 50 局，完整运行两次；
+- 两份报告、`to_dict()`、每策略 pair digest 和 canonical JSON SHA-256 完全一致；
+- 四策略各 50/50/0 games，eligible=evaluated=valid，invalid/skipped=0；
+- forced pass=0，100% pass=opportunity，实际比例严格递增；
+- 顶层、overall 和三个 external bucket diagnostics 均为空；
+- 每策略每个 external bucket 至少 350 个 sample/valid/ready；
+- confidence unavailable、payload omitted、budget omitted、pair mismatch 均为 0；
+- ready exact insertion 等于 ready count；
+- payload char min>0、max<=2400；
+- prompt delta sum=`payload char sum + 11 * ready count`；
+- prompt delta min=`payload char min + 11`，max=`payload char max + 11`；
+- 任一数据完整性或可重复性失败判定 `benchmark_invalid`；
+- benchmark 有效但任一覆盖/预算/插入门槛失败判定 `reject_confidence_prompt_action_ablation`；
+- 全部通过判定 `confidence_prompt_coverage_verified`。
 
 #### 暂停：校准
 
