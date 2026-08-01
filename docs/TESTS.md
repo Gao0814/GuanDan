@@ -648,23 +648,50 @@ J-D1c3c1a 已补测：
 
 #### J-D1c3c2c3b：真实 DeepSeek 响应安全 live pilot
 
-状态：下一步。网络调用前必须获得用户明确授权。
+状态：已完成。唯一判定 `retain_for_action_quality_evaluation`。
 
-- 先将 c3a 两个文件单独提交并确认工作区干净；
-- 回归必须保持单文件 6、相关 76、全量 357 项通过；
-- 只检查 API key 是否存在，不输出、散列或持久化 key；
-- 显示并记录实际 base URL host、model、timeout=60、max_retries=0 和最大 48 次请求，等待用户授权；
-- 使用 seed `13000..13009`、四策略、每桶 2 个样本，共 24 pair；
-- 每桶 off-first/on-first 各 1，off/on 各 24 次；
-- 外部 JSONL 每次调用后 flush/fsync，记录序号、condition、耗时和非敏感 outcome，不含 prompt、action ID、reasoning 或响应原文；
-- aggregate canonical JSON 和门槛摘要写入仓库外目录并重新解析、哈希；
-- max retries=0，逻辑与物理请求都不得超过 48；
-- 任一传输异常、中断、审计缺口或 corpus 不完整均不得重跑/补采；
-- 完整数据要求四策略 10/10/0、每桶 2 selected、零 diagnostics，24 pair/48 calls 守恒；
-- 响应安全要求 exception/malformed/no-action/错误类型/outside legal/prompt 均为 0，24 pair 全部 both-valid；
-- same/changed、pass/pressure 仅报告，不设置事后收益阈值；
-- changed=0 表示该 pilot 未观察到动作差异；changed>0 只允许进入质量评估，不构成 confidence 因果效果；
-- 不运行完整 DeepSeek 对局，不形成胜率结论。
+- c3a 检查点 `e0065c6a3da70b3d4ded4b394817bfab3351c113`；
+- 运行前后工作区干净，回归 6 / 76 / 357 项与 `git diff --check` 通过；
+- endpoint/model 为 `https://api.deepseek.com` / `deepseek-v4-pro`，timeout=60、max retries=0；
+- seed `13000..13009` 四策略每桶 2 样本，共 24 pair / 48 logical/physical requests；
+- 总耗时 1411.005 秒，ledger 1..48 连续，off/on 各 24；
+- off 延迟 sum/min/max 为 588053/7543/54488ms；on 为 807020/11651/76913ms；
+- 四策略均 10/10/0、零 diagnostics，每桶 selected=2、off-first/on-first 各 1；
+- forced/25/50/100 三桶 qualified 分别为 27/32/33、37/38/39、43/47/39、61/51/51；
+- 48 响应全部 valid，24 pair 全部 both-valid，所有异常、解析和候选边界失败为 0；
+- forced/25/50/100 same/changed 为 2/4、3/3、4/2、4/2；总计 13/11；
+- off/on pass 均为 6，pressure 均为 0；
+- 未持久化 key、prompt、action ID、reasoning、响应正文、样本身份或 ground truth；
+- 未运行完整 DeepSeek 对局，changed 不构成 confidence 因果或质量结论。
+
+证据 bytes / SHA-256：
+
+- runner：14966 / `be12c6fc3e265704dab0f2be7b556aeff947f3a7bccae209540b428ce3716167`；
+- ledger：8269 / `a45517e6948bf421a8af28f6f4e4a3c8bc0cddf7a925c359df9bab38c3c32753`；
+- report：19501 / `02e3fe45a983e89d2982a4acba12fc437f70ee30914957096b9385caf09c756c`；
+- summary：24318 / `f338f5cefdfec254482a5a4af803d507d31670f9a3f3bfbb64dd9095ffb55963`。
+
+overall prompt-pair digests：forced `c45e7241a3c37066065c49e3c73d4b33a93d5b7b118126716446485c5af29e14`；25% `c0fb9250103869486ac0bd55689b85b0e82d37339183aa5140a7a080cf280d82`；50% `5b384f566871d2e7472584ce9499e582ace2070d94d54f54ce34b79bcf4fc800`；100% `a95d09fd98c0e72f74fdfc18a7e82aa1998c51460dfa2c0c76b6d7a9d02d17f8`。
+
+#### J-D1c3c2c3c1：确定性分支续局质量载体
+
+状态：下一步。开发测试不调用真实 API。
+
+- c3a 的公开 API、默认 report 和既有 seed `120..129` canonical hash 必须保持不变；
+- `copy.deepcopy(game)` 后 observation/legal actions 必须相等，状态对象和后续推进互相独立；
+- 质量模块不得直接读取或写入 `game._state`，不得修改 engine；
+- provider off/on kwargs 和 AB/BA 规则继续沿用 c3a；
+- 非 both-valid pair 不运行质量比较，只计 fail-closed 分类；
+- same action 只运行一个分支并复用相同结果；changed action 运行两个独立分支；
+- 每个分支先执行模型 action，再由四个独立 RuleBasedAIAgent 仅用公开 payload 推进；
+- rollout 必须有正整数步数上限，超限、clone mismatch、非法 action、异常和终局字段错误分别诊断；
+- terminal finish order 只含三游时，补入唯一未出现玩家为末游；非法、重复或缺失多名玩家 fail-closed；
+- 观察者团队结果按 win=2、draw=1、loss=0；相同时用团队两人名次和，越小越优；其余为 tie；
+- 聚合 branch complete/error、off/on win/draw/loss、same reuse、changed、on-better/off-better/tie、团队名次差和、rollout steps；
+- 所有 pair 与 branch 计数必须守恒，overall 由三个桶原始计数相加；
+- report frozen/slots、不可变、JSON 友好，不含 seed、样本 ID、observation、prompt、action ID、手牌、clone 或逐分支结果；
+- 开发双运行只用确定性假 provider，报告和 canonical JSON 必须相等；
+- 该结果只验证质量代理载体，不形成真实模型动作质量或胜率结论。
 
 #### 暂停：校准
 

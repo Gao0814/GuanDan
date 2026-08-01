@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2c3a 已完成；无网络成对动作 harness 判定 `confidence_action_ablation_harness_verified`。下一步为 J-D1c3c2c3b 小规模真实 DeepSeek 响应安全试验；默认策略消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2c3b 已完成；真实响应安全 live pilot 判定 `retain_for_action_quality_evaluation`。下一步为 J-D1c3c2c3c1 确定性分支续局质量载体；默认策略消费继续暂停。
 
 ## 2. 数据来源
 
@@ -519,20 +519,31 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2c3b：小规模真实 DeepSeek 响应安全试验
 
-- 状态：下一步，必须先获得用户对当前 endpoint/model 和最多 48 次无重试请求的明确授权；
-- 先提交 c3a 两个文件并保持工作区干净；
-- 使用全新 seed `13000..13009`，四策略每桶 2 个样本，共 24 pair；
-- timeout 固定 60 秒，max retries 固定 0，物理请求上限 48；
-- 每次调用只向仓库外 JSONL 写入非敏感状态、条件和耗时，不保留 prompt、action ID 或模型文本；
-- 完成后原子持久化 aggregate canonical JSON；
-- 只验收解析、候选合法性、off/on 响应安全和描述性 changed rate；
-- 单次 changed 不能排除模型非确定性，也不能证明动作更优。
+- 状态：已完成，唯一判定 `retain_for_action_quality_evaluation`；
+- `deepseek-v4-pro`、60 秒 timeout、零重试，实际 logical/physical requests 48/48；
+- seed `13000..13009` 四策略每桶 2 个样本，共 24 pair；
+- 48 个响应全部 valid，24 pair 全部 both-valid，零异常、解析或候选边界失败；
+- same/changed 为 13/11，off/on pass 均为 6，pressure 均为 0；
+- 总耗时 1411.005 秒，审计证据在仓库外持久化；
+- 未保留 prompt、action ID、reasoning、响应正文或密钥；
+- changed 仍不能排除模型非确定性，也不能证明动作更优。
+
+### Step J-D1c3c2c3c1：确定性分支续局质量载体
+
+- 状态：下一步；
+- 对同一候选局面建立彼此独立的 `GuanDanGame` 深拷贝，不修改 engine；
+- 分别执行 off/on 动作，后续使用 RuleBasedAI 推进到终局；
+- same action 只续局一次并复用，changed action 各自独立续局；
+- 只从公开终局结果和 finish order 计算观察者团队结果与团队名次和；
+- 比较优先级固定为 team win/draw/loss，其次团队名次和；
+- 报告只含聚合的 on-better/off-better/tie 和续局完整性，不含状态、手牌或 action ID；
+- 开发阶段只使用假 provider，不联网；该代理不等于真实玩家或 DeepSeek 对局胜率。
 
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有 J-D1c3c2c3b 真实响应安全和 J-D1c3c2c3c 对局质量依次通过，才允许默认策略读取；
+- 只有 J-D1c3c2c3c2 真实动作质量和后续完整对局收益依次通过，才允许默认策略读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准

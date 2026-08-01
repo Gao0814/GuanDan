@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3a 已完成；无网络 harness 判定 `confidence_action_ablation_harness_verified`。下一步在明确授权后运行 J-D1c3c2c3b 小规模真实 DeepSeek 响应安全试验。
+状态：J-A 至 J-D1c3c2c3b 已完成；live pilot 判定 `retain_for_action_quality_evaluation`。下一步实现 J-D1c3c2c3c1 确定性分支续局质量载体。
 
 目标：
 
@@ -175,9 +175,10 @@ AI 决策分为四层：
 29. J-D1c3c2c2：使用独立 seed 正式验收 prompt readiness 与成本，双运行完成但完整审计证据未留存，判定 `benchmark_invalid`；
 30. J-D1c3c2c2a：使用仓库外 canonical JSON 审计文件和全新 seed 恢复正式验收，已完成并通过；
 31. J-D1c3c2c3a：建立 evaluation-only、provider 可注入的固定配对动作消融载体，已完成并通过；
-32. J-D1c3c2c3b：经用户授权后预注册并运行小规模真实 DeepSeek 响应安全与动作变化验收，下一步；
-33. J-D1c3c2c3c：在响应安全后评估固定种子、轮换座位的对局质量与胜率；
-34. 策略接入：仅在动作响应和对局质量独立验收后开始。
+32. J-D1c3c2c3b：经用户授权后预注册并运行小规模真实 DeepSeek 响应安全与动作变化验收，已完成并保留；
+33. J-D1c3c2c3c1：建立同状态动作分支和确定性 RuleBased 续局质量代理，下一步；
+34. J-D1c3c2c3c2：用独立语料运行真实模型动作质量验收；
+35. 策略接入：仅在动作质量与后续对局收益独立验收后开始。
 
 J-A 验证结果：
 
@@ -539,16 +540,25 @@ J-D1c3c2c3a 设计方向：
 
 J-D1c3c2c3b live pilot 方向：
 
-- 先提交 c3a 的两个文件并确保工作区干净；
-- 读取配置前不修改 `.env`，只确认 key 是否存在，绝不输出 key；
-- 在显示实际 base URL host、model、固定 timeout=60、max_retries=0 和最多 48 次请求后，必须获得用户明确授权；
-- 使用全新 seed `13000..13009`，四策略每桶 2 个样本，共 24 pair / 48 个逻辑与物理请求；
-- 每桶 off-first/on-first 各 1，沿用 c3a 固定样本和合法性分类；
-- 仓库外逐调用 JSONL 在每次请求后 flush/fsync，最终 aggregate canonical JSON 原子落盘；
-- ledger 不保留 prompt、observation、action ID、reasoning、响应原文或密钥；
-- 传输/审计中断不得重跑或补采；完整响应失败与观察到的 changed rate 分开判定；
-- changed 只作为描述性结果，不能排除 temperature=0 下的服务非确定性；
-- live pilot 通过最多允许进入动作质量评估，不允许默认开启。
+- 已在 `e0065c6a3da70b3d4ded4b394817bfab3351c113` 上使用 `deepseek-v4-pro`、60 秒 timeout、零重试完成；
+- seed `13000..13009` 四策略每桶 2 个样本，共 24 pair / 48 次真实请求；
+- 48 个响应全部在 prompt candidates，24 pair 全部 both-valid，零异常和解析/合法性失败；
+- same/changed 总计 13/11，off/on pass 均为 6，pressure 均为 0；
+- 总耗时 1411.005 秒，审计文件均已仓库外持久化并哈希；
+- 判定 `retain_for_action_quality_evaluation`；动作差异仅为描述性结果，不排除服务非确定性。
+
+J-D1c3c2c3c1 设计方向：
+
+- 只修改 evaluation/test，不修改 engine、runtime、DeepSeek client、RAG、CLI 或配置；
+- 保持 c3a 公开 API、默认报告和 seed `120..129` 开发 canonical hash 完全不变；
+- 为质量载体采集候选时保存 evaluation-only 的 `copy.deepcopy(GuanDanGame)` 状态分支，不直接读取或写入 `game._state`；
+- clone 后必须证明 observation 与 legal actions 相等、状态推进互相独立；
+- 对 provider 的 off/on 合法动作分别在 clone 上 `step(action_id)`，后续所有玩家使用 `RuleBasedAIAgent` 和公开 payload 推进到终局；
+- same action 只运行一次并复用结果，changed action 运行两个独立分支；
+- 终局只读取公开 step result 和 terminal observation 的 finish order；若只记录三游，补入唯一未出现玩家为末游；
+- 质量字典序固定为：观察者团队结果 win > draw > loss；若相同，团队两位玩家完赛名次和更小者更优；否则 tie；
+- 聚合 on-better/off-better/tie、双方 win/draw/loss、团队名次差和续局步数，不保留逐样本、动作 ID、手牌或隐藏状态；
+- 开发双运行只用假 provider，不调用网络；结果只表示固定 RuleBased 后续下的反事实代理，不是实际胜率。
 
 ### Step K：中局策略路由与残局决策
 
