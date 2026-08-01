@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - 当前实现检查点：`ad85662a47f126991e8ebe0360dc0c6c4a2f1be6 J-D1c3c2c3c1 confidence action quality harness`
-- 当前工作状态：Step J-D1c3c2c3c2a 已完成 48/48 请求，但正式审计错误依赖 canonical JSON 键顺序，唯一判定 `quality_recovery_invalid`；工作区干净
+- 当前工作状态：Step J-D1c3c2c3c2b 独立只读恢复审计完成，唯一判定 `no_observed_action_quality_gain`；confidence 默认继续关闭，工作区干净
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：362 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -40,7 +40,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、正式 prompt coverage、成对动作载体、真实 DeepSeek 响应安全试验和确定性分支续局质量代理。c3c2a 已完整执行 48/48 请求、24 对配对和全部 rollout，但正式 `audit_summary.json` 把 canonical JSON 键顺序误当业务策略顺序，导致 `integrity_pass=false`，因此不形成质量结论。下一步只读复核不可变证据并用显式策略映射恢复审计，不再调用模型；默认策略继续关闭。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、正式 prompt coverage、成对动作载体、真实 DeepSeek 响应安全试验和确定性分支续局质量代理。c3c2b 已从不可变证据恢复有效审计：24 pair 中 same/changed=15/9，on/off better=0/0，24 对全部 tie，双方 team win 均为 10。按预注册门槛没有观察到动作质量净增益，因此停止 confidence prompt 的收益扩展，不进入完整对局评估。下一步转向 Step K-A1，建立公开、确定、可审计的策略意图路由契约。
 
 ## 3. 分模块状态
 
@@ -54,7 +54,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c2c3c2a 审计 invalid | 48/48 请求、24 对和 rollout 已完成，正式审计因键序假阴性失败 | 尚无正式动作质量或胜率结论 |
+| 残局精确分配 | Step J-D1c3c2c3c2b 完成 | 只读恢复审计有效，24 对质量代理全部 tie | 未观察到 confidence 动作质量增益，默认关闭 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -64,7 +64,7 @@
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | 未完成 | 主要依赖模型和经验提示 | 没有结构化策略路由 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
-| 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和确定性质量代理 | 没有真实模型动作质量与完整对局胜率指标 |
+| 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
 ## 4. 已确认问题
 
@@ -742,9 +742,43 @@ J-D1c3c2c3c2a 使用 seed `16000..16009` 和持久后台进程完成：
 
 唯一判定：`quality_recovery_invalid`。完整数据存在不等于正式审计通过。
 
-### P1：尚无真实模型动作质量或完整对局收益结论
+### 已解决：不可变证据只读恢复审计（Step J-D1c3c2c3c2b）
 
-下一步 J-D1c3c2c3c2b 仅对 c3c2a 不可变文件进行独立、只读恢复审计。验证器必须按显式 `策略名 -> rate` 映射复核全部内容和原预注册质量门槛，原 summary/completion 及其 invalid 判定保持不变。该步骤不读取 API key、不联网、不发送请求；即使恢复后判定保留，也只能进入完整对局评估。
+c3c2b 未联网、未调用模型、未修改或重跑 c3c2a 源证据：
+
+- 原 summary 唯一 false path 为 `integrity_pass`；唯一原子原因是 `tuple(policies) == NAMES` 把 canonical `sort_keys=True` 后的键序误当业务顺序；
+- 恢复验证改用固定策略名 lookup 与内部 rate 核对，源文件前后 hashes 不变；
+- forced/25/50/100 主动 pass 为 0/87、40/102、59/98、111/111，比例严格递增；
+- ledger 连续 1..48，off/on=24/24，全部 returned 且为严格整数；
+- 四策略均 10/10/0，每策略每桶 selected=2，所有 provider、pair、branch、diagnostics 和 bucket-to-overall 守恒通过；
+- 双验证输出逐字节相等，未发现敏感内容。
+
+质量结果：
+
+| 策略 | same / changed | on / off / tie | off W/D/L | on W/D/L | placement off/on | steps off/on |
+|---|---:|---:|---:|---:|---:|---:|
+| forced-only | 4 / 2 | 0 / 0 / 6 | 2/1/3 | 2/1/3 | 32/32 | 101/101 |
+| pass-25 | 5 / 1 | 0 / 0 / 6 | 2/1/3 | 2/1/3 | 30/30 | 99/99 |
+| pass-50 | 4 / 2 | 0 / 0 / 6 | 4/2/0 | 4/2/0 | 23/23 | 85/83 |
+| pass-100 | 2 / 4 | 0 / 0 / 6 | 2/1/3 | 2/1/3 | 32/32 | 96/101 |
+
+overall 为 24 pair、same/changed=15/9、33 个 rollout branch 全部完成；on/off better=0/0、tie=24，on/off team win 均为 10。按预注册顺序，唯一恢复审计判定：`no_observed_action_quality_gain`。
+
+恢复目录：`C:\Users\86166\AppData\Local\Temp\guandan-confidence-action-quality-c3c2b-readonly-6999cb8c-6630f371c650462c949a210cd063c320`。
+
+- verifier：13213 bytes / `27a82023…f774799c`；
+- run1/run2：各 19096 bytes，逐字节相同 / `f619c3e1…c9d83f02`；
+- manifest：1062 bytes / `7d777803…6d92ad98`。
+
+原 c3c2a 的 `quality_recovery_invalid` 保持不变。恢复结论不证明 confidence 因果效果或胜率提升。
+
+### 已封板：confidence prompt 未观察到动作质量净增益
+
+`no_observed_action_quality_gain` 不授权完整 DeepSeek 对局评估，也不授权默认开启 confidence。现有 shadow/prompt 代码保留为默认关闭的研究能力，不继续增加 API 消融、提示词内容或策略消费。后续若有新的独立证据或机制，必须作为新研究分支重新预注册。
+
+### P1：尚无中局策略路由与完整策略收益结论
+
+下一步进入 Step K-A1，只建立策略意图上下文和确定性路由契约。该步骤不修改动作选择、DeepSeek prompt、RAG 检索或 confidence，不宣称策略收益。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -789,7 +823,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3c2c3c1 已完成；c3c2 与 c3c2a 均保持 invalid，后者数据完整但正式键序审计失败。下一步为 J-D1c3c2c3c2b 只读恢复审计。
+状态：J-A 至 J-D1c3c2c3c2b 已完成；恢复审计判定 `no_observed_action_quality_gain`，confidence prompt 路径封板并保持默认关闭。
 
 拆分为：
 
@@ -828,19 +862,21 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3c2c3c1：建立同状态 off/on 动作的确定性 RuleBased 分支续局质量载体，已完成，判定 `confidence_action_quality_harness_verified`；
 - Step J-D1c3c2c3c2：使用 seed `15000..15009` 运行真实模型动作质量验收，45/48 请求后中断，已完成失败审计，判定 `quality_benchmark_invalid`；
 - Step J-D1c3c2c3c2a：使用全新 seed 和耐久后台完成 48/48 请求，但正式 summary 因 JSON 键序假阴性失败，已完成，判定 `quality_recovery_invalid`；
-- Step J-D1c3c2c3c2b：不联网、不改原证据，以显式策略映射运行独立只读恢复审计，下一步；
-- 策略接入：继续暂停，直到动作响应与对局质量验收均通过。
+- Step J-D1c3c2c3c2b：不联网、不改原证据，以显式策略映射运行独立只读恢复审计，已完成，判定 `no_observed_action_quality_gain`；
+- confidence 策略接入：封板，不进入完整对局评估，默认继续关闭；
 
 设计见 `docs/BELIEF_STATE.md`。
 
 ### Step K：中局策略路由与残局决策
 
-状态：尚未开始。
+状态：准备开始。下一步为 K-A1 公开策略意图上下文与确定性路由契约。
 
 依赖：
 
 - Step I 阶段分类稳定；
 - Step J 能提供结构化信念状态。
+
+K-A1 只消费统一阶段、公开 observation、legal actions 和既有手牌评估，不消费未证明收益的 confidence，不接入动作选择。
 
 ## 6. 当前风险
 

@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3c1 已完成；c3c2a 完成 48/48 请求但正式审计因 JSON 键序假阴性判 `quality_recovery_invalid`。下一步运行 J-D1c3c2c3c2b 只读恢复审计。
+状态：J-A 至 J-D1c3c2c3c2b 已完成；只读恢复审计判定 `no_observed_action_quality_gain`。confidence 默认关闭且不进入完整对局评估，下一步转入 Step K-A1。
 
 目标：
 
@@ -130,7 +130,7 @@ AI 决策分为四层：
 - 所有推断带来源和置信度；
 - 只有逻辑唯一时才能标记 `confirmed`。
 
-当前阶段已包含确定性公开事实、硬约束、完整残局枚举和 token/rank 级精确物理权重；排序已恢复 hard-only neutral baseline。仍不输出经过校准的概率或置信度，也不做 MCTS 或蒙特卡洛搜索。
+当前阶段已包含确定性公开事实、硬约束、完整残局枚举、token/rank 级精确物理权重和经策略多样性校准的组合边际契约；排序保持 hard-only neutral。runtime confidence 虽可默认关闭地生成和序列化，但动作质量评测未观察到净增益，因此不进入默认策略消费；仍不做 MCTS 或蒙特卡洛搜索。
 
 验收：
 
@@ -179,8 +179,9 @@ AI 决策分为四层：
 33. J-D1c3c2c3c1：建立同状态动作分支和确定性 RuleBased 续局质量代理，已完成并通过；
 34. J-D1c3c2c3c2：用独立语料运行真实模型动作质量验收，已执行但未完成，判定 invalid；
 35. J-D1c3c2c3c2a：用全新 seed 和耐久后台进程恢复同一正式验收，运行完整但正式键序审计失败，判定 invalid；
-36. J-D1c3c2c3c2b：只读复核 c3c2a 不可变证据并显式映射策略，下一步；
-37. 策略接入：仅在动作质量与后续对局收益独立验收后开始。
+36. J-D1c3c2c3c2b：只读复核 c3c2a 不可变证据并显式映射策略，已完成，判定无观察到的质量增益；
+37. confidence 策略接入：停止推进，保持默认关闭；
+38. K-A1：建立只读公开信息的策略意图上下文与确定性路由契约，下一步；
 
 J-A 验证结果：
 
@@ -590,6 +591,15 @@ J-D1c3c2c3c2b 恢复方向：
 - 两次只读验证必须生成完全相等的 canonical recovered summary；
 - 完整性恢复后才按 c3c2 原预注册 overall 门槛形成质量判定，原 c3c2a invalid 不被覆盖。
 
+J-D1c3c2c3c2b 结果：
+
+- 原 summary 只有由 canonical JSON 键序误用导致的派生 `integrity_pass=false`；
+- 显式策略映射、全部源 hashes、48 请求、24 pair、33 branches 和所有守恒独立复核通过；
+- 双验证输出逐字节一致；
+- overall same/changed=15/9，on/off better=0/0，tie=24，双方 team win 均为 10；
+- 唯一判定 `no_observed_action_quality_gain`；
+- 不进入完整 DeepSeek 对局评估，confidence 默认保持关闭。
+
 ### Step K：中局策略路由与残局决策
 
 目标：
@@ -605,6 +615,17 @@ J-D1c3c2c3c2b 恢复方向：
 - RAG 不单独决定动作；
 - 模型只能从传入候选动作中选择；
 - 固定种子和轮换座位 A/B 评测可重复。
+
+K-A1 方向：
+
+- 新增独立 `agents/strategy_router.py` 与对应测试；
+- 只消费调用方传入的统一 phase、公开 observation、legal actions 和既有 hand evaluation；
+- 输出 frozen/slots、JSON 友好的路由上下文，不修改候选动作；
+- 先固定 `run_out`、`block_opponent`、`support_teammate`、`control` 四种意图及 fail-closed unavailable 状态；
+- opening 不参与路由，继续由现有公式开局处理；
+- 不接 DeepSeek、RAG、剪枝、confidence 或动作选择；
+- 固定 fixture 验证优先级、团队关系、紧急手数、弱/强牌和 malformed 输入；
+- 通过只授权 K-A2 shadow 集成，不代表策略质量提升。
 
 ## 6. 质量指标
 

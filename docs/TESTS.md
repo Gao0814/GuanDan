@@ -737,17 +737,35 @@ overall prompt-pair digests：forced `c45e7241a3c37066065c49e3c73d4b33a93d5b7b11
 
 #### J-D1c3c2c3c2b：只读恢复审计
 
-状态：下一步。不需要网络授权。
+状态：已完成。唯一判定 `no_observed_action_quality_gain`。
 
-- 原 c3c2a 文件必须只读且前后 hashes 完全不变；
-- 验证器按固定策略名查找并核对 rate，不比较 mapping 迭代顺序；
-- 原 summary 的失败项必须只有可解释的键序假阴性；
-- 独立重算 48 请求、24 pair、三桶、四策略、rollout 和质量计数守恒；
-- 两次验证输出的 canonical recovered summary 必须完全相同；
-- 任一其他失败判 `recovered_audit_invalid`；
-- 完整性恢复后才应用原预注册 overall 质量门槛。
+- 原 c3c2a 文件前后 hashes 完全不变；
+- 原 summary 唯一 false path 为派生 `integrity_pass`，原子原因仅为 canonical JSON 键序误用；
+- 固定策略 lookup、内部 rate、主动 pass 比例和 48 条 ledger 独立复核通过；
+- 24 pair、33 rollout branches、三桶、四策略和 quality 计数全部守恒；
+- run1/run2 各 19096 bytes 且逐字节相同；
+- overall same/changed=15/9，on/off better=0/0，tie=24；
+- off/on team win=10/10；
+- 恢复输出敏感内容扫描无匹配，未联网或调用模型。
 
-#### 暂停：校准
+恢复输出：
+
+- verifier：13213 bytes / `27a82023…f774799c`；
+- run1/run2：`f619c3e1…c9d83f02`；
+- manifest：1062 bytes / `7d777803…6d92ad98`。
+
+#### K-A1：策略意图路由契约
+
+状态：下一步。不接入动作选择。
+
+- 单元测试覆盖统一 phase 复用、team/opponent 关系、hand count、immediate finish、弱牌和 malformed 输入；
+- 固定优先级输出 `run_out`、`block_opponent`、`support_teammate`、`control`；
+- opening 与无效输入 fail-closed，不重复阶段分类；
+- 输出 frozen/slots、不可变、JSON 友好且不含隐藏状态；
+- 不修改 legal actions，不调用 DeepSeek/RAG/confidence，不读取 engine 内部状态；
+- 全量回归通过后只授权 shadow 集成，不声明策略收益。
+
+#### 持续约束：软信号边界
 
 - pass 只保留为公开行为事实，不作为默认软持牌证据或确定无牌；
 - 所有 `likely` 结论带置信度和证据来源；

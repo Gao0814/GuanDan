@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2c3c1 已完成；c3c2a 已完成 48/48 请求，但正式 summary 因 JSON 键序假阴性判 `quality_recovery_invalid`。下一步为 J-D1c3c2c3c2b 只读恢复审计；默认策略消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2c3c2b 已完成；只读恢复审计判定 `no_observed_action_quality_gain`。confidence 默认继续关闭，不进入完整对局评估；下一步转入 Step K-A1 策略意图路由契约。
 
 ## 2. 数据来源
 
@@ -559,24 +559,25 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2c3c2b：不可变证据只读恢复审计
 
-- 状态：下一步；
-- 不联网、不读取 key、不调用模型，不修改 c3c2a 原目录；
-- 显式按策略名映射 rate，不使用 JSON mapping 顺序；
-- 独立复核全部 hashes、计数、守恒、诊断、JSON 和隐私边界；
-- 只有键序是假阴性的唯一完整性失败时才允许恢复；
-- 恢复成功后沿用原 quality gate，只授权后续完整对局评估。
+- 状态：已完成，唯一判定 `no_observed_action_quality_gain`；
+- 不联网、不读取 key、不调用模型，c3c2a 原目录 hashes 前后不变；
+- 显式策略映射和全部完整性门槛通过，双验证逐字节一致；
+- 24 pair 中 same/changed=15/9，on/off better=0/0，tie=24；
+- off/on team win 均为 10，33 个 rollout branch 全部完成；
+- 不授权完整对局评估或默认策略消费。
 
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有 J-D1c3c2c3c2b 恢复出有效真实动作质量判定、且后续完整对局收益通过，才允许默认策略读取；
+- c3c2b 未观察到动作质量增益，confidence 默认策略消费封板；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
-### 暂停：置信度校准
+### 封板：confidence 策略消费
 
-- 用离线样本校准置信度区间；
-- 做无软信号、分信号和组合信号消融；
-- 只有指标达到预设门槛后才允许进入策略主链。
+- 组合边际校准、runtime 契约、prompt coverage 和动作质量代理已完成；
+- 动作质量代理未观察到净增益，因此默认关闭并停止进入策略主链；
+- 不再追加相同 confidence prompt 的 API 消融或完整对局评估；
+- 新机制必须作为独立研究分支重新预注册，不能覆盖当前结论。
 
 J-C 不得反向污染 J-A 的公开事实或 J-B 的硬约束，ground truth 永远不得进入 runtime observation。
