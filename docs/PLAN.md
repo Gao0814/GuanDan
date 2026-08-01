@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c1 已完成；J-D1c3c2c2 双运行可重复，但完整聚合输出未留存，判定 `benchmark_invalid`。下一步运行 J-D1c3c2c2a 可持久化恢复验收。
+状态：J-A 至 J-D1c3c2c2a 已完成；恢复正式验收判定 `confidence_prompt_coverage_verified`。下一步实现 J-D1c3c2c3a 无网络成对动作消融载体。
 
 目标：
 
@@ -173,9 +173,11 @@ AI 决策分为四层：
 27. J-D1c3c2b2：增加默认关闭的 prompt 消费开关并保持关闭态完全兼容，已完成；
 28. J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算与精确插入基准并运行开发试验，已完成；
 29. J-D1c3c2c2：使用独立 seed 正式验收 prompt readiness 与成本，双运行完成但完整审计证据未留存，判定 `benchmark_invalid`；
-30. J-D1c3c2c2a：使用仓库外 canonical JSON 审计文件和全新 seed 恢复正式验收，下一步；
-31. J-D1c3c2c3：在固定配对 corpus 上运行真实 DeepSeek confidence-off/on 动作消融；
-32. 策略接入：仅在 J-D1c3c2c3 独立验收后开始。
+30. J-D1c3c2c2a：使用仓库外 canonical JSON 审计文件和全新 seed 恢复正式验收，已完成并通过；
+31. J-D1c3c2c3a：建立 evaluation-only、provider 可注入的固定配对动作消融载体，下一步；
+32. J-D1c3c2c3b：预注册并运行小规模真实 DeepSeek 响应安全与动作变化验收；
+33. J-D1c3c2c3c：在响应安全后评估固定种子、轮换座位的对局质量与胜率；
+34. 策略接入：仅在动作响应和对局质量独立验收后开始。
 
 J-A 验证结果：
 
@@ -518,13 +520,25 @@ J-D1c3c2c2 正式方向：
 
 J-D1c3c2c2a 恢复方向：
 
-- 不修改实现、测试、预算、采样、分桶、策略 gate 或门槛；
-- 使用全新 seed `11000..11049`，四策略各 50 局，完整运行两次；
-- 每次完成后立即将 canonical JSON 写入仓库外临时审计目录，不向 stdout 打印完整 report；
-- 两份 JSON 必须可重新解析、字节一致、SHA-256 一致，并保留绝对路径、大小和哈希；
-- 从持久化文件生成 16 个范围的完整门槛摘要；每个策略每个 external bucket 至少 350 个 valid/ready 样本；
-- 全部样本 ready、零 omitted/mismatch/diagnostics，固定章节开销保持 11；
-- 只有恢复验收通过后才允许设计 J-D1c3c2c3 真实 DeepSeek 动作 A/B。
+- 已使用全新 seed `11000..11049` 完成四策略各 50 局双运行；
+- 两份 9218-byte canonical JSON 逐字节一致，SHA-256 为 `679f1f4b7f33fc821cdda4725681abbf86a3204c3b03775c0b2858ce2df9d37b`；
+- 四策略共 5733 个样本，16 个范围全部 available/ready/exact insertion，零 omitted/mismatch/diagnostics；
+- payload 最大 683 字符，固定章节开销精确为每样本 11 字符；
+- 判定 `confidence_prompt_coverage_verified`；原 seed `10000..10049` 结果仍为 `benchmark_invalid`；
+- 原审计摘要错误依赖 JSON 键迭代顺序，恢复解析器按策略名/rate 只读复核；后续不得把 canonical 键顺序当业务顺序。
+
+J-D1c3c2c3a 设计方向：
+
+- 只新增 evaluation 动作消融模块与对应测试，不修改 runtime、engine、client、RAG、CLI 或配置；
+- 从公开 observation/legal actions 采集 critical 且 confidence ready、不会命中本地 shortcut 的局面；
+- 使用固定 SHA-256 优先级从每策略/每 external bucket 选择固定数量样本，样本只在内存存在；
+- 对每个样本构造 off/on 两个 provider kwargs，除 on 增加 `card_confidence_prompt` 外逐字段相同；
+- 在每个桶内平衡 AB/BA 调用顺序，单次异常不能阻止配对另一侧调用；
+- 严格校验 provider 返回类型、action_id 是否在传入 prompt candidates 和完整 legal actions 中；
+- 聚合 off/on 有效响应、异常、无法解析、非法候选、同动作/变更动作、pass/pressure 选择和调用顺序；
+- report 不保留 seed、样本 ID、observation、prompt、action_id、reasoning 或 provider 原始响应；
+- 开发阶段只使用确定性假 provider，验证双运行相等与容量，不读取 `.env`、API key 或网络；
+- c3a 只证明消融载体可信，不宣称 confidence 改善动作。
 
 ### Step K：中局策略路由与残局决策
 

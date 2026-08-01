@@ -1,144 +1,67 @@
 # 下一步实施提示词
 
-## Step J-D1c3c2c2a：可持久化 prompt coverage 恢复正式验收
+## Step J-D1c3c2c3a：无网络成对动作消融载体
 
-请在 GuanDan 项目中执行 Step J-D1c3c2c2a。任务是在不修改仓库文件的前提下，使用全新固定 seed 对四种 strategic-pass 轨迹运行两次无网络 prompt coverage 正式基准，并先把每次完整 canonical JSON 持久化到仓库外审计目录，再从文件生成完整门槛报告。
+请在 GuanDan 项目中实现 Step J-D1c3c2c3a。任务是新增一个 evaluation-only、provider 可注入、固定样本、顺序平衡的 confidence-off/on 动作消融载体，并用确定性假 provider 完成单元测试和小型开发双运行。
 
-本步骤不是对 seed `10000..10049` 的第三次运行，也不是补采。原 J-D1c3c2c2 已永久判定 `benchmark_invalid`；本步骤使用全新 seed 和预注册的落盘审计链路做独立恢复验收。
+本步骤不得调用真实 DeepSeek、HTTP 或其他网络，不得读取 `.env` / API key，不得评价动作质量或胜率。它只证明后续真实 API 实验的采样、配对、合法性分类和聚合载体可信。
 
-本步骤不得修改实现、测试、docs、配置、预算、分桶、策略 gate 或门槛；不得调用真实 DeepSeek、网络、ground truth 或引擎内部状态；不得扩展到 J-D1c3c2c3 动作 A/B。
+## 一、前置结论
 
-## 一、已知前置结论
+J-D1c3c2c2a 已正式通过：
 
-实现检查点：
+- 运行 HEAD `6b62156a98cfb97dd11e30df5f95a62dba99accd`；
+- 实现检查点 `bc689a37f462672033d754cce7060897d70c7612`；
+- seed `11000..11049`，四策略各 50 局；
+- 两份 9218-byte JSON 逐字节一致；
+- SHA-256 为 `679f1f4b7f33fc821cdda4725681abbf86a3204c3b03775c0b2858ce2df9d37b`；
+- 四策略共 5733 个 critical 样本；
+- 16 个范围全部 available、ready、exact insertion，零 omitted/mismatch/diagnostics；
+- payload 最大 683 字符，全部满足 2400 预算和固定 +11 字符关系；
+- 唯一判定 `confidence_prompt_coverage_verified`。
 
-```text
-bc689a37f462672033d754cce7060897d70c7612
-J-D1c3c2c1 confidence prompt coverage benchmark
-```
+原 seed `10000..10049` 的 J-D1c3c2c2 仍保持 `benchmark_invalid`，不得改写历史结论。
 
-首次正式运行 J-D1c3c2c2：
+## 二、允许修改范围
 
-- seed `10000..10049`，四策略各 50 局，完整运行两次；
-- 两次耗时 344.621s / 342.153s；
-- report、`to_dict()`、canonical JSON 完全相等；
-- SHA-256 均为 `1d6506250def487c16d4da2c4fcf1aed2cdfd13231a6096347b768e0c8680a8f`；
-- 工具层截断 stdout，未保留 4 策略 x 4 范围的完整聚合；
-- 唯一判定 `benchmark_invalid`；未第三次运行、补采或改参。
+只允许新增：
 
-不得使用原运行的局部输出宣告任何正式门槛通过，也不得再次使用 seed `10000..10049`。
+- `evaluation/confidence_action_ablation.py`
+- `tests/test_confidence_action_ablation.py`
 
-## 二、仓库前置检查
+不得修改：
 
-1. 运行 `git status --short`，必须为空；
-2. 记录完整 `HEAD`；
-3. 确认 `bc689a37f462672033d754cce7060897d70c7612` 是当前 HEAD 的祖先；
-4. 确认该实现检查点之后除 `docs/*.md` 外没有源码或测试变化；
-5. 确认以下 benchmark/runtime 文件相对 `bc689a3` 无差异：
-   - `agents/card_confidence.py`
-   - `agents/card_confidence_pipeline.py`
-   - `agents/card_confidence_prompt.py`
-   - `agents/deepseek_ai.py`
-   - `agents/deepseek_client.py`
-   - `evaluation/confidence_prompt_benchmark.py`
-   - `tests/test_card_confidence.py`
-   - `tests/test_card_confidence_pipeline.py`
-   - `tests/test_card_confidence_prompt.py`
-   - `tests/test_confidence_prompt_benchmark.py`
-   - `tests/test_deepseek_prompt_step_h.py`
-6. 不要提交、stash、还原或清理任何文件。
+- `agents/`
+- `engine/`
+- `cli/`
+- `rag/`
+- `config.py`
+- `.env` / `.env.example`
+- 既有 `evaluation/` 文件
+- 既有测试
+- `docs/`
 
-任一前置失败，停止并报告 `precondition_failed`，不得运行正式 corpus。
+不要扩展到真实 API、默认开关、策略接入、RAG、剪枝或对局胜率评测。
 
-## 三、运行前回归
+## 三、核心公开 API
 
-运行：
+在 `evaluation/confidence_action_ablation.py` 中新增：
 
-```bash
-python -m unittest tests.test_confidence_prompt_benchmark tests.test_card_confidence_prompt tests.test_card_confidence_pipeline tests.test_card_confidence -q
-python -m unittest tests.test_deepseek_prompt_step_h tests.test_pass_policy_benchmark tests.test_marginal_policy_corpus tests.test_rag_step_h tests.test_action_pruning -q
-python -m unittest discover -q
-git diff --check
-```
+- `ActionAblationBucket`
+- `PolicyActionAblationReport`
+- `ConfidenceActionAblationReport`
+- 必要的 provider Protocol/类型别名
+- `run_confidence_action_ablation(...)`
 
-预期：
-
-- 第一组 28 项通过；
-- 第二组 77 项通过；
-- 全量 351 项通过；
-- `git diff --check` 通过；
-- 工作区仍为空。
-
-任一失败，停止并判定 `benchmark_invalid`，不得运行正式 corpus。
-
-## 四、仓库外审计目录
-
-正式运行前，在仓库外创建一个全新的审计目录，例如：
-
-```text
-%TEMP%\guandan-confidence-prompt-jd1c3c2c2a-<HEAD前12位>
-```
-
-要求：
-
-- 目录不在 GuanDan 工作树内；
-- 若候选目录已存在且非空，不得覆盖或删除旧证据，改用新的、明确记录的目录；
-- 记录绝对路径；
-- 先用一个很小的 sentinel JSON 验证 UTF-8 写入、`flush`、`fsync`、原子替换、重新读取和 SHA-256；
-- sentinel 失败时停止，判定 `benchmark_invalid`，不得启动正式运行；
-- 运行用临时 Python 脚本也放在该目录，不得加入仓库；
-- 记录临时 runner 文件的 SHA-256。
-
-## 五、结果持久化协议
-
-临时 runner 每次只执行一次 `run_confidence_prompt_benchmark()`，并在函数返回后立即：
-
-1. 调用 `report.to_dict()`；
-2. 使用以下规范生成 canonical JSON：
+建议函数签名至少包含：
 
 ```python
-json.dumps(
-    report.to_dict(),
-    ensure_ascii=False,
-    sort_keys=True,
-    separators=(",", ":"),
-    allow_nan=False,
-)
-```
-
-3. 以 UTF-8 写入同目录临时文件；
-4. `flush` 并 `os.fsync()`；
-5. 原子替换为 `run1.json` 或 `run2.json`；
-6. 重新读取文件，验证非空、UTF-8 可解码、JSON 可解析；
-7. 计算文件字节数和 SHA-256；
-8. stdout 只输出一行短元数据：run 编号、耗时、绝对路径、字节数、SHA-256。
-
-严禁向 stdout 输出 report 对象、`to_dict()`、canonical JSON 或 16 个范围的完整明细。工具输出截断不得再次成为证据链的一部分。
-
-若一次正式运行已经开始，则该次结果写入、解析或校验失败都判定 `benchmark_invalid`；不得重跑该次、不得补采。
-
-## 六、锁定参数
-
-两次完整运行均使用：
-
-```text
-seeds = 11000..11049
-games per policy = 50
-strategic_pass_rates = 0,25,50,100
-current_level_rank = 2
-max_steps = 5000
-max_samples_per_game = 128
-max_external_cards = 12
-max_search_nodes = 1,000,000
-max_solutions = 100,000
-```
-
-调用：
-
-```python
-run_confidence_prompt_benchmark(
-    tuple(range(11000, 11050)),
+run_confidence_action_ablation(
+    seeds,
+    *,
+    suggestion_provider,
     strategic_pass_rates=(0, 25, 50, 100),
+    samples_per_bucket=4,
     current_level_rank="2",
     max_steps=5000,
     max_samples_per_game=128,
@@ -148,139 +71,271 @@ run_confidence_prompt_benchmark(
 )
 ```
 
-只允许 `run1`、`run2` 两次。不得第三次运行、择优选择、多数表决、修改 seed、修改参数或调整门槛。
+`suggestion_provider` 必须显式传入，无默认实现。载体不得创建 `DeepSeekClient`、读取环境配置或自行发网络请求。后续真实实验可以显式传入 `client.suggest_action_id`，但本步骤不这样做。
 
-## 七、文件级可重复性
+## 四、输入校验
 
-两次完成后，从磁盘重新读取 `run1.json` 和 `run2.json`，必须满足：
+沿用现有 benchmark 的严格风格：
 
-- 两个文件均存在且非空；
-- 两个 JSON 均可按 UTF-8 解析；
-- 顶层结构完整；
-- 两个文件字节完全一致；
-- 两个 canonical JSON SHA-256 相同；
-- 每个策略的 `prompt_pair_sha256` 相同；
-- JSON 无 NaN/Infinity；
-- 不依赖仍在内存中的 report 对象完成比较。
+- seeds 必须为非空、唯一、非 bool 整数序列；
+- rates 必须为非空、唯一、0..100 的非 bool 整数序列；
+- `samples_per_bucket`、`max_steps`、`max_samples_per_game`、搜索上限必须为非 bool 正整数；
+- `max_external_cards` 不得超过 12；
+- current level rank 必须为合法普通 rank；
+- provider 必须 callable；
+- 不得静默纠正非法参数。
 
-任一失败判定 `benchmark_invalid`。
+非法输入显式抛出 `ValueError`。
 
-## 八、审计摘要文件
+## 五、公开样本采集
 
-使用只读解析器从已落盘的 `run1.json` 生成 `audit_summary.json`，仍写入同一仓库外审计目录。摘要至少包含：
+复用现有公开轨迹边界：
 
-- schema/version；
-- 完整 HEAD 和实现检查点；
-- 锁定参数；
-- runner 路径和 SHA-256；
-- 两次耗时、文件绝对路径、字节数和 SHA-256；
-- 文件级可重复性 pass/fail；
-- 四策略 opportunity、active pass、实际比例和 pair digest；
-- 四策略 games 与 eligible/evaluated/valid/invalid/skipped；
-- 四策略 overall 和三个 external bucket 的全部 coverage 与字符计数；
-- 每个范围各门槛的 pass/fail；
-- 顶层唯一判定。
+- 每个 strategic-pass rate 创建独立游戏和 `StrategicPassAIAgent`；
+- 只读取 `game.observe()` 与 `game.legal_actions()`；
+- 只采集统一阶段为 `critical_endgame` 的局面；
+- 按 `external_0_4`、`external_5_8`、`external_9_12` 三个互斥桶处理；
+- 样本身份仅在内存使用 `(seed, step_no, observer_player_id)`；
+- 重复样本、步数上限、每局样本上限和异常 external count 都必须诊断；
+- 不读取 ground truth、`game._state` 或任何隐藏手牌。
 
-生成后重新读取 `audit_summary.json`，验证 UTF-8、JSON 结构和 SHA-256。最终报告必须给出该文件的绝对路径、字节数和哈希。
+仅保留符合真实模型调用路径的样本：
 
-## 九、策略与数据完整性
+- legal actions 非空；
+- 不是 only-pass；
+- 不存在可一次出完的非 pass action；
+- phase 为 critical，因此不得额外运行 opening formula；
+- `build_runtime_card_confidence()` 返回 available；
+- `build_card_confidence_prompt_payload()` 返回 ready；
+- off/on prompt 精确满足已封板的单章节插入关系；
+- pruned prompt candidates 非空。
 
-策略顺序必须为：
+only-pass、一次出完、confidence unavailable、payload omitted 和 prompt mismatch 必须分别计数，不得调用 provider。
 
-1. `forced_only`
-2. `strategic_pass_25`
-3. `strategic_pass_50`
-4. `strategic_pass_100`
+## 六、固定样本选择
 
-每个策略必须满足：
+不能简单取每桶最早 N 个样本。为每个内部样本计算固定优先级：
 
-- requested/completed/incomplete games = `50/50/0`；
-- forced-only active pass = 0；
-- pass-25 与 pass-50 满足 `0 < pass < opportunity`；
-- pass-100 满足 `pass = opportunity > 0`；
-- 实际主动 pass 比例严格满足 `forced < 25 < 50 < 100`；
-- `eligible = evaluated = valid`；
-- invalid = 0；
-- skipped = 0；
-- 顶层 diagnostics 为空；
-- overall diagnostics 为空；
-- 三个 external bucket diagnostics 均为空；
-- overall sample count 等于 evaluated；
-- 三桶所有可加计数逐项合计等于 overall；
-- 每个 external bucket 至少 350 个 sample/valid。
+```text
+SHA-256(policy_name | bucket_name | seed | step_no | observer_player_id)
+```
 
-任一失败判定 `benchmark_invalid`，不得跨策略或跨桶抵消。
+要求：
 
-## 十、16 个范围的 coverage 门槛
+- 不使用 Python `hash()`、随机数或时间；
+- 每策略/每桶选择优先级最小的 `samples_per_bucket` 个合格样本；
+- 先完成该策略公开轨迹采集，再按 `(priority_digest, step_no, observer_player_id)` 稳定排序；
+- 只在内存保留被选中的公开 observation、legal actions、phase 和 ready payload；
+- report 不输出 priority、seed、step/player 或样本内容；
+- 样本不足时保留实际数量并诊断 `sample_quota_not_reached`。
 
-对四策略的 overall、`external_0_4`、`external_5_8`、`external_9_12` 分别检查：
+## 七、off/on 请求配对
 
-- `confidence_available_count = sample_count`；
-- `confidence_unavailable_count = 0`；
-- `payload_ready_count = sample_count`；
-- `payload_omitted_count = 0`；
-- `budget_omitted_count = 0`；
-- `ready_exact_insertion_count = sample_count`；
-- `omitted_prompt_equal_count = 0`；
-- `pair_mismatch_count = 0`；
-- 每个 external bucket `payload_ready_count >= 350`。
+为每个选中样本构造一个共同 kwargs mapping，至少包括：
 
-benchmark 数据有效但任一 coverage 门槛失败，判定 `reject_confidence_prompt_action_ablation`。
+- `observation`
+- 完整 `legal_actions`
+- 同一份 `prompt_actions`
+- `rag_context=None`
+- `hand_evaluation=None`
+- `card_tracking_summary=None`
+- 同一 `phase_context`
+- `verbose=False`
+- 稳定且不含样本身份的 `debug_prefix`
 
-## 十一、16 个范围的字符成本门槛
+off 调用使用共同 mapping；on 调用只额外增加：
 
-对每个范围分别检查：
+```python
+card_confidence_prompt=ready_payload
+```
 
-- `payload_char_min > 0`；
-- `payload_char_max <= 2400`；
-- `payload_char_sum > 0`；
-- `prompt_delta_char_min = payload_char_min + 11`；
-- `prompt_delta_char_max = payload_char_max + 11`；
-- `prompt_delta_char_sum = payload_char_sum + 11 * payload_ready_count`；
-- 所有 prompt delta 为正。
+硬性要求：
 
-benchmark 数据有效但任一字符门槛失败，判定 `reject_confidence_prompt_action_ablation`。不得事后修改 2400 字符预算或固定开销。
+- off/on kwargs 的键差只能是 `card_confidence_prompt`；
+- 所有共同值逐字段相等；
+- 完整 legal IDs 和 prompt candidate IDs 完全相同；
+- off/on 结构化 prompt 必须精确满足已验证的固定章节插入关系；
+- 对 prompt pair 做 SHA-256 聚合，但 report 不保留 prompt 文本。
 
-## 十二、隐私与边界
+## 八、AB/BA 顺序
 
-确认 benchmark 和审计文件：
+真实服务即使 `temperature=0` 也不能假设完全确定，因此调用顺序不能与条件绑定。
 
-- 不调用 `suggest_action_id()`、HTTP transport 或真实 DeepSeek；
-- 不读取 ground truth 或 `game._state`；
-- 不修改 runtime、RAG、剪枝、CLI 或配置；
-- 不包含 seed 列表、样本 ID、observation、prompt 文本、legal actions、玩家或手牌明细；
-- 不包含 API key、请求或模型响应；
-- 仓库运行前后保持干净。
+- 在每个策略/每个 external bucket 内按选中样本稳定序列交替 `off->on` 与 `on->off`；
+- 每桶两种顺序数量差不得超过 1；
+- 记录 off-first / on-first pair count；
+- 一侧 provider 抛异常、返回 malformed 或无 action 时，仍必须调用另一侧；
+- harness 本身不重试，provider 内部行为由后续正式步骤另行锁定。
 
-任一边界失败判定 `benchmark_invalid`。
+## 九、provider 结果校验
 
-## 十三、唯一判定
+provider 返回值按 `DeepSeekSuggestion` 契约处理，但必须 fail-closed：
 
-严格按顺序只给出一个结论：
+- provider 抛异常：计入对应 condition exception；
+- 返回对象类型错误：计入 malformed result；
+- `action_id is None`：计入 no-action；
+- bool、字符串、float 等非严格整数：计入 invalid action type；
+- 不在完整 legal IDs：计入 outside legal；
+- 在完整 legal IDs 但不在 prompt candidate IDs：计入 outside prompt；
+- 只有严格非 bool 整数且同时属于 legal/prompt candidate 才是 valid response；
+- reasoning 不评分、不序列化、不保留。
 
-1. 前置、回归、持久化、文件解析、可重复性、策略行为、数据完整性或隐私边界失败：`benchmark_invalid`；
-2. benchmark 有效，但任一 coverage、预算或精确插入门槛失败：`reject_confidence_prompt_action_ablation`；
-3. 全部通过：`confidence_prompt_coverage_verified`。
+不得调用 fallback RuleBasedAI 替换失败结果。该实验评估模型响应本身，fallback 会掩盖失败率。
 
-不得输出“部分通过”“总体通过”或其他模糊结论。
+## 十、聚合指标
 
-## 十四、最终输出
+每个策略先聚合 requested/completed/incomplete games、strategic-pass opportunity/active pass，以及 eligible critical、duplicate、sample-limit、unexpected external 等轨迹完整性计数。
 
-最终报告必须包含：
+每个策略的 overall 和三个 external bucket 至少聚合：
 
-1. 完整 HEAD、实现检查点和运行前后工作区状态；
-2. 三组回归和 `git diff --check`；
-3. 审计目录、runner 路径及其 SHA-256；
-4. 两次耗时、JSON 路径、字节数和 SHA-256；
-5. `audit_summary.json` 路径、字节数和 SHA-256；
-6. 两次文件级相等性结论；
-7. 四策略行为和样本完整性表；
-8. 4 策略 x 4 范围的全部 coverage 表；
-9. 4 策略 x 4 范围的 payload/prompt delta sum/min/max 表；
-10. 每策略 pair digest；
-11. 所有门槛 pass/fail；
-12. 唯一判定；
-13. 明确说明原 seed `10000..10049` 结果仍保持 `benchmark_invalid`；
-14. 明确说明未调用 DeepSeek、未形成动作质量或胜率结论。
+- only-pass skip、finish-action skip；
+- confidence unavailable、payload omitted、prompt mismatch；
+- qualified candidate 与 quota-not-selected count；
+- selected sample count；
+- off-first / on-first pair count；
+- off/on attempted call count；
+- off/on valid response count；
+- off/on no-action count；
+- off/on exception count；
+- off/on malformed result count；
+- off/on invalid action type count；
+- off/on outside-legal count；
+- off/on outside-prompt count；
+- both-valid pair count；
+- only-off-valid / only-on-valid / neither-valid count；
+- same-action / changed-action count；
+- off/on pass selection count；
+- off/on pressure selection count，pressure 为 bomb/straight_flush/joker_bomb；
+- prompt pair digest；
+- 规范化 diagnostics。
 
-完成后停止，不扩展到 J-D1c3c2c3，不修改 docs。
+overall 必须由三个桶的原始整数计数相加，不能平均比例。所有计数必须满足守恒，例如：
+
+- attempted = selected samples；
+- off-first + on-first = selected samples；
+- both-valid + only-off-valid + only-on-valid + neither-valid = selected samples；
+- same-action + changed-action = both-valid；
+- 各结果类别不能重复计入同一 condition。
+
+## 十一、报告安全
+
+所有报告对象使用 frozen/slots dataclass；mapping 使用不可变副本；`to_dict()` 可被 `json.dumps(..., allow_nan=False)` 序列化。
+
+报告不得包含：
+
+- seed 或 seed 列表；
+- 样本 ID、step/player；
+- observation、history、hand；
+- prompt 文本；
+- legal actions、prompt actions；
+- 具体 action_id；
+- reasoning 或 provider 原始响应；
+- API key、URL、model response；
+- ground truth。
+
+策略和 external bucket 必须按显式名称/rate 验证，不得依赖 canonical JSON 的 mapping 键顺序表达业务顺序。
+
+## 十二、测试要求
+
+`tests/test_confidence_action_ablation.py` 至少覆盖：
+
+1. 全部严格输入校验；
+2. external bucket 边界；
+3. SHA-256 样本优先级和稳定选择；
+4. duplicate、sample limit、max steps 和 quota 诊断；
+5. only-pass / 一次出完不调用 provider；
+6. unavailable / omitted / mismatch 不调用 provider；
+7. off/on kwargs 只差 confidence key；
+8. AB/BA 每桶平衡且双运行顺序稳定；
+9. 第一侧异常后第二侧仍被调用；
+10. malformed、None、bool、字符串、float、outside legal、outside prompt 分类；
+11. valid same/changed action 聚合；
+12. pass/pressure 计数；
+13. 三桶到 overall 的整数守恒；
+14. quota 不足 fail-closed 诊断；
+15. frozen/slots、mapping 不可变、JSON 序列化与报告快照；
+16. report 不含敏感逐样本字段；
+17. 源码边界扫描不含 AppConfig、`.env`、API key、HTTP、ground truth 或 `game._state`；
+18. `agents/`、CLI、RAG、engine 不导入新 evaluation 模块。
+
+测试中只使用确定性假 provider。禁止 monkeypatch 真实网络。
+
+## 十三、开发容量双运行
+
+单元测试通过后，使用纯内存确定性假 provider 运行：
+
+```text
+seeds = 120..129
+strategic_pass_rates = 0,25,50,100
+samples_per_bucket = 4
+current_level_rank = 2
+max_steps = 5000
+max_samples_per_game = 128
+max_external_cards = 12
+max_search_nodes = 1,000,000
+max_solutions = 100,000
+```
+
+假 provider 行为必须纯函数化：
+
+- off 从 prompt candidates 选择第一个合法 action；
+- on 从同一 prompt candidates 选择最后一个合法 action；
+- 不读取时间、随机数、seed 或隐藏状态；
+- 不模拟网络异常；
+- 不保留 reasoning。
+
+完整运行两次并要求：
+
+- 两份 report 和 `to_dict()` 完全相等；
+- canonical JSON SHA-256 相同；
+- 四策略均 10/10/0 games；
+- 每策略每桶恰好选择 4 个样本，如不足则不得给出通过判定；
+- 总样本 48、provider 逻辑调用 96 次；
+- off/on attempted 均等于 48；
+- 每桶 AB/BA 各 2；
+- exception/malformed/invalid/outside/no-action 均为 0；
+- 所有 pair both-valid；
+- 所有 diagnostics 为空；
+- 运行前后工作区除本任务两个新文件外无其他变化。
+
+开发双运行不调用真实 DeepSeek，不设置真实 API 门槛，也不形成动作质量或胜率结论。
+
+## 十四、验证命令
+
+至少运行：
+
+```bash
+python -m unittest tests.test_confidence_action_ablation -q
+python -m unittest tests.test_confidence_action_ablation tests.test_confidence_prompt_benchmark tests.test_card_confidence_prompt tests.test_card_confidence_pipeline tests.test_card_confidence tests.test_deepseek_prompt_step_h tests.test_pass_policy_benchmark -q
+python -m unittest discover -q
+git diff --check
+```
+
+并运行边界扫描，确认没有 runtime 反向导入或网络/真值访问。
+
+## 十五、唯一开发判定
+
+严格输出一个结论：
+
+1. 实现、测试、守恒、双运行、容量、隐私或边界任一失败：`confidence_action_ablation_harness_invalid`；
+2. 全部通过：`confidence_action_ablation_harness_verified`。
+
+该判定只授权下一步预注册小规模真实 DeepSeek 响应实验，不授权默认启用 confidence，不代表动作质量或胜率提升。
+
+## 十六、最终报告
+
+完成后报告：
+
+1. 修改文件；
+2. 核心数据契约与 provider 边界；
+3. 样本选择、shortcut 排除和 AB/BA 顺序规则；
+4. 响应分类与所有守恒；
+5. 定向、相关、全量测试和 `git diff --check`；
+6. 开发双运行参数、耗时、报告相等性和 SHA-256；
+7. 四策略/三桶样本、调用和顺序计数；
+8. valid/异常/非法/same/changed/pass/pressure 聚合；
+9. 边界扫描结果；
+10. 唯一开发判定；
+11. 明确说明未调用 DeepSeek、未形成动作质量或胜率结论。
+
+完成后停止，不修改 docs，不扩展到 J-D1c3c2c3b。

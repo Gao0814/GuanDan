@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2c1 已完成；J-D1c3c2c2 正式双运行可重复，但完整分桶审计输出未留存，判定 `benchmark_invalid`。下一步为 J-D1c3c2c2a 可持久化恢复验收；默认策略消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2c2a 已完成；四策略 16 个范围的 prompt coverage 正式通过，判定 `confidence_prompt_coverage_verified`。下一步为 J-D1c3c2c3a 无网络成对动作消融载体；默认策略消费继续暂停。
 
 ## 2. 数据来源
 
@@ -495,20 +495,31 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2c2a：可持久化恢复验收
 
+- 状态：已完成，唯一判定 `confidence_prompt_coverage_verified`；
+- seed `11000..11049` 四策略各 50 局完整双运行；
+- 两份 9218-byte canonical JSON 逐字节一致，SHA-256 为 `679f1f4b7f33fc821cdda4725681abbf86a3204c3b03775c0b2858ce2df9d37b`；
+- 四策略样本为 1380 / 1469 / 1510 / 1374，所有 external bucket 均至少 443 个样本；
+- 5733 个样本全部 available/ready/exact insertion，零 unavailable/omitted/mismatch/diagnostics；
+- 16 个范围均满足 2400 字符预算和固定 +11 字符关系；
+- 未调用 DeepSeek、网络、ground truth 或 `game._state`；
+- 原 seed `10000..10049` 的 J-D1c3c2c2 仍保持 `benchmark_invalid`。
+
+### Step J-D1c3c2c3a：无网络成对动作消融载体
+
 - 状态：下一步；
-- 保持实现、测试、collector、formatter、2400 字符预算、分桶与全部门槛不变；
-- 使用全新 seed `11000..11049` 四策略各 50 局完整双运行；
-- 每次 canonical JSON 先写入仓库外临时审计文件，再做哈希和门槛解析；
-- 两份文件必须可解析、字节一致，且完整报告 16 个范围的聚合值；
-- 每策略每桶至少 350 个 valid/ready 样本；
-- 全样本 ready、零 omitted/mismatch/diagnostics，固定开销仍为 11；
-- 仅通过后允许进入真实 DeepSeek 动作 A/B 设计。
+- 只消费公开 observation、legal actions、统一 phase、confidence state 与 prompt payload；
+- 固定选择 critical 且 payload ready、不会命中本地 shortcut 的局面；
+- 同一局面的 off/on provider kwargs 只能相差 `card_confidence_prompt`；
+- 每桶平衡 AB/BA 顺序，防止调用时间顺序与条件绑定；
+- 聚合响应有效性、候选合法性、动作相同/变化、动作类别和异常，不保留逐样本内容；
+- 开发阶段必须注入确定性假 provider，不读取 API key 或发网络请求；
+- 本步骤只证明实验载体，不形成模型动作质量结论。
 
 ### Step J-D1c3：runtime 准入判定
 
 - 在正式运行前预注册校准与安全门槛；
 - J-D1c3b2 已授权设计 runtime 置信度输出契约；
-- 只有 J-D1c3c2c2a 恢复正式覆盖和 J-D1c3c2c3 动作消融依次通过，才允许默认策略读取；
+- 只有 J-D1c3c2c3b 真实响应安全和 J-D1c3c2c3c 对局质量依次通过，才允许默认策略读取；
 - ground truth 只存在于 `evaluation/`，不得进入 runtime 推断。
 
 ### 暂停：置信度校准

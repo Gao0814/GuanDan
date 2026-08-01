@@ -5,7 +5,8 @@
 ## 1. 当前基线
 
 - 当前实现检查点：`bc689a37f462672033d754cce7060897d70c7612 J-D1c3c2c1 confidence prompt coverage benchmark`
-- 当前工作状态：Step J-D1c3c2c2 双运行完成且结果一致，但完整门槛报告未留存，唯一判定 `benchmark_invalid`；工作区干净
+- 验收运行 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
+- 当前工作状态：Step J-D1c3c2c2a 可持久化恢复验收通过，唯一判定 `confidence_prompt_coverage_verified`；工作区干净
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：351 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -38,7 +39,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、默认关闭的 prompt 接线和配对 prompt 开发基准。J-D1c3c2c2 的两次正式运行可重复，但 stdout 在工具层截断，未保留四策略全部分桶聚合，不能逐项审计门槛，因此判定 `benchmark_invalid`。下一步不复用原 seed，而是在结果先落盘的前提下，用全新 seed 做恢复性正式验收。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、默认关闭的 prompt 接线，以及跨四策略的正式 prompt coverage 验收。J-D1c3c2c2a 在 5733 个 critical 样本上证明全部 confidence available、payload ready、精确插入且无 mismatch，16 个范围均满足 2400 字符预算和固定 +11 字符关系。下一步先建立无网络、可注入、聚合式的成对动作消融载体，再预注册真实 DeepSeek 调用。
 
 ## 3. 分模块状态
 
@@ -52,7 +53,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c2c2 已运行但无效 | 开发容量、全 ready 和固定成本已验证；首次正式双运行可重复 | 完整正式门槛证据未留存，尚无动作消融 |
+| 残局精确分配 | Step J-D1c3c2c2a 正式通过 | 四策略 16 个范围全 ready、精确插入、预算和成本关系已验证 | 尚无真实模型动作消融或胜率结论 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -62,7 +63,7 @@
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | 未完成 | 主要依赖模型和经验提示 | 没有结构化策略路由 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
-| 策略评测 | 未完成 | 单元测试覆盖功能契约 | 没有胜率、猜牌准确率和校准指标 |
+| 策略评测 | 部分完成 | 已有信念校准、策略分布和 prompt coverage 正式指标 | 没有真实模型动作质量与胜率指标 |
 
 ## 4. 已确认问题
 
@@ -602,9 +603,31 @@ J-D1c3c2c2 在检查点 `bc689a37f462672033d754cce7060897d70c7612` 上完成：
 
 唯一判定：`benchmark_invalid`。失败原因是审计证据不完整，不是 coverage 数值门槛失败；任何局部片段均不得外推为正式通过。
 
-### P1：prompt coverage 需要可持久化的恢复验收
+### 已解决：可持久化 prompt coverage 恢复验收（Step J-D1c3c2c2a）
 
-J-D1c3c2c2a 必须冻结实现、预算、分桶和门槛，使用全新 seed `11000..11049` 四策略各 50 局完整双运行。每次 report 的 canonical JSON 必须在运行结束后立即写入仓库外临时审计目录；只有两份完整文件可重新解析、哈希相同，且 16 个范围逐项通过，才能判定 `confidence_prompt_coverage_verified`。
+J-D1c3c2c2a 在不修改实现和门槛的前提下完成：
+
+- 仓库外审计目录为 `C:\Users\86166\AppData\Local\Temp\guandan-confidence-prompt-jd1c3c2c2a-6b62156a98cf`；
+- runner SHA-256 为 `61ac8e55fdc57e58ee09a6af80972f1dea67bcfddd413a0f02ecb29ce6b76202`；
+- seed `11000..11049`，四策略各 50 局，完整运行两次；
+- 两次耗时 321.921s / 321.047s；
+- `run1.json` / `run2.json` 均为 9218 bytes，逐字节、JSON、canonical JSON 和策略 pair digest 完全一致；
+- 两次 SHA-256 均为 `679f1f4b7f33fc821cdda4725681abbf86a3204c3b03775c0b2858ce2df9d37b`；
+- recovered 审计摘要为 19833 bytes，SHA-256 为 `fc8e9f3d7aa016e4772350834039b4780eccf3d9330c5315eae77c9c8eac33d7`；
+- 四策略均 50/50/0 局，eligible=evaluated=valid，invalid/skipped/diagnostics 均为 0；
+- forced/25/50/100 分别采集 1380 / 1469 / 1510 / 1374 个样本；
+- 各策略三个 external bucket 分别为 461/443/476、489/490/490、475/530/505、473/444/457，均不低于 350；
+- 5733 个样本全部 available、ready、exact insertion，零 unavailable/omitted/budget omitted/pair mismatch；
+- 16 个范围 payload 最大长度为 683，均不超过 2400；所有 delta sum/min/max 精确为 payload 对应值 + 每样本 11；
+- 全程未调用 DeepSeek、网络、ground truth 或 `game._state`。
+
+原始 `audit_summary.json` 将 canonical `sort_keys=True` 后的键顺序误当成策略调用顺序；只读恢复解析器按固定策略名和 rate 映射重新验证两份原始 JSON。原摘要保留，未修改 corpus 或重跑。后续审计器不得依赖 JSON mapping 的迭代顺序表达业务顺序。
+
+唯一判定：`confidence_prompt_coverage_verified`。原 seed `10000..10049` 的 J-D1c3c2c2 仍保持 `benchmark_invalid`。
+
+### P1：真实模型动作消融尚无安全载体
+
+coverage 通过只证明提示词可用，不证明模型能稳定解析、动作会改善或胜率提升。J-D1c3c2c3a 必须先建立 evaluation-only 成对动作载体，用同一公开局面和候选动作构造 off/on 两次调用，唯一输入差异为 confidence payload；开发阶段只使用注入的假 provider，不读取密钥或发起网络请求。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -649,7 +672,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3c2c1 已完成；J-D1c3c2c2 已运行但因完整审计输出未留存判定 `benchmark_invalid`。下一步为 J-D1c3c2c2a 可持久化恢复验收。
+状态：J-A 至 J-D1c3c2c2a 已完成；prompt coverage 正式通过。下一步为 J-D1c3c2c3a 无网络成对动作消融载体。
 
 拆分为：
 
@@ -682,9 +705,11 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3c2b2：增加默认关闭的 DeepSeek prompt 消费开关并验证兼容性，已完成；
 - Step J-D1c3c2c1：建立四策略配对 prompt 覆盖、预算和精确插入基准并运行开发语料，已完成，判定 `confidence_prompt_coverage_capacity_verified`；
 - Step J-D1c3c2c2：使用 seed `10000..10049` 完成正式双运行，但完整门槛输出未留存，已完成，判定 `benchmark_invalid`；
-- Step J-D1c3c2c2a：使用仓库外审计文件和全新 seed `11000..11049` 恢复正式验收，下一步；
-- Step J-D1c3c2c3：覆盖正式通过后再运行真实 DeepSeek 动作 A/B，尚未开始；
-- 策略接入：继续暂停，直到 J-D1c3c2c3 动作消融验收。
+- Step J-D1c3c2c2a：使用仓库外审计文件和全新 seed `11000..11049` 恢复正式验收，已完成，判定 `confidence_prompt_coverage_verified`；
+- Step J-D1c3c2c3a：建立无网络、provider 可注入、顺序平衡的成对动作消融载体，下一步；
+- Step J-D1c3c2c3b：在 c3a 通过后预注册小规模真实 DeepSeek 动作响应验收，尚未开始；
+- Step J-D1c3c2c3c：动作响应安全后再评估对局质量与胜率，尚未开始；
+- 策略接入：继续暂停，直到动作响应与对局质量验收均通过。
 
 设计见 `docs/BELIEF_STATE.md`。
 

@@ -599,25 +599,49 @@ J-D1c3c1a 已补测：
 
 #### J-D1c3c2c2a：可持久化恢复验收
 
-状态：下一步。只运行锁定回归和 benchmark，不修改仓库文件。
+状态：已完成。唯一判定 `confidence_prompt_coverage_verified`。
 
-- `bc689a37f462672033d754cce7060897d70c7612` 必须是当前 HEAD 的祖先，且之后除规划 docs 外无源码/测试变化；运行前后工作区干净；
-- 使用全新 seed `11000..11049`，四策略各 50 局，完整运行两次；
-- 每次 report 完成后立即序列化 canonical JSON 到仓库外临时审计目录，禁止向 stdout 打印完整 report/JSON；
-- 两份文件必须存在、非空、UTF-8 可解析、字节完全一致，SHA-256 相同；
-- 从已落盘 JSON 生成独立的完整门槛摘要，保留两个报告路径、文件大小、哈希和每策略 pair digest；
-- 四策略各 50/50/0 games，eligible=evaluated=valid，invalid/skipped=0；
-- forced pass=0，100% pass=opportunity，实际比例严格递增；
-- 顶层、overall 和三个 external bucket diagnostics 均为空；
-- 每策略每个 external bucket 至少 350 个 sample/valid/ready；
-- confidence unavailable、payload omitted、budget omitted、pair mismatch 均为 0；
-- ready exact insertion 等于 ready count；
-- payload char min>0、max<=2400；
-- prompt delta sum=`payload char sum + 11 * ready count`；
-- prompt delta min=`payload char min + 11`，max=`payload char max + 11`；
-- 任一前置、文件持久化、可解析性、完整性或可重复性失败判定 `benchmark_invalid`；
-- benchmark 有效但任一 coverage/预算/插入门槛失败判定 `reject_confidence_prompt_action_ablation`；
-- 全部通过判定 `confidence_prompt_coverage_verified`。
+- HEAD `6b62156a98cfb97dd11e30df5f95a62dba99accd`，实现检查点 `bc689a37f462672033d754cce7060897d70c7612`；
+- 仓库外审计目录为 `C:\Users\86166\AppData\Local\Temp\guandan-confidence-prompt-jd1c3c2c2a-6b62156a98cf`，runner SHA-256 为 `61ac8e55fdc57e58ee09a6af80972f1dea67bcfddd413a0f02ecb29ce6b76202`；
+- 运行前后工作区干净；定向 28 项、相关 77 项、全量 351 项和 `git diff --check` 全部通过；
+- seed `11000..11049`，四策略各 50 局，完整运行两次；
+- 两次耗时 321.921s / 321.047s；
+- 两份 JSON 均为 9218 bytes，逐字节与 canonical SHA-256 完全一致：`679f1f4b7f33fc821cdda4725681abbf86a3204c3b03775c0b2858ce2df9d37b`；
+- recovered 审计摘要为 19833 bytes，SHA-256 为 `fc8e9f3d7aa016e4772350834039b4780eccf3d9330c5315eae77c9c8eac33d7`；
+- 四策略 games 均为 50/50/0，样本分别为 1380 / 1469 / 1510 / 1374；
+- 各策略 external 0-4 / 5-8 / 9-12 样本为 461/443/476、489/490/490、475/530/505、473/444/457；
+- 5733 个样本全部 available=ready=exact insertion，零 invalid/skipped/diagnostics/unavailable/omitted/budget omitted/pair mismatch；
+- 16 个范围 payload 最大 683，全部低于 2400；delta sum/min/max 精确满足每样本 +11；
+- forced/25/50/100 主动 pass 为 0/498、196/547、318/557、609/609，比例严格递增；
+- 原始摘要曾把 canonical JSON 键顺序误当调用顺序；只读恢复解析器按策略名/rate 复核原文件，未重跑或改 corpus；
+- 未调用 DeepSeek、网络、ground truth 或 `game._state`。
+
+字符成本 `payload sum/min/max -> prompt delta sum/min/max`：
+
+| 策略 | overall | external_0_4 | external_5_8 | external_9_12 |
+|---|---|---|---|---|
+| forced | 447781/106/683 -> 462961/117/694 | 75258/106/296 -> 80329/117/307 | 143478/139/476 -> 148351/150/487 | 229045/162/683 -> 234281/173/694 |
+| pass-25 | 462156/106/677 -> 478315/117/688 | 78728/106/296 -> 84107/117/307 | 153981/139/476 -> 159371/150/487 | 229447/161/677 -> 234837/172/688 |
+| pass-50 | 475768/106/639 -> 492378/117/650 | 73658/106/296 -> 78883/117/307 | 165464/139/476 -> 171294/150/487 | 236646/162/639 -> 242201/173/650 |
+| pass-100 | 371715/106/662 -> 386829/117/673 | 64873/106/296 -> 70076/117/307 | 111541/128/482 -> 116425/139/493 | 195301/161/662 -> 200328/172/673 |
+
+#### J-D1c3c2c3a：无网络成对动作消融载体
+
+状态：下一步。开发测试不得调用真实 API。
+
+- 严格校验 seeds、策略 rates、每桶样本上限和搜索参数，拒绝 bool 冒充整数；
+- 只采集 critical、confidence available、payload ready 且不会命中 only-pass/一次出完 shortcut 的公开局面；
+- 使用固定 SHA-256 优先级从每策略/每 external bucket 选取样本，不使用 `hash()`、随机数或时间；
+- 同一样本 off/on provider kwargs 除 `card_confidence_prompt` 外完全一致，prompt candidate ID 集合一致；
+- 每桶 AB/BA 数量差不超过 1，异常一侧不阻止另一侧被调用；
+- provider 必须为显式注入且无默认网络实现；
+- 对返回类型、非 bool 整数 action_id、完整 legal ID 和 prompt candidate ID 分层校验；
+- 聚合 attempted、valid、none、exception、malformed、outside legal、outside prompt、both valid、same/changed、pass/pressure 和调用顺序；
+- overall 必须由三个桶原始计数相加，不平均比例；
+- 报告 frozen/slots、mapping 不可变、JSON 友好且双运行相等；
+- 报告不得包含 seed、样本 ID、observation、prompt、legal actions、action_id、reasoning 或 provider 原始响应；
+- 边界扫描禁止 `.env`、API key、HTTP、ground truth、`game._state` 和 runtime 对 evaluation 的反向导入；
+- 先使用确定性假 provider 运行小型开发双验收，只形成 harness/capacity 结论，不形成动作质量或胜率结论。
 
 #### 暂停：校准
 
