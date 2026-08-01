@@ -120,7 +120,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3c1 已完成；质量载体判定 `confidence_action_quality_harness_verified`。下一步运行 J-D1c3c2c3c2 真实模型动作质量验收。
+状态：J-A 至 J-D1c3c2c3c1 已完成；J-D1c3c2c3c2 因 45/48 请求后外层时限中断而判 `quality_benchmark_invalid`。下一步运行 J-D1c3c2c3c2a 独立语料恢复验收。
 
 目标：
 
@@ -177,8 +177,9 @@ AI 决策分为四层：
 31. J-D1c3c2c3a：建立 evaluation-only、provider 可注入的固定配对动作消融载体，已完成并通过；
 32. J-D1c3c2c3b：经用户授权后预注册并运行小规模真实 DeepSeek 响应安全与动作变化验收，已完成并保留；
 33. J-D1c3c2c3c1：建立同状态动作分支和确定性 RuleBased 续局质量代理，已完成并通过；
-34. J-D1c3c2c3c2：用独立语料运行真实模型动作质量验收，下一步；
-35. 策略接入：仅在动作质量与后续对局收益独立验收后开始。
+34. J-D1c3c2c3c2：用独立语料运行真实模型动作质量验收，已执行但未完成，判定 invalid；
+35. J-D1c3c2c3c2a：用全新 seed 和耐久后台进程恢复同一正式验收，下一步；
+36. 策略接入：仅在动作质量与后续对局收益独立验收后开始。
 
 J-A 验证结果：
 
@@ -559,13 +560,24 @@ J-D1c3c2c3c1 实现与开发结果：
 - 新模块 5 项、相关 81 项、全量 362 项测试通过；
 - 判定 `confidence_action_quality_harness_verified`，不形成真实模型动作质量或胜率结论。
 
-J-D1c3c2c3c2 正式方向：
+J-D1c3c2c3c2 正式结果：
 
-- 先只提交 c3c1 的 implementation/test 检查点并确认工作区干净；
-- 只读取非敏感配置元数据，联网前重新报告 endpoint、model、timeout、retries 和请求上限并取得用户明确授权；
-- 使用全新 seed、四策略和每桶 2 个样本运行一次真实 provider 成对质量评估，最多 24 pair / 48 次零重试请求；
-- 请求与本地 RuleBased rollout 分层审计，任一响应、合法性、clone、rollout、终局或证据持久化门槛失败均判 benchmark invalid；
-- 只将 on-better/off-better/tie 和双方 team outcome 作为预注册描述性门槛，不读取 reasoning 或逐样本动作；
+- c3c1 已提交为 `ad85662a47f126991e8ebe0360dc0c6c4a2f1be6`；
+- seed `15000..15009`、四策略、每桶 2、最多 48 次零重试请求；
+- 外层执行器在 30 分钟中断，子进程随后终止，未恢复或重跑；
+- ledger 连续 45 条，off/on=23/22，全部 returned；
+- 没有完整 `report.json`，不计算 same/changed、rollout 或质量结果；
+- 失败证据已在仓库外持久化并哈希；
+- 判定 `quality_benchmark_invalid`。
+
+J-D1c3c2c3c2a 恢复方向：
+
+- 旧 seed 和 45 条记录只保留审计，不补采、不恢复、不参与统计；
+- 使用全新 seed `16000..16009`，保持 endpoint/model、60 秒 timeout、零重试、48 请求上限、采样和质量门槛不变；
+- 联网前重新取得用户明确授权；
+- runner 作为唯一后台子进程启动，仓库外记录 PID、心跳和原子完成标记；
+- 外层每 30-60 秒轮询同一 PID，工具返回或 30 分钟界面时限不构成终止理由；最长 65 分钟仍未结束才终止并判 invalid；
+- 不得因状态不明启动第二个进程；完成后只从完整 report 进入预注册质量判定；
 - 即使保留，也只允许进入完整 DeepSeek 对局收益评估，不默认开启 confidence。
 
 ### Step K：中局策略路由与残局决策

@@ -6,7 +6,7 @@
 
 它不是规则真值，也不能访问其他玩家真实手牌。
 
-当前状态：Step J-A 至 J-D1c3c2c3c1 已完成；确定性质量载体判定 `confidence_action_quality_harness_verified`。下一步为 J-D1c3c2c3c2 真实模型动作质量验收；默认策略消费继续暂停。
+当前状态：Step J-A 至 J-D1c3c2c3c1 已完成；J-D1c3c2c3c2 正式运行因 45/48 请求后外层时限中断而判 `quality_benchmark_invalid`。下一步为 J-D1c3c2c3c2a 独立语料恢复验收；默认策略消费继续暂停。
 
 ## 2. 数据来源
 
@@ -541,12 +541,21 @@ pass 不能推出“该玩家没有能压的牌”，因为玩家可以策略性
 
 ### Step J-D1c3c2c3c2：真实模型动作质量验收
 
+- 状态：正式运行未完成，唯一判定 `quality_benchmark_invalid`；
+- checkpoint `ad85662a47f126991e8ebe0360dc0c6c4a2f1be6`，seed `15000..15009`；
+- 外层 30 分钟时限中断后终止仍运行的子进程，没有恢复或重跑；
+- ledger 只有连续 45 条，off/on=23/22，均 returned；没有完整 report；
+- 部分记录不产生 same/changed、rollout、质量或胜负代理结论；
+- 失败审计文件在仓库外保留，runtime 和默认 confidence 未改变。
+
+### Step J-D1c3c2c3c2a：耐久执行恢复验收
+
 - 状态：下一步；
-- 使用全新独立 seed 和真实 DeepSeek provider 运行 c3c1 的固定 RuleBased 续局代理；
-- 联网前重新取得 endpoint、model、timeout、重试和最多请求数的明确授权；
-- 响应合法性、质量 rollout 和仓库外审计证据分别 fail-closed；
-- 报告只保留聚合质量计数，不持久化 prompt、action ID、reasoning、响应正文或密钥；
-- 通过只允许进入完整对局收益评估，不允许默认开启 confidence。
+- 使用全新 seed `16000..16009`，不复用或补全旧语料；
+- 保持 DeepSeek 配置、48 请求上限、采样规则、RuleBased 续局和质量门槛不变；
+- 联网前重新取得明确授权；
+- 使用单一后台进程和仓库外 PID/心跳/完成标记，持续轮询最多 65 分钟；
+- 完整性通过后才读取聚合质量结果；通过只允许进入完整对局收益评估。
 
 ### Step J-D1c3：runtime 准入判定
 

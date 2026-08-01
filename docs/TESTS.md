@@ -696,14 +696,33 @@ overall prompt-pair digests：forced `c45e7241a3c37066065c49e3c73d4b33a93d5b7b11
 
 #### J-D1c3c2c3c2：真实模型动作质量验收
 
+状态：正式运行未完成。唯一判定 `quality_benchmark_invalid`。
+
+- c3c1 checkpoint `ad85662a47f126991e8ebe0360dc0c6c4a2f1be6`；
+- seed `15000..15009`，endpoint/model 为 `https://api.deepseek.com` / `deepseek-v4-pro`，timeout=60、retries=0、请求上限 48；
+- 外层执行器在 30 分钟中断，仍运行的子进程随后终止，没有恢复、补采或重跑；
+- ledger 连续 45 条，off/on=23/22，全部 returned 且为严格整数；
+- 未达到 48 请求、24 pair 和完整 report 门槛，不报告 same/changed、rollout 或质量结果；
+- 本地 5 / 81 / 362 项测试、`git diff --check` 和工作区检查通过；
+- 未保存密钥、prompt、action ID、reasoning 或响应正文。
+
+失败证据：
+
+- runner：12718 bytes / `ffcc5448ea7ff5b960c58869db0c1e6d34f8eac621de425a11f56332ac4bb7a6`；
+- ledger：9576 bytes / `908fbd2e05f2c1d85e3092c4f72054ccdd810ff2c669324c15d0cf516a9d08ab`；
+- failure summary：1190 bytes / `4475786a589534b77ef8421f8f614753d1be7f9665e175312bae6396464af250`。
+
+#### J-D1c3c2c3c2a：耐久后台恢复验收
+
 状态：下一步。联网前必须重新取得用户明确授权。
 
-- 先提交且只提交 c3c1 的 implementation/test 检查点，确认回归与工作区干净；
-- 使用全新独立 seed、四策略、每桶 2 个样本，最多 24 pair / 48 次真实请求，timeout=60、retries=0；
-- 真实请求、响应分类、本地 rollout 和仓库外证据分别审计；不得保留 prompt、action ID、reasoning、正文或密钥；
-- 所有 pair 必须 both-valid、quality-evaluable，所有 rollout complete，且 diagnostics 为零，否则判 benchmark invalid；
-- 质量判定只使用预注册的 on-better/off-better/tie 和 team win/draw/loss 聚合；
-- 通过只允许进入完整对局评估，不代表 confidence 因果效果或胜率提升。
+- 全新 seed `16000..16009`，旧 45 条记录不得补采、恢复或参与统计；
+- 四策略、每桶 2、最多 24 pair / 48 次请求，timeout=60、retries=0；
+- 唯一后台进程在仓库外写 PID、心跳、ledger、report、summary 和原子完成标记；
+- 外层持续轮询同一 PID，30 分钟工具时限不得触发重启；最长 65 分钟后才允许终止；
+- 完整性仍要求 48/48 请求、24 pair both-valid/quality-evaluable、全部 rollout complete 和零 diagnostics；
+- 任一失败判 `quality_recovery_invalid`，不得用部分数据形成质量结论；
+- 完整性通过后沿用 c3c2 的 overall 质量判定，不改变门槛。
 
 #### 暂停：校准
 

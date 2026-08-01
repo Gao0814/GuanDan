@@ -6,8 +6,8 @@
 
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
-- 当前已提交实现检查点：`e0065c6a3da70b3d4ded4b394817bfab3351c113 J-D1c3c2c3a harness`
-- 当前工作状态：Step J-D1c3c2c3c1 已完成，唯一开发判定 `confidence_action_quality_harness_verified`；对应 implementation/test 文件尚未提交
+- 当前实现检查点：`ad85662a47f126991e8ebe0360dc0c6c4a2f1be6 J-D1c3c2c3c1 confidence action quality harness`
+- 当前工作状态：Step J-D1c3c2c3c2 正式运行在 45/48 请求后被外层时限中断，唯一判定 `quality_benchmark_invalid`；工作区干净
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：362 项测试全部通过
 - 当前规则范围：单局掼蛋核心规则
@@ -40,7 +40,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、正式 prompt coverage、成对动作载体、真实 DeepSeek 响应安全试验和确定性分支续局质量代理。J-D1c3c2c3c1 的 24 对开发样本全部 both-valid、quality-evaluable 且 rollout 完成，固定 RuleBased 后续下汇总为 on-better/off-better/tie = 3/1/20。下一步使用全新语料运行有界、可审计的真实模型动作质量验收；默认策略继续关闭。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、正式 prompt coverage、成对动作载体、真实 DeepSeek 响应安全试验和确定性分支续局质量代理。首次正式动作质量运行只落盘 45/48 条请求记录，因外层 30 分钟时限中断且没有完整 report，严格判为 invalid，不产生 same/changed 或质量结论。下一步使用全新语料和可持续轮询的单一后台进程恢复验收；默认策略继续关闭。
 
 ## 3. 分模块状态
 
@@ -54,7 +54,7 @@
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
 | 硬归属约束 | Step J-B1 完成 | token/点数可能归属域、容量校验、唯一候选确认 | 多玩家实时域通常仍较宽 |
-| 残局精确分配 | Step J-D1c3c2c3c1 开发载体通过 | 正式 coverage、真实响应候选安全和确定性分支续局质量载体已验证 | 尚无真实模型动作质量或胜率结论 |
+| 残局精确分配 | Step J-D1c3c2c3c2 正式运行 invalid | 正式 coverage、真实响应候选安全和确定性分支续局质量载体已验证 | 真实质量运行未完成，尚无动作质量或胜率结论 |
 | 信念离线评测 | Step J-C1 完成 | 域召回、确认精度/覆盖、边界违例、域缩减指标 | 尚无正式独立种子结论与策略分布验证 |
 | 公开行为事件 | Step J-C2a 完成 | lead/follow/pass 响应链、声明/carrier 差异、逐玩家事实画像 | 目前只有敌方 single pass 进入软评分 |
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
@@ -696,9 +696,28 @@ J-D1c3c2c3c1 只新增 `evaluation/confidence_action_quality.py` 和对应测试
 
 唯一开发判定：`confidence_action_quality_harness_verified`。
 
+### 已确认：首次真实动作质量运行无完整报告（Step J-D1c3c2c3c2）
+
+J-D1c3c2c3c2 在检查点 `ad85662a47f126991e8ebe0360dc0c6c4a2f1be6` 上使用 seed `15000..15009`、`deepseek-v4-pro`、60 秒 timeout、零重试和 48 请求上限执行：
+
+- 外层执行器在 30 分钟时限中断；发现子进程仍运行后立即终止，没有恢复、补采或重跑；
+- ledger 只有连续 45 条记录，off/on 为 23/22，均为 returned 且严格整数；
+- 未达到 48 请求、24 pair 和完整 report 门槛；没有生成 `report.json`；
+- 不报告 same/changed、rollout、质量比较或胜负代理结果；
+- 本地 5 / 81 / 362 项测试与 `git diff --check` 通过，运行前后工作区干净；
+- 未输出密钥、prompt、action ID、reasoning 或响应正文，未修改 runtime。
+
+仓库外失败证据目录：`C:\Users\86166\AppData\Local\Temp\guandan-confidence-action-quality-c3c2-ad85662a47f1-0f1b1b08851742fea86a9965e8617154`。
+
+- runner：12718 bytes，SHA-256 `ffcc5448ea7ff5b960c58869db0c1e6d34f8eac621de425a11f56332ac4bb7a6`；
+- ledger：9576 bytes，SHA-256 `908fbd2e05f2c1d85e3092c4f72054ccdd810ff2c669324c15d0cf516a9d08ab`；
+- failure audit summary：1190 bytes，SHA-256 `4475786a589534b77ef8421f8f614753d1be7f9665e175312bae6396464af250`。
+
+唯一判定：`quality_benchmark_invalid`。旧 seed 与 45 条部分记录永久只作为失败审计，不能补全或进入后续质量统计。
+
 ### P1：尚无真实模型动作质量或完整对局收益结论
 
-下一步 J-D1c3c2c3c2 必须使用全新独立语料和真实 DeepSeek provider 运行相同成对质量代理。联网前必须再次取得用户对 endpoint、model、timeout、重试和最多请求数的明确授权；质量结果只代表固定 RuleBased 后续下的局部反事实代理，即使通过也只能进入完整对局评估，不能直接启用默认 confidence 或宣称胜率提升。
+下一步 J-D1c3c2c3c2a 使用全新独立语料恢复正式验收。模型、请求上限、采样、质量字典序和判定门槛保持不变，只将执行方式改为仓库外单一后台进程、PID/心跳/完成标记和最长 65 分钟持续轮询。联网前必须重新取得明确授权；即使通过也只能进入完整对局评估，不能直接启用默认 confidence 或宣称胜率提升。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -743,7 +762,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step J：逐玩家牌面信念
 
-状态：J-A 至 J-D1c3c2c3c1 已完成；确定性质量代理开发验收通过。下一步为 J-D1c3c2c3c2 真实模型动作质量验收。
+状态：J-A 至 J-D1c3c2c3c1 已完成；J-D1c3c2c3c2 正式运行未完成并判 invalid。下一步为 J-D1c3c2c3c2a 独立语料恢复验收。
 
 拆分为：
 
@@ -780,7 +799,8 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 - Step J-D1c3c2c3a：建立无网络、provider 可注入、顺序平衡的成对动作消融载体，已完成，判定 `confidence_action_ablation_harness_verified`；
 - Step J-D1c3c2c3b：在用户授权最多 48 次无重试请求后运行小规模真实 DeepSeek 动作响应验收，已完成，判定 `retain_for_action_quality_evaluation`；
 - Step J-D1c3c2c3c1：建立同状态 off/on 动作的确定性 RuleBased 分支续局质量载体，已完成，判定 `confidence_action_quality_harness_verified`；
-- Step J-D1c3c2c3c2：使用全新独立语料运行真实模型动作质量验收，下一步；
+- Step J-D1c3c2c3c2：使用 seed `15000..15009` 运行真实模型动作质量验收，45/48 请求后中断，已完成失败审计，判定 `quality_benchmark_invalid`；
+- Step J-D1c3c2c3c2a：保持模型、请求和质量门槛不变，以全新 seed 和耐久后台执行恢复正式验收，下一步；
 - 策略接入：继续暂停，直到动作响应与对局质量验收均通过。
 
 设计见 `docs/BELIEF_STATE.md`。
