@@ -4,7 +4,7 @@
 
 ## 1. 当前结论
 
-截至 2026-07-31，项目已经完成：
+截至 2026-08-03，项目已经完成：
 
 - 单局掼蛋规则引擎和 4 AI 对局闭环；
 - `observe()` / `legal_actions()` / `step(action_id)` 公开契约；
@@ -33,7 +33,7 @@
 - Step J-D1c2c 默认 RuleBasedAI 独立语料正式校准。
 - Step J-D1c3a forced/25/50/100 strategic-pass corpus 载体与开发容量验证。
 
-当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。
+当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。`record.txt` 联网单局只读复盘新增了三个直接样本：开局公式拆对出高单、同队互相消耗炸弹、危险对手剩两张时未阻断。单局不构成收益证明，但可以作为确定性回归 fixture。
 
 ## 2. 总体目标
 
@@ -100,6 +100,12 @@ AI 决策分为四层：
 - RAG 场景覆盖率和命中质量；
 - 新旧策略 A/B 对局结果。
 
+联网单局发现的待修复项：
+
+- 现有公式把拆对的单 K 排在天然单 9 和天然长套之前，因为只对当前动作打分，不评估残余点数结构；
+- CLI 只把 `last_decision_source == "local"` 标为本地，没有标记 `local_opening_formula`；
+- H2-A1/A1a 已完成开局严格封板，K-A1/A1a 已封板路由契约，K-A2a 已完成默认关闭的 shadow 装配；下一步为 K-A2b1 离线分布载体。
+
 ## 5. 当前实施阶段
 
 ### Step I：统一阶段模型
@@ -120,7 +126,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3c2b 已完成；只读恢复审计判定 `no_observed_action_quality_gain`。confidence 默认关闭且不进入完整对局评估，下一步转入 Step K-A1。
+状态：J-A 至 J-D1c3c2c3c2b 已完成；只读恢复审计判定 `no_observed_action_quality_gain`。confidence 默认关闭且不进入完整对局评估。H2-A1/A1a、K-A1/A1a 与 K-A2a 已完成，下一步为 K-A2b1。
 
 目标：
 
@@ -181,7 +187,13 @@ AI 决策分为四层：
 35. J-D1c3c2c3c2a：用全新 seed 和耐久后台进程恢复同一正式验收，运行完整但正式键序审计失败，判定 invalid；
 36. J-D1c3c2c3c2b：只读复核 c3c2a 不可变证据并显式映射策略，已完成，判定无观察到的质量增益；
 37. confidence 策略接入：停止推进，保持默认关闭；
-38. K-A1：建立只读公开信息的策略意图上下文与确定性路由契约，下一步；
+38. H2-A1：建立开局动作残余结构代价、避免无收益拆组，并修复公式来源日志，已完成；
+39. H2-A1a：精确公开 fixture、真实评分和未知 token fail-closed，已完成并核验；
+40. K-A1：建立只读公开信息的策略意图上下文与确定性路由契约，已完成；
+41. K-A1a：严格 phase context 数值类型并聚合多项 diagnostics，已完成并核验；
+42. K-A2a：在 DeepSeek 主链做默认关闭的策略意图 shadow 装配，已完成并验证；
+43. K-A2b1：建立 evaluation-only 离线路由分布载体并运行开发容量试验，下一步；
+44. K-A2b2：根据开发分布预注册独立 seed 正式覆盖验收，待 K-A2b1 通过后单独定义。
 
 J-A 验证结果：
 
@@ -602,12 +614,16 @@ J-D1c3c2c3c2b 结果：
 
 ### Step K：中局策略路由与残局决策
 
+状态：K-A1/A1a 已封板公开策略路由，K-A2a 已完成默认关闭且不影响决策的 shadow 装配。最新唯一判定 `strategy_router_shadow_verified`，下一步为 K-A2b1。
+
 目标：
 
 - 中局明确区分 `run_out`、`control`、`support_teammate`、`block_opponent`；
 - 策略路由器先选择策略意图，RAG 再为意图检索经验；
 - 近似明牌残局使用逐玩家信念状态；
 - 危险对手、队友跑牌和牌权转移进入结构化决策。
+- 路由显式记录当前桌面动作来自队友还是对手，避免无收益压队友；
+- 对手完成一次出牌后剩余不超过 2 张时进入阻断优先级。
 
 验收：
 
@@ -624,8 +640,35 @@ K-A1 方向：
 - 先固定 `run_out`、`block_opponent`、`support_teammate`、`control` 四种意图及 fail-closed unavailable 状态；
 - opening 不参与路由，继续由现有公式开局处理；
 - 不接 DeepSeek、RAG、剪枝、confidence 或动作选择；
-- 固定 fixture 验证优先级、团队关系、紧急手数、弱/强牌和 malformed 输入；
+- 固定 fixture 验证优先级、团队关系、桌面领牌关系、紧急手数、弱/强牌和 malformed 输入；
+- 纳入 `record.txt` 第 2、16、20 轮的最小公开 fixture，但不读取原始日志文件作为运行时依赖；
 - 通过只授权 K-A2 shadow 集成，不代表策略质量提升。
+
+K-A2a 方向：
+
+- 在 `DeepSeekAIAgent` 增加严格布尔、默认关闭的 shadow 开关和非展示审计字段；
+- 每次决策先重置审计字段，本地快捷路径和公式命中不运行 router；
+- 其余路径复用已计算的唯一 phase 与手牌评估，只调用 router 一次；
+- shadow 结果只写入审计字段，不进入 prompt、RAG、剪枝、client kwargs、fallback 或 action 选择；
+- off/on 必须对模型调用、prompt、返回动作和 decision source 完全兼容；
+- 通过只授权 K-A2b1 离线路由分布载体，不授权策略消费。
+
+K-A2a 验证结果：
+
+- 严格布尔开关默认关闭，每次决策重置非展示审计字段；
+- 本地快捷路径跳过 router，普通链路复用同一 phase、原始 legal actions 和已有手牌评估；
+- router 结果或异常都不改变 prompt、RAG、剪枝、fallback、action 和 decision source；
+- 定向 25 项、相关 100 项、全量 396 项通过；
+- 唯一判定 `strategy_router_shadow_verified`。
+
+K-A2b1 方向：
+
+- 新建 evaluation-only 多策略路由分布载体，不修改 runtime；
+- 复用 forced-only 与 25/50/100% strategic-pass 公开策略，每个 rate 使用独立对局；
+- 按 midgame/endgame/near-open/critical 和四种 intent 聚合 available、unavailable、reason、桌面领牌关系与 diagnostics；
+- 单独记录 opening、only-pass、一次出完和样本上限跳过，保持计数守恒；
+- 报告不保留 seed、样本 ID、observation、action、玩家或手牌明细；
+- 先运行小型双运行开发容量试验，用实际分布为 K-A2b2 锁定门槛；本步不判定策略质量。
 
 ## 6. 质量指标
 

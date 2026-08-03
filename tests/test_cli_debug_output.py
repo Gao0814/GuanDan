@@ -33,6 +33,13 @@ def _render_game(game: GuanDanGame) -> str:
 
 
 class TestCliDebugOutput(unittest.TestCase):
+    def test_decision_source_prefix_distinguishes_local_formula(self) -> None:
+        self.assertEqual(run_4ai_debug._decision_source_prefix("local"), "（本地）")
+        self.assertEqual(run_4ai_debug._decision_source_prefix("local_opening_formula"), "（本地公式）")
+        self.assertEqual(run_4ai_debug._decision_source_prefix("model"), "")
+        self.assertEqual(run_4ai_debug._decision_source_prefix("fallback"), "")
+        self.assertNotIn("（本地）（本地公式）", run_4ai_debug._decision_source_prefix("local_opening_formula"))
+
     def test_card_tokens_and_hand_cards_are_rendered_in_chinese(self) -> None:
         self.assertEqual(run_4ai_debug._card_token_to_cn("AS"), "♠A")
         self.assertEqual(run_4ai_debug._card_token_to_cn("10H"), "♥10")

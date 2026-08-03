@@ -154,6 +154,14 @@ def _finish_suffix_cn(result: dict[str, object]) -> str:
     return f"（玩家{player_id}{_FINISH_LABELS[rank_index]}）"
 
 
+def _decision_source_prefix(decision_source: object) -> str:
+    if decision_source == "local":
+        return "（本地）"
+    if decision_source == "local_opening_formula":
+        return "（本地公式）"
+    return ""
+
+
 def _print_initial_hands(game: GuanDanGame, *, hand_evaluation_enabled: bool) -> None:
     print("发牌完成：")
     state = game._state  # noqa: SLF001 - debug CLI needs full-information replay
@@ -214,7 +222,7 @@ def _print_human_replay(
         result = game.step(chosen_action_id)
 
         decision_source = getattr(agent, "last_decision_source", None)
-        local_prefix = "（本地）" if decision_source == "local" else ""
+        local_prefix = _decision_source_prefix(decision_source)
         print(f"玩家{current_player}出牌：{local_prefix}{_format_action_cn(result['chosen_action'])}{_finish_suffix_cn(result)}")
 
         if result["round_ended"]:

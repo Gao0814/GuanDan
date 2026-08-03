@@ -25,6 +25,7 @@ from agents.rule_based_ai import RuleBasedAIAgent
 if TYPE_CHECKING:
     from agents.card_confidence import CardConfidenceState
     from agents.card_confidence_prompt import CardConfidencePromptPayload
+    from agents.strategy_router import StrategyIntentContext
 
 
 _OPENING_RANK_ORDER: tuple[str, ...] = (
@@ -406,6 +407,7 @@ class DeepSeekAIAgent(BaseAgent):
     opening_formula_enabled: bool | None = None
     card_confidence_shadow_enabled: bool = False
     card_confidence_prompt_enabled: bool = False
+    strategy_router_shadow_enabled: bool = False
     last_decision_source: str | None = field(default=None, init=False, repr=False)
     card_tracker: object | None = field(default=None, init=False, repr=False)
     last_card_confidence: "CardConfidenceState | None" = field(
@@ -418,6 +420,11 @@ class DeepSeekAIAgent(BaseAgent):
         init=False,
         repr=False,
     )
+    last_strategy_intent: "StrategyIntentContext | None" = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.card_confidence_shadow_enabled, bool):
@@ -426,6 +433,8 @@ class DeepSeekAIAgent(BaseAgent):
             raise ValueError("card_confidence_prompt_enabled must be a bool")
         if self.card_confidence_prompt_enabled and not self.card_confidence_shadow_enabled:
             raise ValueError("card_confidence_prompt_enabled requires shadow mode")
+        if not isinstance(self.strategy_router_shadow_enabled, bool):
+            raise ValueError("strategy_router_shadow_enabled must be a bool")
         config = AppConfig.from_env()
         if self.hand_evaluation_enabled is None:
             self.hand_evaluation_enabled = config.hand_evaluation_enabled
@@ -442,6 +451,7 @@ class DeepSeekAIAgent(BaseAgent):
     ) -> int:
         self.last_card_confidence = None
         self.last_card_confidence_prompt = None
+        self.last_strategy_intent = None
         if not legal_actions:
             raise ValueError("legal_actions must not be empty")
 
@@ -522,6 +532,24 @@ class DeepSeekAIAgent(BaseAgent):
         hand_evaluation: dict[str, object] | None = None
         if self.hand_evaluation_enabled:
             hand_evaluation = opening_evaluation or evaluate_hand(observation, legal_actions)
+
+        if self.strategy_router_shadow_enabled:
+            try:
+                router_hand_evaluation = opening_evaluation
+                if router_hand_evaluation is None:
+                    router_hand_evaluation = hand_evaluation
+                if router_hand_evaluation is None:
+                    router_hand_evaluation = evaluate_hand(observation, legal_actions)
+                from agents.strategy_router import route_strategy_intent
+
+                self.last_strategy_intent = route_strategy_intent(
+                    observation,
+                    legal_actions,
+                    phase_context=phase_context,
+                    hand_evaluation=router_hand_evaluation,
+                )
+            except Exception:
+                self.last_strategy_intent = None
 
         history = dict(observation.get("history", {}))
         card_tracking_summary: str | None = None

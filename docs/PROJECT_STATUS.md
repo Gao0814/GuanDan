@@ -1,15 +1,15 @@
 # 项目状态看板
 
-更新时间：2026-08-01
+更新时间：2026-08-03
 
 ## 1. 当前基线
 
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
-- 当前实现检查点：`ad85662a47f126991e8ebe0360dc0c6c4a2f1be6 J-D1c3c2c3c1 confidence action quality harness`
-- 当前工作状态：Step J-D1c3c2c3c2b 独立只读恢复审计完成，唯一判定 `no_observed_action_quality_gain`；confidence 默认继续关闭，工作区干净
+- 当前 HEAD：`3aab6e997a434bf015287b0880326df5e30b9e31 Close confidence path and plan strategy routing`
+- 当前工作状态：K-A2a 默认关闭的策略意图 shadow 已验证；下一步为 K-A2b1 离线路由分布载体与开发容量试验
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：362 项测试全部通过
+- 实际验证结果：396 项测试全部通过；K-A2a 定向 25 项、相关 100 项通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -40,16 +40,16 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准、fail-closed confidence、正式 prompt coverage、成对动作载体、真实 DeepSeek 响应安全试验和确定性分支续局质量代理。c3c2b 已从不可变证据恢复有效审计：24 pair 中 same/changed=15/9，on/off better=0/0，24 对全部 tie，双方 team win 均为 10。按预注册门槛没有观察到动作质量净增益，因此停止 confidence prompt 的收益扩展，不进入完整对局评估。下一步转向 Step K-A1，建立公开、确定、可审计的策略意图路由契约。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准以及 H2 开局严格封板。K-A1/A1a 已封板策略路由契约，K-A2a 已在 `DeepSeekAIAgent` 中增加严格布尔、默认关闭的 shadow 审计。off/on 的 client kwargs、结构化 prompt、action、fallback 和 decision source 保持一致，intent 不进入 prompt、RAG、剪枝或动作选择。唯一判定为 `strategy_router_shadow_verified`。下一步只建立 K-A2b1 离线分布载体。
 
 ## 3. 分模块状态
 
 | 模块 | 状态 | 当前能力 | 主要缺口 |
 |---|---|---|---|
 | 规则引擎 | 已完成 | 规则、动作、状态、终局稳定 | 暂无本轮优化需求 |
-| 公式化开局 | MVP 完成 | 满足条件时本地选择并跳过 API，使用统一阶段 | 缺少 A/B 数据 |
+| 公式化开局 | H2-A1/A1a 完成 | 残余结构代价、严格 token、天然单 9 fixture、CLI 本地公式标记 | 尚未做固定种子胜率评测 |
 | 统一阶段 | 已完成 | 开局、剪枝、RAG、提示词共用公开阶段上下文 | 尚未接入 Step J 信念状态或 Step K 策略路由 |
-| 手牌评分 | 基础完成 | 输出结构、控制力和潜力分 | 权重未校准 |
+| 手牌评分 | 基础完成 | 输出结构、控制力和潜力分 | 不是胜率；动作结构可重叠，权重未校准 |
 | 动作剪枝 | 基础完成 | 区分首出和跟牌，保留关键动作，使用统一阶段 | 缺少策略收益评测 |
 | 基础记牌 | 基础完成 | `CardTracker` 按点数统计已出和外部剩余 | 仍是旧链路，不提供逐玩家候选 |
 | 公开牌面事实 | Step J-A 完成 | 精确 108 张牌池、token/点数扣牌、逐玩家公开历史与诊断 | 尚未接入决策主链 |
@@ -62,7 +62,7 @@
 | rank 离线基准 | Step J-C3a/J-C3b 完成 | 固定种子采集、微聚合、阶段桶、可重复正式验收 | RuleBasedAI 不覆盖有牌可压时的战略性 pass |
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
-| 中期策略 | 未完成 | 主要依赖模型和经验提示 | 没有结构化策略路由 |
+| 中期策略 | K-A2a 完成 | 严格 fail-closed 路由契约与默认关闭、不影响决策的 shadow 审计 | 尚未离线分布评测或策略消费 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -776,9 +776,83 @@ overall 为 24 pair、same/changed=15/9、33 个 rollout branch 全部完成；o
 
 `no_observed_action_quality_gain` 不授权完整 DeepSeek 对局评估，也不授权默认开启 confidence。现有 shadow/prompt 代码保留为默认关闭的研究能力，不继续增加 API 消融、提示词内容或策略消费。后续若有新的独立证据或机制，必须作为新研究分支重新预注册。
 
-### P1：尚无中局策略路由与完整策略收益结论
+### 新确认：联网单局暴露开局、协作和残局规划缺口
 
-下一步进入 Step K-A1，只建立策略意图上下文和确定性路由契约。该步骤不修改动作选择、DeepSeek prompt、RAG 检索或 confidence，不宣称策略收益。
+`record.txt` 的终局为 `[4, 1, 3, 2]`，按当前规则是平局，不是玩家 1/3 队落败。开局评分 97/71/90/81 只表示单手启发式结构，不是胜率，也不能按队伍相加。
+
+已确认：
+
+- 第 1 轮单 K 可由默认开局公式确定复现；公式不评估残余结构，把拆对 K 排在天然单 9 和天然 10-J 钢板之前；
+- CLI 没有把 `local_opening_formula` 显示为本地来源；
+- 第 2 轮玩家 1/3 连续用 4 炸、5 炸互压，暴露桌面队友关系没有进入确定性策略；
+- 第 16 轮玩家 4 出 8 后只剩 2 张，玩家 3 有 9/J 可压却 pass，直接放出对手头游；
+- 第 20 轮 J 确为公开牌池中的最高剩余单牌，但玩家 1 只剩一张，先出 6 有直接放跑风险；问题应定义为 `6,7,J,J` 的多手序列规划，而不是机械改成先出低牌。
+
+详细复盘见 `docs/LIVE_GAME_REVIEW.md`。单局不授权胜率声明或直接调整评分权重。
+
+### 已解决：H2-A1/A1a 开局残余结构与严格封板
+
+已核对实现：
+
+- 完整消耗点数代价 0，拆对子 24，部分拆三张 32，部分拆四张及以上 48；
+- malformed carrier 预期代价 80；
+- 同一候选集合中 K/Q/J/10/9 修复后为 65/65/56/55/86，单 9 胜出；
+- CLI 正确区分 `（本地）`、`（本地公式）` 和模型/其他来源；
+- 定向 26 项、相关 73 项、全量 370 项均通过。
+
+H2-A1 初次复核发现三项缺口：
+
+1. `test_record_public_fixture...` 把 `hand_eval={"total_score": 97}` 直接写入，断言只验证该常量，没有调用 `evaluate_hand()`；
+2. fixture 的花色/重复 token 与 `record.txt` 不完全相同，`remaining_single_card_count` 写为 1，而真实公开点数单张数为 3；
+3. 公开手牌和 carrier 同时包含未知 token `ZZ` 时，`_residual_structure_cost()` 实测返回 0，不符合“未知 token 保守代价 80”的预注册要求。
+
+H2-A1a 已完成修复：
+
+- 精确写入四位玩家的初始 token multiset，通过 `reset()/observe()/legal_actions()` 获取公开 fixture；
+- 真实 `evaluate_hand()` 得到 97/40/27/30、`极强`，公开散牌数为 3；
+- K/Q/J/10/9/天然钢板分数为 65/65/56/55/86/72，最终选择 `9C`；
+- 非字符串、未知、裸点数、错误花色、空串和带空格 token 在 hand/carrier 任一路径均返回 80；
+- 单文件 21 项、相关 74 项、全量 371 项通过，`git diff --check` 通过。
+
+唯一判定：`opening_residual_structure_hardening_verified`。该判定封板 Step H，只授权 K-A1，不形成动作质量或胜率结论。
+
+### P1：尚无中局策略收益结论
+
+K-A1/A1a 路由契约已封板，K-A2a 也已完成默认关闭的 shadow 装配。联网单局第 2、16、20 轮 fixture 分别输出 `support_teammate`、`block_opponent`、`block_opponent`，但当前还不知道四种 intent 在自然和策略压力轨迹中的覆盖、阶段分布与 unavailable 比例。下一步 K-A2b1 只做 evaluation-only 分布载体和开发容量试验。
+
+### K-A1/A1a 复核：严格契约已封板
+
+已核对：
+
+- `StrategyIntentContext` 为 frozen/slots、JSON 友好、unavailable 不保留部分结论；
+- 当前 round 最后一个非 pass 动作与 table action 严格核对；
+- 路由优先级和三个联网单局公开 fixture 符合预注册结果；
+- 深层校验 `GamePhaseContext` 的 phase、五个计数字段、`other_hand_counts` 容器与元素类型；
+- `bool` 不能冒充整数，非法 phase context 整体 unavailable；
+- 可安全判断的独立错误按 `_DIAGNOSTIC_ORDER` 去重聚合，上游容器不可读时不派生级联诊断；
+- 三组合法 fixture 的完整 `to_dict()` 快照与路由优先级保持不变；
+- 定向 18 项、相关 86 项、全量 389 项通过。
+
+初次复核发现的反例：
+
+1. 公开手数为 1 时传入 `GamePhaseContext.my_hand_count=True`，router 返回 `available / run_out`，违反“不接受 bool 冒充 int”；
+2. 同一 observation 同时存在非法 team 和非法 hand_count 时，只返回 `invalid_team`，没有按固定顺序聚合两个 diagnostics。
+
+两项均已由 K-A1a 修复并有回归锁定。唯一判定：`strategy_router_hardening_verified`。该判定只授权 K-A2a shadow 装配，不代表策略收益或胜率提升。
+
+### K-A2a 复核：shadow 装配已验证
+
+已核对：
+
+- 新增 `strategy_router_shadow_enabled=False` 严格布尔开关与非展示 `last_strategy_intent`；
+- 每次决策重置审计字段，only-pass、一次出完与开局公式命中均跳过 router；
+- 普通模型链只传入同一 phase、原始 legal actions 并复用已有手牌评估；
+- available/unavailable 只写审计字段，router 或 shadow-only 评分异常均 fail-closed；
+- off/on 的 client kwargs、结构化 prompt、action、fallback 和 `last_decision_source` 一致；
+- 禁止消费扫描无匹配，未调用网络或读取隐藏状态；
+- 定向 25 项、相关 100 项、全量 396 项通过。
+
+唯一判定：`strategy_router_shadow_verified`。该判定只授权 K-A2b1 离线路由分布载体，不授权策略消费。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -796,7 +870,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### P1：没有完整策略收益基准
 
-362 项测试和确定性分支代理证明当前实现满足已有功能契约且可比较局部反事实结果，但不能证明：
+389 项测试和确定性分支代理证明当前实现满足已有功能契约且可比较局部反事实结果，但不能证明：
 
 - 公式开局提高胜率；
 - RAG 改善动作质量；
@@ -807,7 +881,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step H：公式化开局与场景化 RAG
 
-状态：MVP 完成，待量化。
+状态：H2-A1/A1a 完成并严格核验，唯一判定 `opening_residual_structure_hardening_verified`。
 
 ### Step I：统一阶段分类
 
@@ -869,14 +943,14 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step K：中局策略路由与残局决策
 
-状态：准备开始。下一步为 K-A1 公开策略意图上下文与确定性路由契约。
+状态：K-A1/A1a 与 K-A2a 已完成，唯一最新判定 `strategy_router_shadow_verified`。下一步为 K-A2b1 离线路由分布载体与开发容量试验。
 
 依赖：
 
 - Step I 阶段分类稳定；
 - Step J 能提供结构化信念状态。
 
-K-A1 只消费统一阶段、公开 observation、legal actions 和既有手牌评估，不消费未证明收益的 confidence，不接入动作选择。
+K-A2a 已保持 K-A1/A1a 的公开输入边界，shadow off/on 的 client kwargs、prompt、fallback、decision source 和最终 action 完全一致。K-A2b1 只允许在 `evaluation/` 中统计分布，不得改变 runtime 或读取 ground truth。
 
 ## 6. 当前风险
 
@@ -885,6 +959,7 @@ K-A1 只消费统一阶段、公开 observation、legal actions 和既有手牌�
 3. 无条件 pass 扣分已撤销；不得以 runtime confidence 名义重新引入该信号。
 4. RAG 条目增加会扩大提示词，必须同步控制 token。
 5. 当前没有 A/B 对局工具，策略增强暂时只能声明“已接入”，不能声明“已提升”。
+6. 单局复盘容易把隐藏真值误当成玩家当时已知信息；每个建议必须区分公开可知、事后可知和需要 rollout 才能判断的内容。
 
 ## 7. 项目管理规则
 

@@ -35,6 +35,7 @@ python -m unittest tests.test_hand_evaluator tests.test_card_tracker tests.test_
 - 仅有 `pass` 时不调用评分、记牌、RAG 或 DeepSeek；
 - 存在一次出完动作时直接本地选择；
 - 公式化开局命中时跳过 RAG 和 DeepSeek；
+- H2-A1/A1a 残余结构、CLI 来源、精确公开 fixture、真实 97 分和未知 token fail-closed 已覆盖；单文件 21 项、相关 74 项、全量 371 项通过；
 - 本地策略返回的 ID 必须来自原始 `legal_actions`。
 
 ### 动作剪枝
@@ -756,14 +757,44 @@ overall prompt-pair digests：forced `c45e7241a3c37066065c49e3c73d4b33a93d5b7b11
 
 #### K-A1：策略意图路由契约
 
-状态：下一步。不接入动作选择。
+状态：K-A1/A1a 已完成并严格封板。唯一判定 `strategy_router_hardening_verified`；不接入动作选择。
 
 - 单元测试覆盖统一 phase 复用、team/opponent 关系、hand count、immediate finish、弱牌和 malformed 输入；
 - 固定优先级输出 `run_out`、`block_opponent`、`support_teammate`、`control`；
+- 只用当前 round 的公开历史重建最后一个非 pass 领牌者，验证其与 table action 一致；pass 不进入持牌推断；
+- 固定 fixture 覆盖联网单局第 2 轮队友领牌、第 16 轮危险对手领牌和第 20 轮自由首出阻断；
+- K-A1a 深层校验 phase、五个计数字段、`other_hand_counts` 的 tuple/长度/元素类型和完赛人数边界；
+- `bool`、字符串等 truthy 值不能通过整数契约；上游容器不可读时只返回可确定诊断；
+- 多个可安全判定的独立错误按 `_DIAGNOSTIC_ORDER` 去重聚合，unavailable 不保留任何部分玩家、领牌或意图字段；
+- 三个合法公开 fixture 有完整 `to_dict()` 快照，第 2/16/20 轮意图与 reason code 保持不变；
+- K-A1a 定向 18 项、相关 86 项、全量 389 项通过；`git diff --check` 通过（仅换行符提示）；
 - opening 与无效输入 fail-closed，不重复阶段分类；
 - 输出 frozen/slots、不可变、JSON 友好且不含隐藏状态；
 - 不修改 legal actions，不调用 DeepSeek/RAG/confidence，不读取 engine 内部状态；
-- 全量回归通过后只授权 shadow 集成，不声明策略收益。
+- 封板只授权 K-A2a 默认关闭的 shadow 装配，不声明策略收益。
+
+#### K-A2a：策略意图 shadow 装配
+
+状态：已完成并验证。唯一判定 `strategy_router_shadow_verified`。
+
+- 开关默认关闭且严格接受 `bool`，非 bool 初始化即拒绝；
+- 每次决策重置 shadow 审计字段；仅 pass、一次出完和公式命中均跳过 router 与 shadow-only 评分；
+- 普通模型路径只计算一次 phase，只调用一次 router，传入原始 legal actions 并复用已有手牌评估；
+- router available/unavailable 只写审计字段；router 或 shadow-only 评分异常不影响模型调用和 fallback；
+- off/on 的 client kwargs、结构化 prompt、动作、fallback 与 decision source 完全一致；
+- `deepseek_client.py`、RAG、CLI、engine、config 与 evaluation 消费扫描无匹配；
+- 定向 25 项、相关 100 项、全量 396 项通过；`git diff --check` 通过（仅换行符提示）。
+
+#### K-A2b1：离线路由分布载体
+
+状态：下一步，尚未实施。
+
+- 四种 strategic-pass 策略必须使用独立对局、agent 和聚合状态；
+- 仅消费公开 observation、原始 legal actions、统一 phase 和手牌评估；
+- 路由样本按四个非 opening 阶段聚合 available/unavailable、intent、reason、桌面领牌关系和 diagnostics；
+- opening、only-pass、一次出完、重复和样本上限单独计数，每层守恒；
+- 固定 seed 双运行的报告、`to_dict()` 和 canonical JSON 必须一致；
+- 本步只验证载体和容量，不以任意 intent 比例判定策略质量。
 
 #### 持续约束：软信号边界
 
