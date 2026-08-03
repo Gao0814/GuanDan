@@ -104,7 +104,7 @@ AI 决策分为四层：
 
 - 现有公式把拆对的单 K 排在天然单 9 和天然长套之前，因为只对当前动作打分，不评估残余点数结构；
 - CLI 只把 `last_decision_source == "local"` 标为本地，没有标记 `local_opening_formula`；
-- H2-A1/A1a、K-A1/A1a、K-A2a 与 K-A2b1a 已封板；开发分布哈希保持不变，下一步为 K-A2b2 独立 seed 正式覆盖验收。
+- H2-A1/A1a、K-A1/A1a、K-A2a 与 K-A2b1a 已封板；K-A2b2 仅因三个 endgame 样本下限失败，下一步为 K-A2b2a 扩容恢复验收。
 
 ## 5. 当前实施阶段
 
@@ -126,7 +126,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3c2b 已完成，confidence 默认关闭。H2-A1/A1a、K-A1/A1a、K-A2a 与 K-A2b1a 已完成；下一步为 K-A2b2。
+状态：J-A 至 J-D1c3c2c3c2b 已完成，confidence 默认关闭。H2-A1/A1a、K-A1/A1a、K-A2a 与 K-A2b1a 已完成；K-A2b2 判定覆盖容量不足，下一步为 K-A2b2a。
 
 目标：
 
@@ -194,7 +194,8 @@ AI 决策分为四层：
 42. K-A2a：在 DeepSeek 主链做默认关闭的策略意图 shadow 装配，已完成并验证；
 43. K-A2b1：建立 evaluation-only 离线路由分布载体并运行开发容量试验，已完成，初次严格复核未通过；
 44. K-A2b1a：严格复核 router source、phase、available reason-intent 和 unavailable 中性契约，已完成并封板；
-45. K-A2b2：根据开发分布预注册独立 seed 正式覆盖验收，下一步。
+45. K-A2b2：根据开发分布运行独立 seed 正式覆盖验收，已完成，判定 `strategy_router_coverage_insufficient`；
+46. K-A2b2a：不改实现和门槛，使用全新 seed 将语料扩大到每策略 200 局，下一步。
 
 J-A 验证结果：
 
@@ -615,7 +616,7 @@ J-D1c3c2c3c2b 结果：
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A1/A1a、K-A2a 与 K-A2b1a 已封板。最新唯一判定 `strategy_router_distribution_hardening_verified`，下一步为 K-A2b2 独立 seed 正式覆盖验收。
+状态：K-A1/A1a、K-A2a 与 K-A2b1a 已封板。K-A2b2 双运行完整，最新唯一判定 `strategy_router_coverage_insufficient`，下一步为 K-A2b2a 扩容恢复验收。
 
 目标：
 
@@ -704,6 +705,21 @@ K-A2b2 方向：
 - 审计四策略的对局、采样、phase、intent、reason、relation 与全部守恒；
 - 使用仓库外完整 JSON 与哈希证据，显式按策略名和 rate 复核，不依赖 JSON 键序；
 - 只验证覆盖可重复且非退化，不比较动作质量，不授权策略消费。
+
+K-A2b2 正式结果：
+
+- seed `16000..16099`、四策略各 100 局，双运行 canonical SHA-256 均为 `e77e5632b4b71f4a12fc1b213be78b413c70486f60e06e3f5cd35c941aa2d40d`；
+- 四策略全部完成，无 unavailable、invalid、skip、duplicate 或 diagnostics，全部守恒和 pass 梯度通过；
+- overall/phase intent、relation 和 reason 覆盖全部通过；
+- forced/25%/50% 的 endgame available 为 583/660/663，低于预注册 700；
+- 273 项检查只有上述三项失败，唯一判定 `strategy_router_coverage_insufficient`。
+
+K-A2b2a 方向：
+
+- 不改实现、策略、phase、分桶、采样规则或覆盖门槛；
+- 永久排除 seed `16000..16099`，使用全新 seed `17000..17199`；
+- 每策略扩大到 200 局并完整双运行，继续使用仓库外 canonical JSON 审计；
+- 只解决预注册绝对样本容量，不把扩容结果解释为动作质量。
 
 ## 6. 质量指标
 

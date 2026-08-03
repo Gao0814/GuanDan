@@ -6,10 +6,10 @@
 
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
-- 当前 HEAD：`3aab6e997a434bf015287b0880326df5e30b9e31 Close confidence path and plan strategy routing`
-- 当前工作状态：K-A2b1a 输出 fail-closed 已封板；下一步为 K-A2b2 独立 seed 正式覆盖验收
+- 当前 HEAD：`7f014db0c871a6ff851ab331e4ef4f19c357a909`
+- 当前工作状态：K-A2b2 正式语料完整但 endgame 容量不足；下一步为 K-A2b2a 扩容恢复验收
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：407 项测试全部通过；K-A2b1a 单模块 11 项、相关 61 项通过
+- 实际验证结果：407 项测试全部通过；K-A2b2 前后单模块 11 项、相关 61 项通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -40,7 +40,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、H2 开局封板、K-A1/A1a 路由契约与 K-A2a shadow。K-A2b1a 已补齐固定 source、expected phase、reason-intent、relation/leader 和 unavailable 中性字段的严格复核，malformed context 只记 `invalid_router_result`。原 seed `200..209` 双运行报告和 SHA-256 `32e42e0e7dc56377811fc52aa5d387d0b0f16e45102a3f88bea1a8e86d755ccb` 精确不变。唯一判定为 `strategy_router_distribution_hardening_verified`，下一步为 K-A2b2。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、H2 开局封板、K-A1/A1a 路由契约、K-A2a shadow 与 K-A2b1a 输出封板。K-A2b2 使用 seed `16000..16099` 完成双运行，报告 SHA-256 为 `e77e5632b4b71f4a12fc1b213be78b413c70486f60e06e3f5cd35c941aa2d40d`；273 项审计中仅三个 endgame 最低样本检查失败。唯一判定为 `strategy_router_coverage_insufficient`，下一步 K-A2b2a 只扩大独立语料，不改实现或门槛。
 
 ## 3. 分模块状态
 
@@ -62,7 +62,7 @@
 | rank 离线基准 | Step J-C3a/J-C3b 完成 | 固定种子采集、微聚合、阶段桶、可重复正式验收 | RuleBasedAI 不覆盖有牌可压时的战略性 pass |
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
-| 中期策略 | K-A2b1/a 完成 | shadow 审计、四策略×四阶段分布聚合与严格输出 fail-closed | 尚未独立 seed 正式覆盖验收或策略消费 |
+| 中期策略 | K-A2b2 完成 | shadow 审计、严格输出复核、独立语料结构与语义覆盖通过 | endgame 绝对样本容量不足；待 K-A2b2a 扩容，尚未策略消费 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -818,7 +818,7 @@ H2-A1a 已完成修复：
 
 ### P1：尚无中局策略收益结论
 
-K-A1/A1a 路由契约、K-A2a shadow 与 K-A2b1a 载体输出契约已封板。开发语料显示四策略在四个 phase 都有 available 样本，run-out/block/support/control 在 overall 均有覆盖；这些仍只是分布事实。下一步 K-A2b2 使用全新独立 seed 验证覆盖的可重复性和非退化，不评价动作质量。
+K-A1/A1a 路由契约、K-A2a shadow 与 K-A2b1a 载体输出契约已封板。K-A2b2 的完整性、守恒、intent/relation/reason 覆盖全部通过，但 100 局语料中 forced/25%/50% 的 endgame available 为 583/660/663，未达到预注册 700 门槛。下一步 K-A2b2a 仅扩大独立语料容量，不评价动作质量。
 
 ### K-A1/A1a 复核：严格契约已封板
 
@@ -891,6 +891,21 @@ K-A1/A1a 路由契约、K-A2a shadow 与 K-A2b1a 载体输出契约已封板。�
 - 开发 SHA-256、四策略完整性、pass 计数与所有分布字段保持不变。
 
 唯一判定：`strategy_router_distribution_hardening_verified`。该判定只授权 K-A2b2 独立 seed 正式覆盖验收，不授权策略消费。
+
+### K-A2b2 正式结果：结构完整，endgame 容量不足
+
+已验证：
+
+- HEAD 与 K-A2b1a 检查点均为 `7f014db0c871a6ff851ab331e4ef4f19c357a909`，运行前后工作区干净；
+- seed `16000..16099`、四策略各 100 局完整运行两次，耗时 28.364s / 36.501s；
+- 两份 report、`to_dict()` 与 canonical JSON 逐字节相等，SHA-256 为 `e77e5632b4b71f4a12fc1b213be78b413c70486f60e06e3f5cd35c941aa2d40d`；
+- 四策略均 100/100/0，unavailable、invalid、duplicate、sample-limit 与 diagnostics 全为 0；
+- 全部计数守恒、pass 比例梯度、overall intent、分阶段 intent、relation 和全部 reason 覆盖通过；
+- 273 项审计中 270 项通过，唯一失败为 `forced_only`、`strategic_pass_25`、`strategic_pass_50` 的 endgame available 最低门槛；
+- endgame available 分别为 583、660、663、777，只有 100% pass 策略达到 700；
+- 单模块 11 项、相关 61 项、全量 407 项再次通过。
+
+唯一判定：`strategy_router_coverage_insufficient`。失败属于预注册绝对样本容量，不是路由契约、载体完整性或分支覆盖错误。K-A2b2a 使用全新 seed 将每策略扩大到 200 局，保持实现、分桶、采样和全部门槛不变。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -981,14 +996,14 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A2b1a 输出 fail-closed 已封板。唯一最新判定 `strategy_router_distribution_hardening_verified`，下一步为 K-A2b2 独立 seed 正式覆盖验收。
+状态：K-A2b2 双运行完整，但三个 endgame 最低样本门槛失败。唯一最新判定 `strategy_router_coverage_insufficient`，下一步为 K-A2b2a 扩容恢复验收。
 
 依赖：
 
 - Step I 阶段分类稳定；
 - Step J 能提供结构化信念状态。
 
-K-A2b2 只运行现有 evaluation 载体并生成仓库外审计证据，不修改 runtime、evaluation 实现、测试、阈值或采样规则。通过只授权后续单独设计 intent 消费消融，不授权直接接入 prompt、RAG、剪枝或动作选择。
+K-A2b2a 只把全新独立语料扩大到每策略 200 局；不修改 runtime、evaluation 实现、测试、phase、采样规则或任何覆盖门槛。通过只授权后续单独设计 intent 消费消融，不授权直接接入 prompt、RAG、剪枝或动作选择。
 
 ## 6. 当前风险
 

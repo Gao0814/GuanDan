@@ -816,7 +816,29 @@ K-A2b1 当时尚未覆盖的严格反例：
 - wrong source/phase/status、非 tuple、bool 冒充、未知或错配 reason、relation/leader 矛盾和 unavailable 字段泄露均已覆盖；
 - 单模块 11 项、相关 61 项、全量 407 项通过；
 - seed `200..209` 双运行报告完全相等，canonical SHA-256 仍为 `32e42e0e7dc56377811fc52aa5d387d0b0f16e45102a3f88bea1a8e86d755ccb`；
-- 下一步 K-A2b2 只运行独立正式语料，不修改实现或阈值。
+- K-A2b2 只运行独立正式语料，不修改实现或阈值。
+
+#### K-A2b2：独立语料正式覆盖验收
+
+状态：已完成，唯一判定 `strategy_router_coverage_insufficient`。
+
+- seed `16000..16099`、四策略各 100 局，双运行报告与 canonical JSON 完全一致；
+- canonical SHA-256：`e77e5632b4b71f4a12fc1b213be78b413c70486f60e06e3f5cd35c941aa2d40d`；
+- 四策略均 100/100/0，所有 unavailable、invalid、duplicate、sample-limit 和 diagnostics 为 0；
+- 计数守恒、pass 比例梯度、overall/phase intent、relation 和 reason 覆盖全部通过；
+- midgame、near-open、critical 最低样本门槛全部通过；
+- endgame 最低 700 门槛中，forced=583、25%=660、50%=663 失败，100%=777 通过；
+- 273 项审计中只有上述三项失败；
+- 单模块 11 项、相关 61 项、全量 407 项通过。
+
+#### K-A2b2a：独立语料扩容恢复验收
+
+状态：下一步，尚未运行。
+
+- 使用全新 seed `17000..17199`，四策略各 200 局；
+- 保持 K-A2b2 的实现、策略、phase、分桶、采样、守恒和全部覆盖门槛不变；
+- 完整运行两次并将报告、审计摘要与哈希保存在仓库外；
+- 通过只证明覆盖容量充足，不证明路由质量或胜率提升。
 
 #### 持续约束：软信号边界
 
