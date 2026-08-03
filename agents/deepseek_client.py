@@ -18,6 +18,30 @@ from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_
 
 if TYPE_CHECKING:
     from agents.card_confidence_prompt import CardConfidencePromptPayload
+    from agents.strategy_intent_prompt import StrategyIntentPromptPayload
+
+
+_STRATEGY_INTENT_PROMPT_SOURCE = "strategy_intent_prompt_v1"
+_STRATEGY_INTENT_ROUTER_SOURCE = "public_strategy_router_v1"
+_STRATEGY_INTENT_PHASES = ("midgame", "endgame", "near_open_endgame", "critical_endgame")
+_STRATEGY_INTENT_TEXT = {
+    "run_out": "加速走牌",
+    "block_opponent": "阻断对手",
+    "support_teammate": "支援队友",
+    "control": "控制牌权",
+}
+_STRATEGY_INTENT_REASON_TEXTS = {
+    "run_out": ("本次可直接出完", "手牌偏弱，优先减少手数"),
+    "block_opponent": (
+        "紧急对手当前控桌",
+        "对手威胁更紧迫",
+        "双方同样紧迫，优先阻断对手",
+        "对手接近出完",
+    ),
+    "support_teammate": ("队友当前控桌", "队友跑牌更紧迫", "队友接近出完"),
+    "control": ("手牌控制力稳定",),
+}
+_STRATEGY_INTENT_BOUNDARY = "边界：这是公开局面下的策略偏好，不是隐藏牌事实或合法性结论；只能从候选动作中选择。"
 
 _SUIT_DISPLAY: dict[str, str] = {"S": "♠", "H": "♥", "C": "♣", "D": "♦"}
 
@@ -862,6 +886,52 @@ class DeepSeekClient:
         return payload
 
     @staticmethod
+    def _validated_strategy_intent_prompt(
+        payload: object,
+    ) -> "StrategyIntentPromptPayload | None":
+        if payload is None:
+            return None
+        try:
+            from agents.strategy_intent_prompt import StrategyIntentPromptPayload
+        except Exception:
+            return None
+        if type(payload) is not StrategyIntentPromptPayload:
+            return None
+        if (
+            payload.status != "ready"
+            or payload.source != _STRATEGY_INTENT_PROMPT_SOURCE
+            or payload.router_source != _STRATEGY_INTENT_ROUTER_SOURCE
+            or type(payload.phase) is not str
+            or payload.phase not in _STRATEGY_INTENT_PHASES
+            or type(payload.intent) is not str
+            or payload.intent not in _STRATEGY_INTENT_TEXT
+            or type(payload.diagnostics) is not tuple
+            or payload.diagnostics != ()
+            or type(payload.text) is not str
+            or not payload.text
+            or type(payload.char_count) is not int
+            or payload.char_count <= 0
+            or payload.char_count != len(payload.text)
+            or payload.char_count > 800
+        ):
+            return None
+        lines = payload.text.split("\n")
+        if len(lines) != 4:
+            return None
+        if lines[0] != f"范围：{payload.phase}":
+            return None
+        if lines[1] != f"策略意图：{_STRATEGY_INTENT_TEXT[payload.intent]}":
+            return None
+        if lines[2] not in {
+            f"公开依据：{reason_text}"
+            for reason_text in _STRATEGY_INTENT_REASON_TEXTS[payload.intent]
+        }:
+            return None
+        if lines[3] != _STRATEGY_INTENT_BOUNDARY:
+            return None
+        return payload
+
+    @staticmethod
     def _build_structured_prompt(
         my_info: dict[str, object],
         current_round: dict[str, object],
@@ -873,6 +943,7 @@ class DeepSeekClient:
         card_tracking_summary: str | None = None,
         phase_context: GamePhaseContext | None = None,
         card_confidence_prompt: "CardConfidencePromptPayload | None" = None,
+        strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None,
     ) -> str:
         """Build the final Step-H structured prompt from public payloads."""
         lines: list[str] = []
@@ -954,6 +1025,14 @@ class DeepSeekClient:
         if validated_confidence is not None:
             lines.append("【残局牌面信念】")
             lines.append(validated_confidence.text)
+            lines.append("")
+
+        validated_strategy_intent = DeepSeekClient._validated_strategy_intent_prompt(
+            strategy_intent_prompt,
+        )
+        if validated_strategy_intent is not None:
+            lines.append("【策略意图】")
+            lines.append(validated_strategy_intent.text)
             lines.append("")
 
         lines.append("【场景标签】")
@@ -1058,6 +1137,7 @@ class DeepSeekClient:
         verbose: bool = False,
         debug_prefix: str = "[DeepSeek]",
         card_confidence_prompt: "CardConfidencePromptPayload | None" = None,
+        strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None,
     ) -> DeepSeekSuggestion:
         current_round = dict(observation.get("current_round", {}))
         step_no = self._coerce_int(current_round.get("step_no"), default=0)
@@ -1093,6 +1173,7 @@ class DeepSeekClient:
             card_tracking_summary=card_tracking_summary,
             phase_context=phase_context,
             card_confidence_prompt=card_confidence_prompt,
+            strategy_intent_prompt=strategy_intent_prompt,
         )
 
         if verbose:

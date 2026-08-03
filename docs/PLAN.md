@@ -104,7 +104,7 @@ AI 决策分为四层：
 
 - 现有公式把拆对的单 K 排在天然单 9 和天然长套之前，因为只对当前动作打分，不评估残余点数结构；
 - CLI 只把 `last_decision_source == "local"` 标为本地，没有标记 `local_opening_formula`；
-- H2-A1/A1a、K-A1/A1a、K-A2a 与 K-A2b1a 已封板；K-A2b2 仅因三个 endgame 样本下限失败，下一步为 K-A2b2a 扩容恢复验收。
+- H2-A1/A1a 与 K-A1 至 K-A3c1 已封板；下一步为 K-A3c2 独立语料正式 prompt 覆盖验收。
 
 ## 5. 当前实施阶段
 
@@ -126,7 +126,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3c2b 已完成，confidence 默认关闭。H2-A1/A1a、K-A1/A1a、K-A2a 与 K-A2b1a 已完成；K-A2b2 判定覆盖容量不足，下一步为 K-A2b2a。
+状态：J-A 至 J-D1c3c2c3c2b 已完成，confidence 默认关闭。H2-A1/A1a 与 K-A1 至 K-A3c1 已完成；下一步为 K-A3c2。
 
 目标：
 
@@ -195,7 +195,12 @@ AI 决策分为四层：
 43. K-A2b1：建立 evaluation-only 离线路由分布载体并运行开发容量试验，已完成，初次严格复核未通过；
 44. K-A2b1a：严格复核 router source、phase、available reason-intent 和 unavailable 中性契约，已完成并封板；
 45. K-A2b2：根据开发分布运行独立 seed 正式覆盖验收，已完成，判定 `strategy_router_coverage_insufficient`；
-46. K-A2b2a：不改实现和门槛，使用全新 seed 将语料扩大到每策略 200 局，下一步。
+46. K-A2b2a：不改实现和门槛，使用全新 seed 将语料扩大到每策略 200 局，已完成并通过；
+47. K-A3a：建立有界、默认不消费的 intent prompt payload 初版，已实现但严格复核未通过；
+48. K-A3a1：补齐路由优先级与跨字段一致性，已完成并封板；
+49. K-A3b：增加默认关闭的 intent prompt 消费接线，已完成并封板；
+50. K-A3c1：建立 evaluation-only prompt 覆盖、成本与配对摘要载体，已完成并通过；
+51. K-A3c2：使用独立 seed 正式验证 prompt coverage 与字符成本，下一步。
 
 J-A 验证结果：
 
@@ -616,7 +621,7 @@ J-D1c3c2c3c2b 结果：
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A1/A1a、K-A2a 与 K-A2b1a 已封板。K-A2b2 双运行完整，最新唯一判定 `strategy_router_coverage_insufficient`，下一步为 K-A2b2a 扩容恢复验收。
+状态：K-A1 至 K-A3c1 已封板。最新唯一判定为 `strategy_intent_prompt_coverage_capacity_verified`，下一步为 K-A3c2。
 
 目标：
 
@@ -720,6 +725,90 @@ K-A2b2a 方向：
 - 永久排除 seed `16000..16099`，使用全新 seed `17000..17199`；
 - 每策略扩大到 200 局并完整双运行，继续使用仓库外 canonical JSON 审计；
 - 只解决预注册绝对样本容量，不把扩容结果解释为动作质量。
+
+K-A2b2a 正式结果：
+
+- seed `17000..17199`、四策略各 200 局，双运行 canonical SHA-256 均为 `ee321d18a50f923e92bbcc7e99c7e90a0ee87ac8b57b35b95e091f988c670c0e`；
+- 四策略全部完成，无 unavailable、invalid、duplicate、sample-limit 或 diagnostics；
+- 结构完整性 97/97、覆盖 176/176、总计 273/273 通过；
+- 单模块 11 项、相关 61 项、全量 407 项通过；
+- 唯一判定 `strategy_router_coverage_verified`。
+
+K-A3a 方向：
+
+- 新增独立 `agents/strategy_intent_prompt.py` 和对应单元测试；
+- 只消费已经 available 的 `StrategyIntentContext`，严格复核 source、phase、intent、reason 与公开字段一致性；
+- 输出 frozen/slots、JSON 友好、有固定字符预算的 ready/omitted payload；
+- 使用固定文案映射，不透传任意字符串，不输出隐藏事实或把 intent 描述为规则命令；
+- 本步不修改 DeepSeek client、agent、RAG、evaluation 或动作选择；
+- 通过后只授权 K-A3b 默认关闭的 prompt 消费接线。
+
+K-A3a 初次复核：
+
+- fixed text、reason-intent 映射、预算、frozen/slots 与 omitted 清空均已实现；
+- 单模块 7 项、相关 43 项、全量 414 项通过；
+- 但局部 reason 校验没有重放 K-A1 路由优先级，多个跨字段矛盾 context 仍返回 ready；
+- hand strength 与 total score、control score 与 total score、minimum count 与 urgent IDs 也未完整守恒；
+- 唯一判定 `strategy_intent_prompt_contract_invalid`，不得进入 K-A3b。
+
+K-A3a1 方向：
+
+- 只修改 formatter 与对应测试，payload 字段和合法文本快照保持不变；
+- 先验证 count/urgency/score 的内部守恒，再按 K-A1 固定优先级推导唯一 expected reason；
+- context 的 reason 和 intent 必须与 expected reason 精确一致，否则整体 omitted；
+- 覆盖被更高优先级条件遮蔽的 weak/control/urgency reason 反例；
+- 通过后才授权 K-A3b 默认关闭的消费接线。
+
+K-A3a1 验证结果：
+
+- 九类预注册伪造 context 全部 omitted；
+- score/strength、minimum/urgent IDs、teammate/leader urgency 守恒已锁定；
+- 唯一 expected reason 按 K-A1 原优先级推导；
+- 合法十 reason、三 snapshot 与固定文本保持不变；
+- 单模块 11 项、相关 47 项、全量 418 项通过；
+- 唯一判定 `strategy_intent_prompt_contract_hardening_verified`。
+
+K-A3b 方向：
+
+- 在 `DeepSeekAIAgent` 增加严格布尔、默认关闭且依赖 router shadow 的 prompt 开关；
+- 只有 ready payload 才作为新增类型化 keyword 传给 client；
+- client 独立复核 payload 并在固定位置精确插入一次；
+- off、shadow-only、omitted 和异常路径的 kwargs、prompt、动作与 fallback 必须保持等价；
+- 本步不让 intent 选择 RAG、改变剪枝或默认启用。
+
+K-A3b 验证结果：
+
+- off/shadow-only/prompt 三态与严格依赖已实现；
+- ready 才增加类型化 keyword，client 对固定四行文本做独立复核；
+- 插入顺序为 confidence、strategy intent、scene tags；
+- omitted/异常路径保持原模型和 fallback 等价；
+- 定向 56 项、相关 88 项、全量 424 项通过；
+- 唯一判定 `strategy_intent_prompt_wiring_verified`。
+
+K-A3c1 方向：
+
+- 新增 evaluation-only 多策略×多阶段 prompt pair collector；
+- 只使用公开 observation、legal actions、统一 phase、hand evaluation、router 与 formatter；
+- 构建 off/on structured prompt，不调用模型或网络；
+- 聚合 ready/omitted、精确插入、payload/prompt delta 字符成本、diagnostics 与 pair digest；
+- 先运行小型双运行开发容量试验，为 K-A3c2 正式覆盖验收锁定门槛。
+
+K-A3c1 验证结果：
+
+- seed `300..309` 双运行 canonical SHA-256 均为 `032ff0964a0fe4c377c612f27263e553abfe22ad759d14b5714ebf788d280a20`；
+- 四策略均 10/10/0，16 个 phase bucket 全部 ready；
+- 零 unavailable、invalid、omitted、duplicate、limit、mismatch 与 diagnostics；
+- payload 74..90 字符，delta 83..99 字符，逐样本精确相差 9；
+- 定向 6 项、相关 52 项、全量 430 项通过；
+- 唯一判定 `strategy_intent_prompt_coverage_capacity_verified`。
+
+K-A3c2 方向：
+
+- 先提交 K-A3c1 检查点并要求工作区干净；
+- 使用全新 seed、每策略 200 局完整运行两次；
+- 保持实现、策略、phase、采样、字符预算和全部 pair 规则不变；
+- 仓库外保存完整 canonical JSON、审计摘要和文件哈希；
+- 通过只授权 K-A3d1 evaluation-only 动作消融载体。
 
 ## 6. 质量指标
 

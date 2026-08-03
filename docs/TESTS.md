@@ -833,12 +833,89 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 #### K-A2b2a：独立语料扩容恢复验收
 
-状态：下一步，尚未运行。
+状态：已完成，唯一判定 `strategy_router_coverage_verified`。
 
 - 使用全新 seed `17000..17199`，四策略各 200 局；
 - 保持 K-A2b2 的实现、策略、phase、分桶、采样、守恒和全部覆盖门槛不变；
 - 完整运行两次并将报告、审计摘要与哈希保存在仓库外；
-- 通过只证明覆盖容量充足，不证明路由质量或胜率提升。
+- canonical SHA-256 为 `ee321d18a50f923e92bbcc7e99c7e90a0ee87ac8b57b35b95e091f988c670c0e`；
+- 四策略均 200/200/0，无 unavailable、invalid、duplicate、sample-limit 或 diagnostics；
+- 结构完整性 97/97、覆盖 176/176、总计 273/273 通过；
+- 单模块 11 项、相关 61 项、全量 407 项通过；
+- 该结果只证明覆盖容量充足，不证明路由质量或胜率提升。
+
+#### K-A3a：intent prompt payload 契约
+
+状态：初版已实现，但严格复核未通过。唯一判定 `strategy_intent_prompt_contract_invalid`。
+
+- formatter 只消费精确 `StrategyIntentContext`，不读取 observation、history、RAG、engine 或配置；
+- available 且语义一致时输出完整 ready payload，其他输入整体 omitted；
+- 固定 intent/reason/phase 文案映射，不透传任意文本；
+- 严格字符预算，超限不截断、不输出部分内容；
+- payload frozen/slots、JSON 友好、确定序列化且不修改输入；
+- 本步未接入 DeepSeek prompt 或动作选择；
+- 单模块 7 项、相关 43 项、全量 414 项通过。
+
+当前缺失回归：
+
+- higher-priority urgency 存在时，`weak_hand` / `stable_control` 必须 omitted；
+- 双方都紧急时，`opponent_urgent` / `teammate_urgent` 不能绕过比较 reason；
+- 队友控桌或紧急对手控桌时，后续 urgency/weak/control reason 不能被接受；
+- `minimum_opponent_hand_count` 与 `urgent_opponent_ids` 必须一致；
+- opponent table urgency 与 minimum/urgent IDs 必须不矛盾；
+- hand strength 必须与 total score 阈值一致，control score 不得大于 total score。
+
+#### K-A3a1：intent prompt 跨字段语义加固
+
+状态：已完成，唯一判定 `strategy_intent_prompt_contract_hardening_verified`。
+
+- 使用完整字段按 K-A1 优先级推导唯一 expected reason；
+- reason/intent 与 expected reason 不一致时整体 omitted；
+- 合法十种 reason 和三个公开 snapshot 保持逐字节不变；
+- 不修改现有 agent/client/RAG/evaluation 或动作选择；
+- 九类预注册反例全部 omitted；
+- 单模块 11 项、相关 47 项、全量 418 项通过。
+
+#### K-A3b：默认关闭的 intent prompt 消费接线
+
+状态：已完成，唯一判定 `strategy_intent_prompt_wiring_verified`。
+
+- 严格三态：off、shadow-only、prompt；prompt 必须依赖 shadow；
+- 每次决策重置 intent 与 payload 审计字段；本地快捷路径跳过两者；
+- 只有 ready payload 才增加类型化 client keyword；
+- client 独立复核 payload，固定章节只插入一次；
+- off/shadow-only/omitted/异常路径保持模型调用和动作等价；
+- RAG、剪枝、fallback、config、CLI 和 evaluation 保持不变；
+- client 拒绝手工篡改的类型、metadata、reason、边界行、行数和 char count；
+- confidence 与 strategy intent 同时 ready 时顺序稳定且各出现一次；
+- 定向 56 项、相关 88 项、全量 424 项通过。
+
+#### K-A3c1：离线 prompt 覆盖与成本载体
+
+状态：已完成，唯一判定 `strategy_intent_prompt_coverage_capacity_verified`。
+
+- 四种 strategic-pass 策略使用独立对局和聚合状态；
+- 按 midgame/endgame/near-open/critical 聚合 prompt pair；
+- ready 必须精确插入一次，omitted 必须保持 off/on 相等；
+- 记录 payload 与 prompt delta 字符和、最小值、最大值及 pair SHA-256；
+- 报告不保留 prompt、observation、动作、玩家、手牌或逐样本内容；
+- 不调用 DeepSeek、网络、真值或 `game._state`；
+- seed `300..309` 双运行 canonical SHA-256 为 `032ff0964a0fe4c377c612f27263e553abfe22ad759d14b5714ebf788d280a20`；
+- 四策略样本/ready 为 350/350、377/377、391/391、469/469；
+- 16 个 phase bucket 全部 ready，零 omitted/invalid/mismatch/diagnostics；
+- payload 74..90 字符，delta 83..99 字符；
+- 定向 6 项、相关 52 项、全量 430 项通过。
+
+#### K-A3c2：独立语料正式 prompt 覆盖验收
+
+状态：下一步，尚未运行。
+
+- K-A3c1 必须先提交，正式运行前后工作区保持干净；
+- 使用全新 seed `18000..18199`，四策略各 200 局，完整双运行；
+- 所有实现、采样、预算和覆盖规则保持不变；
+- 16 个策略×阶段桶必须满足正式 ready 样本下限；
+- 完整证据保存在仓库外，不依赖标准输出；
+- 不调用模型、网络、真值或隐藏状态。
 
 #### 持续约束：软信号边界
 

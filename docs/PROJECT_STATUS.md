@@ -6,10 +6,10 @@
 
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
-- 当前 HEAD：`7f014db0c871a6ff851ab331e4ef4f19c357a909`
-- 当前工作状态：K-A2b2 正式语料完整但 endgame 容量不足；下一步为 K-A2b2a 扩容恢复验收
+- 当前 HEAD：`7b9aaae53faf7c5135cd147333d6195a10b90f87`
+- 当前工作状态：K-A3c1 离线覆盖载体已封板；下一步为 K-A3c2 独立语料正式验收
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：407 项测试全部通过；K-A2b2 前后单模块 11 项、相关 61 项通过
+- 实际验证结果：K-A3c1 定向 6 项、相关 52 项、全量 430 项通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -40,7 +40,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、H2 开局封板、K-A1/A1a 路由契约、K-A2a shadow 与 K-A2b1a 输出封板。K-A2b2 使用 seed `16000..16099` 完成双运行，报告 SHA-256 为 `e77e5632b4b71f4a12fc1b213be78b413c70486f60e06e3f5cd35c941aa2d40d`；273 项审计中仅三个 endgame 最低样本检查失败。唯一判定为 `strategy_router_coverage_insufficient`，下一步 K-A2b2a 只扩大独立语料，不改实现或门槛。
+当前已完成 K-A3c1 evaluation-only prompt pair 载体。seed `300..309` 双运行 report、`to_dict()` 与 canonical JSON 完全一致，SHA-256 为 `032ff0964a0fe4c377c612f27263e553abfe22ad759d14b5714ebf788d280a20`；四策略×四阶段全部 ready，零 omitted/invalid/mismatch/diagnostics，字符增量精确为 payload+9。唯一判定为 `strategy_intent_prompt_coverage_capacity_verified`，下一步 K-A3c2 只运行独立正式语料。
 
 ## 3. 分模块状态
 
@@ -62,7 +62,7 @@
 | rank 离线基准 | Step J-C3a/J-C3b 完成 | 固定种子采集、微聚合、阶段桶、可重复正式验收 | RuleBasedAI 不覆盖有牌可压时的战略性 pass |
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
-| 中期策略 | K-A2b2 完成 | shadow 审计、严格输出复核、独立语料结构与语义覆盖通过 | endgame 绝对样本容量不足；待 K-A2b2a 扩容，尚未策略消费 |
+| 中期策略 | K-A3c1 完成 | 默认关闭接线、四策略×四阶段 prompt pair 覆盖与字符成本开发载体 | 尚未独立 seed 正式 prompt 覆盖验收或动作质量结论 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -818,7 +818,7 @@ H2-A1a 已完成修复：
 
 ### P1：尚无中局策略收益结论
 
-K-A1/A1a 路由契约、K-A2a shadow 与 K-A2b1a 载体输出契约已封板。K-A2b2 的完整性、守恒、intent/relation/reason 覆盖全部通过，但 100 局语料中 forced/25%/50% 的 endgame available 为 583/660/663，未达到预注册 700 门槛。下一步 K-A2b2a 仅扩大独立语料容量，不评价动作质量。
+K-A1 至 K-A3c1 已封板。开发双运行证明四策略×四阶段可生成稳定 prompt pair，但仍只是 10 局/策略容量试验。下一步 K-A3c2 使用全新独立 seed 正式验证 ready 覆盖和字符成本；仍不调用模型或比较动作。
 
 ### K-A1/A1a 复核：严格契约已封板
 
@@ -906,6 +906,92 @@ K-A1/A1a 路由契约、K-A2a shadow 与 K-A2b1a 载体输出契约已封板。K
 - 单模块 11 项、相关 61 项、全量 407 项再次通过。
 
 唯一判定：`strategy_router_coverage_insufficient`。失败属于预注册绝对样本容量，不是路由契约、载体完整性或分支覆盖错误。K-A2b2a 使用全新 seed 将每策略扩大到 200 局，保持实现、分桶、采样和全部门槛不变。
+
+### K-A2b2a 正式结果：独立覆盖已封板
+
+已验证：
+
+- HEAD 为 `7b9aaae53faf7c5135cd147333d6195a10b90f87`，K-A2b1a 检查点为 `7f014db0c871a6ff851ab331e4ef4f19c357a909`；
+- 永久排除 seed `16000..16099`，本次仅使用全新 seed `17000..17199`；
+- 四策略各 200 局完整运行两次，耗时 57.145s / 55.747s；
+- 两份 report、`to_dict()` 与 canonical JSON 逐字节相同，SHA-256 为 `ee321d18a50f923e92bbcc7e99c7e90a0ee87ac8b57b35b95e091f988c670c0e`；
+- runner 落盘报告后只做仓库外 audit-only manifest 修复，未重跑 benchmark，原始两份报告未修改；
+- 四策略均 200/200/0，unavailable、invalid、duplicate、sample-limit 和 diagnostics 全为 0；
+- pass 比例严格递增，全部计数守恒通过；
+- 结构完整性 97/97、原覆盖门槛 176/176、总计 273/273 通过；
+- 单模块 11 项、相关 61 项、全量 407 项再次通过，边界扫描无禁止引用。
+
+唯一判定：`strategy_router_coverage_verified`。该结论只授权 K-A3a 建立 intent prompt payload 契约；不授权直接修改 DeepSeek client、RAG、剪枝、fallback 或动作选择。
+
+### K-A3a 复核：局部校验通过，完整语义契约未封板
+
+已确认：
+
+- 只新增 formatter 与对应测试，现有 runtime 消费路径无反向引用；
+- payload frozen/slots、JSON 友好，ready 文本固定四行；
+- 十种 reason 到四种 intent 的中文映射、800 字符预算和 omitted 清空契约已实现；
+- 单模块 7 项、相关 43 项、全量 414 项通过，`git diff --check` 与边界扫描通过。
+
+但以下非法 context 实测仍返回 ready：
+
+1. `stable_control` 同时存在紧急对手；
+2. `weak_hand` 同时存在紧急队友；
+3. `opponent_urgent` 同时满足“队友比对手更紧急”；
+4. `urgent_opponent_ids` 非空但 `minimum_opponent_hand_count=None`；
+5. 紧急对手控桌，但 minimum count 为 5 且 urgent IDs 为空；
+6. `weak_hand` 搭配非弱总分、`stable_control` 搭配弱总分，或 control score 大于 total score；
+7. `teammate_more_urgent` 同时由队友控桌，绕过更高优先级 `teammate_controls_table`。
+
+这些反例说明 formatter 不能只逐 reason 检查局部条件，必须根据完整公开字段按 K-A1 原优先级推导唯一 expected reason。唯一判定：`strategy_intent_prompt_contract_invalid`。K-A3a1 只修复该契约，不修改文本快照或任何消费路径。
+
+### K-A3a1 复核：跨字段语义已封板
+
+已验证：
+
+- total/control 分数范围、`control <= total` 与 39/40 weak 分界已锁定；
+- minimum opponent count 与 urgent IDs 的 None/1/2/3 关系、队友 0/1/2/3 紧急度和 leader urgency 已锁定；
+- formatter 在基础字段有效后按 K-A1 原优先级推导唯一 expected reason；
+- reason/intent 不是唯一 expected 值时整体 omitted；
+- 九类预注册伪造 context 全部 omitted，分别使用 `invalid_context_fields` 或 `invalid_intent_reason`；
+- 十种合法 reason、四种 intent、三个公开 snapshot、固定四行文本和预算边界保持不变；
+- 单模块 11 项、相关 47 项、全量 418 项通过，`git diff --check` 与边界扫描通过；
+- 现有 runtime 消费路径仍未引用 formatter。
+
+唯一判定：`strategy_intent_prompt_contract_hardening_verified`。该判定只授权 K-A3b 默认关闭的 prompt 消费接线，不授权 RAG 路由、动作质量实验或默认启用。
+
+### K-A3b 复核：默认关闭接线已封板
+
+已验证：
+
+- 新增严格 bool、默认关闭的 `strategy_intent_prompt_enabled`，且 prompt 必须依赖 router shadow；
+- 每次决策重置 intent/payload 审计字段，三个 local shortcut 均跳过 router 和 formatter；
+- shadow-only 不加载 formatter，prompt 模式最多调用 router/formatter 各一次；
+- ready payload 才新增 `strategy_intent_prompt` keyword，omitted 和异常不传该键；
+- client 独立复核精确类型、metadata、phase、intent、reason 文案、四行文本和 800 字符上限；
+- 合法章节位于可选 confidence 之后、场景标签之前，均只出现一次；
+- off、shadow-only、omitted、router/formatter 异常的 kwargs、prompt、动作、fallback 与 decision source 保持兼容；
+- 定向 56 项、相关 88 项、全量 424 项通过，`git diff --check` 与边界扫描通过；
+- config、CLI、engine、RAG、evaluation 无消费或反向引用。
+
+唯一判定：`strategy_intent_prompt_wiring_verified`。该判定只授权 K-A3c1 evaluation-only prompt 覆盖载体，不授权真实 API、动作质量实验、RAG 路由或默认启用。
+
+### K-A3c1 复核：离线 prompt 覆盖载体已验证
+
+已验证：
+
+- 只新增 evaluation collector 与对应测试，runtime 无反向导入；
+- 四种 strategic-pass 策略使用独立 game、agent、seen set、聚合器和 pair hasher；
+- only-pass、一次出完、opening、duplicate 和 per-phase limit 顺序固定；
+- off/on 共用 observation、phase、hand evaluation 和 pruned actions，intent 不影响推进动作；
+- ready 只接受在场景标签前精确插入，delta 严格为 payload char+9；
+- omitted 要求 off/on 逐字节相等，报告只保留聚合计数和 digest；
+- seed `300..309` 双运行耗时约 3.3s，canonical SHA-256 均为 `032ff0964a0fe4c377c612f27263e553abfe22ad759d14b5714ebf788d280a20`；
+- 四策略均 10/10/0，样本/ready 为 350/350、377/377、391/391、469/469；
+- 16 个策略×阶段桶均有 ready，所有 omitted、invalid、duplicate、limit、mismatch 和 diagnostics 为 0；
+- payload 范围 74..90 字符，prompt delta 范围 83..99 字符；
+- 定向 6 项、相关 52 项、全量 430 项通过，边界扫描和 `git diff --check` 通过。
+
+唯一判定：`strategy_intent_prompt_coverage_capacity_verified`。该判定只授权 K-A3c2 独立 seed 正式覆盖验收，不授权动作消融、真实 API、RAG 路由或默认启用。
 
 ### P1：RAG 不能单独承担策略路由
 
@@ -996,14 +1082,14 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A2b2 双运行完整，但三个 endgame 最低样本门槛失败。唯一最新判定 `strategy_router_coverage_insufficient`，下一步为 K-A2b2a 扩容恢复验收。
+状态：K-A3c1 已封板。唯一最新判定 `strategy_intent_prompt_coverage_capacity_verified`，下一步为 K-A3c2 独立语料正式验收。
 
 依赖：
 
 - Step I 阶段分类稳定；
 - Step J 能提供结构化信念状态。
 
-K-A2b2a 只把全新独立语料扩大到每策略 200 局；不修改 runtime、evaluation 实现、测试、phase、采样规则或任何覆盖门槛。通过只授权后续单独设计 intent 消费消融，不授权直接接入 prompt、RAG、剪枝或动作选择。
+K-A3c2 不修改仓库文件，只使用全新 seed 完整双运行并将 canonical 报告与审计证据保存在仓库外；不调用 `suggest_action_id()`、HTTP、真值或隐藏状态。
 
 ## 6. 当前风险
 

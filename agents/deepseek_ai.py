@@ -25,6 +25,7 @@ from agents.rule_based_ai import RuleBasedAIAgent
 if TYPE_CHECKING:
     from agents.card_confidence import CardConfidenceState
     from agents.card_confidence_prompt import CardConfidencePromptPayload
+    from agents.strategy_intent_prompt import StrategyIntentPromptPayload
     from agents.strategy_router import StrategyIntentContext
 
 
@@ -408,6 +409,7 @@ class DeepSeekAIAgent(BaseAgent):
     card_confidence_shadow_enabled: bool = False
     card_confidence_prompt_enabled: bool = False
     strategy_router_shadow_enabled: bool = False
+    strategy_intent_prompt_enabled: bool = False
     last_decision_source: str | None = field(default=None, init=False, repr=False)
     card_tracker: object | None = field(default=None, init=False, repr=False)
     last_card_confidence: "CardConfidenceState | None" = field(
@@ -425,6 +427,11 @@ class DeepSeekAIAgent(BaseAgent):
         init=False,
         repr=False,
     )
+    last_strategy_intent_prompt: "StrategyIntentPromptPayload | None" = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.card_confidence_shadow_enabled, bool):
@@ -433,8 +440,12 @@ class DeepSeekAIAgent(BaseAgent):
             raise ValueError("card_confidence_prompt_enabled must be a bool")
         if self.card_confidence_prompt_enabled and not self.card_confidence_shadow_enabled:
             raise ValueError("card_confidence_prompt_enabled requires shadow mode")
-        if not isinstance(self.strategy_router_shadow_enabled, bool):
+        if type(self.strategy_router_shadow_enabled) is not bool:
             raise ValueError("strategy_router_shadow_enabled must be a bool")
+        if type(self.strategy_intent_prompt_enabled) is not bool:
+            raise ValueError("strategy_intent_prompt_enabled must be a bool")
+        if self.strategy_intent_prompt_enabled and not self.strategy_router_shadow_enabled:
+            raise ValueError("strategy_intent_prompt_enabled requires strategy router shadow mode")
         config = AppConfig.from_env()
         if self.hand_evaluation_enabled is None:
             self.hand_evaluation_enabled = config.hand_evaluation_enabled
@@ -452,6 +463,7 @@ class DeepSeekAIAgent(BaseAgent):
         self.last_card_confidence = None
         self.last_card_confidence_prompt = None
         self.last_strategy_intent = None
+        self.last_strategy_intent_prompt = None
         if not legal_actions:
             raise ValueError("legal_actions must not be empty")
 
@@ -533,6 +545,7 @@ class DeepSeekAIAgent(BaseAgent):
         if self.hand_evaluation_enabled:
             hand_evaluation = opening_evaluation or evaluate_hand(observation, legal_actions)
 
+        strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None
         if self.strategy_router_shadow_enabled:
             try:
                 router_hand_evaluation = opening_evaluation
@@ -550,6 +563,24 @@ class DeepSeekAIAgent(BaseAgent):
                 )
             except Exception:
                 self.last_strategy_intent = None
+            else:
+                if self.strategy_intent_prompt_enabled:
+                    try:
+                        from agents.strategy_intent_prompt import (
+                            StrategyIntentPromptPayload,
+                            build_strategy_intent_prompt_payload,
+                        )
+
+                        self.last_strategy_intent_prompt = build_strategy_intent_prompt_payload(
+                            self.last_strategy_intent,
+                        )
+                        if (
+                            type(self.last_strategy_intent_prompt) is StrategyIntentPromptPayload
+                            and self.last_strategy_intent_prompt.status == "ready"
+                        ):
+                            strategy_intent_prompt = self.last_strategy_intent_prompt
+                    except Exception:
+                        self.last_strategy_intent_prompt = None
 
         history = dict(observation.get("history", {}))
         card_tracking_summary: str | None = None
@@ -677,6 +708,7 @@ class DeepSeekAIAgent(BaseAgent):
                 card_tracking_summary=card_tracking_summary,
                 phase_context=phase_context,
                 card_confidence_prompt=card_confidence_prompt,
+                strategy_intent_prompt=strategy_intent_prompt,
             )
             payload = {
                 "model": self.client._model,
@@ -716,6 +748,8 @@ class DeepSeekAIAgent(BaseAgent):
             }
             if card_confidence_prompt is not None:
                 suggestion_kwargs["card_confidence_prompt"] = card_confidence_prompt
+            if strategy_intent_prompt is not None:
+                suggestion_kwargs["strategy_intent_prompt"] = strategy_intent_prompt
             suggestion = self.client.suggest_action_id(
                 **suggestion_kwargs,
             )
