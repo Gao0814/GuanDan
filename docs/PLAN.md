@@ -104,7 +104,7 @@ AI 决策分为四层：
 
 - 现有公式把拆对的单 K 排在天然单 9 和天然长套之前，因为只对当前动作打分，不评估残余点数结构；
 - CLI 只把 `last_decision_source == "local"` 标为本地，没有标记 `local_opening_formula`；
-- H2-A1/A1a 已完成开局严格封板，K-A1/A1a 已封板路由契约，K-A2a 已完成默认关闭的 shadow 装配；下一步为 K-A2b1 离线分布载体。
+- H2-A1/A1a、K-A1/A1a、K-A2a 与 K-A2b1a 已封板；开发分布哈希保持不变，下一步为 K-A2b2 独立 seed 正式覆盖验收。
 
 ## 5. 当前实施阶段
 
@@ -126,7 +126,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3c2b 已完成；只读恢复审计判定 `no_observed_action_quality_gain`。confidence 默认关闭且不进入完整对局评估。H2-A1/A1a、K-A1/A1a 与 K-A2a 已完成，下一步为 K-A2b1。
+状态：J-A 至 J-D1c3c2c3c2b 已完成，confidence 默认关闭。H2-A1/A1a、K-A1/A1a、K-A2a 与 K-A2b1a 已完成；下一步为 K-A2b2。
 
 目标：
 
@@ -192,8 +192,9 @@ AI 决策分为四层：
 40. K-A1：建立只读公开信息的策略意图上下文与确定性路由契约，已完成；
 41. K-A1a：严格 phase context 数值类型并聚合多项 diagnostics，已完成并核验；
 42. K-A2a：在 DeepSeek 主链做默认关闭的策略意图 shadow 装配，已完成并验证；
-43. K-A2b1：建立 evaluation-only 离线路由分布载体并运行开发容量试验，下一步；
-44. K-A2b2：根据开发分布预注册独立 seed 正式覆盖验收，待 K-A2b1 通过后单独定义。
+43. K-A2b1：建立 evaluation-only 离线路由分布载体并运行开发容量试验，已完成，初次严格复核未通过；
+44. K-A2b1a：严格复核 router source、phase、available reason-intent 和 unavailable 中性契约，已完成并封板；
+45. K-A2b2：根据开发分布预注册独立 seed 正式覆盖验收，下一步。
 
 J-A 验证结果：
 
@@ -614,7 +615,7 @@ J-D1c3c2c3c2b 结果：
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A1/A1a 已封板公开策略路由，K-A2a 已完成默认关闭且不影响决策的 shadow 装配。最新唯一判定 `strategy_router_shadow_verified`，下一步为 K-A2b1。
+状态：K-A1/A1a、K-A2a 与 K-A2b1a 已封板。最新唯一判定 `strategy_router_distribution_hardening_verified`，下一步为 K-A2b2 独立 seed 正式覆盖验收。
 
 目标：
 
@@ -669,6 +670,40 @@ K-A2b1 方向：
 - 单独记录 opening、only-pass、一次出完和样本上限跳过，保持计数守恒；
 - 报告不保留 seed、样本 ID、observation、action、玩家或手牌明细；
 - 先运行小型双运行开发容量试验，用实际分布为 K-A2b2 锁定门槛；本步不判定策略质量。
+
+K-A2b1 复核结果：
+
+- seed `200..209` 双运行报告、`to_dict()` 和 canonical JSON 完全相等，SHA-256 为 `32e42e0e7dc56377811fc52aa5d387d0b0f16e45102a3f88bea1a8e86d755ccb`；
+- 四策略均 10/10/0，无 unavailable、invalid、duplicate、sample-limit 或 diagnostics；
+- 四策略的四阶段均有 available 样本，主动 pass 比例严格递增；
+- 单模块 8 项、相关 58 项、全量 404 项通过；
+- 但 available 的 wrong source、wrong phase、unknown reason 和 reason-intent mismatch 均会被接受，unavailable 也缺少对 source/phase/非空 diagnostics/中性字段的复核；
+- 唯一判定 `strategy_router_distribution_harness_invalid`。
+
+K-A2b1a 方向：
+
+- 只修改 `evaluation/strategy_router_benchmark.py` 和对应测试；
+- 复核 context 类型、固定 source、与 bucket 一致的 phase、status 与 diagnostics；
+- available 只接受已知 reason，且 reason 必须与 intent 映射一致；
+- unavailable 必须有非空规范 diagnostics，且不保留任何玩家、领牌、手牌强度或意图结论；
+- malformed context 统一记为 `invalid_router_result`，不泄露其中的伪 diagnostics；
+- 合法语料报告字段与 canonical SHA-256 必须精确不变；
+- 通过后才授权 K-A2b2，仍不授权策略消费。
+
+K-A2b1a 验证结果：
+
+- context 类型、固定 source、预期 phase、严格 bool/tuple、reason-intent 映射和 available 语义均已集中复核；
+- unavailable 必须完全中性，malformed context 只计一次 `invalid_router_result`；
+- 单模块 11 项、相关 61 项、全量 407 项通过；
+- seed `200..209` 双运行报告与开发 SHA-256 `32e42e0e7dc56377811fc52aa5d387d0b0f16e45102a3f88bea1a8e86d755ccb` 精确不变；
+- 唯一判定 `strategy_router_distribution_hardening_verified`。
+
+K-A2b2 方向：
+
+- 不修改仓库文件，只用全新独立 seed 运行现有载体两次；
+- 审计四策略的对局、采样、phase、intent、reason、relation 与全部守恒；
+- 使用仓库外完整 JSON 与哈希证据，显式按策略名和 rate 复核，不依赖 JSON 键序；
+- 只验证覆盖可重复且非退化，不比较动作质量，不授权策略消费。
 
 ## 6. 质量指标
 

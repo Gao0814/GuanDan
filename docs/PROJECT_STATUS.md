@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - 当前 HEAD：`3aab6e997a434bf015287b0880326df5e30b9e31 Close confidence path and plan strategy routing`
-- 当前工作状态：K-A2a 默认关闭的策略意图 shadow 已验证；下一步为 K-A2b1 离线路由分布载体与开发容量试验
+- 当前工作状态：K-A2b1a 输出 fail-closed 已封板；下一步为 K-A2b2 独立 seed 正式覆盖验收
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：396 项测试全部通过；K-A2a 定向 25 项、相关 100 项通过
+- 实际验证结果：407 项测试全部通过；K-A2b1a 单模块 11 项、相关 61 项通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -40,7 +40,7 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、四策略正式校准以及 H2 开局严格封板。K-A1/A1a 已封板策略路由契约，K-A2a 已在 `DeepSeekAIAgent` 中增加严格布尔、默认关闭的 shadow 审计。off/on 的 client kwargs、结构化 prompt、action、fallback 和 decision source 保持一致，intent 不进入 prompt、RAG、剪枝或动作选择。唯一判定为 `strategy_router_shadow_verified`。下一步只建立 K-A2b1 离线分布载体。
+当前已完成统一阶段、公开牌面事实、硬归属域、受控残局分配、H2 开局封板、K-A1/A1a 路由契约与 K-A2a shadow。K-A2b1a 已补齐固定 source、expected phase、reason-intent、relation/leader 和 unavailable 中性字段的严格复核，malformed context 只记 `invalid_router_result`。原 seed `200..209` 双运行报告和 SHA-256 `32e42e0e7dc56377811fc52aa5d387d0b0f16e45102a3f88bea1a8e86d755ccb` 精确不变。唯一判定为 `strategy_router_distribution_hardening_verified`，下一步为 K-A2b2。
 
 ## 3. 分模块状态
 
@@ -62,7 +62,7 @@
 | rank 离线基准 | Step J-C3a/J-C3b 完成 | 固定种子采集、微聚合、阶段桶、可重复正式验收 | RuleBasedAI 不覆盖有牌可压时的战略性 pass |
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
-| 中期策略 | K-A2a 完成 | 严格 fail-closed 路由契约与默认关闭、不影响决策的 shadow 审计 | 尚未离线分布评测或策略消费 |
+| 中期策略 | K-A2b1/a 完成 | shadow 审计、四策略×四阶段分布聚合与严格输出 fail-closed | 尚未独立 seed 正式覆盖验收或策略消费 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -818,7 +818,7 @@ H2-A1a 已完成修复：
 
 ### P1：尚无中局策略收益结论
 
-K-A1/A1a 路由契约已封板，K-A2a 也已完成默认关闭的 shadow 装配。联网单局第 2、16、20 轮 fixture 分别输出 `support_teammate`、`block_opponent`、`block_opponent`，但当前还不知道四种 intent 在自然和策略压力轨迹中的覆盖、阶段分布与 unavailable 比例。下一步 K-A2b1 只做 evaluation-only 分布载体和开发容量试验。
+K-A1/A1a 路由契约、K-A2a shadow 与 K-A2b1a 载体输出契约已封板。开发语料显示四策略在四个 phase 都有 available 样本，run-out/block/support/control 在 overall 均有覆盖；这些仍只是分布事实。下一步 K-A2b2 使用全新独立 seed 验证覆盖的可重复性和非退化，不评价动作质量。
 
 ### K-A1/A1a 复核：严格契约已封板
 
@@ -854,6 +854,44 @@ K-A1/A1a 路由契约已封板，K-A2a 也已完成默认关闭的 shadow 装配
 
 唯一判定：`strategy_router_shadow_verified`。该判定只授权 K-A2b1 离线路由分布载体，不授权策略消费。
 
+### K-A2b1 历史复核：开发分布有效，载体严格契约未封板
+
+已核对：
+
+- 只新增 evaluation 载体与对应测试，runtime 无反向导入；
+- 每个 rate 使用独立 game、agent、sample set 和聚合器；
+- only-pass、一次出完、opening 按固定顺序跳过；
+- sample、availability、intent/reason/relation、observed/eligible 与 phase-to-overall 守恒已实现；
+- seed `200..209` 双运行 canonical SHA-256 均为 `32e42e0e7dc56377811fc52aa5d387d0b0f16e45102a3f88bea1a8e86d755ccb`；
+- 四策略均 10/10/0，unavailable、invalid、duplicate、sample-limit 和 diagnostics 均为 0；
+- 主动 pass 为 `0/122`、`49/136`、`76/143`、`142/142`，比例严格递增；
+- 单模块 8 项、相关 58 项、全量 404 项通过，边界扫描与 `git diff --check` 通过。
+
+严格反例：
+
+1. available context 的 `phase` 从 `midgame` 改为 `endgame`，`_available_context_is_well_formed()` 仍返回 `True`；
+2. `source` 改为未知值，仍返回 `True`；
+3. reason 改为未知值，或 control 搭配 `weak_hand`，仍返回 `True`；
+4. unavailable 结果也未严格复核 source、phase、非空 diagnostics 和“不保留部分结论”契约。
+
+这些缺口不改变本次真实 router 的开发分布计数，但会使未来回归被错误计入正式 phase/intent/reason 分布。因此唯一项目管理判定为 `strategy_router_distribution_harness_invalid`。K-A2b1a 只修复输出 fail-closed 复核，并要求合法语料的报告与上述 SHA-256 逐字节不变。
+
+### K-A2b1a 复核：输出 fail-closed 已封板
+
+已验证：
+
+- context 必须为精确 `StrategyIntentContext`，source 固定且 phase 与当前 bucket 一致；
+- reason/urgent IDs/diagnostics 严格为 tuple，三个布尔语义字段严格为 bool；
+- available 只接受锁定 reason-intent 映射，并校验出完、relation、leader ID、free lead 和 hand strength；
+- unavailable 必须清空所有玩家、领牌、评分和意图字段，且有非空规范 diagnostics tuple；
+- malformed context 只记一次 `invalid_router_result`，不泄露伪 intent/reason/relation/diagnostics；
+- wrong source/phase/status、非 tuple、bool 冒充、未知/错配 reason、relation/leader 矛盾与 unavailable 部分泄露均已有回归；
+- 单模块 11 项、相关 61 项、全量 407 项通过；
+- 独立双运行耗时 2.603s / 4.903s，report、`to_dict()` 与 canonical JSON 完全相等；
+- 开发 SHA-256、四策略完整性、pass 计数与所有分布字段保持不变。
+
+唯一判定：`strategy_router_distribution_hardening_verified`。该判定只授权 K-A2b2 独立 seed 正式覆盖验收，不授权策略消费。
+
 ### P1：RAG 不能单独承担策略路由
 
 RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
@@ -870,7 +908,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### P1：没有完整策略收益基准
 
-389 项测试和确定性分支代理证明当前实现满足已有功能契约且可比较局部反事实结果，但不能证明：
+407 项测试和确定性分支代理证明当前实现满足已有功能契约且可比较局部反事实结果，但不能证明：
 
 - 公式开局提高胜率；
 - RAG 改善动作质量；
@@ -943,14 +981,14 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A1/A1a 与 K-A2a 已完成，唯一最新判定 `strategy_router_shadow_verified`。下一步为 K-A2b1 离线路由分布载体与开发容量试验。
+状态：K-A2b1a 输出 fail-closed 已封板。唯一最新判定 `strategy_router_distribution_hardening_verified`，下一步为 K-A2b2 独立 seed 正式覆盖验收。
 
 依赖：
 
 - Step I 阶段分类稳定；
 - Step J 能提供结构化信念状态。
 
-K-A2a 已保持 K-A1/A1a 的公开输入边界，shadow off/on 的 client kwargs、prompt、fallback、decision source 和最终 action 完全一致。K-A2b1 只允许在 `evaluation/` 中统计分布，不得改变 runtime 或读取 ground truth。
+K-A2b2 只运行现有 evaluation 载体并生成仓库外审计证据，不修改 runtime、evaluation 实现、测试、阈值或采样规则。通过只授权后续单独设计 intent 消费消融，不授权直接接入 prompt、RAG、剪枝或动作选择。
 
 ## 6. 当前风险
 

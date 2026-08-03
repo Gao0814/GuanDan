@@ -787,14 +787,36 @@ overall prompt-pair digests：forced `c45e7241a3c37066065c49e3c73d4b33a93d5b7b11
 
 #### K-A2b1：离线路由分布载体
 
-状态：下一步，尚未实施。
+状态：核心载体与开发容量试验已完成；本节记录 K-A2b1 当时的 `strategy_router_distribution_harness_invalid`，缺口已由 K-A2b1a 封板。
 
-- 四种 strategic-pass 策略必须使用独立对局、agent 和聚合状态；
-- 仅消费公开 observation、原始 legal actions、统一 phase 和手牌评估；
-- 路由样本按四个非 opening 阶段聚合 available/unavailable、intent、reason、桌面领牌关系和 diagnostics；
-- opening、only-pass、一次出完、重复和样本上限单独计数，每层守恒；
-- 固定 seed 双运行的报告、`to_dict()` 和 canonical JSON 必须一致；
-- 本步只验证载体和容量，不以任意 intent 比例判定策略质量。
+- 四种 strategic-pass 策略使用独立对局、agent 和聚合状态；
+- 只消费公开 observation、原始 legal actions、统一 phase 和手牌评估；
+- 按四个非 opening 阶段聚合 available/unavailable/invalid、intent、reason、领牌关系和 diagnostics；
+- opening、only-pass、一次出完、重复和样本上限单独计数，各层守恒；
+- seed `200..209` 双运行完全相等，SHA-256 为 `32e42e0e7dc56377811fc52aa5d387d0b0f16e45102a3f88bea1a8e86d755ccb`；
+- 四策略均 10/10/0，无 unavailable、invalid、duplicate、sample-limit 或 diagnostics；
+- 主动 pass 为 `0/122`、`49/136`、`76/143`、`142/142`，比例严格递增；
+- 单模块 8 项、相关 58 项、全量 404 项通过；边界扫描与 `git diff --check` 通过。
+
+K-A2b1 当时尚未覆盖的严格反例：
+
+- wrong source 的 available context 仍被计为 available；
+- context phase 与当前 bucket phase 不同时仍被计入该 bucket；
+- unknown reason 或 reason-intent 错配仍被计入 reason 分布；
+- unavailable 结果缺少 source/phase/非空 diagnostics/中性字段复核。
+
+#### K-A2b1a：router 输出 fail-closed 封板
+
+状态：已完成，唯一判定 `strategy_router_distribution_hardening_verified`。
+
+- available 必须具有固定 source、与 bucket 一致的 phase、空 diagnostics、单一已知 reason 与合法 reason-intent 映射；
+- unavailable 必须保持全部策略字段中性，且带非空、规范字符串 diagnostics；
+- malformed result 统一记为 `invalid_router_result`，不泄露或聚合伪 diagnostics；
+- 合法语料的报告、`to_dict()` 和 canonical SHA-256 必须与 K-A2b1 完全一致；
+- wrong source/phase/status、非 tuple、bool 冒充、未知或错配 reason、relation/leader 矛盾和 unavailable 字段泄露均已覆盖；
+- 单模块 11 项、相关 61 项、全量 407 项通过；
+- seed `200..209` 双运行报告完全相等，canonical SHA-256 仍为 `32e42e0e7dc56377811fc52aa5d387d0b0f16e45102a3f88bea1a8e86d755ccb`；
+- 下一步 K-A2b2 只运行独立正式语料，不修改实现或阈值。
 
 #### 持续约束：软信号边界
 
