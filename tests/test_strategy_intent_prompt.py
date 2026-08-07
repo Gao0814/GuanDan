@@ -188,6 +188,73 @@ class TestStrategyIntentPrompt(unittest.TestCase):
                 )
                 self.assertEqual(payload.char_count, len(payload.text))
 
+    def test_fixed_text_character_envelope_covers_all_phase_reason_pairs(self) -> None:
+        """Lock every valid fixed-text length before a future corpus acceptance run."""
+
+        expected_lengths = {
+            "opponent_urgent": (74, 74, 84, 83),
+            "teammate_controls_table": (74, 74, 84, 83),
+            "teammate_urgent": (74, 74, 84, 83),
+            "can_finish_now": (75, 75, 85, 84),
+            "opponent_more_urgent": (75, 75, 85, 84),
+            "stable_control": (75, 75, 85, 84),
+            "teammate_more_urgent": (75, 75, 85, 84),
+            "urgent_opponent_controls_table": (76, 76, 86, 85),
+            "weak_hand": (79, 79, 89, 88),
+            "urgency_tie_block_opponent": (81, 81, 91, 90),
+        }
+        phases = (
+            "midgame",
+            "endgame",
+            "near_open_endgame",
+            "critical_endgame",
+        )
+        payload_envelopes = {
+            "midgame": (74, 81),
+            "endgame": (74, 81),
+            "near_open_endgame": (84, 91),
+            "critical_endgame": (83, 90),
+        }
+        delta_envelopes = {
+            "midgame": (83, 90),
+            "endgame": (83, 90),
+            "near_open_endgame": (93, 100),
+            "critical_endgame": (92, 99),
+        }
+
+        observed_reasons: dict[str, set[str]] = {phase: set() for phase in phases}
+        observed_lengths: dict[str, list[int]] = {phase: [] for phase in phases}
+        for reason, lengths in expected_lengths.items():
+            for phase, expected_length in zip(phases, lengths):
+                with self.subTest(phase=phase, reason=reason):
+                    payload = build_strategy_intent_prompt_payload(
+                        _context(reason, phase=phase)
+                    )
+                    self.assertEqual(
+                        (payload.status, payload.diagnostics),
+                        ("ready", ()),
+                    )
+                    self.assertEqual(payload.char_count, len(payload.text))
+                    self.assertEqual(len(payload.text), expected_length)
+                    observed_reasons[phase].add(reason)
+                    observed_lengths[phase].append(payload.char_count)
+
+        expected_reasons = set(expected_lengths)
+        for phase in phases:
+            with self.subTest(phase=phase, contract="envelope"):
+                lengths = observed_lengths[phase]
+                self.assertEqual(observed_reasons[phase], expected_reasons)
+                self.assertEqual(len(lengths), len(expected_reasons))
+                self.assertEqual(
+                    max(lengths),
+                    expected_lengths["urgency_tie_block_opponent"][phases.index(phase)],
+                )
+                self.assertEqual((min(lengths), max(lengths)), payload_envelopes[phase])
+                self.assertEqual(
+                    (min(length + 9 for length in lengths), max(length + 9 for length in lengths)),
+                    delta_envelopes[phase],
+                )
+
     def test_three_public_route_snapshots(self) -> None:
         steel_plate = {
             "declared_pattern": "steel_plate",

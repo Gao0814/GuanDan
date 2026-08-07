@@ -1,15 +1,15 @@
 # 项目状态看板
 
-更新时间：2026-08-03
+更新时间：2026-08-07
 
 ## 1. 当前基线
 
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
-- 当前 HEAD：`7b9aaae53faf7c5135cd147333d6195a10b90f87`
-- 当前工作状态：K-A3c1 离线覆盖载体已封板；下一步为 K-A3c2 独立语料正式验收
+- 当前 HEAD：`1fca3270843d51c2b565b37e7823b57ed9b950b5`；K-A3c2a 测试改动尚待提交检查点
+- 当前工作状态：K-A3c2a 字符包络契约已验证；下一步为 K-A3c2b 独立 seed 恢复验收
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：K-A3c1 定向 6 项、相关 52 项、全量 430 项通过
+- 实际验证结果：K-A3c2a 定向 12 项、相关 60 项、全量 431 项通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -40,7 +40,9 @@
 4. RAG 根据实时局面检索规则和经验；
 5. 残局达到可量化的近似明牌。
 
-当前已完成 K-A3c1 evaluation-only prompt pair 载体。seed `300..309` 双运行 report、`to_dict()` 与 canonical JSON 完全一致，SHA-256 为 `032ff0964a0fe4c377c612f27263e553abfe22ad759d14b5714ebf788d280a20`；四策略×四阶段全部 ready，零 omitted/invalid/mismatch/diagnostics，字符增量精确为 payload+9。唯一判定为 `strategy_intent_prompt_coverage_capacity_verified`，下一步 K-A3c2 只运行独立正式语料。
+K-A3c2 已使用 seed `18000..18199` 完成四策略各 200 局的正式双运行。两份 canonical JSON 完全一致，SHA-256 为 `35587b8d532dc9ba3fc8d82d6f6a690692362a31a908c066b2ad4783bfd1d148`；全部样本 ready 且精确插入，零 omitted/invalid/mismatch/diagnostics，覆盖门槛全部通过。正式判定仍为 `strategy_intent_prompt_coverage_benchmark_invalid`：四个 near-open 桶均观测到合法的 `91/100` payload/delta 最大值，超过预注册的 `89/98`。静态穷举表明这是字符包络门槛计算错误，不是 formatter 或配对实现错误；不得事后追认本次运行通过。
+
+K-A3c2a 已通过 40 个真实 formatter 调用锁定逐 phase×reason 精确字符数。四阶段 payload/delta 包络为 midgame `74..81 / 83..90`、endgame `74..81 / 83..90`、near-open `84..91 / 93..100`、critical `83..90 / 92..99`；唯一判定 `strategy_intent_prompt_envelope_contract_verified`。原 K-A3c2 结论不变，下一步只能使用全新 seed 做 K-A3c2b。
 
 ## 3. 分模块状态
 
@@ -62,7 +64,8 @@
 | rank 离线基准 | Step J-C3a/J-C3b 完成 | 固定种子采集、微聚合、阶段桶、可重复正式验收 | RuleBasedAI 不覆盖有牌可压时的战略性 pass |
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
-| 中期策略 | K-A3c1 完成 | 默认关闭接线、四策略×四阶段 prompt pair 覆盖与字符成本开发载体 | 尚未独立 seed 正式 prompt 覆盖验收或动作质量结论 |
+| 中期策略 | K-A3c2a 完成 | 默认关闭接线、真实字符包络已由 40 组合测试封板 | K-A3c2 原运行无效；待 K-A3c2b 新 seed 恢复验收 |
+| Botzone 接入 | Step L 已规划 | 支持范围锁定为无贡 profile；官方 transport、GuanDan 阶段与现有引擎差异已梳理 | claim、配子数量、无贡 runmatch initdata 和账号权限尚未封板；未开始代码 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -818,7 +821,7 @@ H2-A1a 已完成修复：
 
 ### P1：尚无中局策略收益结论
 
-K-A1 至 K-A3c1 已封板。开发双运行证明四策略×四阶段可生成稳定 prompt pair，但仍只是 10 局/策略容量试验。下一步 K-A3c2 使用全新独立 seed 正式验证 ready 覆盖和字符成本；仍不调用模型或比较动作。
+K-A1 至 K-A3c1 已封板。K-A3c2 正式双运行的结构、覆盖、插入和可重复性均通过，但预注册 near-open 最大字符数低估 2 个字符，因此唯一判定为 `strategy_intent_prompt_coverage_benchmark_invalid`。下一步 K-A3c2a 只用穷举测试锁定 formatter 的精确字符包络；不改文案、runtime 或 benchmark，也不比较动作。
 
 ### K-A1/A1a 复核：严格契约已封板
 
@@ -993,6 +996,35 @@ K-A1 至 K-A3c1 已封板。开发双运行证明四策略×四阶段可生成�
 
 唯一判定：`strategy_intent_prompt_coverage_capacity_verified`。该判定只授权 K-A3c2 独立 seed 正式覆盖验收，不授权动作消融、真实 API、RAG 路由或默认启用。
 
+### K-A3c2 复核：正式覆盖运行因预注册字符包络错误而无效
+
+已确认：
+
+- HEAD / K-A3c1 检查点为 `1fca3270843d51c2b565b37e7823b57ed9b950b5`，运行前后工作区干净；
+- seed `18000..18199`、四策略各 200 局，正式 benchmark 恰好运行两次；
+- 两份报告和 canonical JSON 完全一致，SHA-256 均为 `35587b8d532dc9ba3fc8d82d6f6a690692362a31a908c066b2ad4783bfd1d148`；
+- 四策略均完整完成，主动 pass 比例严格递增；16 个策略×阶段桶均达到 ready 样本门槛；
+- unavailable、router/payload invalid、omitted、duplicate、sample-limit、pair mismatch 与 diagnostics 均为 0；
+- 每个样本均精确插入，prompt delta 严格等于 payload 字符数加 9；
+- 四个 near-open 桶的 payload/delta 范围均为 `84..91 / 93..100`，超过预注册的 `84..89 / 93..98`；
+- 静态穷举固定四行 formatter 的全部 phase×reason 组合得到真实理论包络：midgame `74..81 / 83..90`、endgame `74..81 / 83..90`、near-open `84..91 / 93..100`、critical `83..90 / 92..99`；
+- 最大值对应合法 reason `urgency_tie_block_opponent`，文案为“双方同样紧迫，优先阻断对手”；没有发现 runtime、formatter、插入或采样缺陷。
+
+唯一判定：`strategy_intent_prompt_coverage_benchmark_invalid`。该正式运行不能因事后发现门槛算错而追认通过；当时要求先完成 K-A3c2a，再以全新、未使用 seed 另行预注册 K-A3c2b 恢复验收。
+
+### K-A3c2a 复核：字符包络契约已封板
+
+已确认：
+
+- 仅修改 `tests/test_strategy_intent_prompt.py`，未修改 formatter、runtime、evaluation benchmark 或 docs；
+- 穷举四阶段×十种合法 reason，共 40 个真实 formatter 调用；
+- 全部 payload 为 ready、diagnostics 为空，且 `char_count == len(text)`；
+- 40 个逐组合长度全部匹配预注册表，每阶段最大值均来自 `urgency_tie_block_opponent`；
+- payload/delta 包络精确为 midgame `74..81 / 83..90`、endgame `74..81 / 83..90`、near-open `84..91 / 93..100`、critical `83..90 / 92..99`；
+- 定向 12 项、相关 60 项、全量 431 项通过，`git diff --check` 和禁止边界扫描通过。
+
+唯一判定：`strategy_intent_prompt_envelope_contract_verified`。该结论不追认 K-A3c2 通过，只授权在 K-A3c2a 形成检查点且工作区干净后，使用 seed `19000..19199` 执行 K-A3c2b。
+
 ### P1：RAG 不能单独承担策略路由
 
 RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
@@ -1082,14 +1114,39 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A3c1 已封板。唯一最新判定 `strategy_intent_prompt_coverage_capacity_verified`，下一步为 K-A3c2 独立语料正式验收。
+状态：K-A3c2a 已完成，唯一判定 `strategy_intent_prompt_envelope_contract_verified`。K-A3c2 原结论仍为 `strategy_intent_prompt_coverage_benchmark_invalid`；下一步为 K-A3c2b。
 
 依赖：
 
 - Step I 阶段分类稳定；
 - Step J 能提供结构化信念状态。
 
-K-A3c2 不修改仓库文件，只使用全新 seed 完整双运行并将 canonical 报告与审计证据保存在仓库外；不调用 `suggest_action_id()`、HTTP、真值或隐藏状态。
+K-A3c2a 只修改了 `tests/test_strategy_intent_prompt.py`。40 个组合全部 ready、空 diagnostics 且字符数精确匹配；定向 12 项、相关 60 项、全量 431 项通过。K-A3c2b 必须先形成 K-A3c2a 检查点并确保工作区干净，再使用全新 seed `19000..19199` 恰好双运行；不得修改 formatter、runtime、benchmark 或事后门槛。
+
+### Step L：Botzone 本地 AI 接入
+
+状态：调研与架构计划已建立，尚未修改代码。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+
+已确认：
+
+- 本地 AI 是本机主动 GET 的长轮询接口，response 通过 `X-Match-<match_id>` Header 在后续 GET 中回传；一次 poll 可承载多个对局；
+- 官方 `runmatch` 使用游戏名、位置 Bot ID 和唯一 `me` 创建对局；本地位置不要求上传本机源码；
+- Botzone GuanDan 使用 `0..107` 实体牌 ID，协议定义 `deal / tribute / return / play` 四阶段；
+- 用户提供的建桌 UI 确认“需要进贡”可选“否”；项目支持范围现锁定为无贡 profile，只运行 `deal + play`；
+- play response 是 `[action, claim]`，对应当前 `carrier_cards / declared_cards` 边界；
+- 当前 engine 没有贡还/抗贡，且 `Card` 不保存两副同牌的实体 ID；adapter 仍需处理实体 ID，并对贡还 stage 显式 fail-closed；
+- play 阶段可以由 integration 构造只含本家手牌、级牌和桌面动作的规则投影，再把 canonical actions 交给 Agent；
+- 第一阶段默认 RuleBasedAI，DeepSeek 不进入基础验收。
+
+阻塞：
+
+- 官方 claim 对花色/副本 ID 的精确要求；
+- 单手配子数量上限是否与当前 engine 的 1 张一致；
+- runmatch `X-Initdata` 中“需要进贡=否”的精确表示；
+- 目标账号当前本地 AI 等级门槛；
+- 真实 smoke 前必须从官方裁判源码或脱敏 Log 封板，不能从第三方代码猜测。
+
+推荐实施顺序：Phase 0 官方差异封板与无贡 profile 确认 → Phase 1 codec/protocol → Phase 2 mock connector/session → Phase 3 RuleBasedAI 的 deal + play → Phase 4 用户授权且手动设为无贡的真实 smoke → Phase 5 可选 DeepSeek。贡还不在当前范围；收到相关 stage 必须失败，不得绕过。
 
 ## 6. 当前风险
 
@@ -1099,6 +1156,8 @@ K-A3c2 不修改仓库文件，只使用全新 seed 完整双运行并将 canoni
 4. RAG 条目增加会扩大提示词，必须同步控制 token。
 5. 当前没有 A/B 对局工具，策略增强暂时只能声明“已接入”，不能声明“已提升”。
 6. 单局复盘容易把隐藏真值误当成玩家当时已知信息；每个建议必须区分公开可知、事后可知和需要 rollout 才能判断的内容。
+7. Botzone 建桌若误设为需要进贡，会进入当前项目明确不支持的 stage；连接器必须验证无贡 profile，并拒绝 `tribute/return`。
+8. Botzone 本地 AI URL/密钥位于连接 URL 中，任何日志、异常、fixture 或文档示例泄露都会构成安全问题。
 
 ## 7. 项目管理规则
 

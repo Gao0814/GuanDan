@@ -908,14 +908,44 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 #### K-A3c2：独立语料正式 prompt 覆盖验收
 
-状态：下一步，尚未运行。
+状态：已完成，唯一判定 `strategy_intent_prompt_coverage_benchmark_invalid`。
 
-- K-A3c1 必须先提交，正式运行前后工作区保持干净；
-- 使用全新 seed `18000..18199`，四策略各 200 局，完整双运行；
-- 所有实现、采样、预算和覆盖规则保持不变；
-- 16 个策略×阶段桶必须满足正式 ready 样本下限；
-- 完整证据保存在仓库外，不依赖标准输出；
-- 不调用模型、网络、真值或隐藏状态。
+- HEAD / K-A3c1 检查点为 `1fca3270843d51c2b565b37e7823b57ed9b950b5`；
+- seed `18000..18199`，四策略各 200 局，正式双运行耗时 65.371s / 65.002s；
+- 两份 canonical JSON 完全一致，SHA-256 为 `35587b8d532dc9ba3fc8d82d6f6a690692362a31a908c066b2ad4783bfd1d148`；
+- 16 个桶全部达到 ready 样本门槛，且 `sample = ready = exact insertion`；
+- unavailable、invalid、omitted、duplicate、sample-limit、pair mismatch 与 diagnostics 全部为 0；
+- 四个 near-open 桶均为 payload `84..91`、delta `93..100`，违反预注册上界 `89/98`；
+- delta 仍严格等于 payload+9，失败来自预注册理论包络错误，不是插入或实现错误；
+- 运行前后定向 6 项、相关 52 项、全量 430 项通过，`git diff --check` 通过；
+- 原运行保持无效，不重跑、不补采、不事后追认。
+
+#### K-A3c2a：字符包络契约封板
+
+状态：已完成，唯一判定 `strategy_intent_prompt_envelope_contract_verified`。
+
+- 只修改 `tests/test_strategy_intent_prompt.py`；
+- 穷举四阶段×十种合法 reason，共 40 个真实 formatter 调用，全部 payload ready、diagnostics 为空；
+- 全部满足 `char_count == len(text)`，逐组合字符数与预注册表精确一致；
+- 理论 payload 包络固定为 midgame `74..81`、endgame `74..81`、near-open `84..91`、critical `83..90`；
+- 对应 prompt delta 固定为 payload+9，即 `83..90`、`83..90`、`93..100`、`92..99`；
+- 每阶段最大值均来自 `urgency_tie_block_opponent`；
+- 定向 12 项、相关 60 项、全量 431 项通过，`git diff --check` 与禁止边界扫描通过；
+- 未修改 formatter 文案、映射、runtime、benchmark 或任何业务代码；
+- K-A3c2 原正式 invalid 结论不变，只授权使用全新 seed 的 K-A3c2b 恢复验收。
+
+#### K-A3c2b：独立 seed 正式恢复验收
+
+状态：下一步，尚未执行。
+
+- 前置为 K-A3c2a 已提交检查点且工作区干净；
+- 固定 seed `19000..19199`、rates `(0,25,50,100)`、级牌 `2`、`max_steps=5000`、每局每阶段最多 128 样本；
+- 正式 benchmark 恰好运行两次，报告、`to_dict()`、canonical JSON 和 SHA-256 必须一致；
+- 每策略 200/200/0，对应四阶段 ready 最低样本为 midgame 1400、endgame 1000、near-open 1000、critical 1800；
+- 16 个桶均要求 `sample = router available = payload ready = exact insertion`，其他状态与 diagnostics 全为 0；
+- 字符范围必须落在 K-A3c2a 封板包络内，且 delta 的 sum/min/max 分别等于 payload 对应值加固定 9 字符开销；
+- 通过判定为 `strategy_intent_prompt_coverage_recovery_verified`，否则为 `strategy_intent_prompt_coverage_recovery_invalid`；
+- 通过只授权规划 evaluation-only 动作消融，不授权联网、默认启用或胜率声明。
 
 #### 持续约束：软信号边界
 
@@ -943,6 +973,32 @@ K-A2b1 当时尚未覆盖的严格反例：
 - 强牌且无紧急威胁时可进入 `control`；
 - RAG 只为已选策略提供证据；
 - 近似明牌残局不能把低置信度猜测写成确定事实。
+
+## 6. Step L：Botzone 本地 AI 接入测试计划
+
+状态：仅规划，尚未新增测试或实现。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+
+最低测试集合：
+
+- `tests/test_botzone_cards.py`：108 个牌 ID、花色/点数/王边界、两副副本 identity；
+- `tests/test_botzone_protocol.py`：本地 AI poll、多个 match、finished/aborted、deal/play 编解码、tribute/return stage 识别和 Header 注入；
+- `tests/test_botzone_profile.py`：无贡 profile、deal/play 允许、tribute/return 明确 unsupported、未知 stage 拒绝；
+- `tests/test_botzone_session.py`：事件去重、实体手牌、重连恢复、多局隔离和中途无状态 fail-closed；
+- `tests/test_botzone_play_adapter.py`：座位映射、observation、table constraint、pass、自然动作和配子 action/claim；
+- `tests/test_botzone_action_provenance.py`：输出只能来自原始 legal action 对应 `action_id`；
+- `tests/test_botzone_connector.py`：mock GET、阻塞/超时/断线、pending response 重发和敏感信息脱敏；
+- `tests/test_botzone_rule_agent_e2e.py`：RuleBasedAI 的 deal→play 关键回合、终局和无贡 profile 边界；
+- `tests/test_botzone_config.py`：不读取真实 `.env`，缺失配置安全失败，日志不包含配置值；
+- `tests/test_botzone_rule_compatibility.py`：官方裁判/脱敏 Log 与当前 engine 的差分 fixture。
+
+验收边界：
+
+- 协议与 unsupported stage 边界通过后可标记 `botzone_no_tribute_protocol_verified`；
+- deal + play 端到端通过后可标记 `botzone_no_tribute_adapter_verified`；不得宣称完整支持 Botzone GuanDan；
+- 真实联网测试必须另行取得用户明确授权；
+- 真实测试桌必须显式设置“需要进贡=否”；收到 tribute/return 时该局验收失败，不生成替代动作；
+- smoke 完成只证明接入可用，不证明胜率或策略提升；
+- fixture 不得包含真实 URL、密钥、match ID、完整真实手牌或原始 Log。
 
 ## 6. 对局评测
 

@@ -1,0 +1,359 @@
+# Botzone 本地 AI 接入计划
+
+更新时间：2026-08-05
+
+## 1. 任务目标与可行性结论
+
+任务编号：Step L（Botzone 本地 AI 接入）。
+
+目标是在不改变现有 AI 边界的前提下，让本机连接器通过 Botzone 本地 AI 接口参与 GuanDan 测试对局，用真实平台对手验证 RuleBasedAI 或其他本地策略的合法性、稳定性和实际对抗表现。
+
+当前结论：**按“Botzone GuanDan 无贡模式”限定范围后有条件可行；本项目不实现贡牌、还牌、抗贡或双贡，也不宣称支持 Botzone GuanDan 的全部配置。**
+
+- 本地 AI 传输层可行性高：官方协议是由本机发起的重复长轮询 GET，不需要公开本机端口，也不是上传源码或 WebSocket。
+- play 阶段适配可行：当前 `BaseRuleEngine.generate_legal_actions()` 实际只依赖当前玩家手牌、级牌和桌面领出动作，可由 Botzone 公开请求构造单玩家规则投影。
+- 用户提供的建桌设置截图确认“需要进贡”可选择“否”，且默认测试对局采用该配置；因此首期真实 smoke 的支持范围可以收敛为 `deal + play`。
+- 当前 engine 没有贡还能力不再阻塞无贡模式接入；但 adapter 必须识别 `tribute / return` 并以 `unsupported_stage` fail-closed，不能返回空响应、pass 或任意牌绕过。
+- 规则一致性尚未完全证明：Botzone `claim` 的精确牌 ID 表示、单手配子数量上限仍需从官方裁判源码或脱敏真实 Log 封板。
+- RuleBasedAI 可作为第一阶段默认 AI，但它只保证从合法动作中稳定选择，不代表已有强对抗能力。真实 smoke 只能证明接入正确；实力判断需要座位平衡和固定对手的小批量统计。
+
+本任务不得改变以下边界：
+
+- `engine/` 继续提供出牌规则真值；
+- `agents/` 只接收转换后的公开 observation 和 canonical `legal_actions`，只返回原始合法 `action_id`；
+- adapter 查找该 `action_id` 对应的原始 action 后再编码 Botzone response；
+- Agent 不得生成 Botzone 牌 ID、`action` 或 `claim`；
+- 真实连接 URL 和密钥仅作为不透明的环境变量或启动参数传入，不写入源码、测试、文档示例或日志；
+- 第一阶段默认使用 `RuleBasedAIAgent`，不使用 DeepSeek。
+- 支持范围固定标记为 `Botzone GuanDan no-tribute profile`；贡还模式和跨局升级均为非目标。
+
+## 2. 已核实的官方协议
+
+以下事实来自 Botzone 官方页面，核对日期为 2026-08-05：
+
+- [本地AI词条](https://wiki.botzone.org.cn/index.php?title=%E6%9C%AC%E5%9C%B0AI)，固定版本 `oldid=2230`；
+- [Bot 交互词条](https://wiki.botzone.org.cn/index.php?title=Bot)，固定版本 `oldid=2245`；
+- [GuanDan 词条](https://wiki.botzone.org.cn/index.php?title=GuanDan)，固定版本 `oldid=2497`；
+- [GuanDan 游戏详情](https://www.botzone.org.cn/game/GuanDan)。
+
+### 2.1 本地 AI 传输
+
+1. 用户手动创建/加入游戏桌并勾选“用本地AI替代我”，或调用官方 `runmatch` API。
+2. 本机连接器向账号页面生成的本地 AI URL 发起 GET；该 URL 包含敏感身份和密钥，程序必须整体当作 opaque secret。
+3. GET 可能阻塞到有新 request 或服务端超时，属于长轮询，不是长连接流或 WebSocket。
+4. 返回文本首行为 `m n`：有新 request 的对局数和已结束对局数。
+5. 后续 `2*m` 行按“match ID、该回合 request”成对出现；再后续 `n` 行是结束信息。
+6. 连接器把已完成 response 放入下一次 GET 的 `X-Match-<match_id>` Header。
+7. 一次轮询可同时承载多个 match，必须按 match ID 隔离状态。
+8. 结束行包含 match ID、本地 AI 座位、玩家数和各玩家分数；玩家数为 0 表示对局异常终止。
+9. 官方未规定固定的服务端长轮询秒数；样例只在 URL/HTTP 错误或超时后等待并重试。
+
+`runmatch` 官方 Header 为 `X-Game`、`X-Player-0..n` 和可选 `X-Initdata`。参与者必须有且只有一个 `me`；其他位置填写 Botzone 已有 Bot ID。创建成功返回 match ID。
+
+### 2.2 Bot 通用交互与本地 AI 的区别
+
+- 普通短生命周期 Bot 的 JSON 输入包含该 Bot 过去全部 `requests/responses`，并可携带 `data/globaldata`。
+- GuanDan Wiki 中展示的是单回合游戏 request；本地 AI 网关按官方词条优先返回 simple-IO request，并由连接器自身持续运行。
+- 本地 AI 专用接口没有承诺在连接器重启后重放整场历史，也没有说明会转发普通 Bot 的 `data/globaldata` 外层对象。
+- 因此不能把普通 Bot 的“完整 requests/responses”保证直接套到本地 AI 连接器；连接器必须有自己的按局恢复机制。
+
+### 2.3 GuanDan 阶段与数据
+
+- 牌 ID 为 `0..107`。`0..53` 是第一副牌，`54..107` 重复同一牌面。
+- 每副牌中普通牌按 `h, d, s, c` 排列；`0..3` 为四种花色的 A，`4..7` 为四种花色的 2，依次到 K；`52/53` 为小王/大王。
+- `deal`：request 含 `deliver` 27 张牌和 `your_id`；response 是空数组。
+- `tribute`：需要进贡；response 是贡牌 ID 数组。
+- `return`：需要还贡；response 是还牌 ID 数组。
+- `play`：response 为 `[action, claim]`。`action` 是真实打出的 ID；`claim` 是配子替代后的声明牌型。没有配子时二者相同；pass 为两个空数组。
+- `play.history` 只包含近四手、包括 pass；每项含 `player` 和同结构 response。
+- `done` 标记已出完玩家；`pass_on` 表示接风上下文。
+- `global` 总是提供 `level`，并可能提供 `tribute`、上一局 `first/last`、`resist`、`tribute_cards`、`return_cards`。
+- 用户提供的当前建桌 UI 显示“需要进贡”可选“否”；本项目只支持该无贡配置。该截图用于确认项目配置范围，不替代官方协议或裁判语义文档。
+- 平台协议仍可能出现 `tribute / return`；在本项目无贡 profile 中出现这些 stage 代表建桌配置或协议状态不符合支持范围，必须安全终止该 match。
+
+## 3. 协议与规则差异表
+
+| 维度 | 当前项目 | Botzone GuanDan | 处理位置 / 结论 |
+|---|---|---|---|
+| 玩家编号 | `1..4`，1/3 与 2/4 组队 | `0..3`，0/2 与 1/3 组队 | adapter 固定 `botzone_id + 1`，测试座位和队伍保持 |
+| 牌面编码 | `Card(rank, suit)` / token；无副本 ID | `0..107`，两副牌 ID 不同 | `cards.py` 保留 ID inventory；token 仅给 engine/Agent |
+| 花色顺序 | token 使用 `S/H/C/D` | ID 余数顺序 `h/d/s/c` | 明确映射，不依赖枚举顺序 |
+| 点数顺序 | token `A,2..K,SJ,BJ` | 每副牌普通 ID 从 A、2 到 K，再 joker/Joker | 公式+108 张穷举测试 |
+| 发牌 | `reset()` 自己洗牌并给四家 27 张 | `deal.deliver` 只给本家 27 张 | 不调用随机 reset；session 接受平台发牌 |
+| 副本身份 | 两张同花同点不可区分 | 两张同牌有不同 ID | 输出前按当前 ID multiset 决定实体 ID，不能只反向 token |
+| 局前阶段 | 无 | 建桌可选择是否进贡；协议定义 `tribute / return / resist / double tribute` | 仅支持“需要进贡=否”；识别其他 stage 后 `unsupported_stage`，不实现策略 |
+| 开局领牌者 | 构造参数 `starting_player_id` | 无贡模式的领牌信息仍须以官方 request/global fixture 为准 | session 只消费已确认字段，不从贡还规则或截图猜测 |
+| 出牌历史 | engine 保存完整 history | request 只给近四手 | session 去重累计公开事件；不能只看单次 request 做全局统计 |
+| 完赛/接风 | engine 内部推进并公开 finish order | `done`、`pass_on` | adapter 转为公开 observation；过渡需去重 |
+| 合法动作 | `BaseRuleEngine` 输出 `Action`，`GuanDanGame` 分配 `action_id` | 平台要求 ID 数组 | integration 构造单玩家 `GameState` 投影并序列化 canonical actions |
+| pass | canonical pass action | `[[], []]` | action adapter 固定转换 |
+| 普通出牌 | `carrier_cards` 与 `declared_cards` | `action` 与 `claim` 相同 | 用 inventory 中实际 ID 同时填两边 |
+| 配子出牌 | carrier 与 declared 分离，`wildcard_info` 显式 | `action` 与 `claim` 可不同 | 只从被选 canonical action 转换；精确 claim 编码仍是 Phase 0 阻塞项 |
+| 配子数量 | 当前实现每手最多 1 张 | Wiki 未明确每手最多几张 | **不确定**；必须查官方裁判源码，不得假设相同 |
+| 牌型/比较 | 当前 SPEC 的单局规则 | Wiki 规则文字相近，但未完整给出所有 judge 比较细节 | Phase 0 建立官方差异 fixture；不以名称相同视为等价 |
+| 终局结果 | engine 自己计算 winner/draw | gateway 结束行给各玩家 score | 以平台结束结果为审计真值；本地结果只用于测试 |
+| 跨局升级 | 不支持 | 建桌可显式设置双方等级和上一轮名次 | 只消费当前测试桌给出的本局公开配置；不实现升级赛或贡还 |
+
+## 4. 推荐目录与模块职责
+
+建议使用 `integrations/botzone/`，不在 `engine/`、`agents/` 或现有 `cli/` 中加入连接逻辑：
+
+```text
+integrations/
+  botzone/
+    __init__.py
+    models.py
+    cards.py
+    protocol.py
+    session.py
+    profile.py
+    play_adapter.py
+    runner.py
+    connector.py
+    __main__.py
+```
+
+| 模块 | 职责 | 禁止事项 |
+|---|---|---|
+| `models.py` | frozen/slots 的 poll、match result、stage request、pending response 数据模型 | 不读环境、不联网 |
+| `cards.py` | 108 ID 双向映射、ID inventory、确定性实体牌选择 | 不丢副本 ID，不做策略 |
+| `protocol.py` | 解析 `m/n` 文本、编码/校验 `X-Match-*`、解析 GuanDan stage JSON | 不调用 Agent，不重试网络 |
+| `session.py` | match ID 隔离、事件去重、手牌/人数/完成状态、pending response 和持久化恢复 | 不保存 URL/密钥，不依赖单例全局状态 |
+| `profile.py` | 验证无贡配置；允许 `deal/play`，识别并拒绝 `tribute/return` | 不实现贡还策略，不用空响应或随意动作绕过 |
+| `play_adapter.py` | Botzone 公共请求→engine 规则投影→observation/legal actions；action ID→`[action, claim]` | 不让 Agent 看 Botzone ID，不调用 engine 私有状态 |
+| `runner.py` | 按 stage 调度；play 默认调用 `RuleBasedAIAgent`；统一 fail-closed | DeepSeek 不作为默认值 |
+| `connector.py` | 可注入 transport 的长轮询、超时/退避、批量 Header、完成通知和脱敏日志 | 不输出完整 URL/Header/response |
+| `__main__.py` | 独立启动入口 | 不修改现有 `cli/run_4ai_debug.py` |
+
+第一版优先使用标准库 HTTP 客户端，不新增依赖。连接配置模块不得导入会自动读取仓库 `.env` 的配置路径；只从显式环境变量或启动参数取得 opaque URL。环境变量名称可以文档化，但不得给出真实或可用示例值。
+
+## 5. 完整消息流
+
+```mermaid
+sequenceDiagram
+    participant Local as 本机 Botzone Connector
+    participant Store as Match Session Store
+    participant Gateway as Botzone Local-AI Gateway
+    participant Judge as Botzone GuanDan Judge
+    participant Adapter as Protocol/Stage Adapter
+    participant Rules as engine BaseRuleEngine
+    participant AI as RuleBasedAIAgent
+
+    Local->>Gateway: GET opaque local-AI URL + pending X-Match headers
+    Gateway->>Judge: 提交上一回合 response
+    Judge-->>Gateway: 生成 stage request 或终局分数
+    Gateway-->>Local: m n + match/request pairs + finished rows
+    Local->>Store: 按 match_id 去重并恢复/创建 session
+    Local->>Adapter: 解码当前 stage request
+    alt deal
+        Adapter->>Store: 保存 your_id、level、27 张实体 ID
+        Adapter-->>Local: []
+    else tribute/return or unsupported stage
+        Adapter->>Store: 标记 profile mismatch / unsupported_stage
+        Adapter-->>Local: 不生成响应，安全终止该 match
+    else play
+        Adapter->>Store: 恢复本家手牌、公开历史、done/pass_on
+        Adapter->>Rules: 当前手牌 + level + leading action 的单玩家规则投影
+        Rules-->>Adapter: engine Action 集合
+        Adapter->>AI: 转换后的公开 observation + canonical legal_actions
+        AI-->>Adapter: 原始合法 action_id
+        Adapter->>Adapter: 查回原 action，编码实体 action 与 claim
+        Adapter-->>Local: [action, claim]
+    end
+    Local->>Store: 原子保存 request hash、response、pending transaction
+    Note over Local,Gateway: 下一次成功 GET 前保留 pending response；传输失败不丢响应
+```
+
+关键边界：Botzone Gateway 只与 connector 通信；Agent 不直接接触网络、match ID、Botzone 牌 ID、连接 URL 或 Header。
+
+## 6. 状态、持久化与重连
+
+### 6.1 会话状态
+
+每个 match ID 独立保存：
+
+- 协议版本和 stage；
+- `your_id`、level、已确认的无贡 profile 和必要公开本局配置；
+- 初始和当前本家 Botzone ID multiset；
+- 去重后的公开 play 事件、各玩家剩余张数、done 顺序和 pass_on；
+- 最新 request digest、已生成 response、pending/acknowledged 状态；
+- 不含密钥的诊断计数。
+
+### 6.2 持久化策略
+
+- 内存 map 只作工作集，不能作为唯一真值。
+- 每次生成 response 前后使用原子 snapshot 或 append-only journal，目录位于显式 runtime state dir，不放在仓库 `logs/`。
+- snapshot 不保存本地 AI URL、密钥、完整 HTTP Header 或环境变量。
+- 相同 request digest 必须返回完全相同 response，避免重试导致策略随机漂移。
+- 只有携带 pending Header 的 GET 成功返回后，才把该 pending transaction 标为已发送；传输异常时保留并重发同一 response。
+- 收到 finished row 后归档最小聚合结果并删除活动手牌状态。
+- 启动时若收到非 `deal` request 且本地无可恢复 session，整体 fail-closed，不猜手牌、不伪造 pass；收到 `tribute/return` 同样 fail-closed。
+
+### 6.3 历史恢复边界
+
+Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完整公开历史。正常运行依赖本地 durable session；不能声称仅靠当前 request 可从任意中途恢复。后续若官方确认本地 AI 会重放全部历史，可再简化，但实现前不得假设。
+
+## 7. 分阶段实施计划
+
+### Phase 0：官方协议核实与差异清单
+
+状态：已完成基础调研，仍有阻塞项待封板。
+
+工作：
+
+- 保存官方页面固定版本、核对本地 AI poll/Header/runmatch 协议；
+- 从官方 GuanDan 裁判源码或脱敏真实调试 Log 确认 claim、配子数量和无贡模式的 request 顺序；
+- 把“需要进贡=否”定义为唯一支持的 Botzone profile，并确认手动建桌可以稳定选择该配置；
+- 核实 `runmatch` 的 `X-Initdata` 如何无歧义表达“需要进贡=否”；未确认前不使用 runmatch 创建正式 smoke 对局；
+- 在登录后的账号设置页确认当前部署的本地 AI 等级门槛；
+- 建立不含真实 URL、密钥、match ID 或手牌的协议差异表和脱敏 fixture 清单。
+
+验收：
+
+- 所有字段标为 confirmed/unsupported/unknown，不以第三方实现补官方空白；
+- `deal/play` 的字段与顺序有官方依据；`tribute/return` 能被精确识别并返回统一 unsupported 诊断；
+- claim 编码可无歧义映射当前 canonical action；
+- 确认账号权限、手动桌选择方式和 runmatch 前置条件；
+- 未读取或持久化任何真实密钥。
+
+未满足以上条件时，唯一状态为 `botzone_protocol_research_blocked`，不得进入真实连接。
+
+### Phase 1：纯协议模型与卡牌映射
+
+工作：实现 `models.py/cards.py/protocol.py`，加入官方脱敏 fixture；不联网、不调用 Agent。
+
+验收：
+
+- 108 个 ID 全量双向映射；两副同牌 round-trip 后仍保留原 ID；
+- `deal/play` request/response 严格编解码；`tribute/return` 至少严格解析 stage 标识并以 unsupported 结果拒绝；
+- poll 的多 request、多 finished、异常终止和 CRLF/LF 均有测试；
+- Header 名和值拒绝换行注入；未知 stage/字段/type 整体失败；
+- 不读取配置、环境变量或 `.env`。
+
+### Phase 2：连接器骨架与 mock Botzone
+
+工作：实现可注入 transport、session store、pending response 事务和独立 module 启动入口；只连 mock transport。
+
+验收：
+
+- mock 覆盖阻塞 poll、超时、HTTP 错误、重试、多 match 和 finished；
+- 失败重试不丢失或改变 pending response；
+- 重复 request 幂等；多会话手牌/历史完全隔离；
+- 进程重启后从临时 state dir 恢复；无状态中途 request fail-closed；
+- 日志和异常不含 URL、密钥或完整 Header。
+
+### Phase 3：连接 RuleBasedAI 的端到端回合测试
+
+工作：实现 `profile.py/play_adapter.py/runner.py`，完成无贡 profile 的 `deal + play` 链路；不联网、不实现贡还路径。
+
+验收：
+
+- adapter 只用公开 request/session 生成 observation 和 legal actions；
+- `RuleBasedAIAgent` 返回值经 `require_legal_action_id` 和原始 action 映射双重验证；
+- pass、自然出牌、配子 action/claim、接风和玩家完成均通过；
+- 每个输出都可追溯到原始 legal action，未知输入不伪造动作；
+- 单玩家规则投影与 `GuanDanGame.legal_actions()` 在可构造同状态 fixture 上等价；
+- deal→多轮 play 的脱敏端到端脚本完成；
+- 任一 `tribute/return` 输入都不调用 Agent、不生成动作，并稳定返回 `unsupported_stage`；
+- 通过后只能标记 `botzone_no_tribute_adapter_verified`，不得标记完整 Botzone GuanDan 支持。
+
+### Phase 4：真实 Botzone 小规模 smoke test
+
+前置：用户明确授权联网；Phase 0-3 全部通过；账号权限已确认；URL/密钥只存在进程环境或显式参数中。
+
+工作：
+
+1. 先手动创建测试桌，明确把“需要进贡”设为“否”，验证 deal 到终局；
+2. 只有在官方资料确认 `X-Initdata` 的无贡表达后，才用 runmatch 与三个指定现有 Bot 创建至多四局，并让 `me` 轮换四个座位；
+3. smoke 通过后，可另行预注册固定对手的小批量观察性对抗评测。
+
+验收：
+
+- 无非法 response、超时、断线丢状态或跨局污染；
+- 实际只出现已支持的 deal/play；若出现 tribute/return，则该局按配置错误失败，不计为接入成功；
+- 保存聚合的完成数、异常数、座位、平台 score 和耗时，不保存请求正文、手牌、match URL 或密钥；
+- smoke 只证明接入可用，不声明胜率提升；实力结论至少需要座位平衡、固定对手和预注册局数。
+
+### Phase 5：可选 DeepSeek
+
+前置：RuleBasedAI 的 Phase 4 完整通过，且另行取得 DeepSeek 与 Botzone 两个外部网络面的明确授权。
+
+验收：
+
+- 默认仍为 RuleBasedAI，DeepSeek 必须显式开启；
+- Botzone 每回合时限、模型超时和 fallback 预算有硬上限；
+- 模型失败仍只能回退到原始 legal actions；
+- 不把 DeepSeek API key 与 Botzone URL/密钥写入同一日志或审计文件；
+- 不作为 Botzone 基础接入验收条件。
+
+## 8. 计划新增的测试
+
+| 测试文件 | 主要场景 |
+|---|---|
+| `tests/test_botzone_cards.py` | 108 ID 全覆盖、A/2/K/王边界、花色、两副副本、非法 ID |
+| `tests/test_botzone_protocol.py` | poll `m/n`、多局、finished/aborted、stage JSON、Header 注入、malformed fail-closed |
+| `tests/test_botzone_profile.py` | 无贡 profile、deal/play 允许、tribute/return 明确 unsupported、未知 stage 拒绝 |
+| `tests/test_botzone_session.py` | request 去重、手牌 ID inventory、history 累积、多局隔离、snapshot/restart、无状态中途恢复失败 |
+| `tests/test_botzone_play_adapter.py` | 0/1-based 座位、公开 observation、table constraint、pass、自然牌、配子 carrier/claim |
+| `tests/test_botzone_action_provenance.py` | 所有输出来自原始 legal action ID；非法/过期/其他会话 action ID 拒绝 |
+| `tests/test_botzone_connector.py` | mock GET、阻塞/超时/断线、pending 重发、批量 Header、敏感信息脱敏 |
+| `tests/test_botzone_rule_agent_e2e.py` | RuleBasedAI 的 deal→关键 play 回合、终局和无贡 profile 边界 |
+| `tests/test_botzone_config.py` | 只读显式环境/参数、缺失配置失败、未导入 dotenv、日志不含配置值 |
+| `tests/test_botzone_rule_compatibility.py` | 官方裁判/Log 脱敏 fixture 与当前 engine 的牌型、比较、配子、接风差异 |
+
+测试 fixture 建议放在 `tests/fixtures/botzone/`，只保留官方文档样例和人工脱敏结构。不得提交真实 URL、密钥、match ID、完整真实手牌或对局 Log。
+
+## 9. 风险与阻塞项
+
+### P0 阻塞
+
+1. **claim 编码仍不充分。** 当前 canonical `declared_cards` 的同点数组合通常没有声明花色，而 Botzone claim 使用牌 ID；必须确认 judge 对 claim 中花色/副本的要求。
+2. **配子数量规则未封板。** 当前 engine 每手最多一个配子，官方 Wiki 没有明确同一手的数量上限。
+3. **无贡 runmatch initdata 未封板。** 手动建桌 UI 已确认可选择“需要进贡=否”，但 `X-Initdata` 的对应 JSON/文本形式不能靠截图猜测。
+4. **账号等级门槛信息冲突。** 官方不同当前页面/缓存出现“1级以上”和“6级以上”两种文本；必须以目标账号登录后的设置页为准。
+
+### P1 风险
+
+1. 本地 AI Wiki 固定版本较旧，接口声明可能变化；Phase 4 前必须重新核对当前页面。
+2. 本地 AI 网关没有明确 exactly-once ack；pending response 需要按官方样例的“失败保留、成功后提交”事务处理。
+3. `play.history` 只有近四手，进程重启恢复必须依赖本地 durable state。
+4. 当前 RuleBasedAI 很弱，合法完成对局不等于实际对抗能力好。
+5. Botzone 平台对手与发牌不可固定，少量结果不能与本地固定 seed 评测直接比较。
+6. 当前项目与 Botzone 的牌型比较细节尚未经过 judge fixture 差分，名字相同不代表完全等价。
+7. 人工建桌误选“需要进贡=是”会进入本项目明确不支持的阶段；必须在启动审计和 stage dispatcher 两处 fail-closed。
+
+## 10. 是否先做 play 子集
+
+建议：**直接实现并验收 `Botzone GuanDan no-tribute profile` 的 `deal + play` 链路；本项目暂不实现 tribute/return/resist。**
+
+理由：
+
+- play adapter 是大部分复用价值所在，可以独立验证 ID 映射、规则投影和 action provenance；
+- 建桌 UI 已提供明确的“需要进贡=否”配置，首期真实对局可以主动限定在无贡范围；
+- 贡还属于 Botzone 可选局前规则，不应污染现有单局 play engine，也不在本项目当前目标内；
+- adapter 仍必须理解 stage discriminator；若配置错误或平台发出 tribute/return，必须显式拒绝，不能用 pass、空数组或随意牌绕过；
+- 无贡 profile 是明确支持契约，不是随机对局恰好未发生贡还。
+
+因此里程碑命名必须区分：
+
+- `botzone_no_tribute_protocol_verified`：证明无贡协议、牌 ID 与 unsupported stage 边界；
+- `botzone_no_tribute_adapter_verified`：证明 deal + play 接入 RuleBasedAI；
+- `botzone_no_tribute_local_ai_smoke_verified`：证明真实平台无贡小规模对局完成。
+
+任何上述状态都不得简写为“完整支持 Botzone GuanDan”。
+
+## 11. 尚不确定的信息与官方查阅位置
+
+| 不确定项 | 当前状态 | 必须查阅的位置 |
+|---|---|---|
+| claim 中替代牌的花色、副本 ID 和排序要求 | 不确定 | GuanDan 游戏详情的“裁判代码”及一份含配子的官方调试 Log |
+| 单手可使用几张配子 | 不确定 | GuanDan 裁判源码，不能仅按 Wiki 单数措辞推断 |
+| runmatch `X-Initdata` 中“需要进贡=否”的精确表示 | 不确定 | 官方 runmatch 文档、GuanDan 裁判 initdata schema 或登录后创建请求；不得从 UI 字段名猜 JSON |
+| 本地 AI 当前账号等级门槛 | 不确定，官方页面文字冲突 | 目标账号登录后的“本地 AI 配置”区域 |
+| 网关服务端长轮询具体超时秒数 | 未公布 | 当前本地 AI 设置页/接口响应 Header；Phase 4 smoke 记录 |
+| 本地 AI 是否在重启后重放历史 | 官方未承诺 | 本地 AI 当前词条、实际断线 smoke；设计按“不重放”处理 |
+| GuanDan 是否有官方可执行 Bot 样例 | 当前游戏详情只链接 Wiki，Wiki 只有交互样例 | 游戏详情、裁判源码入口；若平台另有下载需登录后确认 |
+
+## 12. 推荐下一动作
+
+在写 Phase 1 代码前，先完成 Phase 0 的剩余阻塞项收口：从 Botzone 官方 GuanDan 游戏详情取得裁判源码，或导出一份包含 deal 与配子 play 的脱敏调试 Log，以确认 claim 和配子上限；同时在目标账号中确认本地 AI 权限等级。手动 smoke 明确选择“需要进贡=否”。在官方资料确认无贡 `X-Initdata` 形式前，不使用 runmatch 创建对局，但可以先实现卡牌 ID codec、poll parser 和无贡 profile。

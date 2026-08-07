@@ -104,7 +104,7 @@ AI 决策分为四层：
 
 - 现有公式把拆对的单 K 排在天然单 9 和天然长套之前，因为只对当前动作打分，不评估残余点数结构；
 - CLI 只把 `last_decision_source == "local"` 标为本地，没有标记 `local_opening_formula`；
-- H2-A1/A1a 与 K-A1 至 K-A3c1 已封板；下一步为 K-A3c2 独立语料正式 prompt 覆盖验收。
+- H2-A1/A1a 与 K-A1 至 K-A3c2a 已封板；K-A3c2 原正式结论保持无效，下一步为 K-A3c2b 独立 seed 恢复验收。
 
 ## 5. 当前实施阶段
 
@@ -126,7 +126,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3c2b 已完成，confidence 默认关闭。H2-A1/A1a 与 K-A1 至 K-A3c1 已完成；下一步为 K-A3c2。
+状态：J-A 至 J-D1c3c2c3c2b 已完成，confidence 默认关闭。H2-A1/A1a 与 K-A1 至 K-A3c2a 已完成；K-A3c2 原正式运行无效，下一步为 K-A3c2b。
 
 目标：
 
@@ -200,7 +200,9 @@ AI 决策分为四层：
 48. K-A3a1：补齐路由优先级与跨字段一致性，已完成并封板；
 49. K-A3b：增加默认关闭的 intent prompt 消费接线，已完成并封板；
 50. K-A3c1：建立 evaluation-only prompt 覆盖、成本与配对摘要载体，已完成并通过；
-51. K-A3c2：使用独立 seed 正式验证 prompt coverage 与字符成本，下一步。
+51. K-A3c2：使用独立 seed 正式验证 prompt coverage 与字符成本，已完成；结构和覆盖通过，但预注册字符包络失败，判定无效；
+52. K-A3c2a：穷举并锁定 phase×reason 的精确字符包络测试契约，已完成并封板；
+53. K-A3c2b：以全新 seed `19000..19199` 和预先锁定的正确包络恢复正式验收，下一步。
 
 J-A 验证结果：
 
@@ -621,7 +623,7 @@ J-D1c3c2c3c2b 结果：
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A1 至 K-A3c1 已封板。最新唯一判定为 `strategy_intent_prompt_coverage_capacity_verified`，下一步为 K-A3c2。
+状态：K-A1 至 K-A3c2a 已封板。K-A3c2 原唯一判定保持 `strategy_intent_prompt_coverage_benchmark_invalid`，下一步为 K-A3c2b 独立语料恢复验收。
 
 目标：
 
@@ -810,6 +812,58 @@ K-A3c2 方向：
 - 仓库外保存完整 canonical JSON、审计摘要和文件哈希；
 - 通过只授权 K-A3d1 evaluation-only 动作消融载体。
 
+K-A3c2 正式结果：
+
+- seed `18000..18199`，四策略各 200 局，双运行 canonical SHA-256 均为 `35587b8d532dc9ba3fc8d82d6f6a690692362a31a908c066b2ad4783bfd1d148`；
+- 16 个策略×阶段桶全部 ready、精确插入且达到样本门槛，所有 invalid/omitted/mismatch/diagnostics 为 0；
+- 四个 near-open 桶均出现合法的 payload/delta 最大值 `91/100`，违反预注册上界 `89/98`；
+- 唯一判定 `strategy_intent_prompt_coverage_benchmark_invalid`，不得事后修改门槛追认通过。
+
+K-A3c2a 方向：
+
+- 只修改 formatter 单元测试，不修改固定文本、runtime 或 benchmark；
+- 穷举四阶段×十种 reason，锁定每个组合的精确字符数；
+- 锁定理论包络：midgame `74..81 / 83..90`、endgame `74..81 / 83..90`、near-open `84..91 / 93..100`、critical `83..90 / 92..99`；
+- 通过后才允许 K-A3c2b 使用未用过的新 seed 做正式恢复，不直接进入动作消融。
+
+K-A3c2a 验证结果：
+
+- 只修改 `tests/test_strategy_intent_prompt.py`，未修改 formatter、runtime、evaluation benchmark 或 docs；
+- 40 个阶段×reason 组合全部通过真实 formatter，均为 ready、空 diagnostics，且 `char_count == len(text)`；
+- payload 包络锁定为 midgame/endgame `74..81`、near-open `84..91`、critical `83..90`；
+- 固定插入 delta 包络锁定为 `83..90`、`83..90`、`93..100`、`92..99`；
+- 定向 12 项、相关 60 项、全量 431 项通过，唯一判定 `strategy_intent_prompt_envelope_contract_verified`。
+
+K-A3c2b 方向：
+
+- 先提交 K-A3c2a 检查点并确保工作区干净，不 stash、还原或混入现有 docs 改动；
+- 使用未使用 seed `19000..19199`、四策略各 200 局，正式 benchmark 恰好运行两次；
+- 使用 K-A3c2a 已封板包络，不修改 formatter、benchmark、采样或门槛；
+- 报告先写入仓库外审计目录，再输出摘要，避免工具输出截断导致证据丢失；
+- 通过只授权规划 K-A3d1 evaluation-only 动作消融，不默认启用 intent prompt。
+
+### Step L：Botzone 本地 AI 接入
+
+状态：已新增规划任务；基础官方调研完成，并将支持范围锁定为 `Botzone GuanDan no-tribute profile`。Phase 0 仍有 claim、配子和账号权限等协议阻塞项。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+
+目标：
+
+- 由本机连接器通过 Botzone 官方本地 AI 长轮询接口参加 GuanDan 测试对局；
+- adapter 负责平台协议、牌 ID、阶段和 action/claim 转换；
+- RuleBasedAI 仍只读取转换后的 observation/legal actions 并返回合法 `action_id`；
+- 用真实平台 smoke 和后续座位平衡小批量对局观察本地 AI 的实际对抗能力。
+
+阶段：
+
+1. Phase 0：官方协议、裁判语义、账号权限和差异清单封板；
+2. Phase 1：纯数据模型、108 牌 ID codec 和阶段协议单测；
+3. Phase 2：可注入 transport 的 connector、session persistence 与 mock Botzone；
+4. Phase 3：无贡 `deal + play` adapter 接入 RuleBasedAI；`tribute/return` 只识别并 fail-closed；
+5. Phase 4：经用户明确授权、手动设置“需要进贡=否”的小规模真实 Botzone smoke；
+6. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
+
+关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。真实 smoke 前仍须封板配子 claim 编码和 play 规则差异；若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等官方无贡 `X-Initdata` 表示确认后再启用。
+
 ## 6. 质量指标
 
 ### 正确性
@@ -835,9 +889,9 @@ K-A3c2 方向：
 
 ## 7. 非目标
 
-当前仍不实现：
+当前主引擎仍不实现：
 
-- 多局升级赛和贡还规则；
+- 多局升级赛与 Botzone 贡还模式；integration 仅实现无贡 profile，未经新任务确认不得把贡还写入主引擎；
 - 强化学习、自博弈训练；
 - MCTS 和蒙特卡洛搜索；
 - 把隐藏牌推断写入规则引擎；
