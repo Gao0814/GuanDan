@@ -1,167 +1,182 @@
 # 下一步实施提示词
 
-## Step K-A3c2b：策略意图 prompt 覆盖独立恢复验收
+## Step K-A3d3a：真实模型动作质量试验前置审计与授权请求
 
-请在 GuanDan 项目中完成 Step K-A3c2b。本步只运行既有 evaluation benchmark 和仓库外审计，不修改 formatter、runtime、evaluation、tests、docs 或任何仓库文件，不调用模型或网络。
+请在 GuanDan 项目中完成 Step K-A3d3a。本步只做检查点、回归、确定性兼容、安全预算和非敏感配置元数据审计，最后向用户请求一次明确的外部联网授权。不得创建 live runner、不得发送 probe、不得调用 DeepSeek/HTTP 或其他网络。
 
 ### 背景与唯一目标
 
-K-A3c2 原正式双运行使用 seed `18000..18199`，结构、覆盖、精确插入和可重复性均通过，但因预注册 near-open 字符上界错误，唯一判定保持：
+已完成：
 
-`strategy_intent_prompt_coverage_benchmark_invalid`
+- K-A3d1：`strategy_intent_action_ablation_harness_verified`
+- K-A3d2：`strategy_intent_action_quality_harness_verified`
 
-K-A3c2a 已通过 40 个真实 formatter 调用封板正确字符契约，唯一判定：
+K-A3d2 的 on/off/tie=`5/11/16` 来自 deterministic fake provider 的“首候选 vs 末候选”，只验证 RuleBased 分支续局载体，不能用于判断 strategy intent prompt。
 
-`strategy_intent_prompt_envelope_contract_verified`
+本步唯一目标是把下一次小规模真实模型试验的代码基线、样本、请求数、时间、审计和解释门槛在联网前锁定，并停下来请求用户授权。
 
-本步唯一目标是使用全新 seed 和事前锁定的正确包络，独立恢复正式 prompt coverage 验收。不得追认、改写或复用 K-A3c2 的正式结果。
+### 仓库与检查点前置
 
-### 仓库修改边界
-
-本步不允许修改任何仓库文件，包括：
-
-- `agents/strategy_intent_prompt.py`
-- `agents/strategy_router.py`
-- `agents/deepseek_ai.py`
-- `agents/deepseek_client.py`
-- `evaluation/strategy_intent_prompt_benchmark.py`
-- `tests/test_strategy_intent_prompt.py`
-- 其他 runtime、evaluation、tests、CLI、RAG、engine、config、docs 文件
-
-runner、两份完整报告、审计摘要和 manifest 必须写入仓库外的新临时目录。不得把审计产物写入 `logs/`、仓库根目录或测试 fixture。
-
-### 前置检查
-
-1. 记录当前 HEAD 与 `git status --short`。
-2. 确认 K-A3c2a 的 `tests/test_strategy_intent_prompt.py` 已进入独立检查点，且该检查点包含 40 组合精确字符契约。
-3. 正式运行前工作区必须干净。若存在未提交改动，不得 stash、还原、提交、清理或覆盖；停止并报告 `precondition_failed`。
-4. 确认以下实现文件相对 K-A3c1 检查点 `1fca3270843d51c2b565b37e7823b57ed9b950b5` 无差异：
-   - `agents/strategy_intent_prompt.py`
-   - `agents/strategy_router.py`
-   - `agents/deepseek_ai.py`
-   - `agents/deepseek_client.py`
-   - `evaluation/strategy_intent_prompt_benchmark.py`
-5. 阅读上述文件及：
-   - `tests/test_strategy_intent_prompt.py`
-   - `tests/test_strategy_intent_prompt_benchmark.py`
-6. 运行前回归：
+1. 记录当前 HEAD 和 `git status --short`。
+2. 确认 K-A3d1 检查点精确为：
 
 ```text
-python -m unittest tests.test_strategy_intent_prompt -q
-python -m unittest tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_strategy_intent_prompt_benchmark tests.test_strategy_router tests.test_strategy_router_shadow tests.test_strategy_router_benchmark -q
+b75dace33d399704e45909ce31c339a7a7e14226
+```
+
+3. 确认 K-A3d2 检查点精确为：
+
+```text
+415c86dc5034ca85862f52e94d1406aa58042b98
+```
+
+并确认该提交只包含：
+
+- `evaluation/strategy_intent_action_quality.py`
+- `tests/test_strategy_intent_action_quality.py`
+
+4. 确认 K-A3d1 两个文件相对其检查点无差异，K-A3d2 两个文件相对其检查点无差异。
+5. 工作区必须干净。若 docs 或其他改动仍未由项目所有者处理，本步只能报告 `precondition_failed`，不得自行提交、stash、还原、清理或覆盖。
+
+本步不允许修改或提交任何仓库文件。
+
+### 回归与确定性复核
+
+运行并报告实际数量：
+
+```text
+python -m unittest tests.test_strategy_intent_action_quality -q
+python -m unittest tests.test_strategy_intent_action_quality tests.test_strategy_intent_action_ablation tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_strategy_intent_prompt_benchmark tests.test_strategy_router tests.test_strategy_router_shadow tests.test_strategy_router_benchmark tests.test_confidence_action_quality -q
 python -m unittest discover -q
 git diff --check
 ```
 
-预期基线为 12 / 60 / 431 项；实际数量必须报告。任何失败都停止，不启动 benchmark。
+预期基线为 7 / 80 / 446 项；以实际结果为准，任一失败均停止。
 
-### 锁定正式参数
+使用 deterministic fake provider 复核但不改变参数：
 
-以下参数不得修改：
+- K-A3d1 seed `400..409` canonical SHA-256 必须仍为 `8ec3a766852237e07a1185c0d9de98da71a66fe5d6746b76e580fb4e439e2844`；
+- K-A3d2 seed `500..509` canonical SHA-256 必须仍为 `a8c907489b8d913e2b2e4838ffaa2b477285cf098328786b07dd6064b8a5e557`；
+- K-A3d1/K-A3d2 的 selected、AB/BA、provider validity 与 phase pair digest 兼容检查继续通过。
+
+复核不得联网，不得读取 `_state`、ground truth 或真实对局日志。
+
+### 锁定后续真实试验参数
+
+以下参数用于后续 K-A3d3b，K-A3d3a 不执行：
 
 ```text
-seeds = 19000..19199
-strategic_pass_rates = (0, 25, 50, 100)
+seeds = 600..609
+strategic_pass_rates = (0, 50, 100)
+samples_per_phase = 2
 current_level_rank = "2"
 max_steps = 5000
 max_samples_per_phase_per_game = 128
+max_rollout_steps = 5000
+paired samples = 3 policies * 4 phases * 2 = 24
+logical/physical request cap = 48/48
+request timeout = 60 seconds
+retries = 0
+persistent background wall-clock cap = 65 minutes
 ```
 
-调用既有：
+选择 `(0,50,100)` 是为了在 48 请求预算内保留 forced、中等战略 pass、完全战略 pass 三种轨迹，同时让每个 policy×phase 都有 2 对并精确平衡 AB/BA。25% 策略只在观察到保留信号后的扩大验收中恢复，不能事后加入本次语料。
+
+正式试验必须恰好运行一次；不得补采、换 seed、修改策略、降低样本数、重试失败请求或运行第二份 live 报告。
+
+### 预注册真实试验完整性门槛
+
+后续 K-A3d3b 必须先通过以下完整性门槛，才能解释质量代理：
+
+- 三策略均 10/10/0，主动 pass 行为满足 0%、中间值、100% 边界；
+- 每个 policy×phase qualified≥2、selected=2、off-first/on-first=1/1；
+- 24 pair 均 off/on attempted，ledger 连续 1..48，off/on 各 24；
+- timeout、retries 和物理请求数不超过锁定值；
+- 所有 response 均为严格可解析 `DeepSeekSuggestion`，action ID 为非 bool 整数并位于 legal/prompt candidates；
+- 24 pair 全部 both-valid；异常、malformed、no-action、非法类型、outside legal/prompt 均为 0；
+- 所有需要的 rollout branch 完成，branch failed、clone mismatch、terminal diagnostic 和 step-limit 均为 0；
+- 所有计数、phase-to-overall、provider、pair、branch、W/D/L 和质量比较守恒；
+- 审计文件不保存 prompt、action ID、reasoning、响应正文、observation、玩家、手牌、API key 或样本身份。
+
+任一完整性门槛失败，唯一判定只能是 `strategy_intent_live_quality_benchmark_invalid`，不得解释 on/off 质量数值。
+
+### 预注册描述性保留门槛
+
+只有完整性全部通过后，按以下顺序解释：
+
+1. 若 changed pair 少于 8：`no_observed_strategy_intent_action_quality_gain`。
+2. 若 `on_better_count <= off_better_count`：`no_observed_strategy_intent_action_quality_gain`。
+3. 若 on team win count 小于 off team win count：`no_observed_strategy_intent_action_quality_gain`。
+4. 否则：`retain_for_expanded_strategy_intent_quality_evaluation`。
+
+这是小样本描述性准入门槛，不是显著性检验。即使 retain，也不授权默认启用、完整 DeepSeek 对局或胜率声明；只允许设计包含 25% 策略和更大独立语料的扩大验收。
+
+### 配置与敏感信息边界
+
+本步只允许读取调用进程中显式提供的环境变量元数据：
+
+- `DEEPSEEK_BASE_URL`：必须显式存在，可报告值；
+- `DEEPSEEK_MODEL`：必须显式存在，可报告值；
+- `DEEPSEEK_API_KEY`：只报告 `present/missing`，不得读取后输出、复制、散列或持久化值。
+
+禁止：
+
+- 打开或解析仓库 `.env`；
+- 调用 `AppConfig.from_env()`，因为它会加载 `.env`；
+- 输出完整请求 Header、Authorization、key 长度、前后缀或 hash；
+- 把 endpoint/model/key 写入仓库文件；
+- 用 key 存在代替用户授权；
+- 发送任何 DNS、HTTP、模型探测或真实请求。
+
+若 endpoint/model 未显式提供或 key missing，报告 `precondition_failed`，列出缺失的非敏感变量名后停止。
+
+### 后续审计设计锁定
+
+授权后的 K-A3d3b runner 必须位于仓库外新临时目录，并使用持久后台进程，避免桌面工具 30 分钟中断导致子进程失控。K-A3d3a 只记录设计，不创建 runner。
+
+后续证据至少包括：
+
+- runner 源码及 SHA-256；
+- process state、heartbeat、连续 call ledger；
+- aggregate-only quality report；
+- audit summary、completion 和 manifest；
+- 每个文件 bytes 与 SHA-256。
+
+ledger 每次请求只记录 sequence、off/on condition、started/returned/failed 状态和 latency；不得记录 prompt、action ID、response body、reasoning 或样本身份。runner 必须在每次物理请求前落盘 started，返回后原子更新状态。
+
+### 边界扫描
+
+确认：
+
+- K-A3d1/K-A3d2 仅 evaluation/tests 引用，runtime 无反向导入；
+- harness 没有网络 provider、配置读取、`.env`、API key、ground truth、`game._state` 或 `record.txt`；
+- 工作区和 HEAD 满足前置；
+- 本步没有新增 runner、审计文件或仓库修改。
+
+### 唯一判定与授权问题
+
+- 检查点、干净工作区、回归、hash、配置元数据和预算全部满足：`strategy_intent_live_quality_preflight_ready`
+- 任一前置不满足且未联网：`precondition_failed`
+
+达到 ready 后，最终回复必须停在以下形式的明确问题，不得继续执行：
 
 ```text
-run_strategy_intent_prompt_benchmark(...)
+已完成 K-A3d3a 前置审计。API key present，Endpoint=<实际显式值>，Model=<实际显式值>。
+拟执行一次 K-A3d3b：seed 600..609，策略 0/50/100，每阶段 2 对，共最多 48 次外部请求；单次 timeout 60 秒、零重试、持久后台最长 65 分钟。是否明确授权向该 endpoint/model 发起本次请求？
 ```
 
-四个策略名称与 rate 必须按报告 `policies` 列表顺序精确为：
-
-```text
-forced_only / 0
-strategic_pass_25 / 25
-strategic_pass_50 / 50
-strategic_pass_100 / 100
-```
-
-审计必须按列表位置和显式名称→rate 映射复核，禁止依赖 canonical JSON 对象键迭代顺序。
-
-### 执行次数与证据保存
-
-1. runner 可先做只导入、签名和输出目录写入检查，但 smoke check 不得调用 benchmark。
-2. 正式 benchmark 必须恰好完整运行两次。
-3. 每次运行结束后立即把完整 `report.to_dict()` 以 `ensure_ascii=False`、`sort_keys=True`、紧凑 separators、`allow_nan=False` 写入独立 JSON，再计算 SHA-256。
-4. 不得依赖标准输出保存完整报告；标准输出只打印短摘要和证据路径。
-5. 两次运行后生成只含聚合检查结果的 `audit_summary.json` 与文件大小/hash 的 `manifest.json`。
-6. 不得进行第三次运行、补采、换 seed、修改阈值或失败后恢复运行。
-
-### 预注册完整性门槛
-
-所有条件必须同时满足：
-
-- 两个 `StrategyIntentPromptBenchmarkReport`、`to_dict()` 和 canonical JSON 完全相等；
-- 两份 canonical JSON SHA-256 相同，可解析且不含 NaN/Infinity；
-- requested policy count 为 4，策略名称、rate 和顺序精确匹配；
-- 每个策略 games 为 `200/200/0`；
-- forced-only 主动 pass 为 0；100% 策略主动 pass 等于 opportunity；25% 与 50% 均满足 `0 < active < opportunity`；
-- 四策略主动 pass 比例按精确交叉乘法严格递增；
-- 每个策略 `eligible = evaluated`，duplicate 和 sample-limit skipped 均为 0；
-- 顶层及所有 phase bucket diagnostics 均为空；
-- phase 集合精确为 `midgame/endgame/near_open_endgame/critical_endgame`；
-- overall 是四个 phase 的逐字段整数和，所有现有守恒成立；
-- 每个策略的 ready 样本最低数量：midgame 1400、endgame 1000、near-open 1000、critical 1800。
-
-### 预注册覆盖与字符门槛
-
-对四策略×四阶段共 16 个 bucket，全部要求：
-
-- `sample_count = router_available_count = payload_ready_count = exact_insertion_count`；
-- router unavailable/invalid、payload omitted/invalid、omitted equal、ready/omitted/prompt pair mismatch 全部为 0；
-- `diagnostic_counts = {}`；
-- `prompt_delta_char_sum = payload_char_sum + 9 * payload_ready_count`；
-- `prompt_delta_char_min = payload_char_min + 9`；
-- `prompt_delta_char_max = payload_char_max + 9`。
-
-每个 phase 的观测 min/max 必须落在 K-A3c2a 封板包络内：
-
-| phase | payload 允许包络 | delta 允许包络 |
-|---|---:|---:|
-| midgame | 74..81 | 83..90 |
-| endgame | 74..81 | 83..90 |
-| near_open_endgame | 84..91 | 93..100 |
-| critical_endgame | 83..90 | 92..99 |
-
-这里要求观测值不越过理论包络，不要求每个正式 bucket 恰好观察到理论最小值和最大值。不得因样本未出现某个 reason 而伪造或补采。
-
-每个策略的 `prompt_pair_sha256` 必须是非空 64 位小写十六进制，且两次运行对应值相等。报告与审计 JSON 不得包含 seed 列表、逐样本 ID、observation、prompt 文本、action、玩家、手牌、API key、模型响应或真实对局日志。
-
-### 运行后检查
-
-重复运行前置中的三组测试与 `git diff --check`，并确认：
-
-- HEAD 未变化；
-- `git status --short` 仍为空；
-- 没有网络、DeepSeek、API key、`.env`、ground truth、`game._state` 或 `record.txt` 访问；
-- intent 未影响对局推进动作，仍只做 evaluation-only prompt pair 构造。
-
-### 唯一判定
-
-- 全部前置、双运行、完整性、覆盖、字符、隐私和回归门槛通过：`strategy_intent_prompt_coverage_recovery_verified`
-- benchmark 启动后任一门槛失败、运行不完整、证据缺失或输出不可审计：`strategy_intent_prompt_coverage_recovery_invalid`
-- 前置检查未满足且 benchmark 未启动：`precondition_failed`
-
-`strategy_intent_prompt_coverage_recovery_verified` 只授权规划 K-A3d1 evaluation-only 动作消融载体。它不追认 K-A3c2 通过，不授权真实 API、默认启用、RAG 路由、完整 DeepSeek 对局或胜率声明。
+只有用户后续明确回答授权，才允许另行制定并执行 K-A3d3b。当前任务不得把任何历史授权视为本次授权。
 
 ### 最终报告
 
-报告必须包含：
+必须包含：
 
 - 唯一判定；
-- HEAD、K-A3c2a 检查点及运行前后工作区状态；
-- 锁定参数与 benchmark 实际执行次数；
-- 两次耗时、canonical SHA-256 与报告相等性；
-- 仓库外审计目录及 runner/report/summary/manifest 的 bytes 和 SHA-256；
-- 四策略 games、pass opportunity/active 和精确比例顺序；
-- 16 个 bucket 的 sample/ready、payload min/max、delta min/max；
-- 所有零值异常项、diagnostics、守恒和最低样本门槛结果；
-- 运行前后测试数量、`git diff --check` 和边界扫描结果；
-- 明确说明 K-A3c2 原判定仍为 `strategy_intent_prompt_coverage_benchmark_invalid`；
-- 明确说明未修改仓库、未联网、未形成动作质量或胜率结论。
+- HEAD、K-A3d1/K-A3d2 检查点和工作区状态；
+- K-A3d2 检查点与提交范围；
+- 回归数量、两个 canonical hash、兼容检查和 `git diff --check`；
+- 锁定 seed、策略、pair/request、timeout、retries 和时间预算；
+- endpoint/model 与 key present/missing，不含 key 内容；
+- 完整性门槛和描述性保留门槛摘要；
+- 明确说明未创建 runner、未联网、未调用模型；
+- ready 时输出上述授权问题，precondition failed 时只报告阻塞项。

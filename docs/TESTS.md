@@ -936,16 +936,60 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 #### K-A3c2b：独立 seed 正式恢复验收
 
-状态：下一步，尚未执行。
+状态：已完成，唯一判定 `strategy_intent_prompt_coverage_recovery_verified`。
 
-- 前置为 K-A3c2a 已提交检查点且工作区干净；
+- HEAD / K-A3c2a 检查点为 `a8cf1291de2fde62c6c7ed7ecfeaa878671f5490`，运行前后工作区干净；
 - 固定 seed `19000..19199`、rates `(0,25,50,100)`、级牌 `2`、`max_steps=5000`、每局每阶段最多 128 样本；
-- 正式 benchmark 恰好运行两次，报告、`to_dict()`、canonical JSON 和 SHA-256 必须一致；
-- 每策略 200/200/0，对应四阶段 ready 最低样本为 midgame 1400、endgame 1000、near-open 1000、critical 1800；
-- 16 个桶均要求 `sample = router available = payload ready = exact insertion`，其他状态与 diagnostics 全为 0；
-- 字符范围必须落在 K-A3c2a 封板包络内，且 delta 的 sum/min/max 分别等于 payload 对应值加固定 9 字符开销；
-- 通过判定为 `strategy_intent_prompt_coverage_recovery_verified`，否则为 `strategy_intent_prompt_coverage_recovery_invalid`；
-- 通过只授权规划 evaluation-only 动作消融，不授权联网、默认启用或胜率声明。
+- 正式 benchmark 恰好运行两次，耗时 62.944s / 63.941s；报告和 canonical JSON 逐字节相同，SHA-256 为 `a3f6b35f791435af22ccf3e877e5b5d571028d9dc05d36ce506e10c2a31ad66b`；
+- 每策略 200/200/0，四阶段 ready 最低样本全部达到；
+- 16 个桶均满足 `sample = router available = payload ready = exact insertion`，其他状态与 diagnostics 全为 0；
+- 字符范围落在 K-A3c2a 封板包络内，delta 的 sum/min/max 分别等于 payload 对应值加固定 9 字符开销；
+- 定向 12 项、相关 60 项、全量 431 项通过；
+- K-A3c2 原 invalid 不变，本结论只授权规划 evaluation-only 动作消融。
+
+#### K-A3d1：策略意图成对动作消融载体
+
+状态：已完成，唯一判定 `strategy_intent_action_ablation_harness_verified`。
+
+- 仅新增 `evaluation/strategy_intent_action_ablation.py` 与 `tests/test_strategy_intent_action_ablation.py`；
+- provider 必须由调用方注入，不创建 client、不读配置或环境、不联网；
+- 四策略×四阶段分别以稳定 SHA-256 优先级选样，默认每桶 4 对，AB/BA 各 2；
+- off/on 共用 observation、原始 legal actions、剪枝后的 prompt actions、phase 和 hand evaluation；on 只增加 `strategy_intent_prompt`；
+- only-pass、一次出完、opening、router unavailable、payload omitted、少于两个 prompt 候选或 prompt pair 不精确时不调用 provider；
+- provider 返回必须分类为 exception、malformed、no-action、非法类型、outside-legal、outside-prompt 或 valid；不使用 fallback；
+- 两侧都必须尝试；both-valid 后聚合 same/changed、pass 和 pressure 选择，报告不得保留样本、prompt、动作 ID、玩家或手牌；
+- deterministic fake provider 与 seed `400..409` 双运行报告完全相同，SHA-256 为 `8ec3a766852237e07a1185c0d9de98da71a66fe5d6746b76e580fb4e439e2844`；
+- 四策略×四阶段每桶 qualified≥4、selected=4、AB/BA=2/2、both-valid=4、changed=4；
+- 每轮 128 次 provider 调用，off/on 各 64；所有错误分类与 diagnostics 为 0；
+- 定向 8 项、相关 74 项、全量 439 项通过；不评价动作质量或胜率。
+
+#### K-A3d2：同状态 RuleBased 分支续局质量代理
+
+状态：已完成，唯一判定 `strategy_intent_action_quality_harness_verified`。
+
+- 仅新增 `evaluation/strategy_intent_action_quality.py` 与 `tests/test_strategy_intent_action_quality.py`；
+- 不修改 K-A3d1 模块、runtime、engine、client 或 prompt；
+- 每个固定优先级入选样本保留内存 `deepcopy(game)`，只用公开 `observe()/legal_actions()` 验证 clone 等价，不读取 `_state`；
+- provider off/on 均 valid 后执行分支续局；same action 复用一次 rollout，changed action 使用两个独立 clone；
+- 后续所有玩家由独立 `RuleBasedAIAgent` 通过公开 API 推进，终局只读取 `step()` 结果和公开 `history.finish_order`；
+- 比较顺序为队伍 win/draw/loss、队伍名次和、tie，不以 rollout 步数打破平局；
+- 报告聚合 branch complete/fail、on/off/tie、changed 子集、W/D/L、名次和、步数和及 diagnostics；
+- seed `500..509` 双运行报告完全相同，canonical SHA-256 为 `a8c907489b8d913e2b2e4838ffaa2b477285cf098328786b07dd6064b8a5e557`；
+- 四策略×四阶段每桶 selected=2、AB/BA=1/1、both-valid=2、changed=2、branch complete=4；
+- 32 pair 全部 quality-evaluable，64 branches 全部完成，diagnostics 为空；
+- 假 provider 的 on/off/tie=`5/11/16` 只验证载体，不代表真实模型质量或胜率；
+- K-A3d1 兼容复验通过；定向 7 项、相关 80 项、全量 446 项通过。
+
+#### K-A3d3a：真实模型质量试验前置审计
+
+状态：下一步，尚未实施。
+
+- K-A3d2 已形成只含两个质量文件的检查点 `415c86dc5034ca85862f52e94d1406aa58042b98`；真实运行前工作区必须干净；
+- 本步不联网、不发送 probe、不创建 live runner，只复核测试、hash、非敏感 endpoint/model 与 key presence；
+- 预注册 seed `600..609`、rates `(0,50,100)`、每 phase 2 对、共 24 pair/48 请求；
+- timeout 60 秒、retries 0、持久后台最长 65 分钟；
+- 必须向用户展示明确 endpoint、model、请求数、timeout、重试和目的后请求授权；
+- 未获授权时不得把配置存在视为默许，不得启动任何外部请求。
 
 #### 持续约束：软信号边界
 

@@ -1,15 +1,15 @@
 # 项目状态看板
 
-更新时间：2026-08-07
+更新时间：2026-08-08
 
 ## 1. 当前基线
 
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
-- 当前 HEAD：`1fca3270843d51c2b565b37e7823b57ed9b950b5`；K-A3c2a 测试改动尚待提交检查点
-- 当前工作状态：K-A3c2a 字符包络契约已验证；下一步为 K-A3c2b 独立 seed 恢复验收
+- K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
+- 当前工作状态：K-A3d2 质量代理载体已验证；下一步为 K-A3d3a 真实模型试验前置审计与授权请求
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：K-A3c2a 定向 12 项、相关 60 项、全量 431 项通过
+- 实际验证结果：K-A3d2 定向 7 项、相关 80 项、全量 446 项通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -44,6 +44,12 @@ K-A3c2 已使用 seed `18000..18199` 完成四策略各 200 局的正式双运�
 
 K-A3c2a 已通过 40 个真实 formatter 调用锁定逐 phase×reason 精确字符数。四阶段 payload/delta 包络为 midgame `74..81 / 83..90`、endgame `74..81 / 83..90`、near-open `84..91 / 93..100`、critical `83..90 / 92..99`；唯一判定 `strategy_intent_prompt_envelope_contract_verified`。原 K-A3c2 结论不变，下一步只能使用全新 seed 做 K-A3c2b。
 
+K-A3c2b 已使用 seed `19000..19199` 完成四策略各 200 局的独立正式双运行。两份 canonical JSON 逐字节相同，SHA-256 为 `a3f6b35f791435af22ccf3e877e5b5d571028d9dc05d36ce506e10c2a31ad66b`；16 个桶全部 ready、精确插入、达到样本门槛且字符范围位于已封板包络内，零异常与 diagnostics。唯一判定 `strategy_intent_prompt_coverage_recovery_verified`。
+
+K-A3d1 已建立独立、provider 可注入的四阶段成对动作消融载体。seed `400..409` 双运行 canonical SHA-256 均为 `8ec3a766852237e07a1185c0d9de98da71a66fe5d6746b76e580fb4e439e2844`；四策略每阶段 4 对，64 对全部 both-valid 且 changed，AB/BA 平衡，零异常与 diagnostics。唯一判定 `strategy_intent_action_ablation_harness_verified`。
+
+K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` 双运行 canonical SHA-256 均为 `a8c907489b8d913e2b2e4838ffaa2b477285cf098328786b07dd6064b8a5e557`；32 pair 全部 quality-evaluable，64 branches 全部完成。假 provider 的代理统计为 on/off/tie=`5/11/16`，只验证载体，不是策略意图收益结论。唯一判定 `strategy_intent_action_quality_harness_verified`。
+
 ## 3. 分模块状态
 
 | 模块 | 状态 | 当前能力 | 主要缺口 |
@@ -64,7 +70,7 @@ K-A3c2a 已通过 40 个真实 formatter 调用锁定逐 phase×reason 精确字
 | rank 离线基准 | Step J-C3a/J-C3b 完成 | 固定种子采集、微聚合、阶段桶、可重复正式验收 | RuleBasedAI 不覆盖有牌可压时的战略性 pass |
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
-| 中期策略 | K-A3c2a 完成 | 默认关闭接线、真实字符包络已由 40 组合测试封板 | K-A3c2 原运行无效；待 K-A3c2b 新 seed 恢复验收 |
+| 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
 | Botzone 接入 | Step L 已规划 | 支持范围锁定为无贡 profile；官方 transport、GuanDan 阶段与现有引擎差异已梳理 | claim、配子数量、无贡 runmatch initdata 和账号权限尚未封板；未开始代码 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
@@ -1025,6 +1031,57 @@ K-A1 至 K-A3c1 已封板。K-A3c2 正式双运行的结构、覆盖、插入和
 
 唯一判定：`strategy_intent_prompt_envelope_contract_verified`。该结论不追认 K-A3c2 通过，只授权在 K-A3c2a 形成检查点且工作区干净后，使用 seed `19000..19199` 执行 K-A3c2b。
 
+### K-A3c2b 复核：独立 prompt 覆盖恢复验收通过
+
+已确认：
+
+- HEAD / K-A3c2a 检查点为 `a8cf1291de2fde62c6c7ed7ecfeaa878671f5490`，运行前后工作区干净且本步未修改仓库；
+- 锁定 seed `19000..19199`、rates `(0,25,50,100)`、级牌 2、`max_steps=5000`、每局每阶段上限 128；
+- 正式 benchmark 恰好运行两次，耗时 62.944s / 63.941s；
+- 两份 canonical JSON 逐字节相同，SHA-256 均为 `a3f6b35f791435af22ccf3e877e5b5d571028d9dc05d36ce506e10c2a31ad66b`；
+- 四策略均 200/200/0，主动 pass 比例按精确交叉乘法严格递增；
+- 16 个 phase bucket 全部满足 sample=router available=payload ready=exact insertion，并达到预注册最低样本；
+- payload/delta 字符范围全部位于 K-A3c2a 包络内，sum/min/max 均满足固定 9 字符插入关系；
+- duplicate、sample-limit、router unavailable/invalid、payload omitted/invalid、pair mismatch 与 diagnostics 全为 0；
+- 定向 12 项、相关 60 项、全量 431 项通过，边界扫描与 `git diff --check` 通过；
+- 仓库外 manifest 实际 SHA-256 为 `a913dab602153cbef2216dea5d7977a53827342f46acc70df246274bbf24eae9`。
+
+唯一判定：`strategy_intent_prompt_coverage_recovery_verified`。K-A3c2 原正式 invalid 结论保持不变；该恢复结论只授权规划 K-A3d1 evaluation-only 动作消融载体。
+
+### K-A3d1 复核：策略意图动作消融载体已验证
+
+已确认：
+
+- 仅新增 `evaluation/strategy_intent_action_ablation.py` 和 `tests/test_strategy_intent_action_ablation.py`；原有四个 docs 改动未触碰；
+- 严格校验 seed、rate、正偶数 samples-per-phase、级牌和上限；
+- 每策略独立 game、StrategicPassAIAgent、seen set、候选池、阶段聚合器与 pair hash；
+- 每个 policy×phase 按固定 SHA-256 优先级选样，off/on kwargs 唯一差异为 ready `strategy_intent_prompt`；
+- 每阶段 AB/BA 平衡，一侧异常不阻止另一侧，七类 provider 结果严格分类且无 fallback；
+- 报告 frozen/slots、mapping 不可变、JSON 安全，不保留样本、prompt、action ID、手牌或 reasoning；
+- seed `400..409` 双运行耗时 3.222s / 3.236s，报告完全相同，SHA-256 均为 `8ec3a766852237e07a1185c0d9de98da71a66fe5d6746b76e580fb4e439e2844`；
+- 四策略均 10/10/0，每策略 selected=16、both-valid=16、same=0、changed=16；每轮 provider 128 次，off/on 各 64；
+- 所有异常、malformed、no-action、非法类型、越过 legal/prompt、单侧 valid 和 diagnostics 均为 0；
+- 定向 8 项、相关 74 项、全量 439 项通过，边界扫描与 `git diff --check` 通过。
+
+唯一判定：`strategy_intent_action_ablation_harness_verified`。该结果只证明动作响应配对载体可用，不形成动作质量、因果效果或胜率结论；下一步先建立本地 RuleBased 分支续局质量代理，不直接申请真实 API。
+
+### K-A3d2 复核：策略意图动作质量代理载体已验证
+
+已确认：
+
+- K-A3d1 独立检查点为 `b75dace33d399704e45909ce31c339a7a7e14226`，K-A3d2 独立检查点为 `415c86dc5034ca85862f52e94d1406aa58042b98`，各自只含对应两个 harness 文件；
+- 本步只新增 `evaluation/strategy_intent_action_quality.py` 与 `tests/test_strategy_intent_action_quality.py`，既有 docs 未混入；
+- 采样、优先级、AB/BA、provider 分类与 prompt pair digest 和 K-A3d1 对齐；
+- game clone 只在候选进入 top-N 时创建，并通过公开 `observe()/legal_actions()` 验证等价；未读取 `_state`；
+- same action 复用一次 rollout，changed action 使用两个独立 clone；后续只由独立 RuleBasedAI 通过公开 API 推进；
+- 终局只使用公开 winner/finish order，比较顺序为队伍结果、队伍名次和、tie；步数不打破平局；
+- seed `500..509` 双运行耗时 4.411s / 4.419s，报告完全相同，SHA-256 均为 `a8c907489b8d913e2b2e4838ffaa2b477285cf098328786b07dd6064b8a5e557`；
+- 四策略均 10/10/0；32 pair 全部 changed、quality-evaluable，64 branches 全部完成且 diagnostics 为空；
+- 假 provider 的 on/off/tie=`5/11/16`，该数值不用于判断 strategy intent prompt；
+- K-A3d1 兼容复验及原 hash 通过；定向 7 项、相关 80 项、全量 446 项通过。
+
+唯一判定：`strategy_intent_action_quality_harness_verified`。该结果只证明本地质量代理载体可用；下一步必须先完成真实模型实验前置审计并取得明确联网授权。
+
 ### P1：RAG 不能单独承担策略路由
 
 RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
@@ -1114,14 +1171,14 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A3c2a 已完成，唯一判定 `strategy_intent_prompt_envelope_contract_verified`。K-A3c2 原结论仍为 `strategy_intent_prompt_coverage_benchmark_invalid`；下一步为 K-A3c2b。
+状态：K-A3d2 已完成，唯一判定 `strategy_intent_action_quality_harness_verified`。K-A3c2 原结论仍为 `strategy_intent_prompt_coverage_benchmark_invalid`；下一步为 K-A3d3a。
 
 依赖：
 
 - Step I 阶段分类稳定；
 - Step J 能提供结构化信念状态。
 
-K-A3c2a 只修改了 `tests/test_strategy_intent_prompt.py`。40 个组合全部 ready、空 diagnostics 且字符数精确匹配；定向 12 项、相关 60 项、全量 431 项通过。K-A3c2b 必须先形成 K-A3c2a 检查点并确保工作区干净，再使用全新 seed `19000..19199` 恰好双运行；不得修改 formatter、runtime、benchmark 或事后门槛。
+K-A3d2 已形成独立检查点且开发双运行通过。当前阻塞仅为四个 docs 改动尚未提交；由项目所有者形成文档检查点并清理到干净工作区后，重新执行 K-A3d3a，锁定 endpoint/model、48 请求预算与质量解释门槛；未经用户明确授权不得联网。
 
 ### Step L：Botzone 本地 AI 接入
 

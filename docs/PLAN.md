@@ -104,7 +104,7 @@ AI 决策分为四层：
 
 - 现有公式把拆对的单 K 排在天然单 9 和天然长套之前，因为只对当前动作打分，不评估残余点数结构；
 - CLI 只把 `last_decision_source == "local"` 标为本地，没有标记 `local_opening_formula`；
-- H2-A1/A1a 与 K-A1 至 K-A3c2a 已封板；K-A3c2 原正式结论保持无效，下一步为 K-A3c2b 独立 seed 恢复验收。
+- H2-A1/A1a 与 K-A1 至 K-A3d2 已封板；K-A3c2 原正式结论保持无效，下一步为 K-A3d3a 真实模型质量试验前置审计与授权请求。
 
 ## 5. 当前实施阶段
 
@@ -126,7 +126,7 @@ AI 决策分为四层：
 
 ### Step J：逐玩家牌面信念状态
 
-状态：J-A 至 J-D1c3c2c3c2b 已完成，confidence 默认关闭。H2-A1/A1a 与 K-A1 至 K-A3c2a 已完成；K-A3c2 原正式运行无效，下一步为 K-A3c2b。
+状态：J-A 至 J-D1c3c2c3c2b 已完成，confidence 默认关闭。H2-A1/A1a 与 K-A1 至 K-A3d2 已完成；K-A3c2 原正式运行无效，下一步为 K-A3d3a。
 
 目标：
 
@@ -202,7 +202,10 @@ AI 决策分为四层：
 50. K-A3c1：建立 evaluation-only prompt 覆盖、成本与配对摘要载体，已完成并通过；
 51. K-A3c2：使用独立 seed 正式验证 prompt coverage 与字符成本，已完成；结构和覆盖通过，但预注册字符包络失败，判定无效；
 52. K-A3c2a：穷举并锁定 phase×reason 的精确字符包络测试契约，已完成并封板；
-53. K-A3c2b：以全新 seed `19000..19199` 和预先锁定的正确包络恢复正式验收，下一步。
+53. K-A3c2b：以全新 seed `19000..19199` 和预先锁定的正确包络恢复正式验收，已完成并通过；
+54. K-A3d1：建立 evaluation-only、provider 可注入、四阶段分桶的策略意图动作消融载体，已完成并通过；
+55. K-A3d2：建立同状态 off/on 动作的 RuleBased 分支续局质量代理载体，已完成并通过；
+56. K-A3d3a：完成真实模型质量试验的检查点、预算、安全门槛和明确授权前置，下一步。
 
 J-A 验证结果：
 
@@ -623,7 +626,7 @@ J-D1c3c2c3c2b 结果：
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A1 至 K-A3c2a 已封板。K-A3c2 原唯一判定保持 `strategy_intent_prompt_coverage_benchmark_invalid`，下一步为 K-A3c2b 独立语料恢复验收。
+状态：K-A1 至 K-A3d2 已封板。K-A3c2 原唯一判定保持 `strategy_intent_prompt_coverage_benchmark_invalid`；K-A3c2b 独立恢复判定为 `strategy_intent_prompt_coverage_recovery_verified`。下一步为 K-A3d3a。
 
 目标：
 
@@ -841,6 +844,62 @@ K-A3c2b 方向：
 - 使用 K-A3c2a 已封板包络，不修改 formatter、benchmark、采样或门槛；
 - 报告先写入仓库外审计目录，再输出摘要，避免工具输出截断导致证据丢失；
 - 通过只授权规划 K-A3d1 evaluation-only 动作消融，不默认启用 intent prompt。
+
+K-A3c2b 验证结果：
+
+- HEAD / K-A3c2a 检查点为 `a8cf1291de2fde62c6c7ed7ecfeaa878671f5490`，运行前后工作区干净；
+- seed `19000..19199`、四策略各 200 局，正式 benchmark 恰好运行两次；
+- 两份 canonical JSON 逐字节相同，SHA-256 均为 `a3f6b35f791435af22ccf3e877e5b5d571028d9dc05d36ce506e10c2a31ad66b`；
+- 16 个 phase bucket 全部达到样本门槛，均为 sample=available=ready=exact insertion；
+- 字符 min/max 全部落在 K-A3c2a 包络内，delta 的 sum/min/max 与 payload+9 精确一致；
+- 零 duplicate、limit、unavailable、invalid、omitted、mismatch 和 diagnostics；
+- 定向 12 项、相关 60 项、全量 431 项通过；
+- 唯一判定 `strategy_intent_prompt_coverage_recovery_verified`，K-A3c2 原 invalid 不变。
+
+K-A3d1 方向：
+
+- 新增独立 `evaluation/strategy_intent_action_ablation.py` 与对应测试，不修改现有 confidence harness 或 runtime；
+- 使用注入的 deterministic provider，off/on 共用同一公开局面和候选动作，on 仅增加类型化 strategy intent payload；
+- 按四策略×四阶段以固定 SHA-256 优先级选样，平衡 AB/BA 调用顺序；
+- 严格分类异常、malformed、no-action、非法类型、越过 legal/prompt 候选，并且不使用 fallback；
+- 先以全本地 fake provider 双运行验证载体，不联网、不评价动作质量或胜率。
+
+K-A3d1 验证结果：
+
+- 仅新增 `evaluation/strategy_intent_action_ablation.py` 与对应测试，未修改 runtime 或既有 harness；
+- 四策略×四阶段使用固定 SHA-256 优先级，每桶选择 4 对并平衡 AB/BA；
+- off/on kwargs 唯一差异为 ready `strategy_intent_prompt`，七类 provider 结果 fail-closed 且无 fallback；
+- seed `400..409` 双运行报告完全相同，canonical SHA-256 均为 `8ec3a766852237e07a1185c0d9de98da71a66fe5d6746b76e580fb4e439e2844`；
+- 每轮 128 次 provider 调用，64 对全部 both-valid 且 changed，所有异常分类和 diagnostics 为 0；
+- 定向 8 项、相关 74 项、全量 439 项通过；
+- 唯一判定 `strategy_intent_action_ablation_harness_verified`。
+
+K-A3d2 方向：
+
+- 先把 K-A3d1 的两个新增文件形成独立实现检查点，不混入既有 docs 改动；
+- 新增独立 `evaluation/strategy_intent_action_quality.py` 与对应测试，不修改 K-A3d1 公共契约；
+- 在固定优先级入选时只做内存 `deepcopy(game)`，clone 前后以 `observe()/legal_actions()` 验证公开等价，不读取 `_state`；
+- off/on both-valid 后从独立 clone 执行动作，再由独立 RuleBasedAI 推进到终局；same action 只 rollout 一次并复用；
+- 比较顺序固定为队伍 win/draw/loss 分数、队伍两人名次和，再 tie；不以步数、pass 或 pressure 打破平局；
+- 先用 deterministic fake provider 双运行验证全部分支和守恒，不联网，不把代理结果称为真实模型质量或胜率。
+
+K-A3d2 验证结果：
+
+- K-A3d1 已独立提交为 `b75dace33d399704e45909ce31c339a7a7e14226`，本步只新增质量模块和测试；
+- seed `500..509` 双运行报告完全相同，canonical SHA-256 均为 `a8c907489b8d913e2b2e4838ffaa2b477285cf098328786b07dd6064b8a5e557`；
+- 四策略×四阶段每桶 2 对，32 pair 全部 changed 且 quality-evaluable，64 branches 全部完成；
+- 固定 RuleBased 续局代理为 on/off/tie=`5/11/16`，只描述假 provider 首/末候选差异，不代表 intent prompt 质量；
+- K-A3d1 同参数采样与 digest 兼容，原开发 hash 保持不变；
+- 定向 7 项、相关 80 项、全量 446 项通过；
+- 唯一判定 `strategy_intent_action_quality_harness_verified`。
+
+K-A3d3a 方向：
+
+- K-A3d2 已独立提交为 `415c86dc5034ca85862f52e94d1406aa58042b98`；由项目所有者单独提交既有 docs，使真实运行前工作区干净；
+- 不联网、不创建 runner、不发送 probe，只复核回归、harness hash、非敏感 endpoint/model 元数据与 key 是否存在；
+- 预注册 seed `600..609`、策略 `(0,50,100)`、每 phase 2 对，共 24 pair、最多 48 次请求；
+- timeout 60 秒、零重试、持久后台上限 65 分钟；真实请求必须另行取得用户对明确 endpoint/model 的授权；
+- 完整性通过后才解释 RuleBased 续局代理；小样本只决定是否保留到扩大验收，不构成因果或胜率结论。
 
 ### Step L：Botzone 本地 AI 接入
 
