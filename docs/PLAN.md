@@ -897,11 +897,13 @@ K-A3d3a 方向：
 
 - K-A3d2 已独立提交为 `415c86dc5034ca85862f52e94d1406aa58042b98`；由项目所有者单独提交既有 docs，使真实运行前工作区干净；
 - K-A3d3a 已连续两次因当前进程未显式提供 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`DEEPSEEK_API_KEY` 而判定 `precondition_failed`；首次在干净 HEAD `a450fd2367b53ba455e904e1361422f9f965eb58` 完成全部离线前置，第二次按快速门槛停止且未重复回归；
+- 当前新进程已确认三项变量 present 且工作区干净；项目所有者选择 `https://api.deepseek.com` / `deepseek-v4-flash` 作为本次 K-A3d3b 锁定配置；
 - 重试时先检查三项显式进程环境元数据；仍缺失则立即停止，不重复运行 7 / 80 / 446 项回归；三项齐备后才继续完整前置审计并请求授权；
 - 不得把 `.env.example` 当作配置注入方式；它的未提交改动必须由项目所有者在不暴露内容的前提下自行处理，真实密钥不得进入该文件；
 - 不联网、不创建 runner、不发送 probe，只复核回归、harness hash、非敏感 endpoint/model 元数据与 key 是否存在；
 - 预注册 seed `600..609`、策略 `(0,50,100)`、每 phase 2 对，共 24 pair、最多 48 次请求；
 - timeout 60 秒、零重试、持久后台上限 65 分钟；真实请求必须另行取得用户对明确 endpoint/model 的授权；
+- 48 次请求必须全部使用 `deepseek-v4-flash`，不得回退或混入历史 `deepseek-v4-pro`；结果只作 flash 内部 off/on 配对解释，不与旧 pro 结果合并；
 - 完整性通过后才解释 RuleBased 续局代理；小样本只决定是否保留到扩大验收，不构成因果或胜率结论。
 
 ### Step L：Botzone 本地 AI 接入

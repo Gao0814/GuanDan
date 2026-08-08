@@ -6,14 +6,14 @@
 
 ### 本次重试上下文
 
-K-A3d3a 已连续两次停在配置快速门槛，当前唯一判定仍为 `precondition_failed`。首次在 HEAD `a450fd2367b53ba455e904e1361422f9f965eb58` 上完成离线前置；第二次按快速门槛执行，没有重复运行回归。已确认：
+K-A3d3a 曾连续两次停在配置快速门槛，历史唯一判定均为 `precondition_failed`。首次在 HEAD `a450fd2367b53ba455e904e1361422f9f965eb58` 上完成离线前置；第二次按快速门槛执行，没有重复运行回归。此后任务调用方已从新进程启动 Codex，当前子进程已只按 presence 复核三项变量均存在，工作区干净，因此本次允许继续 K-A3d3a。已确认：
 
 - 工作区干净，K-A3d1/K-A3d2 检查点及提交范围正确；
 - 7 / 80 / 446 项回归、`git diff --check`、两个固定 canonical hash 与兼容性复核均通过；
-- 调用进程未显式提供 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 和 `DEEPSEEK_API_KEY`；
+- 历史两次失败时调用进程未显式提供 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 和 `DEEPSEEK_API_KEY`；当前进程已确认三项均 present，但未读取或输出 key；
 - 未读取 `.env`、未创建 runner、未联网、未调用模型或发送探测请求。
 
-不要在相同启动环境中再次执行本提示词。下一次仍是 K-A3d3a 重试，不是 K-A3d3b；只有在任务调用方确认已从带有三项变量的新进程启动任务后才执行。不得把变量值写入提示词、`.env.example`、仓库、测试、日志或审计文件。若任一变量仍缺失，应立即报告 `precondition_failed`，不要重复运行完整回归。
+本次仍是 K-A3d3a 重试，不是 K-A3d3b。不得把 API key 写入提示词、`.env.example`、仓库、测试、日志或审计文件。若任一变量缺失或与下面锁定的非敏感值不符，应立即报告 `precondition_failed`，不要重复运行完整回归。
 
 `.env.example` 不属于进程环境，不能满足本门槛；不得读取它来获取配置。若工作区存在其未提交改动，应由项目所有者先自行确认不含真实密钥并处理，执行方不得读取、提交、还原或清理该文件。
 
@@ -57,8 +57,8 @@ b75dace33d399704e45909ce31c339a7a7e14226
 
 在运行耗时回归前，先只检查当前进程环境：
 
-- `DEEPSEEK_BASE_URL`：必须显式存在且非空，可报告其值；
-- `DEEPSEEK_MODEL`：必须显式存在且非空，可报告其值；
+- `DEEPSEEK_BASE_URL`：必须显式存在且精确为 `https://api.deepseek.com`；
+- `DEEPSEEK_MODEL`：必须显式存在且精确为 `deepseek-v4-flash`；
 - `DEEPSEEK_API_KEY`：必须显式存在且非空，只报告 `present/missing`。
 
 禁止打开或解析 `.env`，禁止调用会加载 `.env` 的配置入口。任一变量缺失时立即停止；不得创建 runner、联网或重复执行后续回归。三项均满足后，才继续下面的回归与确定性复核。
@@ -89,6 +89,8 @@ git diff --check
 以下参数用于后续 K-A3d3b，K-A3d3a 不执行：
 
 ```text
+endpoint = https://api.deepseek.com
+model = deepseek-v4-flash
 seeds = 600..609
 strategic_pass_rates = (0, 50, 100)
 samples_per_phase = 2
@@ -103,6 +105,8 @@ retries = 0
 persistent background wall-clock cap = 65 minutes
 ```
 
+`deepseek-v4-flash` 是项目所有者基于当前成本约束作出的本次实验选择。该判断不在本任务中外推为通用价格或质量结论。K-A3d3b 的 off/on 必须全部使用同一 `deepseek-v4-flash` 配置；不得混入、回退或静默替换为历史 `deepseek-v4-pro`。历史 pro 运行只能证明旧载体经验，不能与本次 flash 结果直接合并或声称同模型复现。
+
 选择 `(0,50,100)` 是为了在 48 请求预算内保留 forced、中等战略 pass、完全战略 pass 三种轨迹，同时让每个 policy×phase 都有 2 对并精确平衡 AB/BA。25% 策略只在观察到保留信号后的扩大验收中恢复，不能事后加入本次语料。
 
 正式试验必须恰好运行一次；不得补采、换 seed、修改策略、降低样本数、重试失败请求或运行第二份 live 报告。
@@ -114,6 +118,7 @@ persistent background wall-clock cap = 65 minutes
 - 三策略均 10/10/0，主动 pass 行为满足 0%、中间值、100% 边界；
 - 每个 policy×phase qualified≥2、selected=2、off-first/on-first=1/1；
 - 24 pair 均 off/on attempted，ledger 连续 1..48，off/on 各 24；
+- 48 次逻辑/物理请求均使用锁定 endpoint 与 `deepseek-v4-flash`，无模型替换、混用或 fallback；
 - timeout、retries 和物理请求数不超过锁定值；
 - 所有 response 均为严格可解析 `DeepSeekSuggestion`，action ID 为非 bool 整数并位于 legal/prompt candidates；
 - 24 pair 全部 both-valid；异常、malformed、no-action、非法类型、outside legal/prompt 均为 0；
@@ -184,8 +189,8 @@ ledger 每次请求只记录 sequence、off/on condition、started/returned/fail
 达到 ready 后，最终回复必须停在以下形式的明确问题，不得继续执行：
 
 ```text
-已完成 K-A3d3a 前置审计。API key present，Endpoint=<实际显式值>，Model=<实际显式值>。
-拟执行一次 K-A3d3b：seed 600..609，策略 0/50/100，每阶段 2 对，共最多 48 次外部请求；单次 timeout 60 秒、零重试、持久后台最长 65 分钟。是否明确授权向该 endpoint/model 发起本次请求？
+已完成 K-A3d3a 前置审计。API key present，Endpoint=https://api.deepseek.com，Model=deepseek-v4-flash。
+拟执行一次 K-A3d3b：seed 600..609，策略 0/50/100，每阶段 2 对，共最多 48 次外部请求；单次 timeout 60 秒、零重试、持久后台最长 65 分钟。是否明确授权向该 endpoint 的 deepseek-v4-flash 发起本次请求？
 ```
 
 只有用户后续明确回答授权，才允许另行制定并执行 K-A3d3b。当前任务不得把任何历史授权视为本次授权。
