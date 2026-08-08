@@ -982,9 +982,14 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 #### K-A3d3a：真实模型质量试验前置审计
 
-状态：下一步，尚未实施。
+状态：连续两次执行均为 `precondition_failed`；必须从已注入显式环境变量的新进程启动后重试同一步。
 
 - K-A3d2 已形成只含两个质量文件的检查点 `415c86dc5034ca85862f52e94d1406aa58042b98`；真实运行前工作区必须干净；
+- 首次执行 HEAD 为 `a450fd2367b53ba455e904e1361422f9f965eb58`，工作区干净；7 / 80 / 446 项测试、`git diff --check`、K-A3d1/K-A3d2 固定 hash 与兼容检查均通过；
+- 首次执行未显式取得 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`DEEPSEEK_API_KEY`，因此在配置门槛处停止；未读取 `.env`、未创建 runner、未联网或调用模型；
+- 第二次执行仍缺少相同三项变量，按快速门槛停止且没有重复运行回归；
+- 重试顺序调整为先检查三项显式进程环境；仍缺失时立即报告 `precondition_failed`，不重复运行完整回归；
+- `.env.example` 不计作显式进程环境，不得从中读取配置或写入真实密钥；其未提交改动会同时阻塞干净工作区前置；
 - 本步不联网、不发送 probe、不创建 live runner，只复核测试、hash、非敏感 endpoint/model 与 key presence；
 - 预注册 seed `600..609`、rates `(0,50,100)`、每 phase 2 对、共 24 pair/48 请求；
 - timeout 60 秒、retries 0、持久后台最长 65 分钟；

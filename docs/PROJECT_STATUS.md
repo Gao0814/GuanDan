@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：K-A3d2 质量代理载体已验证；下一步为 K-A3d3a 真实模型试验前置审计与授权请求
+- 当前工作状态：K-A3d3a 已连续两次因三项显式进程环境变量缺失而 `precondition_failed`；必须从已注入变量的新进程启动后再重试
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：K-A3d2 定向 7 项、相关 80 项、全量 446 项通过
 - 当前规则范围：单局掼蛋核心规则
@@ -1171,14 +1171,18 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A3d2 已完成，唯一判定 `strategy_intent_action_quality_harness_verified`。K-A3c2 原结论仍为 `strategy_intent_prompt_coverage_benchmark_invalid`；下一步为 K-A3d3a。
+状态：K-A3d2 已完成，唯一判定 `strategy_intent_action_quality_harness_verified`。K-A3d3a 已连续两次执行但均未达到授权请求门槛，唯一判定仍为 `precondition_failed`。K-A3c2 原结论仍为 `strategy_intent_prompt_coverage_benchmark_invalid`。
 
 依赖：
 
 - Step I 阶段分类稳定；
 - Step J 能提供结构化信念状态。
 
-K-A3d2 已形成独立检查点且开发双运行通过。当前阻塞仅为四个 docs 改动尚未提交；由项目所有者形成文档检查点并清理到干净工作区后，重新执行 K-A3d3a，锁定 endpoint/model、48 请求预算与质量解释门槛；未经用户明确授权不得联网。
+K-A3d2 已形成独立检查点且开发双运行通过。K-A3d3a 首次执行时，HEAD 为 `a450fd2367b53ba455e904e1361422f9f965eb58`，工作区干净；7 / 80 / 446 项回归、`git diff --check`、K-A3d1/K-A3d2 固定 hash 和兼容性复核全部通过。阻塞仅为调用进程未显式提供 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 和 `DEEPSEEK_API_KEY`。本次没有读取 `.env`、创建 runner、联网、调用模型或发送 probe。
+
+下一步仍为 K-A3d3a 重试：由任务调用方在启动进程环境中显式注入三项变量，先做 presence 快速门槛；变量齐备后再执行完整前置并就明确 endpoint/model、48 请求预算向用户请求授权。不得把密钥写入提示词、仓库或文档，未经明确授权不得进入 K-A3d3b。
+
+第二次重试仍缺少同样三项变量，已按快速门槛停止，没有重复运行回归。当前还观察到未提交的 `.env.example` 改动；该文件未被读取或修改，不能作为进程环境来源，也不能在含真实密钥时提交。项目所有者必须先在本地确认并处理该改动，再从带有三项变量的新进程启动任务。
 
 ### Step L：Botzone 本地 AI 接入
 
