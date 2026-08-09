@@ -18,11 +18,54 @@ from .protocol import ProtocolValidationError, parse_action_claim
 
 
 SESSION_SCHEMA: Final[str] = "botzone_no_tribute_session"
-SESSION_VERSION: Final[int] = 1
+SESSION_VERSION: Final[int] = 2
 
 
 class SessionStorageError(ValueError):
     """Stored state is unavailable, invalid, or cannot be written atomically."""
+
+
+@dataclass(frozen=True, slots=True)
+class PlayEffect:
+    """The exact physical cards to deduct only after acknowledgement."""
+
+    action: tuple[int, ...]
+
+    def to_json(self) -> dict[str, list[int]]:
+        return {"action": list(self.action)}
+
+
+@dataclass(frozen=True, slots=True)
+class HandlerResult:
+    """A handler response and its typed, deferred hand-state effect."""
+
+    response: bytes | None
+    effect: PlayEffect | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HandlerContext:
+    """Match-isolated input for a future offline play adapter."""
+
+    match_key: str
+    request_digest: str
+    request: DealRequest | PlayRequest
+    own_hand: tuple[int, ...]
+    history: tuple[HistoryEntry, ...]
+    latest_window: tuple[HistoryEntry, ...]
+    global_state: GlobalState
+    finished: bool
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "match_key": self.match_key,
+            "request_digest": self.request_digest,
+            "own_hand": list(self.own_hand),
+            "history": [entry.to_json() for entry in self.history],
+            "latest_window": [entry.to_json() for entry in self.latest_window],
+            "global": self.global_state.to_json(),
+            "finished": self.finished,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +76,9 @@ class SessionRecord:
     global_state: GlobalState
     own_hand: tuple[int, ...]
     history: tuple[HistoryEntry, ...]
+    latest_window: tuple[HistoryEntry, ...]
     pending_response: bytes | None
+    pending_effect: PlayEffect | None
     delivery_state: str
     handler_completed: bool
     cached_response: bytes | None
@@ -50,7 +95,9 @@ class SessionRecord:
             "global": self.global_state.to_json(),
             "own_hand": list(self.own_hand),
             "history": [entry.to_json() for entry in self.history],
+            "latest_window": [entry.to_json() for entry in self.latest_window],
             "pending_response": _encode_bytes(self.pending_response),
+            "pending_effect": _effect_to_json(self.pending_effect),
             "delivery_state": self.delivery_state,
             "handler_completed": self.handler_completed,
             "cached_response": _encode_bytes(self.cached_response),
@@ -110,6 +157,25 @@ def _finished_to_json(value: FinishedRow | None) -> dict[str, object] | None:
     }
 
 
+def _effect_to_json(value: PlayEffect | None) -> dict[str, list[int]] | None:
+    return None if value is None else value.to_json()
+
+
+def _parse_effect(value: object, own_hand: tuple[int, ...]) -> PlayEffect | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"action"} or not isinstance(value["action"], list):
+        raise SessionStorageError("invalid_pending_effect")
+    action = value["action"]
+    if (
+        any(type(card_id) is not int or not 0 <= card_id <= 107 for card_id in action)
+        or len(set(action)) != len(action)
+        or not set(action).issubset(own_hand)
+    ):
+        raise SessionStorageError("invalid_pending_effect")
+    return PlayEffect(tuple(action))
+
+
 def _parse_global(value: object) -> GlobalState:
     if not isinstance(value, dict) or set(value) != {"level", "tribute", "first", "last"}:
         raise SessionStorageError("invalid_global")
@@ -166,8 +232,8 @@ def _record_from_json(value: object) -> SessionRecord:
     if not isinstance(value, dict):
         raise SessionStorageError("invalid_session")
     expected = {
-        "schema", "version", "match_id", "request_digest", "stage", "global", "own_hand", "history",
-        "pending_response", "delivery_state", "handler_completed", "cached_response",
+        "schema", "version", "match_id", "request_digest", "stage", "global", "own_hand", "history", "latest_window",
+        "pending_response", "pending_effect", "delivery_state", "handler_completed", "cached_response",
         "cached_response_digest", "finished",
     }
     if (
@@ -199,12 +265,24 @@ def _record_from_json(value: object) -> SessionRecord:
     _validate_match_id(match_id)
     pending = _decode_bytes(value["pending_response"], "pending_response")
     cached = _decode_bytes(value["cached_response"], "cached_response")
+    typed_hand = tuple(own_hand)
+    effect = _parse_effect(value["pending_effect"], typed_hand)
     if stage == "deal" and len(own_hand) != 27:
         raise SessionStorageError("invalid_session")
     if pending is not None and delivery_state not in {"pending", "inflight"}:
         raise SessionStorageError("invalid_session")
+    if effect is not None and pending is None:
+        raise SessionStorageError("invalid_session")
     if cached is None and cached_digest is not None:
         raise SessionStorageError("invalid_session")
+    parsed_history = _parse_history(value["history"], _parse_global(value["global"]).level)
+    parsed_window = _parse_history(value["latest_window"], _parse_global(value["global"]).level)
+    if (
+        bool(parsed_history) != bool(parsed_window)
+        or len(parsed_history) < len(parsed_window)
+        or (parsed_window and parsed_history[-len(parsed_window):] != parsed_window)
+    ):
+        raise SessionStorageError("history_alignment_failed")
     finished = _parse_finished(value["finished"])
     if finished is not None and finished.match_id != match_id:
         raise SessionStorageError("session_key_mismatch")
@@ -213,9 +291,11 @@ def _record_from_json(value: object) -> SessionRecord:
         request_digest=digest,
         stage=stage,
         global_state=_parse_global(value["global"]),
-        own_hand=tuple(own_hand),
-        history=_parse_history(value["history"], _parse_global(value["global"]).level),
+        own_hand=typed_hand,
+        history=parsed_history,
+        latest_window=parsed_window,
         pending_response=pending,
+        pending_effect=effect,
         delivery_state=delivery_state,
         handler_completed=completed,
         cached_response=cached,
@@ -277,7 +357,7 @@ class SessionStore:
             raise SessionStorageError("finished_session")
         if record is not None and record.request_digest == digest:
             if record.pending_response is None and record.cached_response_digest == digest and record.cached_response is not None:
-                record = replace(record, pending_response=record.cached_response, delivery_state="pending")
+                record = replace(record, pending_response=record.cached_response, pending_effect=None, delivery_state="pending")
                 self.save(record)
             return record, not record.handler_completed
         if record is not None and record.pending_response is not None:
@@ -285,7 +365,11 @@ class SessionStore:
         if isinstance(stage, PlayRequest) and record is None:
             raise SessionStorageError("play_without_state")
         own_hand = stage.deliver if isinstance(stage, DealRequest) else record.own_hand
-        history = () if isinstance(stage, DealRequest) else stage.history
+        latest_window, history = ((), ()) if isinstance(stage, DealRequest) else merge_history(
+            record.latest_window,
+            record.history,
+            stage.history,
+        )
         global_state = stage.global_state
         prepared = SessionRecord(
             match_id=match_id,
@@ -294,7 +378,9 @@ class SessionStore:
             global_state=global_state,
             own_hand=own_hand,
             history=history,
+            latest_window=latest_window,
             pending_response=None,
+            pending_effect=None,
             delivery_state="idle",
             handler_completed=False,
             cached_response=None,
@@ -303,14 +389,34 @@ class SessionStore:
         self.save(prepared)
         return prepared, True
 
-    def complete_handler(self, record: SessionRecord, response: bytes | None) -> SessionRecord:
+    def complete_handler(self, record: SessionRecord, result: HandlerResult) -> SessionRecord:
+        if not isinstance(result, HandlerResult):
+            raise SessionStorageError("malformed_handler_result")
+        response = result.response
         if response is not None and not isinstance(response, bytes):
             raise SessionStorageError("handler_response_not_bytes")
         if response is not None and (b"\r" in response or b"\n" in response):
             raise SessionStorageError("header_injection")
+        effect = result.effect
+        if record.stage == "deal" and effect is not None:
+            raise SessionStorageError("malformed_handler_result")
+        if record.stage == "play" and response is not None and effect is None:
+            raise SessionStorageError("malformed_handler_result")
+        if response is None and effect is not None:
+            raise SessionStorageError("malformed_handler_result")
+        if effect is not None:
+            if not isinstance(effect, PlayEffect):
+                raise SessionStorageError("malformed_handler_result")
+            if (
+                any(type(card_id) is not int or not 0 <= card_id <= 107 for card_id in effect.action)
+                or len(set(effect.action)) != len(effect.action)
+                or not set(effect.action).issubset(record.own_hand)
+            ):
+                raise SessionStorageError("invalid_play_effect")
         next_record = replace(
             record,
             pending_response=response,
+            pending_effect=effect,
             delivery_state="pending" if response is not None else "idle",
             handler_completed=True,
             cached_response=response,
@@ -318,6 +424,18 @@ class SessionStore:
         )
         self.save(next_record)
         return next_record
+
+    def handler_context(self, record: SessionRecord, request: DealRequest | PlayRequest) -> HandlerContext:
+        return HandlerContext(
+            match_key=record.match_id,
+            request_digest=record.request_digest,
+            request=request,
+            own_hand=record.own_hand,
+            history=record.history,
+            latest_window=record.latest_window,
+            global_state=record.global_state,
+            finished=record.finished is not None,
+        )
 
     def reserve_handler(self, record: SessionRecord) -> SessionRecord:
         if record.handler_completed:
@@ -359,10 +477,36 @@ class SessionStore:
         for delivery in deliveries:
             record = self.load(delivery.match_id)
             if record is not None and record.pending_response == delivery.response and record.finished is None:
-                self.save(replace(record, pending_response=None, delivery_state="idle"))
+                own_hand = record.own_hand
+                if record.pending_effect is not None:
+                    deductions = set(record.pending_effect.action)
+                    if not deductions.issubset(own_hand):
+                        raise SessionStorageError("invalid_play_effect")
+                    own_hand = tuple(card_id for card_id in own_hand if card_id not in deductions)
+                self.save(replace(record, own_hand=own_hand, pending_response=None, pending_effect=None, delivery_state="idle"))
 
     def finish(self, row: FinishedRow) -> None:
         record = self.load(row.match_id)
         if record is None:
             return
-        self.save(replace(record, pending_response=None, delivery_state="finished", finished=row))
+        self.save(replace(record, pending_response=None, pending_effect=None, delivery_state="finished", finished=row))
+
+
+def merge_history(
+    latest_window: tuple[HistoryEntry, ...],
+    accumulated: tuple[HistoryEntry, ...],
+    incoming_window: tuple[HistoryEntry, ...],
+) -> tuple[tuple[HistoryEntry, ...], tuple[HistoryEntry, ...]]:
+    """Append only a provably new suffix of Botzone's four-event window."""
+
+    if not latest_window and not accumulated:
+        return incoming_window, incoming_window
+    if not latest_window or len(accumulated) < len(latest_window) or accumulated[-len(latest_window):] != latest_window:
+        raise SessionStorageError("history_alignment_failed")
+    if incoming_window == latest_window:
+        return incoming_window, accumulated
+    maximum_overlap = min(len(latest_window), len(incoming_window))
+    for overlap in range(maximum_overlap, 0, -1):
+        if latest_window[-overlap:] == incoming_window[:overlap]:
+            return incoming_window, accumulated + incoming_window[overlap:]
+    raise SessionStorageError("history_alignment_failed")

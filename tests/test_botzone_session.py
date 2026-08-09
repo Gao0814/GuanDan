@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 from integrations.botzone.models import DealRequest, PlayRequest
 from integrations.botzone.protocol import parse_stage_request
-from integrations.botzone.session import SessionStorageError, SessionStore
+from integrations.botzone.poll import FinishedRow
+from integrations.botzone.session import HandlerResult, PlayEffect, SessionStorageError, SessionStore
 
 
 def _global() -> dict[str, object]:
@@ -35,7 +36,7 @@ class BotzoneSessionTests(unittest.TestCase):
             record, call_handler = store.prepare("unit-a", b'{"request":1}', _deal(0))
             self.assertTrue(call_handler)
             record = store.reserve_handler(record)
-            stored = store.complete_handler(record, b'{"response":1}')
+            stored = store.complete_handler(record, HandlerResult(b'{"response":1}'))
             self.assertEqual(stored.delivery_state, "pending")
             deliveries = store.pending_deliveries()
             store.mark_inflight(deliveries)
@@ -57,7 +58,7 @@ class BotzoneSessionTests(unittest.TestCase):
         with TemporaryDirectory() as root:
             store = SessionStore(root)
             record, first_call = store.prepare("unit-a", b"same", _deal(0))
-            record = store.complete_handler(store.reserve_handler(record), b"ok")
+            record = store.complete_handler(store.reserve_handler(record), HandlerResult(b"ok"))
             self.assertTrue(first_call)
             deliveries = store.pending_deliveries()
             store.mark_inflight(deliveries)
@@ -71,8 +72,8 @@ class BotzoneSessionTests(unittest.TestCase):
             store = SessionStore(root)
             first, _ = store.prepare("unit-a", b"deal-a", _deal(0))
             second, _ = store.prepare("unit-b", b"deal-b", _deal(1))
-            first = store.complete_handler(store.reserve_handler(first), b"a")
-            second = store.complete_handler(store.reserve_handler(second), b"b")
+            first = store.complete_handler(store.reserve_handler(first), HandlerResult(b"a"))
+            second = store.complete_handler(store.reserve_handler(second), HandlerResult(b"b"))
             self.assertEqual(store.load("unit-a").pending_response, b"a")
             self.assertEqual(store.load("unit-b").pending_response, b"b")
             deliveries = store.pending_deliveries()
@@ -99,6 +100,82 @@ class BotzoneSessionTests(unittest.TestCase):
                 with patch("integrations.botzone.session.os.replace", side_effect=OSError("denied")):
                     with self.assertRaises(SessionStorageError):
                         atomic_store.save(record)
+
+    def test_pending_play_effect_deducts_once_only_after_acknowledgement(self) -> None:
+        with TemporaryDirectory() as root:
+            store = SessionStore(root)
+            deal, _ = store.prepare("unit-a", b"deal", _deal(0))
+            deal = store.complete_handler(store.reserve_handler(deal), HandlerResult(b"deal"))
+            deliveries = store.pending_deliveries()
+            store.mark_inflight(deliveries)
+            store.acknowledge(deliveries)
+            before = store.load("unit-a")
+            assert before is not None
+            play, _ = store.prepare("unit-a", b"play", _play())
+            play = store.complete_handler(
+                store.reserve_handler(play),
+                HandlerResult(b"play", PlayEffect((before.own_hand[0],))),
+            )
+            self.assertEqual(store.load("unit-a").own_hand, before.own_hand)
+            restarted = SessionStore(root)
+            deliveries = restarted.pending_deliveries()
+            restarted.mark_inflight(deliveries)
+            restarted.restore_pending(deliveries)
+            restarted.mark_inflight(deliveries)
+            restarted.acknowledge(deliveries)
+            after = restarted.load("unit-a")
+            assert after is not None
+            self.assertEqual(after.own_hand, before.own_hand[1:])
+            restarted.acknowledge(deliveries)
+            self.assertEqual(restarted.load("unit-a").own_hand, before.own_hand[1:])
+
+    def test_history_windows_merge_only_a_verifiable_suffix(self) -> None:
+        def play(history: list[dict[str, object]], done: list[int] | None = None) -> PlayRequest:
+            parsed = parse_stage_request(
+                {"stage": "play", "history": history, "done": [] if done is None else done, "pass_on": -1, "global": _global()}
+            )
+            assert isinstance(parsed, PlayRequest)
+            return parsed
+
+        one = {"player": 0, "response": [[0], [0]]}
+        two = {"player": 1, "response": [[], []]}
+        three = {"player": 2, "response": [[1], [1]]}
+        four = {"player": 3, "response": [[], []]}
+        with TemporaryDirectory() as root:
+            store = SessionStore(root)
+            store.prepare("unit-a", b"deal", _deal(0))
+            original_history = [dict(one), dict(two)]
+            first, _ = store.prepare("unit-a", b"p1", play([one, two]))
+            repeated, _ = store.prepare("unit-a", b"p2", play([one, two]))
+            sliding, _ = store.prepare("unit-a", b"p3", play([two, three]))
+            skipped, _ = store.prepare("unit-a", b"p4", play([three, four], done=[0]))
+            self.assertEqual(first.history, repeated.history)
+            self.assertEqual(len(sliding.history), 3)
+            self.assertEqual(len(skipped.history), 4)
+            self.assertEqual([one, two], original_history)
+            with self.assertRaisesRegex(SessionStorageError, "history_alignment_failed"):
+                store.prepare("unit-a", b"p5", play([one]))
+
+    def test_unauthorized_effect_and_finished_pending_effect_fail_closed(self) -> None:
+        with TemporaryDirectory() as root:
+            store = SessionStore(root)
+            deal, _ = store.prepare("unit-a", b"deal", _deal(0))
+            deal = store.complete_handler(store.reserve_handler(deal), HandlerResult(b"deal"))
+            deliveries = store.pending_deliveries()
+            store.mark_inflight(deliveries)
+            store.acknowledge(deliveries)
+            play, _ = store.prepare("unit-a", b"play", _play())
+            with self.assertRaises(SessionStorageError):
+                store.complete_handler(store.reserve_handler(play), HandlerResult(b"play", PlayEffect((107,))))
+            valid, _ = store.prepare("unit-a", b"play-2", _play())
+            before = valid.own_hand
+            store.complete_handler(store.reserve_handler(valid), HandlerResult(b"play", PlayEffect((before[0],))))
+            store.finish(FinishedRow("unit-a", 0, 0, ()))
+            finished = store.load("unit-a")
+            assert finished is not None
+            self.assertTrue(finished.finished is not None)
+            self.assertIsNone(finished.pending_effect)
+            self.assertEqual(finished.own_hand, before)
 
 
 if __name__ == "__main__":

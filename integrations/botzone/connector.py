@@ -10,14 +10,14 @@ from typing import Protocol
 
 from .models import DealRequest, PlayRequest, UnsupportedStage
 from .poll import PollFormatError, PollRequest, parse_poll
-from .session import PendingDelivery, SessionStorageError, SessionStore
+from .session import HandlerContext, HandlerResult, PendingDelivery, SessionStorageError, SessionStore
 
 
 class Transport(Protocol):
     def poll(self, headers: Mapping[str, bytes]) -> bytes: ...
 
 
-RequestHandler = Callable[[DealRequest | PlayRequest], bytes | None]
+RequestHandler = Callable[[HandlerContext], HandlerResult]
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,13 +91,13 @@ class MockConnector:
             return int(record.pending_response is not None), diagnostics
         try:
             record = self._store.reserve_handler(record)
-            response = self._handler(request.stage)
+            result = self._handler(self._store.handler_context(record, request.stage))
         except Exception:
-            self._store.complete_handler(record, None)
+            self._store.complete_handler(record, HandlerResult(None))
             diagnostics["handler_failure"] += 1
             return 0, diagnostics
         try:
-            completed = self._store.complete_handler(record, response)
+            completed = self._store.complete_handler(record, result)
         except SessionStorageError as exc:
             diagnostics[_normalized_session_error(exc)] += 1
             return 0, diagnostics
@@ -105,7 +105,15 @@ class MockConnector:
 
 
 def _normalized_session_error(error: SessionStorageError) -> str:
-    known = {"play_without_state", "atomic_write_failed", "header_injection", "corrupt_session"}
+    known = {
+        "play_without_state",
+        "atomic_write_failed",
+        "header_injection",
+        "corrupt_session",
+        "history_alignment_failed",
+        "invalid_play_effect",
+        "malformed_handler_result",
+    }
     return str(error) if str(error) in known else "session_error"
 
 

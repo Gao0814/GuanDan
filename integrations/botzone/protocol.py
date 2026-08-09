@@ -78,7 +78,9 @@ def parse_action_claim(
     if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, Sequence) or len(value) != 2:
         raise ProtocolValidationError("response must be [action, claim]")
     action = _id_sequence(value[0], "action")
-    claim = _id_sequence(value[1], "claim")
+    # claim IDs are virtual face representatives. The referee compares their
+    # faces, so a wildcard declaration may repeat an otherwise valid ID.
+    claim = _id_sequence(value[1], "claim", unique=False)
     if not action and not claim:
         return ActionClaim.pass_action()
     if not action or not claim:

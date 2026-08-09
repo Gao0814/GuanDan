@@ -102,6 +102,28 @@ class BotzoneProtocolTests(unittest.TestCase):
         with self.assertRaises(ProtocolValidationError):
             parse_action_claim([[True], [True]], level="2")
 
+    def test_large_bombs_allow_repeated_virtual_claim_ids_only_with_wildcards(self) -> None:
+        natural_eight = [card_id_for("3", suit, copy) for copy in (0, 1) for suit in ("h", "d", "s", "c")]
+        wildcard_one = card_id_for("2", "h", 0)
+        wildcard_two = card_id_for("2", "h", 1)
+        virtual_three_hearts = card_id_for("3", "h", 0)
+        nine = parse_action_claim(
+            [natural_eight + [wildcard_one], natural_eight + [virtual_three_hearts]],
+            level="2",
+            known_hand_ids=natural_eight + [wildcard_one],
+        )
+        ten = parse_action_claim(
+            [natural_eight + [wildcard_one, wildcard_two], natural_eight + [virtual_three_hearts, virtual_three_hearts]],
+            level="2",
+            known_hand_ids=natural_eight + [wildcard_one, wildcard_two],
+        )
+        self.assertEqual(nine.claim.count(virtual_three_hearts), 2)
+        self.assertEqual(ten.claim.count(virtual_three_hearts), 3)
+        with self.assertRaises(ProtocolValidationError):
+            parse_action_claim([natural_eight, natural_eight[:-1] + [virtual_three_hearts]], level="2")
+        with self.assertRaises(ProtocolValidationError):
+            parse_action_claim([[natural_eight[0], natural_eight[4]], [natural_eight[0], natural_eight[0]]], level="2")
+
     def test_history_and_requests_fail_as_a_whole_without_mutating_input(self) -> None:
         malformed = _play(history=[{"player": 0, "response": [[0], [0]]}] * 5)
         original = deepcopy(malformed)
