@@ -1,109 +1,107 @@
 # 下一步实施提示词
 
-## Step L4-A2c4a：Botzone preflight 超时纯离线分阶段诊断
+## Step L4-A2c4b：Botzone preflight 超时诊断载体修复与独立恢复
 
-请在 GuanDan 项目中执行 Step L4-A2c4a。本步只诊断 L4-A2c3a 中既有 `python -m integrations.botzone --preflight-only` 为何在 30 秒内未返回。不得再次对真实环境/state dir 运行该命令，不得启动 live launcher、connector 或网络请求，也不得修改仓库文件。
+请在 GuanDan 项目中执行 Step L4-A2c4b。本步修复上一轮临时诊断载体的 import-path 缺口，并在全新仓库外目录重新执行合成分阶段矩阵。不得修改旧证据、仓库代码或文档，不得接触真实 Botzone URL/state，不得启动 launcher、connector 或网络请求。
 
 ### 已封板事实
 
-- L4-A2c2 检查点：`30d9b5897d97939f64dab32b97772118c72ef3d1`，只含 `live_launcher.py` 与对应测试；
-- L4-A2c2 复核：定向 5、相关 17、全量 520 项及 `git diff --check` 通过；
-- L4-A2c3a 判定：`botzone_live_launcher_recovery_preflight_invalid`；
-- 实际环境 metadata、空 state dir、无残留进程和干净工作区门槛均通过；
-- 第一项零网络检查在 30 秒上限内没有返回 `preflight_ready`；
-- 第二项 launcher offline probe 未执行；
-- 未重试、未启动 connector/live launcher，request/GET/network/connector count 均为 0；
-- L4-A2b 的 `botzone_no_tribute_local_ai_smoke_invalid` 永久保留。
+- L4-A2c2 检查点：`30d9b5897d97939f64dab32b97772118c72ef3d1`；
+- L4-A2b：`botzone_no_tribute_local_ai_smoke_invalid`，永久保留；
+- L4-A2c3a：`botzone_live_launcher_recovery_preflight_invalid`，永久保留；
+- L4-A2c4a：`botzone_preflight_timeout_diagnosis_inconclusive`；
+- L4-A2c4a 仅完成 `python_startup`；`runtime_config_import` 因临时脚本子进程没有仓库根 import path 而出现 `ModuleNotFoundError`；
+- 该失败不是项目 import 行为的有效复现，根因类别保持 `unknown`；
+- 后续阶段未执行，request/GET/network/connector/live-launcher count 均为 0。
 
-L4-A2c3a 证据文件：`C:\Users\86166\AppData\Local\Temp\guandan-botzone-launcher-recovery-82a5c4c7321b420fa233cfbdffe1a333\preflight_summary.json`，522 bytes，SHA-256 `9c4ed8010a950f11bedae92e5784118f080a5ee95f0bfb8087638f896fbc00b2`。只允许只读解析该脱敏 JSON 和复核 metadata/hash，不得修改或补写。
+旧 L4-A2c4a 证据目录 `C:\Users\86166\AppData\Local\Temp\guandan-botzone-preflight-diagnosis-5f8ae9fd8d4c4872ad0ce5e8bfebf177` 必须只读保持。文件 metadata：
+
+- `phase_probe.py`：5,122 bytes / `d794c5a23e9c7151560a7055ed55c266c85ae4b7a518df8c00d6debc18b58c4f`；
+- `driver.py`：2,757 bytes / `0eedb86a6b814454eaf4435e86c6bbad5b420ef54e0307e4a3ced2d4cf41cfb9`；
+- `diagnosis.json`：575 bytes / `d479ea2f51a2f9010b513e3e1ae808cdbd46e090a48cf317ca8a66a82647b718`；
+- 两份 heartbeat：62 / 106 bytes，hash 为 `4771e2d7b89850634318cd7f17d885e6ae914dcc4117b031da893bbe641b145c`、`13d3e64686e674055efb5e2128e8887e1da846fe24a2b131eb7c4e621653890d`。
 
 ### 启动前门槛
 
-1. 工作区干净；
-2. `30d9b5897d97939f64dab32b97772118c72ef3d1` 是当前 HEAD 的祖先；
-3. 该检查点之后只允许五份规划 docs 变化；
-4. 上述 summary 的 bytes/hash 不变；
-5. 没有正在运行的 `integrations.botzone` 或 `live_launcher` 进程。
+1. 工作区干净，`30d9b589...` 是当前 HEAD 的祖先，其后只允许规划 docs 提交；
+2. L4-A2c3a summary 与上述 L4-A2c4a 证据 bytes/hash 全部不变；
+3. 没有 `integrations.botzone`、`live_launcher` 或旧 diagnosis 子进程；
+4. 新建全新的仓库外诊断目录，初始为空。
 
-任一失败即 `precondition_failed`。不得清理 state、重跑 preflight 或修改代码。
+任一失败即 `precondition_failed`，不得修复或清理旧证据。
 
 ### 安全边界
 
-- 不读取 `.env`、真实 `BOTZONE_LOCAL_AI_URL` 值、密钥、Cookie、Header、账号信息或浏览器存储；
-- 不使用实际 `BOTZONE_STATE_DIR`；
-- 所有诊断只使用固定合成 URL（`.invalid` 域名）和仓库外全新临时 state/audit 目录；
-- 不构造 `LocalAIHttpTransport`、opener、socket 或请求；
-- 不调用 RuleBasedAI、adapter、session 或 connector；
-- 不修改仓库，不提交诊断脚本或证据。
+- 只使用固定 `.invalid` 合成 URL和全新临时 state 目录；
+- 不读取 `.env`、真实 `BOTZONE_*` 值、Cookie、Header、账号信息或实际 state dir；
+- 不构造 transport/opener/socket，不调用 session、adapter、Agent 或 connector；
+- 不修改仓库，不将诊断脚本提交到仓库；
+- 子进程输出不得包含绝对用户路径、环境值、URL 全文、命令行或未脱敏 traceback。
 
-### 分阶段诊断
+### A. harness qualification
 
-在仓库外创建标准库诊断脚本。每个阶段都在独立 Python 子进程运行，开始/结束写入原子 heartbeat，单阶段上限 10 秒；超时后只终止该子进程并记录最后完成阶段。禁止执行真实 preflight 命令。
+正式阶段前，先独立运行两次 qualification；两次均使用全新子目录，不计入八阶段配额。
 
-按顺序运行：
+固定调用方式：
 
-1. `python_startup`：仅启动 Python、输出固定标记并退出；
-2. `runtime_config_import`：只导入 `integrations.botzone.runtime_config`；
-3. `main_import`：只导入 `integrations.botzone.__main__`，用于覆盖其顶层 transport/runner/adapter import graph；
-4. `config_load`：以显式合成 HTTPS URL、显式临时 state path 和空 mapping 调用 `load_runtime_config()`；
-5. `state_preflight_steps`：在临时 state 目录逐项执行并打点 `resolve → project-boundary-check → mkdir → NamedTemporaryFile → write → flush → fsync → replace → unlink → exit`；
-6. `state_preflight_function`：直接调用 `preflight_state_directory()`，前后目录必须为空；
-7. `main_function`：直接调用 `integrations.botzone.__main__.main()`，显式传入合成 `--url`、`--state-dir` 与 `--preflight-only`，并传空环境 mapping；预期退出码 0、输出精确为 `preflight_ready`；
-8. `module_subprocess`：独立执行 `python -m integrations.botzone`，同样只传显式合成 URL/state 与 `--preflight-only`；预期 10 秒内退出 0。
+- 父进程以仓库根作为 `cwd`；
+- 子进程必须使用 `python -c`，通过 `runpy.run_path()` 执行仓库外 probe；不得直接执行临时 `.py` 文件；
+- 不设置或修改 `PYTHONPATH`；
+- 子进程先验证 `cwd` 为仓库根、`sys.path` 可从当前目录解析包、`importlib.util.find_spec("integrations.botzone.runtime_config")` 非空且 origin 位于预期仓库根；
+- 只输出 `cwd_ok`、`path_ok`、`spec_ok`、`origin_ok` 四个布尔值，不输出实际路径。
 
-每一步最多运行一次；只有在全部步骤成功后，才允许用全新临时目录把第 8 步再运行一次作为确定性复验。不得对真实环境/state 路径重试。
+两次 qualification 必须逐字段相等且全部为 true。否则判定 `diagnostic_harness_invalid`，不得执行正式阶段。
 
-### 超时证据
+### B. 正式合成矩阵
 
-诊断子脚本启用 `faulthandler.dump_traceback_later()` 或等价标准库机制，在超时前写入仅含模块/函数/阶段的脱敏栈证据。最终报告和 JSON 不得保留绝对用户路径、命令行、合成 URL 全文或环境值；只保留规范化 stage/category。
+qualification 通过后，在同一新任务中按顺序执行八阶段。每阶段使用独立 Python 子进程、独立临时 state 目录、原子 heartbeat、10 秒上限和脱敏 faulthandler；每个阶段最多一次：
 
-根因类别只能是：
+1. `python_startup`
+2. `runtime_config_import`
+3. `main_import`
+4. `config_load`
+5. `state_preflight_steps`：`resolve → boundary → mkdir → tempfile → write → flush → fsync → replace → unlink → exit`
+6. `state_preflight_function`
+7. `main_function`：显式合成 URL/state、空 environment mapping、`--preflight-only`
+8. `module_subprocess`：从仓库根执行 module，显式合成 URL/state、`--preflight-only`
 
-- `python_startup`
-- `runtime_config_import`
-- `main_import_graph`
-- `config_load`
-- `path_resolve`
-- `state_mkdir`
-- `tempfile_open`
-- `file_write`
-- `file_flush`
-- `file_fsync`
-- `file_replace`
-- `file_unlink`
-- `main_function`
-- `module_process_exit`
-- `parent_wait`
-- `not_reproduced`
-- `unknown`
+每个正式子进程也必须使用已通过 qualification 的 `python -c + runpy.run_path` 形状，且在执行目标阶段前重复四个布尔自检；自检失败属于 `diagnostic_harness_invalid`，不归因项目。
 
-不得仅凭一次 30 秒超时猜测 fsync、杀毒软件、环境变量或 launcher 是根因。
+只有 1–8 全部成功时，才允许用全新目录把阶段 8 再运行一次；两次都应在 10 秒内退出 0，输出精确为 `preflight_ready`。
 
-### 判定
+### 根因与判定
 
-若某一阶段稳定给出足够证据，并能明确最小后续修复/测试范围：
+允许的项目根因类别沿用：startup、runtime import、main import graph、config、各 state file-op、main function、module exit、parent wait。harness qualification/self-check 失败必须单独归类 `diagnostic_harness_invalid`。
+
+若有效矩阵定位到项目阶段并有足够证据：
 
 ```text
-botzone_preflight_timeout_diagnosis_verified
+botzone_preflight_timeout_diagnosis_recovery_verified
 ```
 
-若全部合成阶段通过、原问题不可复现，或证据不足以区分类别：
+若有效矩阵全部通过，原 30 秒问题仍无法复现：
 
 ```text
-botzone_preflight_timeout_diagnosis_inconclusive
+botzone_preflight_timeout_diagnosis_recovery_inconclusive
 ```
 
-无论哪种结果，都不得在本步形成 preflight ready、请求 live 授权或运行 launcher probe。
+若 qualification 或阶段自检失败：
 
-### 最终报告
+```text
+botzone_preflight_timeout_diagnostic_harness_invalid
+```
 
-报告必须包含：
+三种结果均不得形成 preflight ready、提高 timeout、请求 live 授权或运行 launcher probe。
 
-- HEAD、工作区与 L4-A2c2 检查点范围；
-- L4-A2c3a invalid 和 L4-A2b invalid 保留声明；
-- 原 summary bytes/hash 复核；
-- 八阶段 success/timeout/exit/duration 范围及最后 heartbeat；
-- 规范化根因类别；
-- 若可复现，最小修复文件和测试建议；若不可复现，明确不能直接提高 timeout 或重试 live；
-- 新诊断证据目录及非敏感文件 bytes/SHA-256；
-- request/GET/network/connector/live-launcher count 均为 0。
+### 最终证据
+
+仓库外保存：qualification 双运行、八阶段结果、heartbeat、规范化 diagnostics、canonical summary 和 manifest。报告必须包含：
+
+- HEAD/工作区与两个 invalid、一次 inconclusive 保留声明；
+- 旧证据 bytes/hash 前后不变；
+- qualification 两次四布尔结果；
+- 八阶段状态、退出码、耗时范围和最后 heartbeat；
+- 阶段 8 是否执行确定性复验；
+- 新证据文件 bytes/SHA-256；
+- request/GET/network/connector/live-launcher count=0；
+- 下一步只能依据有效诊断另行规划，不得直接 live。

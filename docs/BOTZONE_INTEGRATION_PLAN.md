@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A2c2 已封存为 `30d9b5897d97939f64dab32b97772118c72ef3d1`。L4-A2c3a 因既有 preflight-only 30 秒未返回而 invalid，launcher probe 未执行；下一步 L4-A2c4a 纯离线定位 preflight 超时阶段。
+状态：L4-A2c2 已封存。L4-A2c3a invalid 永久保留；L4-A2c4a 因临时诊断脚本缺少仓库 import path 而 inconclusive。下一步 L4-A2c4b 先验证 harness，再恢复合成矩阵。
 
 工作：
 
@@ -476,7 +476,7 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A2a 均已完成；L4-A2b 与 L4-A2c3a 均已封板为 invalid，不得重跑或补采。Windows-safe launcher 已提交，但 preflight-only 超时根因未知。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c4a 合成分阶段诊断；不得启动真实 connector 或联网。
+Phase 0 至 L4-A2a 均已完成；L4-A2b 与 L4-A2c3a invalid、L4-A2c4a inconclusive 均保留。preflight 超时根因仍未知。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c4b：先做双份 import harness qualification，再运行合成矩阵；不得启动真实 connector 或联网。
 
 理由：
 
@@ -509,4 +509,4 @@ Phase 0 至 L4-A2a 均已完成；L4-A2b 与 L4-A2c3a 均已封板为 invalid，
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A2c4a：不再调用真实环境的 preflight-only，而是在仓库外用合成 `.invalid` URL 和全新临时 state 目录，把 Python 启动、runtime/main import、配置加载、state 原子文件步骤、main 函数和 module 子进程拆为独立短时阶段。以 heartbeat/faulthandler 定位最后完成点；若不可复现则明确 inconclusive，不得通过延长 timeout 直接恢复 live。
+执行 Step L4-A2c4b：在新目录使用 `cwd=repo root` 与 `python -c + runpy.run_path`，先两次证明 cwd/path/spec/origin 全部正确；只有资格门槛通过才重新执行八阶段合成诊断。资格失败单独判 harness invalid，不得误归因项目；即使矩阵全部通过，也只能保留 diagnosis inconclusive，不能直接恢复 live。

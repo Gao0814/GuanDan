@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：L4-A2c2 已封存且 5 / 17 / 520 项通过。L4-A2c3a metadata 门槛通过，但 preflight-only 在 30 秒内未返回，launcher probe 未执行，唯一判定 `botzone_live_launcher_recovery_preflight_invalid`。下一步 L4-A2c4a 仅用合成配置分阶段定位超时；完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：L4-A2c2 已封存且 5 / 17 / 520 项通过；L4-A2c3a invalid 保留。L4-A2c4a 因诊断子进程 import path 缺口判定 inconclusive，阶段 3–8 未执行。下一步 L4-A2c4b 先验证 harness 再恢复矩阵；完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1160,6 +1160,16 @@ L4-A2c3a 实际结果：L4-A2c2 检查点范围和回归通过；环境 presence
 - 每阶段独立 10 秒上限和脱敏 faulthandler；
 - 不使用真实 URL/state，不构造 transport/opener；
 - request/GET/network/connector/live-launcher count 严格为 0。
+
+L4-A2c4a 实际仅完成 startup；runtime import 的 `ModuleNotFoundError` 来自诊断脚本执行形状，不能作为项目结果。L4-A2c4b 必须新增以下载体门槛：
+
+- 父进程 cwd 固定仓库根；临时 probe 仅经 `python -c + runpy.run_path` 执行；
+- 不设置 PYTHONPATH；
+- 两次 qualification 的 cwd/path/spec/origin 四布尔全部为 true 且一致；
+- qualification 失败不执行正式阶段；
+- 每个正式阶段执行前重复同一自检；
+- 有效矩阵才允许形成 verified/inconclusive，harness 错误必须独立 invalid；
+- 全程只用合成 URL/临时 state，网络与 connector 计数严格为 0。
 
 ## 6. 对局评测
 
