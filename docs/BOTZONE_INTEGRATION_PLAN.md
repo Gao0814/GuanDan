@@ -320,13 +320,13 @@ Phase 3 准入审计新增硬门槛：
 - pending response 必须携带 action 实体 ID effect，只在 transport 成功 acknowledge 后原子扣牌一次；
 - latest four history 必须可验证地并入累计公开事件；无法对齐时 fail-closed。
 
-L2-A1a 已通过并给出历史判定 `botzone_phase3_admission_contract_verified`。随后精确官方首个 play fixture 发现 `resist=false`、四槽空 history 和本地座位未持久化三项遗漏；Phase 3 准入重新打开。L2-A1b 通过 `botzone_phase3_official_request_contract_verified` 后才允许 Phase 3。
+L2-A1a 已通过并给出历史判定 `botzone_phase3_admission_contract_verified`。L2-A1b 随后补全 `resist=false`、四槽空 history、本地座位、schema v3 和 `TableView`，定向 39 项、全量 485 项通过，唯一判定 `botzone_phase3_official_request_contract_verified`。Phase 3 现已获准开始，但仍仅限离线 adapter。
 
 ### Phase 3：连接 RuleBasedAI 的端到端回合测试
 
-状态：被 L2-A1b 阻塞，尚未开始。
+状态：准入已满足，下一步 Step L3-A1；尚未开始实现。
 
-工作：实现 `profile.py/play_adapter.py/runner.py`，完成无贡 profile 的 `deal + play` 链路；不联网、不实现贡还路径。
+工作：实现 `profile.py/play_adapter.py` 和可注入现有 mock connector 的 RuleBased handler，完成无贡 profile 的 `deal + play` 链路；不提供 CLI/module runner，不联网、不实现贡还路径。
 
 验收：
 
@@ -407,12 +407,12 @@ L2-A1a 已通过并给出历史判定 `botzone_phase3_admission_contract_verifie
 
 ## 10. play 子集的前置状态
 
-Step L1-A1 的纯协议模型、108 ID codec 和离线 fixture 已完成。当前只允许实现 mock connector/session；仍不得实现真实 HTTP transport或启动 live connector，也不得实现 `deal + play` Agent adapter。
+Phase 0、L1 和 L2 准入均已完成，当前允许实现无贡合法子集的离线 `deal + play` RuleBased adapter，并通过 mock connector 验证。仍不得实现真实 HTTP transport、CLI/module runner 或启动 live connector。
 
 理由：
 
-- 108 ID、`deal`、`pass`、local-AI transport 与 `tribute/return` fail-closed 边界已有可复用的官方文字依据；
-- 但 claim 语义、多配子裁判约束和无贡手动桌阶段流是 play 编码与调度的必要条件，缺一不可；
+- 108 ID、官方首个 play、四槽 history、座位、claim、pending effect 与 `tribute/return` fail-closed 边界已有测试契约；
+- 当前只把 engine 已支持的单配子动作视为合法子集，双配子仍是明确能力缺口；
 - 贡还属于当前 engine 明确 unsupported 的能力，即使未来无贡 profile 通过，也必须对 `tribute/return` fail-closed；
 - 无贡 profile 只有取得该配置的官方证据后才是支持契约，不能由随机对局恰好未发生贡还来替代。
 
@@ -438,4 +438,4 @@ Step L1-A1 的纯协议模型、108 ID codec 和离线 fixture 已完成。当�
 
 ## 12. 推荐下一动作
 
-执行 Step L2-A1b：先为当前 L2-A1a 六个修改文件创建独立检查点，再补全官方无贡首个 play 的 `resist=false`、四槽空 history、本地座位持久化和桌面语义 fixture。不得实现真实 HTTP transport、adapter，不得读取本地 AI URL/密钥，不得联网或调用 Agent；通过后才允许 Phase 3，仍不能启动 live connector。
+执行 Step L3-A1：先为当前 L2-A1b 七个修改文件创建独立检查点，再实现无贡单回合规则投影、RuleBasedAI action-id 选择、实体 ID/claim 回写和 `MockConnector` 离线 E2E。不得修改 engine/agents，不得实现真实 HTTP transport、CLI/module runner，不得读取本地 AI URL/密钥或联网；通过后仍不能启动 live connector。
