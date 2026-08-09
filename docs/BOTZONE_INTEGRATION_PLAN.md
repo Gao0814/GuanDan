@@ -477,7 +477,7 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A3b1 均已完成并封存；既有 invalid/inconclusive 结论全部保留。L4-A3b1 已独立锁定 `preflight_ready` 的单行输出、空 stderr、零 transport 与临时 state 清理，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。当前 L4-A3c 仅等待用户明确授权，不得把报告中转述的授权问题视为授权。L4-A2c5b2a 暂缓。
+Phase 0 至 L4-A3b1 均已完成并封存；既有 invalid/inconclusive 结论全部保留。L4-A3b1 已独立锁定 `preflight_ready` 的单行输出、空 stderr、零 transport 与临时 state 清理，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。用户随后已对固定预算 L4-A3c 明确回复“授权”；执行任务仍须核对该用户消息，不能只依赖文档转述。L4-A2c5b2a 暂缓。
 
 理由：
 
@@ -512,4 +512,4 @@ Phase 0 至 L4-A3b1 均已完成并封存；既有 invalid/inconclusive 结论�
 
 ## 12. 推荐下一动作
 
-等待用户明确授权后执行 L4-A3c：启动唯一前台 RuleBasedAI connector，提示用户刷新 Botzone 并新建“需要进贡=否”的全新测试桌；使用全新 LocalAppData state/audit，最多 100 次 GET、timeout 120 秒、最长 900 秒、完成 1 局即停且不重试。未授权前不读取真实配置或创建运行资源。
+执行已授权的 L4-A3c：核对授权消息后启动唯一前台 RuleBasedAI connector，提示用户刷新 Botzone 并新建“需要进贡=否”的全新测试桌；使用全新 LocalAppData state/audit，最多 100 次 GET、timeout 120 秒、最长 900 秒、完成 1 局即停且不重试。

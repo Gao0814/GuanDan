@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：L4-A3b1 已完成，定向 2、相关 18、全量 534 项通过，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。下一步 L4-A3c 等待用户明确授权后执行一次前台无贡 smoke；未授权不得联网。L4-A2c5b2a 暂缓。
+状态：L4-A3b1 已完成，定向 2、相关 18、全量 534 项通过，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。用户已明确授权固定预算 L4-A3c；下一执行任务核对授权消息后运行一次前台无贡 smoke。L4-A2c5b2a 暂缓。
 
 Phase 0 证据验收已完成：
 

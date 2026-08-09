@@ -2,7 +2,7 @@
 
 ## Step L4-A3c：真实 Botzone 无贡前台 smoke
 
-本任务只有在用户于当前任务中明确授权后才能执行。未取得授权时只报告 `authorization_required`，不得读取真实配置、创建运行目录、启动 connector 或发送 GET。
+授权状态：用户已在 2026-08-09 针对下述固定范围明确回复“授权”。若执行发生在保留该对话上下文的同一任务中，此门槛已通过；若提示词被复制到无法核对该用户消息的新任务，必须重新取得同范围授权。无法核对授权时只报告 `authorization_required`，不得读取真实配置、创建运行目录、启动 connector 或发送 GET。
 
 授权文本必须明确覆盖：使用当前已配置的 `BOTZONE_LOCAL_AI_URL`，RuleBasedAI，全新手动无贡测试桌，全新 LocalAppData state/audit，最多 100 次 GET，timeout 120 秒，最长 900 秒，完成 1 局即停，不重试。
 
@@ -18,7 +18,7 @@
 
 ### A. 启动前门槛
 
-1. 用户已在本任务中给出上述明确授权；转述旧报告中的授权问题不算授权。
+1. 能在当前对话中核对用户紧接固定预算问题后的明确“授权”；只有文档转述而没有用户消息时不算授权。
 2. HEAD 必须包含 `28de0cb36f7356bc35ade874fa8f75fa63b1f331`，工作区必须干净。
 3. 只确认 `BOTZONE_LOCAL_AI_URL` 在当前进程为 present；不输出、复制、散列或拆解值，不读取 `.env`。
 4. 内部确认没有正在运行的 `integrations.botzone` connector；只报告 `running/not_running`，不输出进程命令行。

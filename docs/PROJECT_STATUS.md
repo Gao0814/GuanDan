@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A3b1 已完成并判定 `botzone_live_smoke_recovery_authorization_ready`；下一步 L4-A3c 等待用户明确授权后执行一次前台 RuleBasedAI 无贡 smoke
+- 当前工作状态：Botzone L4-A3b1 已完成；用户已明确授权固定预算的 L4-A3c，下一执行任务可在核对授权消息后启动一次前台 RuleBasedAI 无贡 smoke
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：L4-A3b1 direct main 与两次 binary PIPE 捕获通过；定向 2、相关 18、全量 534 项通过，检查点 `28de0cb3...b1f331`
 - 当前规则范围：单局掼蛋核心规则
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L4-A3b1 授权前置 ready | stdout 单行契约、零 transport 与 state 清理已独立验证 | 等待用户授权 L4-A3c；尚未证明真实一局完成 |
+| Botzone 接入 | L4-A3c 已授权待执行 | stdout 单行契约、零 transport 与 state 清理已独立验证 | 尚未启动真实 smoke，未证明一局完成 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1297,7 +1297,7 @@ L4-A3b 已完成 L4-A3a 检查点 `2ac51fb2c80a5a0ae4b7dabd4f2aa161e11f1498`，�
 
 L4-A3b1 已完成，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。新增 `tests/test_botzone_preflight_output.py`；direct main exit 0、输出精确 `preflight_ready\n`、state 空且 transport/opener 构造为 0，两次独立 module binary PIPE 均 exit 0、仅含合法 LF/CRLF 单行、normalized lines 一致、stderr 与 state 为空。定向 2、相关 18、全量 534 项与 `git diff --check` 通过，检查点为 `28de0cb36f7356bc35ade874fa8f75fa63b1f331`。该恢复结论不改写 L4-A3b invalid，也未读取真实配置或联网。
 
-下一步 L4-A3c 已锁定为：当前环境 URL、前台单进程 RuleBasedAI、全新手动测试桌且“需要进贡=否”、全新 LocalAppData state/audit、timeout 120 秒、最多 100 GET、最长 900 秒、完成 1 局即停且不重试。当前尚未获得用户明确授权，不能启动。
+下一步 L4-A3c 已锁定为：当前环境 URL、前台单进程 RuleBasedAI、全新手动测试桌且“需要进贡=否”、全新 LocalAppData state/audit、timeout 120 秒、最多 100 GET、最长 900 秒、完成 1 局即停且不重试。用户已在紧接固定授权问题后明确回复“授权”；执行任务核对该消息后可进入启动前门槛。
 
 ## 6. 当前风险
 

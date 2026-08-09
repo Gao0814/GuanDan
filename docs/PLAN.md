@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：既有 invalid/inconclusive 永久保留。L4-A3b1 已封存为 `28de0cb3...b1f331`，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。下一步 L4-A3c 等待用户明确授权后执行一次前台 RuleBasedAI 无贡 smoke；当前不得联网。L4-A2c5b2a 暂缓。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：既有 invalid/inconclusive 永久保留。L4-A3b1 已封存为 `28de0cb3...b1f331`，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。用户已明确授权固定预算 L4-A3c；下一执行任务核对授权消息后执行一次前台 RuleBasedAI 无贡 smoke。L4-A2c5b2a 暂缓。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
