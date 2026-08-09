@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：L4-A3a 已封存，定向 50、全量 532 项通过。L4-A3b 真实环境 preflight exit 0、stderr/state/零网络门槛通过，但 stdout 固定文本未获合格验证，整体 invalid。下一步 L4-A3b1 只新增合成 stdout 契约测试，不重跑真实 preflight。L4-A2c5b2a 暂缓。
+状态：L4-A3b1 已完成，定向 2、相关 18、全量 534 项通过，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。下一步 L4-A3c 等待用户明确授权后执行一次前台无贡 smoke；未授权不得联网。L4-A2c5b2a 暂缓。
 
 Phase 0 证据验收已完成：
 
@@ -1260,6 +1260,19 @@ L4-A3b1 最低测试口径：
 - 两次 normalized 结果完全一致，request/GET/network/connector 为 0；
 - 运行专属、相关、全量测试和 `git diff --check`；
 - 通过只形成独立 `botzone_live_smoke_recovery_authorization_ready`，不改写 L4-A3b invalid。
+
+L4-A3b1 实际结果：新增 `tests/test_botzone_preflight_output.py`；direct main 与两次 module binary PIPE 全部通过，transport/opener/request/GET/network/connector 为 0，state 临时目录为空。定向 2、相关 18、全量 534 和 diff check 通过；检查点 `28de0cb3...b1f331`。L4-A3b invalid 保持不变。
+
+L4-A3c live smoke 验收口径：
+
+- 必须先取得用户对当前 URL、RuleBasedAI、100 GET、120 秒 timeout、900 秒 wall、1 局和不重试的明确授权；
+- 使用唯一前台进程，不使用 `Start-Process`、隐藏 launcher、runmatch 或第二 connector；
+- 用户新建测试桌并明确选择“需要进贡=否”，不得复用旧桌；
+- state/audit 位于全新 LocalAppData 路径，仓库保持干净；
+- 成功必须为 exit 0、`finished_target`、finished=1、request/response/header 均大于 0、transport failure=0、diagnostics 空；
+- 出现贡还、malformed、transport、limit、interrupt、audit 缺失或状态残留均判 invalid，不重跑；
+- 报告只保留聚合计数，不读取或展示 URL、Header、match ID、手牌、history 或 session 正文；
+- verified 只证明一局无贡接入可用，不形成胜率或策略提升结论。
 
 ## 6. 对局评测
 

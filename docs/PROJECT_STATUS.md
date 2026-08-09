@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A3a 已封存；L4-A3b preflight exit 0 且零网络，但 stdout 固定文本未获合格验证，唯一判定 invalid；下一步 L4-A3b1 只做合成 stdout 契约恢复审计
+- 当前工作状态：Botzone L4-A3b1 已完成并判定 `botzone_live_smoke_recovery_authorization_ready`；下一步 L4-A3c 等待用户明确授权后执行一次前台 RuleBasedAI 无贡 smoke
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：L4-A3a 检查点 `2ac51fb2...e11f1498`，定向 50、全量 532 项通过；L4-A3b 唯一真实 preflight exit 0、stderr 空、state 空、零网络，但 stdout gate 失败
+- 实际验证结果：L4-A3b1 direct main 与两次 binary PIPE 捕获通过；定向 2、相关 18、全量 534 项通过，检查点 `28de0cb3...b1f331`
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L4-A3b preflight invalid | L4-A3a 已封存；preflight 业务路径 exit 0、零网络 | stdout 捕获未合格；下一步 L4-A3b1，不直接 live |
+| Botzone 接入 | L4-A3b1 授权前置 ready | stdout 单行契约、零 transport 与 state 清理已独立验证 | 等待用户授权 L4-A3c；尚未证明真实一局完成 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1204,7 +1204,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 至 L4-A3a 已完成并封存。L4-A3b 唯一真实环境 preflight 在 30 秒内 exit 0、stderr 空、state 清空且零网络，但监督端未合格验证固定 stdout，因此判定 `botzone_envelope_live_smoke_preflight_invalid`。下一步 L4-A3b1 只用合成 URL、临时目录和 binary PIPE 锁定输出契约，不重跑真实 preflight。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A3b1 已完成。L4-A3b1 用 direct main 与两次 binary PIPE module capture 独立验证 `preflight_ready` 输出契约，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。下一步 L4-A3c 只能在用户明确授权后启动一次前台 RuleBasedAI 无贡 smoke。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1293,7 +1293,11 @@ L4-A3a 已完成，唯一判定 `botzone_bot_json_envelope_contract_verified`。
 
 L4-A3b 已完成 L4-A3a 检查点 `2ac51fb2c80a5a0ae4b7dabd4f2aa161e11f1498`，精确提交 19 个 allowlist 文件；提交后工作区干净，定向 50、全量 532 项与 `git diff --check` 通过。随后唯一零网络 preflight 使用全新 LocalAppData 目录，30 秒内 exit 0、stderr 空、目录前后为空并删除，request/GET/network/connector 均为 0；但监督结果 `stdout_is_preflight_ready=false`，且没有合格原始 stdout bytes，故唯一判定 `botzone_envelope_live_smoke_preflight_invalid`，不请求 live 授权。
 
-入口代码显示 preflight 成功分支先打印 `preflight_ready` 再 return 0，但这不足以追认缺失的原始输出。下一步 L4-A3b1 新增纯测试契约：直接 main 捕获精确文本，并用两个合成 URL/临时目录的 module 子进程通过 binary PIPE 接受严格 UTF-8 的 LF 或 CRLF 单行。不得读取真实环境或重跑真实 preflight；只有独立契约、确定性和全量回归全部通过，才能形成新的 live 授权准入结论。
+入口代码显示 preflight 成功分支先打印 `preflight_ready` 再 return 0，但这不足以追认缺失的原始输出。当时规划的 L4-A3b1 纯测试契约要求：直接 main 捕获精确文本，并用两个合成 URL/临时目录的 module 子进程通过 binary PIPE 接受严格 UTF-8 的 LF 或 CRLF 单行；不得读取真实环境或重跑真实 preflight。该契约现已按下一段结果完成。
+
+L4-A3b1 已完成，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。新增 `tests/test_botzone_preflight_output.py`；direct main exit 0、输出精确 `preflight_ready\n`、state 空且 transport/opener 构造为 0，两次独立 module binary PIPE 均 exit 0、仅含合法 LF/CRLF 单行、normalized lines 一致、stderr 与 state 为空。定向 2、相关 18、全量 534 项与 `git diff --check` 通过，检查点为 `28de0cb36f7356bc35ade874fa8f75fa63b1f331`。该恢复结论不改写 L4-A3b invalid，也未读取真实配置或联网。
+
+下一步 L4-A3c 已锁定为：当前环境 URL、前台单进程 RuleBasedAI、全新手动测试桌且“需要进贡=否”、全新 LocalAppData state/audit、timeout 120 秒、最多 100 GET、最长 900 秒、完成 1 局即停且不重试。当前尚未获得用户明确授权，不能启动。
 
 ## 6. 当前风险
 
