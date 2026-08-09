@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：Phase 0、L1、L2、L3-A1、L3-A1a、L4-A1 与 L4-A1a 已完成；L4-A1a 判定 `botzone_live_smoke_preflight_ready`，定向 46 项、全量 515 项通过。下一步 L4-A2a 只复跑基线并执行零网络 preflight，成功后请求一局 live 授权。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A2a 已完成。L4-A1a 定向 46 项、全量 515 项通过；L4-A2a 零网络 preflight 返回 ready，state dir 保持为空，用户已授权 L4-A2b。下一步只执行唯一一次真实无贡手动桌 smoke，不重复回归或 preflight。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 

@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A1a 判定 `botzone_live_smoke_preflight_ready`；下一步为 Step L4-A2a 只读前置审计与授权请求
+- 当前工作状态：Botzone L4-A2a 判定 `botzone_live_smoke_authorization_ready`，用户已授权；下一步为 Step L4-A2b 唯一一次真实无贡 smoke
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：Botzone L4-A1a 定向 46 项、全量 515 项通过；全程 fake opener/gateway、零真实网络
+- 实际验证结果：L4-A2a 工作区/检查点/环境/state dir/preflight 全部通过，preflight 网络请求数为 0；live 尚未启动
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L4-A1a 完成，进入 L4-A2a | HTTPS transport、RuleBased adapter、有界 runner、finished tombstone、audit 和零网络 preflight 已通过 | 需确认凭据轮换、运行时配置与明确联网授权；尚未 live |
+| Botzone 接入 | L4-A2a ready，已授权 L4-A2b | HTTPS transport、RuleBased adapter、有界 runner、finished tombstone、audit、凭据轮换与零网络 preflight 已通过 | 尚未执行唯一一次真实无贡 smoke |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1204,7 +1204,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0、L1、L2、L3-A1、L3-A1a、L4-A1 与 L4-A1a 已完成。L4-A1 已封存为 `e4a4fba99211831c66062ac0f003094edc941c6a`。L4-A1a 修改十个 runtime/session/test 文件，已通过定向 46 项、全量 515 项，判定 `botzone_live_smoke_preflight_ready`；当前改动尚待独立封存。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A2a 已完成。L4-A1a 已封存为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`，定向 46 项、全量 515 项通过。L4-A2a 已得到 `botzone_live_smoke_authorization_ready`，用户已明确授权固定预算的 L4-A2b；当前尚未启动 connector。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1258,7 +1258,7 @@ L4-A1 已完成标准库 HTTPS GET transport、显式 runtime 配置、前台 ru
 
 L4-A1a 已关闭 live 准入缺口：runner 聚合 cycle/request/response/header/finished/diagnostics，并按 interrupt、protocol、finished、failure、wall/cycle 固定优先级停止；finished 原子替换为不含 match/手牌/history/response/digest 的最小 tombstone；response 全路径关闭，Header 为严格 ASCII token；退出码、最小 audit 和零网络 `--preflight-only` 已锁定。
 
-下一步 L4-A2a 不改代码、不联网。必须先独立封存 L4-A1a，确认工作区干净和截图中暴露过的凭据已轮换，只检查两个 Botzone 环境变量存在并运行一次 preflight-only。全部通过后按固定预算请求一局 live 授权：RuleBasedAI、最多 100 次 GET、最长 600 秒、timeout 30 秒、连续失败 5、finished 1 局即停。
+L4-A2a 已完成：工作区干净，两个 Botzone 环境变量 present，state dir 与用户确认路径一致且为空；唯一 preflight-only 返回 `preflight_ready`，之后目录仍为空、网络请求为 0。用户随后明确授权 L4-A2b：RuleBasedAI、手动无贡一局、最多 100 次 GET、最长 600 秒、timeout 30 秒、连续失败 5、finished 1 局即停。下一任务按 `docs/NEXT_PROMPT.md` 启动唯一进程，失败不得重跑。
 
 ## 6. 当前风险
 

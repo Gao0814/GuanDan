@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0、L1、L2、L3-A1、L3-A1a、L4-A1 与 L4-A1a 已完成。L4-A1 检查点为 `e4a4fba99211831c66062ac0f003094edc941c6a`；L4-A1a 已封板有界停止、fatal diagnostics、finished tombstone、response close、退出码、audit 与 preflight-only，定向 46 项、全量 515 项通过，判定 `botzone_live_smoke_preflight_ready`。下一步 Step L4-A2a 只做运行时只读前置审计和授权请求，不联网。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A2a 已完成。L4-A1a 检查点为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`；L4-A2a 已确认工作区、检查点、凭据轮换、显式环境、空 state dir 与零网络 preflight，判定 `botzone_live_smoke_authorization_ready`。用户已明确授权下一步 L4-A2b 唯一一次一局无贡 smoke；本轮只提供执行提示词，尚未启动 connector。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -982,8 +982,8 @@ K-A3d3c3a 结果：
 2. Phase 1：已完成；纯数据模型、108 牌 ID codec、无贡 profile 与 action/claim 单测通过；
 3. Phase 2：已完成；mock connector/session、事务加固、官方首个 play 和本地座位契约均通过；
 4. Phase 3：已完成；adapter 主链与 L3-A1a observation/实体守恒均封板；
-5. Phase 4 准备：L4-A1/L4-A1a 已完成；L4-A2a 复核检查点、凭据轮换、显式环境与零网络 preflight，并请求授权；
-6. Phase 4 live：L4-A2a ready 且用户明确授权后，手动设置“需要进贡=否”进行一局有界真实 Botzone smoke；
+5. Phase 4 准备：L4-A1/L4-A1a/L4-A2a 已完成；凭据已轮换、preflight ready、固定预算授权已取得；
+6. Phase 4 live：下一步 L4-A2b 启动唯一进程，由用户手动设置“需要进贡=否”进行一局有界真实 Botzone smoke；
 7. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。

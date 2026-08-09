@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A1 与 L4-A1a 已完成。L4-A1 检查点为 `e4a4fba99211831c66062ac0f003094edc941c6a`；L4-A1a 定向 46 项、全量 515 项通过，判定 `botzone_live_smoke_preflight_ready`。下一步 L4-A2a 只读审计并请求授权。
+状态：L4-A1、L4-A1a 与 L4-A2a 已完成。L4-A1 检查点为 `e4a4fba99211831c66062ac0f003094edc941c6a`，L4-A1a 检查点为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`；定向 46 项、全量 515 项和零网络 preflight 均通过。下一步执行已授权的 L4-A2b 唯一 live run。
 
 工作：
 
@@ -387,18 +387,18 @@ L4-A1a 已通过的 live 准入硬门槛：
 - `preflight-only` 验证仓库外绝对 state dir 与配置，但零 opener/零网络；
 - 通过后唯一判定 `botzone_live_smoke_preflight_ready`，仍不得自动联网。
 
-L4-A2a 只读前置审计：
+L4-A2a 只读前置审计已完成：
 
 - 先把 L4-A1a 十个 runtime/session/test 文件独立封存并保持工作区干净；
 - 用户明确确认截图中暴露过的 Botzone 连接凭据已轮换；不得读取或比较 URL 来代替确认；
 - 只检查 `BOTZONE_LOCAL_AI_URL` / `BOTZONE_STATE_DIR` 在当前进程中存在，不输出值、host、path、长度或 hash；
 - state dir 与 audit dir 为仓库外全新目录；运行一次 `--preflight-only` 后仍为空；
 - 不启动 connector、不发送 probe、不创建对局；
-- 通过后判定 `botzone_live_smoke_authorization_ready`，再以固定预算请求用户明确授权。
+- 判定 `botzone_live_smoke_authorization_ready`；用户已明确授权固定预算的一次 L4-A2b live run。
 
 ### Phase 4：真实 Botzone 小规模 smoke test
 
-前置：L4-A2a 判定 `botzone_live_smoke_authorization_ready`；用户随后对固定预算另行明确授权联网；账号权限已确认；URL/密钥只存在进程环境中。
+前置：L4-A2a 判定 `botzone_live_smoke_authorization_ready`，固定预算联网授权已取得；账号权限已确认；URL/密钥只存在进程环境中。当前尚未启动 connector。
 
 工作：
 
@@ -469,7 +469,7 @@ L4-A2a 只读前置审计：
 
 ## 10. play 子集的前置状态
 
-Phase 0、L1、L2、L3-A1、L3-A1a、L4-A1 与 L4-A1a 均已完成。当前只允许执行 L4-A2a 的只读 preflight 与授权请求；仍不得启动 live connector。
+Phase 0 至 L4-A2a 均已完成。当前只允许按 `docs/NEXT_PROMPT.md` 执行已授权的唯一一次 L4-A2b live connector；不得改变预算、启动第二进程、重跑或补采。
 
 理由：
 
@@ -502,4 +502,4 @@ Phase 0、L1、L2、L3-A1、L3-A1a、L4-A1 与 L4-A1a 均已完成。当前只�
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A2a：先把 L4-A1a 十个文件独立封存，再复核检查点、回归和干净工作区；要求用户明确确认旧凭据已轮换，仅检查两个环境变量存在，执行一次零网络 preflight-only。全部通过后，以 RuleBasedAI、100 GET、600 秒、30 秒 timeout、连续失败 5、finished 1 局即停的固定预算请求明确 live 授权；在用户授权前不得启动 connector。
+执行 Step L4-A2b：使用当前已轮换且脱敏的进程环境，启动唯一一个前台型后台进程；由用户手动创建“需要进贡=否”的一局 GuanDan 桌。本次预算锁定为 RuleBasedAI、100 GET、600 秒、30 秒 timeout、连续失败 5、finished 1 局即停。结束后只读审计聚合 audit、固定输出和最小 tombstone；任一门槛失败即 `botzone_no_tribute_local_ai_smoke_invalid`，不得重跑；全部通过才是 `botzone_no_tribute_local_ai_smoke_verified`。
