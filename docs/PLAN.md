@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0、L1、L2、L3-A1 与 L3-A1a 已完成。L3-A1 检查点为 `39bd881f7155a35a49f989910be7dcd8bd23e02a`；L3-A1a 已修复轮次重放、精确 observation、外部 wildcard table action、实体牌守恒和 HandlerContext 一致性，定向 45 项、全量 500 项通过，判定 `botzone_adapter_observation_hardening_verified`。下一步 Step L4-A1 只做真实 HTTP connector 与前台 runner 的离线 fake-gateway 验收，不联网。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0、L1、L2、L3-A1、L3-A1a 与 L4-A1 已完成。L3-A1a 检查点为 `253159f7cf00e9995cc986bac816bf67a8596a4e`；L4-A1 已实现 HTTPS GET transport、显式 runtime 配置、前台 runner 与 module 入口，定向 42 项、全量 511 项通过，判定 `botzone_local_connector_offline_verified`。下一步 Step L4-A1a 只做 live smoke 准入加固和离线前置审计，不联网。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -982,8 +982,8 @@ K-A3d3c3a 结果：
 2. Phase 1：已完成；纯数据模型、108 牌 ID codec、无贡 profile 与 action/claim 单测通过；
 3. Phase 2：已完成；mock connector/session、事务加固、官方首个 play 和本地座位契约均通过；
 4. Phase 3：已完成；adapter 主链与 L3-A1a observation/实体守恒均封板；
-5. Phase 4 准备：L4-A1 离线实现 HTTP transport、显式配置和前台 runner，仅连接 fake gateway；
-6. Phase 4 live：L4-A1 通过后，经用户明确授权、手动设置“需要进贡=否”进行小规模真实 Botzone smoke；
+5. Phase 4 准备：L4-A1 已完成离线 connector；L4-A1a 补齐有界停止、finished 清理、退出码和零网络 preflight；
+6. Phase 4 live：L4-A1a 通过、凭据轮换并经用户明确授权后，手动设置“需要进贡=否”进行一局真实 Botzone smoke；
 7. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。

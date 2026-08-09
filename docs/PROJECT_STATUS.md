@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L3-A1a 判定 `botzone_adapter_observation_hardening_verified`；下一步为 Step L4-A1 离线 HTTP connector 与前台 runner
+- 当前工作状态：Botzone L4-A1 判定 `botzone_local_connector_offline_verified`；下一步为 Step L4-A1a live smoke 准入加固
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：Botzone L3-A1a 定向 45 项、全量 500 项通过；同轮 fixture 已修正为 current/history round 1、table action ID `None`
+- 实际验证结果：Botzone L4-A1 定向 42 项、全量 511 项通过；全程 fake opener/gateway、零真实网络
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L3-A1a 完成，进入 L4-A1 | RuleBased adapter、精确公开 observation、实体守恒、provenance 和 mock E2E 已通过 | 尚无真实 HTTP transport/runner；尚未 live |
+| Botzone 接入 | L4-A1 完成，进入 L4-A1a | 已有 HTTPS transport、显式配置、前台 runner、RuleBased adapter 和 fake-gateway E2E | 需有界 live 停止、finished 敏感状态清理和授权前审计；尚未 live |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1204,7 +1204,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0、L1、L2、L3-A1 与 L3-A1a 已完成。L2-A1b 已提交为 `1766c91895874b963ca7f78ea2a39810183028d6`，L3-A1 检查点为 `39bd881f7155a35a49f989910be7dcd8bd23e02a`。L3-A1a 的四个 observation/守恒改动已通过定向 45 项、全量 500 项，判定 `botzone_adapter_observation_hardening_verified`；当前改动尚待独立封存。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0、L1、L2、L3-A1、L3-A1a 与 L4-A1 已完成。L3-A1a 检查点为 `253159f7cf00e9995cc986bac816bf67a8596a4e`。L4-A1 新增四个 runtime 模块和三份离线测试，已通过定向 42 项、全量 511 项，判定 `botzone_local_connector_offline_verified`；七个 L4-A1 文件当前尚待独立封存。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1254,7 +1254,9 @@ L3-A1 已完成单本家规则投影、RuleBasedAI action-id 选择、实体 ID/
 
 L3-A1a 已完成：同一轮 single 3→single 4 的 current/history round 均为 1，桌面 action 使用 `action_id=None`；history 固定六字段，手牌稳定排序，外部一/双配子 table action 可重建 canonical declared cards 与 wildcard info；跨历史重复实体、本家已出牌仍在手中、27 张容量与 done 边界均 fail-closed；矛盾 HandlerContext 不创建或调用 Agent。
 
-下一步 Step L4-A1 先把 L3-A1a 四个文件独立封存，再用标准库实现可注入的 HTTP GET transport、显式 runtime 配置与前台 runner。该步只连接 fake gateway，禁止读取真实 URL/密钥、禁止 `.env`、禁止联网或创建真实对局；通过后仍需单独授权才能进入 live smoke。
+L4-A1 已完成标准库 HTTPS GET transport、显式 runtime 配置、前台 runner 和 `python -m integrations.botzone` 入口。URL 仅来自显式参数/环境变量且在 repr/错误中脱敏；fake gateway 已验证 pending failure/restart/resend/ack、退避、failure limit、有限 cycle 与 Ctrl+C。未读取 `.env`、未联网。
+
+live 准入审计发现仍需加固：runner 尚不能按 finished 数或 wall time 停止；非 transport diagnostics 不会终止；finished session 仍持久化 match ID、手牌、history 和缓存；HTTP response close、严格 ASCII Header、退出码与 preflight-only 尚未封板。下一步 Step L4-A1a 只离线关闭这些缺口，判定必须为 `botzone_live_smoke_preflight_ready` 后才允许请求真实联网授权。
 
 ## 6. 当前风险
 
