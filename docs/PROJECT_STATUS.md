@@ -1,13 +1,13 @@
 # 项目状态看板
 
-更新时间：2026-08-08
+更新时间：2026-08-09
 
 ## 1. 当前基线
 
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：新 Codex 进程已确认三项环境变量 present、工作区干净；K-A3d3a 将以 `deepseek-v4-flash` 重试前置审计
+- 当前工作状态：K-A3d3c1 首次尝试仅因四份规划文档未提交而 invalid；形成 docs 检查点后重试离线启动加固
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：K-A3d2 定向 7 项、相关 80 项、全量 446 项通过
 - 当前规则范围：单局掼蛋核心规则
@@ -1171,7 +1171,7 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 ### Step K：中局策略路由与残局决策
 
-状态：K-A3d2 已完成，唯一判定 `strategy_intent_action_quality_harness_verified`。K-A3d3a 已连续两次执行但均未达到授权请求门槛，唯一判定仍为 `precondition_failed`。K-A3c2 原结论仍为 `strategy_intent_prompt_coverage_benchmark_invalid`。
+状态：K-A3d2 已完成，唯一判定 `strategy_intent_action_quality_harness_verified`；K-A3d3a 最终判定 `strategy_intent_live_quality_preflight_ready`；K-A3d3b 在零请求、无启动状态证据时退出，唯一判定 `strategy_intent_live_quality_benchmark_invalid`。K-A3c2 原结论仍为 `strategy_intent_prompt_coverage_benchmark_invalid`。
 
 依赖：
 
@@ -1180,11 +1180,17 @@ RAG 当前能找到相关经验，但文本命中不等于稳定策略选择。
 
 K-A3d2 已形成独立检查点且开发双运行通过。K-A3d3a 首次执行时，HEAD 为 `a450fd2367b53ba455e904e1361422f9f965eb58`，工作区干净；7 / 80 / 446 项回归、`git diff --check`、K-A3d1/K-A3d2 固定 hash 和兼容性复核全部通过。阻塞仅为调用进程未显式提供 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 和 `DEEPSEEK_API_KEY`。本次没有读取 `.env`、创建 runner、联网、调用模型或发送 probe。
 
-下一步仍为 K-A3d3a 重试：由任务调用方在启动进程环境中显式注入三项变量，先做 presence 快速门槛；变量齐备后再执行完整前置并就明确 endpoint/model、48 请求预算向用户请求授权。不得把密钥写入提示词、仓库或文档，未经明确授权不得进入 K-A3d3b。
-
 第二次重试仍缺少同样三项变量，已按快速门槛停止，没有重复运行回归。当时同时观察到未提交的 `.env.example` 改动；该文件未被读取或修改。项目所有者随后已处理工作区并从带有三项变量的新进程启动任务，当前工作区干净。
 
-当前新进程已通过不输出值的 presence 检查确认三项变量均存在，工作区干净。项目所有者明确选择 `https://api.deepseek.com` / `deepseek-v4-flash`，理由是当前实验预算下的性价比取舍；这不是通用价格或质量结论。K-A3d3a 下一次必须复核这两个非敏感值，K-A3d3b 的 48 次请求不得混用或回退到历史 `deepseek-v4-pro`。本次结果只能解释 flash 模型内的 off/on 配对差异。
+新进程随后通过不输出值的 presence 检查确认三项变量均存在，工作区干净。项目所有者明确选择 `https://api.deepseek.com` / `deepseek-v4-flash`，理由是当前实验预算下的性价比取舍；这不是通用价格或质量结论。K-A3d3b 已锁定不得混用或回退到历史 `deepseek-v4-pro`，但本次在任何请求前即失败，因此没有 flash 模型结果可解释。
+
+K-A3d3a 随后完成全部前置：HEAD `f0a087a4146b0950764b8b08bf03ff6c15723d98`，工作区干净，7 / 80 / 446 项回归通过，两个固定 hash 与兼容性复核通过，唯一判定 `strategy_intent_live_quality_preflight_ready`。
+
+唯一 K-A3d3b 后台进程 PID `33612` 异常退出。仓库外目录只保留 SHA-256 为 `a390ce8bc98aa92592f046c425ec9d0fe7c2313c5727dbd48918f2350033ffbd` 的 runner；没有 process state、heartbeat、ledger、report 或 completion，ledger/request count 为 0。未启动第二进程、重跑或补采，工作区保持干净。唯一判定 `strategy_intent_live_quality_benchmark_invalid`，没有动作、rollout 或质量结果可解释。
+
+只读行号审计显示原 runner 的项目 imports 位于顶层，`main()` 在第 168 行，audit directory 参数读取/校验在 169..171，首次 state 写入在 181，而异常保护从 190 才开始。没有 stderr、exit code 或 traceback，当前只能锁定 `startup_failure_before_state_write`，不能确认是 import、参数、目录还是首次写入。下一步 K-A3d3c1 必须离线建立父级 spawn 前状态与子级 import 前状态；不得联网或沿用旧授权。
+
+K-A3d3c1 首次尝试只读复核 runner 仍为 14,724 bytes，SHA-256 不变，PID `33612` 已退出；随后因 `docs/NEXT_PROMPT.md`、`docs/PLAN.md`、`docs/PROJECT_STATUS.md`、`docs/TESTS.md` 未提交而判定 `strategy_intent_live_startup_hardening_invalid`。该次没有创建 recovery candidate、第二个 live 进程、runner 状态或网络请求，也未读取 `.env`。该判定只表示工作区前置失败，不增加新的 runner 根因证据。
 
 ### Step L：Botzone 本地 AI 接入
 

@@ -904,6 +904,24 @@ K-A3d3a 方向：
 - 预注册 seed `600..609`、策略 `(0,50,100)`、每 phase 2 对，共 24 pair、最多 48 次请求；
 - timeout 60 秒、零重试、持久后台上限 65 分钟；真实请求必须另行取得用户对明确 endpoint/model 的授权；
 - 48 次请求必须全部使用 `deepseek-v4-flash`，不得回退或混入历史 `deepseek-v4-pro`；结果只作 flash 内部 off/on 配对解释，不与旧 pro 结果合并；
+
+K-A3d3b 结果：
+
+- 前置已通过并取得一次性授权，但唯一后台进程 PID `33612` 在任何 state/heartbeat/ledger 落盘前异常退出；
+- 失败目录只保留 runner，SHA-256 为 `a390ce8bc98aa92592f046c425ec9d0fe7c2313c5727dbd48918f2350033ffbd`；
+- ledger 为 0，没有模型响应、pair、rollout 或质量结果可解释；
+- 未重跑、未补采、未启动第二进程，唯一判定 `strategy_intent_live_quality_benchmark_invalid`；
+- 下一步 K-A3d3c1 只做仓库外离线启动审计与 bootstrap 加固，不联网；原 seed `600..609` 永久停用。
+
+K-A3d3c1 方向：
+
+- 首次尝试只读复核原 runner 后，因四份规划文档未提交而停止并判定 `strategy_intent_live_startup_hardening_invalid`；未创建 candidate、第二进程或网络请求；
+- 先由项目所有者提交四份 docs，恢复干净工作区，再重试同一 K-A3d3c1；
+- 将父启动状态提前到 spawn 前，将子状态提前到项目 import 前；
+- 延迟 project imports，并让参数、目录、首次写入和 import 全部进入最外层保护；
+- 通过 `--offline-self-check` 验证正常/失败状态链，request count 必须为 0；
+- 不能从缺失证据猜测唯一根因，只能锁定 `startup_failure_before_state_write`；
+- 通过后才允许以全新 seed `700..709` 规划 K-A3d3c2，并重新请求用户授权。
 - 完整性通过后才解释 RuleBased 续局代理；小样本只决定是否保留到扩大验收，不构成因果或胜率结论。
 
 ### Step L：Botzone 本地 AI 接入

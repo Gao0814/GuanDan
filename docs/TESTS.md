@@ -999,6 +999,29 @@ K-A2b1 当时尚未覆盖的严格反例：
 - 必须向用户展示明确 endpoint、model、请求数、timeout、重试和目的后请求授权；
 - 未获授权时不得把配置存在视为默许，不得启动任何外部请求。
 
+#### K-A3d3b：真实 strategy intent 动作质量小样本运行
+
+状态：已执行但启动失败，唯一判定 `strategy_intent_live_quality_benchmark_invalid`。
+
+- HEAD `f0a087a4146b0950764b8b08bf03ff6c15723d98`，K-A3d3a 的 7 / 80 / 446、固定 hash、兼容性和配置前置均通过；
+- 唯一后台进程 PID `33612` 已退出；没有第二次运行、补采或恢复；
+- 失败目录只保留 runner，SHA-256 为 `a390ce8bc98aa92592f046c425ec9d0fe7c2313c5727dbd48918f2350033ffbd`；
+- process state、heartbeat、ledger、report、summary、completion 均不存在；request/ledger count=0；
+- 因没有可审计 pair 或 rollout，不运行或解释任何质量守恒和描述性门槛。
+
+#### K-A3d3c1：离线启动状态链加固
+
+状态：首次尝试因四份规划文档未提交而 `strategy_intent_live_startup_hardening_invalid`；提交 docs 后重试同一步。
+
+- 首次尝试只读复核原 runner bytes/hash、PID 和启动边界，均与 K-A3d3b 失败报告一致；
+- 因工作区不干净，在创建 recovery candidate 前停止；未运行 offline self-check、未创建第二进程、未联网或调用模型；
+- 原 runner 首次 state 写入早于 `try/except`，且项目 imports 位于顶层；缺失证据只能标记 `startup_failure_before_state_write`；
+- 父启动器必须在 spawn 前写 launch state，捕获 PID/exit code 和脱敏输出；
+- 子 runner 必须在 project import 前写 bootstrap state，所有参数、目录、写入和 import 错误进入最外层保护；
+- `--offline-self-check` 必须禁止 client/网络，request count=0，并覆盖正常、参数、目录、import 和写入失败；
+- 正常 self-check 独立运行两次，易变字段外的结构化结果一致；
+- 通过后才能使用全新 seed `700..709` 规划 K-A3d3c2，并重新取得明确联网授权。
+
 #### 持续约束：软信号边界
 
 - pass 只保留为公开行为事实，不作为默认软持牌证据或确定无牌；
