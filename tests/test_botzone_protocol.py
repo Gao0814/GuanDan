@@ -7,8 +7,10 @@ from integrations.botzone.cards import card_id_for
 from integrations.botzone.models import DealRequest, PlayRequest, UnsupportedStage
 from integrations.botzone.protocol import (
     ProtocolValidationError,
+    botzone_player_to_engine_player,
     parse_action_claim,
     parse_stage_request,
+    resolve_table_view,
 )
 
 
@@ -26,12 +28,16 @@ def _play(
     done: list[int] | None = None,
     pass_on: int = -1,
 ) -> dict[str, object]:
+    events = [] if history is None else history
+    slots: list[object] = events if len(events) > 4 else ([[]] * (4 - len(events)) + events)
+    global_state = _global()
+    global_state["resist"] = False
     return {
         "stage": "play",
-        "history": [] if history is None else history,
+        "history": slots,
         "done": [] if done is None else done,
         "pass_on": pass_on,
-        "global": _global(),
+        "global": global_state,
     }
 
 
@@ -149,6 +155,84 @@ class BotzoneProtocolTests(unittest.TestCase):
                 assert isinstance(result, UnsupportedStage)
                 self.assertEqual(result.to_json(), {"error": "unsupported_stage", "stage": stage})
                 self.assertFalse(hasattr(result, "response_json"))
+
+    def test_official_first_play_fixture_and_stage_specific_globals(self) -> None:
+        first = _play()
+        parsed = parse_stage_request(first)
+        self.assertIsInstance(parsed, PlayRequest)
+        assert isinstance(parsed, PlayRequest)
+        self.assertEqual(parsed.history, ())
+        self.assertFalse(parsed.global_state.resist)
+        self.assertEqual(first["history"], [[], [], [], []])
+
+        invalid_globals = (
+            {"level": "2", "tribute": 0, "first": None, "last": None},
+            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": True},
+            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": 0},
+            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False, "extra": False},
+        )
+        for global_state in invalid_globals:
+            with self.subTest(global_state=global_state):
+                payload = _play()
+                payload["global"] = global_state
+                with self.assertRaises(ProtocolValidationError):
+                    parse_stage_request(payload)
+        invalid_deal = _deal(0, list(range(27)))
+        invalid_deal["global"] = {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False}
+        with self.assertRaises(ProtocolValidationError):
+            parse_stage_request(invalid_deal)
+
+    def test_fixed_history_slots_normalize_only_a_leading_empty_prefix(self) -> None:
+        one = {"player": 0, "response": [[0], [0]]}
+        two = {"player": 1, "response": [[], []]}
+        for events in ([], [one], [one, two], [one, two, one], [one, two, one, two]):
+            with self.subTest(count=len(events)):
+                payload = _play(events)
+                parsed = parse_stage_request(payload)
+                assert isinstance(parsed, PlayRequest)
+                self.assertEqual(len(parsed.history), len(events))
+        for slots in (
+            [[], one, [], two],
+            [{}, [], [], []],
+            [None, [], [], []],
+            [[0], [], [], []],
+            [[], [], []],
+            [[], [], [], [], one],
+        ):
+            with self.subTest(slots=slots):
+                payload = _play()
+                payload["history"] = slots
+                with self.assertRaises(ProtocolValidationError):
+                    parse_stage_request(payload)
+
+    def test_pure_player_conversion_and_table_view(self) -> None:
+        self.assertEqual([botzone_player_to_engine_player(player) for player in range(4)], [1, 2, 3, 4])
+        with self.assertRaises(ProtocolValidationError):
+            botzone_player_to_engine_player(True)
+        pass_entry = parse_stage_request(_play([{"player": 1, "response": [[], []]}]))
+        leader_entry = parse_stage_request(_play([{"player": 2, "response": [[0], [0]]}]))
+        assert isinstance(pass_entry, PlayRequest) and isinstance(leader_entry, PlayRequest)
+        free = resolve_table_view(local_player_id=0, latest_window=pass_entry.history, done=(), pass_on=-1)
+        constrained = resolve_table_view(local_player_id=0, latest_window=leader_entry.history, done=(), pass_on=-1)
+        self.assertTrue(free.free_lead)
+        self.assertFalse(constrained.free_lead)
+        assert constrained.table_leader is not None
+        self.assertEqual(constrained.table_leader.player_id, 2)
+        stopped = resolve_table_view(
+            local_player_id=0,
+            latest_window=parse_stage_request(_play([
+                {"player": 1, "response": [[0], [0]]},
+                {"player": 0, "response": [[], []]},
+                {"player": 3, "response": [[], []]},
+            ])).history,
+            done=(),
+            pass_on=-1,
+        )
+        self.assertTrue(stopped.free_lead)
+        finished = resolve_table_view(local_player_id=0, latest_window=leader_entry.history, done=(2,), pass_on=2)
+        self.assertEqual(finished.pass_on, 2)
+        with self.assertRaises(ProtocolValidationError):
+            resolve_table_view(local_player_id=0, latest_window=leader_entry.history, done=(), pass_on=2)
 
 
 if __name__ == "__main__":

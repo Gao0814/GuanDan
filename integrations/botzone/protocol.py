@@ -12,6 +12,7 @@ from .models import (
     GlobalState,
     HistoryEntry,
     PlayRequest,
+    TableView,
     UnsupportedStage,
 )
 
@@ -52,8 +53,11 @@ def _mapping(value: object, label: str, required: frozenset[str]) -> Mapping[str
     return value
 
 
-def _global_state(value: object) -> GlobalState:
-    data = _mapping(value, "global", frozenset({"level", "tribute", "first", "last"}))
+def _global_state(value: object, *, stage: str) -> GlobalState:
+    expected = frozenset({"level", "tribute", "first", "last"})
+    if stage == "play":
+        expected = expected | {"resist"}
+    data = _mapping(value, "global", expected)
     level = data["level"]
     if not isinstance(level, str) or level not in RANKS:
         raise ProtocolValidationError("global.level must be a rank")
@@ -62,7 +66,12 @@ def _global_state(value: object) -> GlobalState:
     last = data["last"]
     if first is not None or last is not None:
         raise ProtocolValidationError("no-tribute profile requires null first and last")
-    return GlobalState(level=level, tribute=tribute, first=None, last=None)
+    resist: bool | None = None
+    if stage == "play":
+        resist = data["resist"]
+        if type(resist) is not bool or resist:
+            raise ProtocolValidationError("no-tribute play requires resist=false")
+    return GlobalState(level=level, tribute=tribute, first=None, last=None, resist=resist)
 
 
 def parse_action_claim(
@@ -124,10 +133,16 @@ def _face(card: BotzoneCard) -> tuple[str, str | None]:
 def _history(value: object, level: str) -> tuple[HistoryEntry, ...]:
     if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, Sequence):
         raise ProtocolValidationError("history must be an array")
-    if len(value) > 4:
-        raise ProtocolValidationError("history may contain at most four entries")
+    if len(value) != 4:
+        raise ProtocolValidationError("history must contain exactly four slots")
     entries: list[HistoryEntry] = []
+    seen_event = False
     for index, raw_entry in enumerate(value):
+        if raw_entry == []:
+            if seen_event:
+                raise ProtocolValidationError("history empty slots must be a prefix")
+            continue
+        seen_event = True
         entry = _mapping(raw_entry, f"history[{index}]", frozenset({"player", "response"}))
         entries.append(
             HistoryEntry(
@@ -148,7 +163,7 @@ def _done(value: object) -> tuple[int, ...]:
 def _play_request(data: Mapping[str, object]) -> PlayRequest:
     expected = frozenset({"stage", "history", "done", "pass_on", "global"})
     payload = _mapping(data, "play request", expected)
-    global_state = _global_state(payload["global"])
+    global_state = _global_state(payload["global"], stage="play")
     return PlayRequest(
         history=_history(payload["history"], global_state.level),
         done=tuple(_player_id(player, "done") for player in _done(payload["done"])),
@@ -166,7 +181,7 @@ def _deal_request(data: Mapping[str, object]) -> DealRequest:
     return DealRequest(
         deliver=deliver,
         your_id=_player_id(payload["your_id"], "your_id"),
-        global_state=_global_state(payload["global"]),
+        global_state=_global_state(payload["global"], stage="deal"),
     )
 
 
@@ -206,3 +221,37 @@ def validate_no_tribute_opening(
         raise ProtocolValidationError("opening deals must preserve all 108 physical cards")
     if first_play.history or first_play.done or first_play.pass_on != -1:
         raise ProtocolValidationError("first play fixture contains prior play state")
+
+
+def botzone_player_to_engine_player(player_id: object) -> int:
+    """Pure 0..3 to 1..4 conversion; no engine objects are constructed."""
+
+    return _player_id(player_id, "player_id") + 1
+
+
+def resolve_table_view(
+    *,
+    local_player_id: object,
+    latest_window: Sequence[HistoryEntry],
+    done: Sequence[int],
+    pass_on: object,
+) -> TableView:
+    """Derive only the public free-lead/table-leader constraint or fail closed."""
+
+    local = _player_id(local_player_id, "local_player_id")
+    done_players = tuple(_player_id(player, "done") for player in done)
+    if len(set(done_players)) != len(done_players) or local in done_players:
+        raise ProtocolValidationError("inconsistent_done")
+    pending = _integer(pass_on, "pass_on", minimum=-1, maximum=3)
+    events = tuple(latest_window)
+    if len(events) > 4 or any(not isinstance(event, HistoryEntry) for event in events):
+        raise ProtocolValidationError("invalid_latest_window")
+    if pending != -1:
+        if pending not in done_players or not any(event.player_id == pending for event in events):
+            raise ProtocolValidationError("inconsistent_pass_on")
+    for event in reversed(events):
+        if event.player_id == local:
+            break
+        if not event.response.is_pass:
+            return TableView(free_lead=False, table_leader=event, pass_on=pending)
+    return TableView(free_lead=True, table_leader=None, pass_on=pending)

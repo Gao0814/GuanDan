@@ -11,13 +11,15 @@ class GlobalState:
     tribute: int
     first: int | None
     last: int | None
+    resist: bool | None = None
 
-    def to_json(self) -> dict[str, str | int | None]:
+    def to_json(self) -> dict[str, str | int | bool | None]:
         return {
             "level": self.level,
             "tribute": self.tribute,
             "first": self.first,
             "last": self.last,
+            "resist": self.resist,
         }
 
 
@@ -65,6 +67,15 @@ class PlayRequest:
     done: tuple[int, ...]
     pass_on: int
     global_state: GlobalState
+
+
+@dataclass(frozen=True, slots=True)
+class TableView:
+    """Pure public-table constraint, with no engine or agent dependency."""
+
+    free_lead: bool
+    table_leader: HistoryEntry | None
+    pass_on: int
 
 
 @dataclass(frozen=True, slots=True)

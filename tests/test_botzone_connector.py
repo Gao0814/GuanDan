@@ -25,7 +25,7 @@ def _deal(player: int = 0) -> str:
 
 def _play() -> str:
     return json.dumps(
-        {"stage": "play", "history": [], "done": [], "pass_on": -1, "global": {"level": "2", "tribute": 0, "first": None, "last": None}},
+        {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False}},
         separators=(",", ":"),
     )
 
@@ -124,6 +124,7 @@ class BotzoneConnectorTests(unittest.TestCase):
             play_contexts = [context for context in contexts if isinstance(context.request, PlayRequest)]
             self.assertEqual(len(play_contexts), 2)
             self.assertNotEqual(play_contexts[0].own_hand, play_contexts[1].own_hand)
+            self.assertNotEqual(play_contexts[0].local_player_id, play_contexts[1].local_player_id)
             before_failure = store.load("unit-a").own_hand
             connector.cycle()
             self.assertEqual(store.load("unit-a").own_hand, before_failure)

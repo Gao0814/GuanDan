@@ -21,7 +21,9 @@ def _deal(player: int, cards: list[int]) -> dict[str, object]:
 
 
 def _first_play() -> dict[str, object]:
-    return {"stage": "play", "history": [], "done": [], "pass_on": -1, "global": _global()}
+    global_state = _global()
+    global_state["resist"] = False
+    return {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": global_state}
 
 
 class BotzoneNoTributeProfileTests(unittest.TestCase):

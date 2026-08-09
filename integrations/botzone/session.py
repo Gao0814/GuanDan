@@ -18,7 +18,7 @@ from .protocol import ProtocolValidationError, parse_action_claim
 
 
 SESSION_SCHEMA: Final[str] = "botzone_no_tribute_session"
-SESSION_VERSION: Final[int] = 2
+SESSION_VERSION: Final[int] = 3
 
 
 class SessionStorageError(ValueError):
@@ -50,6 +50,7 @@ class HandlerContext:
     match_key: str
     request_digest: str
     request: DealRequest | PlayRequest
+    local_player_id: int
     own_hand: tuple[int, ...]
     history: tuple[HistoryEntry, ...]
     latest_window: tuple[HistoryEntry, ...]
@@ -60,6 +61,7 @@ class HandlerContext:
         return {
             "match_key": self.match_key,
             "request_digest": self.request_digest,
+            "local_player_id": self.local_player_id,
             "own_hand": list(self.own_hand),
             "history": [entry.to_json() for entry in self.history],
             "latest_window": [entry.to_json() for entry in self.latest_window],
@@ -75,6 +77,7 @@ class SessionRecord:
     stage: str
     global_state: GlobalState
     own_hand: tuple[int, ...]
+    local_player_id: int
     history: tuple[HistoryEntry, ...]
     latest_window: tuple[HistoryEntry, ...]
     pending_response: bytes | None
@@ -94,6 +97,7 @@ class SessionRecord:
             "stage": self.stage,
             "global": self.global_state.to_json(),
             "own_hand": list(self.own_hand),
+            "local_player_id": self.local_player_id,
             "history": [entry.to_json() for entry in self.history],
             "latest_window": [entry.to_json() for entry in self.latest_window],
             "pending_response": _encode_bytes(self.pending_response),
@@ -176,8 +180,8 @@ def _parse_effect(value: object, own_hand: tuple[int, ...]) -> PlayEffect | None
     return PlayEffect(tuple(action))
 
 
-def _parse_global(value: object) -> GlobalState:
-    if not isinstance(value, dict) or set(value) != {"level", "tribute", "first", "last"}:
+def _parse_global(value: object, stage: str) -> GlobalState:
+    if not isinstance(value, dict) or set(value) != {"level", "tribute", "first", "last", "resist"}:
         raise SessionStorageError("invalid_global")
     level = value["level"]
     tribute = value["tribute"]
@@ -185,7 +189,16 @@ def _parse_global(value: object) -> GlobalState:
         raise SessionStorageError("invalid_global")
     if value["first"] is not None or value["last"] is not None:
         raise SessionStorageError("invalid_global")
-    return GlobalState(level, 0, None, None)
+    resist = value["resist"]
+    if stage == "deal":
+        if resist is not None:
+            raise SessionStorageError("invalid_global")
+    elif stage == "play":
+        if type(resist) is not bool or resist:
+            raise SessionStorageError("invalid_global")
+    else:
+        raise SessionStorageError("invalid_session")
+    return GlobalState(level, 0, None, None, resist)
 
 
 def _parse_history(value: object, level: str) -> tuple[HistoryEntry, ...]:
@@ -232,7 +245,7 @@ def _record_from_json(value: object) -> SessionRecord:
     if not isinstance(value, dict):
         raise SessionStorageError("invalid_session")
     expected = {
-        "schema", "version", "match_id", "request_digest", "stage", "global", "own_hand", "history", "latest_window",
+        "schema", "version", "match_id", "request_digest", "stage", "global", "own_hand", "local_player_id", "history", "latest_window",
         "pending_response", "pending_effect", "delivery_state", "handler_completed", "cached_response",
         "cached_response_digest", "finished",
     }
@@ -247,6 +260,7 @@ def _record_from_json(value: object) -> SessionRecord:
     digest = value["request_digest"]
     stage = value["stage"]
     own_hand = value["own_hand"]
+    local_player_id = value["local_player_id"]
     delivery_state = value["delivery_state"]
     completed = value["handler_completed"]
     cached_digest = value["cached_response_digest"]
@@ -255,6 +269,8 @@ def _record_from_json(value: object) -> SessionRecord:
         or not isinstance(digest, str)
         or not isinstance(stage, str)
         or not isinstance(own_hand, list)
+        or type(local_player_id) is not int
+        or not 0 <= local_player_id <= 3
         or any(type(card_id) is not int or not 0 <= card_id <= 107 for card_id in own_hand)
         or len(set(own_hand)) != len(own_hand)
         or delivery_state not in {"idle", "pending", "inflight", "finished"}
@@ -275,8 +291,9 @@ def _record_from_json(value: object) -> SessionRecord:
         raise SessionStorageError("invalid_session")
     if cached is None and cached_digest is not None:
         raise SessionStorageError("invalid_session")
-    parsed_history = _parse_history(value["history"], _parse_global(value["global"]).level)
-    parsed_window = _parse_history(value["latest_window"], _parse_global(value["global"]).level)
+    parsed_global = _parse_global(value["global"], stage)
+    parsed_history = _parse_history(value["history"], parsed_global.level)
+    parsed_window = _parse_history(value["latest_window"], parsed_global.level)
     if (
         bool(parsed_history) != bool(parsed_window)
         or len(parsed_history) < len(parsed_window)
@@ -290,8 +307,9 @@ def _record_from_json(value: object) -> SessionRecord:
         match_id=match_id,
         request_digest=digest,
         stage=stage,
-        global_state=_parse_global(value["global"]),
+        global_state=parsed_global,
         own_hand=typed_hand,
+        local_player_id=local_player_id,
         history=parsed_history,
         latest_window=parsed_window,
         pending_response=pending,
@@ -360,11 +378,14 @@ class SessionStore:
                 record = replace(record, pending_response=record.cached_response, pending_effect=None, delivery_state="pending")
                 self.save(record)
             return record, not record.handler_completed
+        if isinstance(stage, DealRequest) and record is not None:
+            raise SessionStorageError("conflicting_deal")
         if record is not None and record.pending_response is not None:
             raise SessionStorageError("pending_response_exists")
         if isinstance(stage, PlayRequest) and record is None:
             raise SessionStorageError("play_without_state")
         own_hand = stage.deliver if isinstance(stage, DealRequest) else record.own_hand
+        local_player_id = stage.your_id if isinstance(stage, DealRequest) else record.local_player_id
         latest_window, history = ((), ()) if isinstance(stage, DealRequest) else merge_history(
             record.latest_window,
             record.history,
@@ -377,6 +398,7 @@ class SessionStore:
             stage="deal" if isinstance(stage, DealRequest) else "play",
             global_state=global_state,
             own_hand=own_hand,
+            local_player_id=local_player_id,
             history=history,
             latest_window=latest_window,
             pending_response=None,
@@ -430,6 +452,7 @@ class SessionStore:
             match_key=record.match_id,
             request_digest=record.request_digest,
             request=request,
+            local_player_id=record.local_player_id,
             own_hand=record.own_hand,
             history=record.history,
             latest_window=record.latest_window,

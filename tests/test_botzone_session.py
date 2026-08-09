@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -24,7 +25,9 @@ def _deal(player: int) -> DealRequest:
 
 
 def _play() -> PlayRequest:
-    parsed = parse_stage_request({"stage": "play", "history": [], "done": [], "pass_on": -1, "global": _global()})
+    global_state = _global()
+    global_state["resist"] = False
+    parsed = parse_stage_request({"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": global_state})
     assert isinstance(parsed, PlayRequest)
     return parsed
 
@@ -131,8 +134,11 @@ class BotzoneSessionTests(unittest.TestCase):
 
     def test_history_windows_merge_only_a_verifiable_suffix(self) -> None:
         def play(history: list[dict[str, object]], done: list[int] | None = None) -> PlayRequest:
+            global_state = _global()
+            global_state["resist"] = False
+            slots: list[object] = [[]] * (4 - len(history)) + history
             parsed = parse_stage_request(
-                {"stage": "play", "history": history, "done": [] if done is None else done, "pass_on": -1, "global": _global()}
+                {"stage": "play", "history": slots, "done": [] if done is None else done, "pass_on": -1, "global": global_state}
             )
             assert isinstance(parsed, PlayRequest)
             return parsed
@@ -176,6 +182,36 @@ class BotzoneSessionTests(unittest.TestCase):
             self.assertTrue(finished.finished is not None)
             self.assertIsNone(finished.pending_effect)
             self.assertEqual(finished.own_hand, before)
+
+    def test_local_seat_persists_and_conflicting_deal_or_old_schema_fails_closed(self) -> None:
+        with TemporaryDirectory() as root:
+            store = SessionStore(root)
+            for player in range(4):
+                record, _ = store.prepare(f"unit-{player}", f"deal-{player}".encode(), _deal(player))
+                context = store.handler_context(record, _deal(player))
+                self.assertEqual(context.local_player_id, player)
+                self.assertEqual(context.to_json()["local_player_id"], player)
+                self.assertEqual(SessionStore(root).load(f"unit-{player}").local_player_id, player)
+            with self.assertRaises(SessionStorageError):
+                store.prepare("unit-0", b"conflicting-deal", _deal(1))
+
+            path = next(Path(root).glob("*.json"))
+            snapshot = json.loads(path.read_text(encoding="utf-8"))
+            snapshot["version"] = 2
+            path.write_text(json.dumps(snapshot), encoding="utf-8")
+            with self.assertRaises(SessionStorageError):
+                store.load(snapshot["match_id"])
+
+    def test_malformed_persisted_local_seat_fails_closed(self) -> None:
+        with TemporaryDirectory() as root:
+            store = SessionStore(root)
+            store.prepare("unit-a", b"deal", _deal(0))
+            path = next(Path(root).glob("*.json"))
+            snapshot = json.loads(path.read_text(encoding="utf-8"))
+            snapshot["local_player_id"] = True
+            path.write_text(json.dumps(snapshot), encoding="utf-8")
+            with self.assertRaises(SessionStorageError):
+                store.load("unit-a")
 
 
 if __name__ == "__main__":
