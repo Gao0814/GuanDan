@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：K-A3d3c3a 只读恢复完整但未达到 changed 门槛，strategy-intent 分支封板；下一步为 Step L0-A1 Botzone 手动无贡协议收口
+- 当前工作状态：K-A3d3c3a 已封板；Botzone Phase 0 唯一判定为 `botzone_manual_no_tribute_phase0_blocked`，下一步为 Step L0-A2 用户辅助的官方裁判证据与账号权限补全
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：K-A3d2 定向 7 项、相关 80 项、全量 446 项通过
 - 当前规则范围：单局掼蛋核心规则
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | Step L 已规划 | 支持范围锁定为无贡 profile；官方 transport、GuanDan 阶段与现有引擎差异已梳理 | claim、配子数量、无贡 runmatch initdata 和账号权限尚未封板；未开始代码 |
+| Botzone 接入 | Phase 0 blocked | transport、108 ID、deal/play/pass 已有官方依据；支持范围锁定为手动无贡 profile | claim 实体 ID、多配子规则、无贡阶段流/先手和账号权限缺官方证据；不得开始代码 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1204,7 +1204,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：调研与架构计划已建立，尚未修改代码。支持范围收敛为手动建桌、明确无贡；下一步 Step L0-A1 继续查官方裁判与账号权限。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 基础调研已完成，尚未修改代码。唯一判定为 `botzone_manual_no_tribute_phase0_blocked`。公开 Wiki 固定版本已经封板，继续重复检索不能解除阻塞；下一步 Step L0-A2 需要用户辅助提供官方裁判源码/官方 fixture，并在登录后只确认本地 AI 功能是否可用。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1219,13 +1219,14 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 阻塞：
 
-- 官方 claim 对花色/副本 ID 的精确要求；
-- 单手配子数量上限是否与当前 engine 的 1 张一致；
+- 官方 claim 对合法范围、花色、副本 ID、重复、排序和 canonical 的精确要求；
+- 单手配子数量上限，以及多配子在各复合牌型中的裁判约束；
+- “需要进贡=否”的官方 `deal → play` 请求序列和新桌首个先手字段；
 - runmatch `X-Initdata` 中“需要进贡=否”的精确表示；该项只阻塞自动建桌，不阻塞已明确选择“否”的手动建桌路径；
 - 目标账号当前本地 AI 等级门槛；
 - 真实 smoke 前必须从官方裁判源码或脱敏 Log 封板，不能从第三方代码猜测。
 
-推荐实施顺序：Phase 0-A 手动建桌无贡差异、claim 与权限封板 → Phase 1 codec/protocol → Phase 2 mock connector/session → Phase 3 RuleBasedAI 的 deal + play → Phase 4 用户授权且手动设为无贡的真实 smoke → 可选 runmatch 自动化 → Phase 5 可选 DeepSeek。贡还不在当前范围；收到相关 stage 必须失败，不得绕过。
+推荐实施顺序：L0-A2 官方源码/fixture/权限补证 → Phase 0 verified 后才进入 Phase 1 codec/protocol → Phase 2 mock connector/session → Phase 3 RuleBasedAI 的 deal + play → Phase 4 用户授权且手动设为无贡的真实 smoke → 可选 runmatch 自动化 → Phase 5 可选 DeepSeek。贡还不在当前范围；收到相关 stage 必须失败，不得绕过。
 
 ## 6. 当前风险
 
