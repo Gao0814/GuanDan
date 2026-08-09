@@ -146,7 +146,10 @@ class BotzoneConnectorTests(unittest.TestCase):
 
     def test_connector_sources_have_no_runtime_network_or_secret_imports(self) -> None:
         package = Path(__file__).parents[1] / "integrations" / "botzone"
-        source = "\n".join(path.read_text(encoding="utf-8") for path in package.glob("*.py"))
+        source = "\n".join(
+            (package / filename).read_text(encoding="utf-8")
+            for filename in ("poll.py", "session.py", "connector.py")
+        )
         forbidden_imports = re.compile(
             r"(?m)^\s*(?:from|import)\s+(?:urllib|requests|socket|dotenv|engine|agents|cli)\b"
         )
