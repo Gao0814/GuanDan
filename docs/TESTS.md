@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：L4-A2c5b2 qualification 与前两项探针有效，但第三目标因 evidence/target 同名未执行，整体 invalid。下一步 L4-A2c5b2a 先验证路径拓扑，再用全新目录独立执行完整矩阵；完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：人工前台 connector 已连接 Botzone，但真实无贡请求在 Agent 调用前以 `malformed_request` 退出。下一步 L4-A3a 用纯离线合成 fixture 补齐 Bot JSON 外层信封、历史重放和 response wrapper；L4-A2c5b2a 文件系统矩阵暂缓。完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1110,6 +1110,9 @@ Phase 0 证据验收已完成：
 - `tests/test_botzone_runner.py`：已完成；退避/重置、finished/wall/cycle/failure/diagnostic 停止、退出码、fake gateway E2E 和零真实网络；
 - `tests/test_botzone_live_preflight.py`：已完成；零网络启动审计、finished 敏感状态清理、最小 audit schema 和一局 fake smoke 守恒；
 - `tests/test_botzone_rule_compatibility.py`：官方裁判/脱敏 Log 与当前 engine 的差分 fixture。
+- `tests/test_botzone_bot_io.py`：待新增；外层 `requests/responses` 模型、可选官方字段、基数与 inner-stage 解析。
+- `tests/test_botzone_envelope_replay.py`：待新增；从合成 deal 和既往 play response 冷启动恢复实体手牌、history 与 no-tribute profile。
+- `tests/test_botzone_response_wrapper.py`：待新增；deal/pass/自然牌/配子的 canonical `{"response": ...}` 编码及 Header mock E2E。
 
 验收边界：
 
@@ -1211,7 +1214,7 @@ L4-A2c5b1 实际结果：资格验证成功；真实目录单次探测 exit code
 - 结果只能划定目录/卷/进程范围，不得解释系统根因；
 - request/GET/network/connector/live-launcher 严格为 0。
 
-L4-A2c5b2 实际结果：qualification 成功；configured 与 same-volume 均返回 `PermissionError`、errno 13、winerror null并清空。local-appdata 因父载体将 evidence 子目录与 target 设为同名而未启动，summary/manifest 缺失，唯一判定 `botzone_exclusive_open_scope_diagnosis_invalid`。L4-A2c5b2a 恢复测试口径：
+L4-A2c5b2 实际结果：qualification 成功；configured 与 same-volume 均返回 `PermissionError`、errno 13、winerror null并清空。local-appdata 因父载体将 evidence 子目录与 target 设为同名而未启动，summary/manifest 缺失，唯一判定 `botzone_exclusive_open_scope_diagnosis_invalid`。以下 L4-A2c5b2a 恢复口径保留但暂缓，不是当前下一步：
 
 - 使用新 run ID、新 runner、全新 evidence root 和全新目标目录；
 - 探针前验证所有 evidence/target resolve 路径两两不等、互不包含；
@@ -1220,6 +1223,18 @@ L4-A2c5b2 实际结果：qualification 成功；configured 与 same-volume 均�
 - 旧 b2 的两项部分结果不得进入新 summary 或替代任何目标；
 - 三目标完成后必须原子生成 summary.json 和 manifest.json；
 - 异常脱敏、精确清理、空目录、进程与零网络守恒全部通过。
+
+L4-A3a 最低测试口径：
+
+- 顶层必需 `requests/responses`，满足 `len(requests)=len(responses)+1`；官方可选字段可缺省；未知字段和错误类型拒绝；
+- 每条 inner request 继续使用现有 stage parser；`tribute/return` 仍 fail-closed；
+- 首条 deal 与历史 response 可在无本地 session 时恢复本家实体手牌；pass 不扣牌，合法 action 精确扣一次；
+- 历史 response/stage、level、座位、profile、实体牌或 claim 矛盾时不调用 Agent、不伪造动作；
+- 无贡 play 的 `tribute_cards/return_cards` 必须是空 mapping，非空或 malformed 拒绝；
+- deal、pass、自然动作和配子动作均输出 canonical `{"response":...}`；
+- mock connector 验证 full-envelope digest、pending resend、ack 后 effect 提交和多 match 隔离；
+- fixture 只用合成 ID，不保存真实 live 请求、完整真实手牌、URL、密钥、match ID 或 Header 值；
+- 定向测试、全量 `python -m unittest discover -q`、`git diff --check` 与敏感内容扫描全部通过。
 
 ## 6. 对局评测
 

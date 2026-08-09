@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：既有 invalid/inconclusive 永久保留。L4-A2c5b2 因第三目标与证据目录同名而 invalid；前两项 errno 13 不能形成范围结论。下一步 L4-A2c5b2a 使用路径拓扑预验证的全新矩阵独立恢复。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：既有 invalid/inconclusive 永久保留。人工前台 connector 已显示连接成功并收到真实无贡对局请求，但在 Agent 调用前因外层 Bot JSON 信封未解析而 `malformed_request`。下一步为离线 L4-A3a 信封解析、历史重放和响应包装；文件系统矩阵 L4-A2c5b2a 暂缓。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -983,9 +983,10 @@ K-A3d3c3a 结果：
 3. Phase 2：已完成；mock connector/session、事务加固、官方首个 play 和本地座位契约均通过；
 4. Phase 3：已完成；adapter 主链与 L3-A1a observation/实体守恒均封板；
 5. Phase 4 准备：L4-A1/L4-A1a/L4-A2a 已完成；凭据轮换与 preflight ready 已确认；
-6. Phase 4 live：L4-A2b 已执行唯一启动尝试并因 launcher environment error 判定 invalid，未实际联网；
-7. Phase 4 恢复：独占创建边界已定位；首个范围矩阵因载体路径冲突 invalid，仍不具备修改 state 配置或 launcher offline 准入资格；
-8. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
+6. Phase 4 live：历史 L4-A2b 启动失败永久保留；后续人工前台运行已连接网关，但首个真实请求因协议 envelope 缺口失败；
+7. Phase 4 协议恢复：L4-A3a 离线区分外层 Bot JSON 与内层 GuanDan stage，重放历史并包装 response；
+8. Phase 4 文件系统诊断：L4-A2c5b2a 暂缓，既有 invalid 不追认；
+9. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。
 

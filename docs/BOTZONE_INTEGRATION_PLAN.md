@@ -116,12 +116,13 @@
 
 `runmatch` 官方 Header 为 `X-Game`、`X-Player-0..n` 和可选 `X-Initdata`。参与者必须有且只有一个 `me`；其他位置填写 Botzone 已有 Bot ID。创建成功返回 match ID。
 
-### 2.2 Bot 通用交互与本地 AI 的区别
+### 2.2 Bot 通用交互与本地 AI 的实测关系
 
-- 普通短生命周期 Bot 的 JSON 输入包含该 Bot 过去全部 `requests/responses`，并可携带 `data/globaldata`。
-- GuanDan Wiki 中展示的是单回合游戏 request；本地 AI 网关按官方词条优先返回 simple-IO request，并由连接器自身持续运行。
-- 本地 AI 专用接口没有承诺在连接器重启后重放整场历史，也没有说明会转发普通 Bot 的 `data/globaldata` 外层对象。
-- 因此不能把普通 Bot 的“完整 requests/responses”保证直接套到本地 AI 连接器；连接器必须有自己的按局恢复机制。
+- Bot JSON 输入以 `requests/responses` 保存该 Bot 的交互历史，并可携带 `data/globaldata/time_limit/memory_limit`。
+- GuanDan Wiki 展示的是数组内的单回合游戏 request，不是网关最外层 JSON。
+- 人工本地 AI smoke 已确认网关实际转发完整 `requests/responses` 外层；首条 deal 和当前 play 同时出现在一次请求中，可用于冷启动重放。
+- 实测请求未携带 `data/globaldata/time_limit/memory_limit`，因此这些官方字段必须可选，不能作为本地 AI 请求的必需字段。
+- durable session 仍负责 match 事务、pending response、ack 和幂等；外层历史负责恢复本家牌与公开交互，两者不能互相替代。
 
 ### 2.3 GuanDan 阶段与数据
 
@@ -257,7 +258,7 @@ sequenceDiagram
 
 ### 6.3 历史恢复边界
 
-Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完整公开历史。正常运行依赖本地 durable session；不能声称仅靠当前 request 可从任意中途恢复。后续若官方确认本地 AI 会重放全部历史，可再简化，但实现前不得假设。
+Botzone 的内层 `play.history` 仍只有近四手，但真实本地 AI 请求已确认使用标准 Bot JSON 交互信封：顶层 `requests/responses` 重放本 Bot 的完整请求/响应历史。adapter 应从首条 `deal` 和全部既往本家 response 重建当前实体手牌，再用各 `play.history` 合并公开动作。durable session 继续负责 match 隔离、pending response、ack 与幂等，但不再作为冷启动恢复本家手牌的唯一来源。
 
 ## 7. 分阶段实施计划
 
@@ -350,7 +351,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A2c5b1 已定位独占创建边界；L4-A2c5b2 因第三目标路径与证据路径冲突而 invalid。下一步 L4-A2c5b2a 使用全新、拓扑预验证的三目录矩阵独立恢复。
+状态：离线 HTTP connector 与 runner 已完成。人工前台 smoke 已成功连接 Botzone 并收到一条真实对局请求；当前阻塞转为外层 Bot JSON 信封未解析。L4-A2c5b2a 文件系统矩阵暂缓，下一步为 L4-A3a 离线协议修复。
 
 工作：
 
@@ -405,7 +406,7 @@ L4-A2b 启动门槛修正：
 
 ### Phase 4：真实 Botzone 小规模 smoke test
 
-结果：L4-A2b 启动前门槛全部通过，但唯一 `Start-Process` 调用在 connector 进程创建前失败。未发送 GET，未产生 live audit/state，未重试或启动第二进程；唯一判定 `botzone_no_tribute_local_ai_smoke_invalid`。该结果不证明 connector 或 Botzone 协议失败，只证明本次启动链不完整。
+结果：历史 L4-A2b 仍保持 `botzone_no_tribute_local_ai_smoke_invalid`。后续人工前台运行已建立真实 GET 长轮询连接，但进入无贡测试桌后的第一条消息以 `malformed_request` 退出；平台超时是未返回 response 的结果，不是 AI 推理超时。该运行确认传输可达，同时暴露外层 Bot JSON 信封契约缺失，不能记为 smoke 通过。
 
 工作：
 
@@ -476,11 +477,13 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留。L4-A2c5b2 前两项目录均观测到 errno 13，但第三项因载体目录冲突未执行，整体 invalid 且不能形成范围结论。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c5b2a 的独立恢复矩阵；必须先验证 evidence/target 路径拓扑，不得复用旧部分结果、重跑 preflight、修改永久配置、启动 launcher/connector 或联网。
+Phase 0 至离线 connector/adapter 均已完成；既有 invalid/inconclusive 结论全部保留。真实人工连接确认网关下发标准 Bot JSON 外层信封，而现有实现只解析内层 GuanDan stage。当前只允许按 `docs/NEXT_PROMPT.md` 执行离线 L4-A3a；不得再次启动 live connector 或复制真实请求正文。L4-A2c5b2a 暂缓，不用于阻塞协议修复。
 
 理由：
 
 - 108 ID、官方首个 play、四槽 history、座位、claim、pending effect 与 `tribute/return` fail-closed 边界已有测试契约；
+- 外层 Bot JSON 需要 `requests/responses` 完整历史重放，不能把整个顶层对象直接传给 inner-stage parser，也不能只取最后一条请求；
+- 标准 Bot 输出需要 `{"response": ...}` wrapper；当前内部 deal/play response 仍需在 Header 前包装；
 - 当前只把 engine 已支持的单配子动作视为合法子集，双配子仍是明确能力缺口；
 - 贡还属于当前 engine 明确 unsupported 的能力，即使未来无贡 profile 通过，也必须对 `tribute/return` fail-closed；
 - 无贡 profile 只有取得该配置的官方证据后才是支持契约，不能由随机对局恰好未发生贡还来替代。
@@ -509,4 +512,4 @@ Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A2c5b2a：使用新 run ID、新仓库外 evidence root 和全新目标目录；先以八项 bool 门槛证明 evidence/target 两两不同且互不包含，再按固定顺序各探测一次 configured、same-volume、local-appdata。必须生成完整 summary/manifest，旧 b2 部分结果不参与恢复结论；本步不修改配置、仓库或 live 状态。
+执行 Step L4-A3a：离线新增 Bot JSON 外层模型，严格校验 `requests/responses` 基数，重放首条 deal 与既往 play response 恢复本家实体手牌，接受无贡 play 中空的 `tribute_cards/return_cards`，并在 `X-Match-*` Header 前输出 canonical `{"response": ...}`。使用合成 fixture，不联网；通过后再规划全新的手工 smoke。

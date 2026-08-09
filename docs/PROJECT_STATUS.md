@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A2c5b2 因第三目标与证据目录命名冲突判定 invalid；下一步 L4-A2c5b2a 使用全新且拓扑预验证的三目录矩阵独立恢复
+- 当前工作状态：Botzone 手工连接已到达真实无贡对局请求，但 connector 将完整 Bot JSON 交互信封误作单条 GuanDan stage 解析，首请求以 `malformed_request` 退出；下一步为离线 L4-A3a 信封解析、历史重放与响应包装
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：L4-A2c5a 定向 10、相关 23、全量 526 项通过；合成 module 退出 0、audit 阶段完整，全部网络/connector 计数为 0
 - 当前规则范围：单局掼蛋核心规则
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L4-A2c5b2 invalid | configured 与同卷目标均观测 PermissionError/errno=13，但第三目标未执行 | 目录范围仍未知；需独立恢复矩阵，真实 smoke 未执行 |
+| Botzone 接入 | 手工 smoke 到达协议解析 | 本地 AI 显示已连接；真实无贡请求到达 connector | 外层 Bot JSON 信封未解析，Agent 尚未被调用；先完成 L4-A3a |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1204,11 +1204,12 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 至 L4-A2a 已完成。L4-A1a 已封存为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`，定向 46 项、全量 515 项通过。L4-A2b 已执行唯一启动尝试并封板为 `botzone_no_tribute_local_ai_smoke_invalid`：启动前门槛通过，但 `Start-Process` 返回 `launcher_environment_error`，未创建 connector 或发送 GET。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至离线 connector/adapter 已完成。人工前台 smoke 已证明 Botzone 本地 AI 长轮询能够连接并收到真实无贡对局消息，但当前 parser 在调用 Agent 前以 `malformed_request` 退出。根因是外层 Bot JSON 交互信封与内层 GuanDan stage 请求未分层；下一步只做离线 L4-A3a。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
 - 本地 AI 是本机主动 GET 的长轮询接口，response 通过 `X-Match-<match_id>` Header 在后续 GET 中回传；一次 poll 可承载多个对局；
+- Botzone 网关下发的是标准 Bot JSON 交互信封，顶层 `requests/responses` 保存完整交互历史；GuanDan 的 `deal/play` 是 `requests` 中的内层对象；
 - 官方 `runmatch` 使用游戏名、位置 Bot ID 和唯一 `me` 创建对局；本地位置不要求上传本机源码；
 - Botzone GuanDan 使用 `0..107` 实体牌 ID，协议定义 `deal / tribute / return / play` 四阶段；
 - 用户提供的建桌 UI 确认“需要进贡”可选“否”；项目支持范围现锁定为无贡 profile，只运行 `deal + play`；
@@ -1280,7 +1281,13 @@ L4-A2c5b 已完成，唯一判定 `botzone_instrumented_live_preflight_invalid`�
 
 L4-A2c5b1 已完成，唯一判定 `botzone_state_tempfile_operation_boundary_verified`。临时目录资格验证低于 1 秒完成；真实 state 目录唯一诊断 exit code 5，最后阶段为 `exclusive_open_started`，没有 `exclusive_open_completed`，规范化诊断 `operation_error`。任务自有候选文件随后精确清理成功，真实目录前后均为空，全部网络计数为 0。证据为 `state_probe.py` 6,192 / `f86ea0c6...468c320`、`driver.py` 4,587 / `ba34fd1d...434488`、`summary.json` 3,127 / `0851b694...52bbc1` bytes/hash。该结果只定位到 `os.open(O_CREAT|O_EXCL|O_RDWR)`，未记录足以解释原因的脱敏 errno/winerror，也没有目录对照。随后执行的 L4-A2c5b2 保持零网络和仓库不变，尝试以当前目录、同卷全新目录、本地应用数据全新目录的固定矩阵确认错误分类和影响范围。
 
-L4-A2c5b2 已完成，唯一判定 `botzone_exclusive_open_scope_diagnosis_invalid`。qualification 成功；configured state 与 same-volume fresh 均为 `PermissionError`、errno 13、winerror null，候选不存在且目录清空。但父载体把 local-appdata 的证据子目录与目标目录设为同名，第三项在探针启动前退出；summary/manifest 均未生成。旧结果不能形成目录范围，也不能归因。证据为 probe 5,908 / `469a2f9d...bf235b`、driver 5,341 / `56773435...b4be3`，三个 audit 分别 325 / `1f61f6d5...f3aba`、434 / `04f6d2e9...305de4`、435 / `985384cf...064ee` bytes/hash；已产生流均为空。下一步 L4-A2c5b2a 必须使用新 run ID、新脚本和新目录，先验证 evidence/target 两两不同且互不包含，再独立执行完整三项矩阵；不得补齐或追认本次 invalid。
+L4-A2c5b2 已完成，唯一判定 `botzone_exclusive_open_scope_diagnosis_invalid`。qualification 成功；configured state 与 same-volume fresh 均为 `PermissionError`、errno 13、winerror null，候选不存在且目录清空。但父载体把 local-appdata 的证据子目录与目标目录设为同名，第三项在探针启动前退出；summary/manifest 均未生成。旧结果不能形成目录范围，也不能归因。证据为 probe 5,908 / `469a2f9d...bf235b`、driver 5,341 / `56773435...b4be3`，三个 audit 分别 325 / `1f61f6d5...f3aba`、434 / `04f6d2e9...305de4`、435 / `985384cf...064ee` bytes/hash；已产生流均为空。当时规划的 L4-A2c5b2a 需要新 run ID、新脚本和路径拓扑验证，但现已暂缓；不得补齐或追认本次 invalid。
+
+随后用户以仓库外本地应用数据目录手工启动前台 connector。Botzone 页面先显示已连接，证明 URL、GET 长轮询和网关链路可达；创建明确无贡的测试桌后，connector 在第一个对局请求退出，聚合 audit 为 `cycles=1`、`requests_seen=1`、`malformed_request=1`、`responses_prepared=0`、exit code 5。平台显示的“决策超时”是 connector 未返回合法响应的结果，不是 RuleBasedAI 或模型推理超时；本次 Agent 尚未被调用。
+
+用户提供的真实消息结构与官方 Bot JSON 文档共同确认：顶层是 `requests/responses` 交互信封，首条内层 `deal` 提供本家座位和 27 张实体牌，最新内层请求为 `play`；不能只提取最后一项。当前 `poll.py` 直接把顶层对象传给只接受顶层 `stage` 的 `parse_stage_request()`，因此必然触发 `malformed_request`。真实 `play.global` 还包含空的 `tribute_cards/return_cards`，标准 Bot 输出需要 `{"response": ...}` 包装。真实牌 ID 和原始请求不得进入仓库。
+
+L4-A2c5b2a 文件系统恢复矩阵暂缓，既有 invalid 结论不变。当前关键路径改为 L4-A3a：离线实现外层信封模型、完整历史重放、无贡 global 加固和 canonical response wrapper；通过后才允许规划全新的手工 smoke。
 
 ## 6. 当前风险
 
