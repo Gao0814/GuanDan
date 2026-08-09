@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0、L1、L2 与 L3-A1 已完成。L2-A1b 检查点为 `1766c91895874b963ca7f78ea2a39810183028d6`；L3-A1 新增无贡规则投影、RuleBased handler、实体 ID/claim 与 mock E2E，定向 39 项、全量 494 项通过，历史判定 `botzone_no_tribute_adapter_verified`。后续复核发现 round 计算、history round 和 table action ID 不符合公开 observation 契约，下一步 Step L3-A1a 先加固，不直接实现真实 transport。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0、L1、L2、L3-A1 与 L3-A1a 已完成。L3-A1 检查点为 `39bd881f7155a35a49f989910be7dcd8bd23e02a`；L3-A1a 已修复轮次重放、精确 observation、外部 wildcard table action、实体牌守恒和 HandlerContext 一致性，定向 45 项、全量 500 项通过，判定 `botzone_adapter_observation_hardening_verified`。下一步 Step L4-A1 只做真实 HTTP connector 与前台 runner 的离线 fake-gateway 验收，不联网。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -981,9 +981,10 @@ K-A3d3c3a 结果：
 1. Phase 0：已完成；claim、双配子、无贡 `deal→play`、首个玩家和账号入口已封板；runmatch 自动化仍为可选项；
 2. Phase 1：已完成；纯数据模型、108 牌 ID codec、无贡 profile 与 action/claim 单测通过；
 3. Phase 2：已完成；mock connector/session、事务加固、官方首个 play 和本地座位契约均通过；
-4. Phase 3：adapter 主链已完成；L3-A1a 补齐公开 observation 与实体牌守恒后封板；
-5. Phase 4：经用户明确授权、手动设置“需要进贡=否”的小规模真实 Botzone smoke；
-6. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
+4. Phase 3：已完成；adapter 主链与 L3-A1a observation/实体守恒均封板；
+5. Phase 4 准备：L4-A1 离线实现 HTTP transport、显式配置和前台 runner，仅连接 fake gateway；
+6. Phase 4 live：L4-A1 通过后，经用户明确授权、手动设置“需要进贡=否”进行小规模真实 Botzone smoke；
+7. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。
 

@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：Phase 0、L1、L2 与 L3-A1 已完成；L3-A1 历史判定 `botzone_no_tribute_adapter_verified`，定向 39 项、全量 494 项通过。额外 observation fixture 发现 round/history/table action ID 错误；下一步 L3-A1a 增加精确公开字段、wildcard table action、实体牌守恒与 context 一致性测试，不实现真实 transport、CLI 或联网。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0、L1、L2、L3-A1 与 L3-A1a 已完成；L3-A1a 判定 `botzone_adapter_observation_hardening_verified`，定向 45 项、全量 500 项通过。下一步 L4-A1 增加 HTTP transport、显式 runtime 配置和前台 runner 的纯离线 fake-gateway 测试，不连接 Botzone。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1101,11 +1101,13 @@ Phase 0 证据验收已完成：
 - `tests/test_botzone_poll.py`：已完成；批量 request、finished/aborted、计数、UTF-8、CRLF 和注入防护；
 - `tests/test_botzone_session.py`：事务、实体手牌、重连、多局、effect、history merge、本地座位和 schema v3 已完成；
 - `tests/test_botzone_connector.py`：fake transport、match context、类型化 result、四座位 context 和官方首个 play 已完成；
-- `tests/test_botzone_play_adapter.py`：座位映射、observation、table constraint、pass、自然动作和配子 action/claim；
-- `tests/test_botzone_action_provenance.py`：输出只能来自原始 legal action 对应 `action_id`；
+- `tests/test_botzone_play_adapter.py`：已完成；座位映射、observation、table constraint、pass、自然动作和配子 action/claim；
+- `tests/test_botzone_action_provenance.py`：已完成；输出只能来自原始 legal action 对应 `action_id`，矛盾 context 不创建 Agent；
 - `tests/test_botzone_rule_agent_e2e.py`：RuleBasedAI 的 deal→play 关键回合、终局和无贡 profile 边界；
-- `tests/test_botzone_adapter_observation.py`：下一步新增或并入 play adapter 测试；轮次重放、精确 key set、wildcard table action、实体守恒与 `GuanDanGame.observe()` 对照；
-- `tests/test_botzone_config.py`：不读取真实 `.env`，缺失配置安全失败，日志不包含配置值；
+- `tests/test_botzone_adapter_observation.py`：已完成；轮次重放、精确 key set、wildcard table action、实体守恒与 context 一致性；
+- `tests/test_botzone_http_transport.py`：下一步；GET/Header、timeout、重定向、响应上限、错误脱敏和 fake opener；
+- `tests/test_botzone_runtime_config.py`：下一步；只读显式环境/参数、缺失配置失败、不导入 dotenv/根 config、输出不含配置值；
+- `tests/test_botzone_runner.py`：下一步；依赖装配、退避/重置、有限 cycle、Ctrl+C、fake gateway E2E 和零真实网络；
 - `tests/test_botzone_rule_compatibility.py`：官方裁判/脱敏 Log 与当前 engine 的差分 fixture。
 
 验收边界：

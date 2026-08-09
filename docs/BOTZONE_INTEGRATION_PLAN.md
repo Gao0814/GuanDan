@@ -320,11 +320,11 @@ Phase 3 准入审计新增硬门槛：
 - pending response 必须携带 action 实体 ID effect，只在 transport 成功 acknowledge 后原子扣牌一次；
 - latest four history 必须可验证地并入累计公开事件；无法对齐时 fail-closed。
 
-L2-A1b 已通过 `botzone_phase3_official_request_contract_verified`。L3-A1 随后完成离线 RuleBased adapter，定向 39 项、全量 494 项通过，历史判定 `botzone_no_tribute_adapter_verified`。精确 observation 审计发现 round/history/table action ID 与实体守恒仍未封板，因此真实 transport 准入重新打开；先执行 L3-A1a。
+L2-A1b 已通过 `botzone_phase3_official_request_contract_verified`。L3-A1 随后完成离线 RuleBased adapter，检查点为 `39bd881f7155a35a49f989910be7dcd8bd23e02a`。L3-A1a 已封板精确 observation 与实体守恒，定向 45 项、全量 500 项通过，判定 `botzone_adapter_observation_hardening_verified`。下一步进入 L4-A1 离线 HTTP connector/runner，不直接 live。
 
 ### Phase 3：连接 RuleBasedAI 的端到端回合测试
 
-状态：L3-A1 主链已完成；下一步 Step L3-A1a 加固公开 observation 和实体牌守恒，之后才允许设计真实 transport。
+状态：L3-A1 主链与 L3-A1a 加固均已完成；公开 observation、外部 wildcard table action、实体守恒和 context 一致性已封板。
 
 工作：实现 `profile.py/play_adapter.py` 和可注入现有 mock connector 的 RuleBased handler，完成无贡 profile 的 `deal + play` 链路；不提供 CLI/module runner，不联网、不实现贡还路径。
 
@@ -339,9 +339,39 @@ L2-A1b 已通过 `botzone_phase3_official_request_contract_verified`。L3-A1 随
 - 任一 `tribute/return` 输入都不调用 Agent、不生成动作，并稳定返回 `unsupported_stage`；
 - 通过后只能标记 `botzone_no_tribute_adapter_verified`，不得标记完整 Botzone GuanDan 支持。
 
+L3-A1a 验收补充：
+
+- current/history round 来自同一次累计公开历史重放；同轮连续跟牌不新开 round；
+- table action 使用 `action_id=None`，history 只含公开六字段，本家手牌稳定排序；
+- 外部自然牌及一/双配子动作重建 canonical declared cards、wildcard info 与稳定 display；
+- 实体 action ID 全局唯一，本家 27 张与公开出牌守恒，done/未完成容量边界 fail-closed；
+- global/window/history/local/finished 矛盾在 Agent 创建前拒绝；
+- 判定 `botzone_adapter_observation_hardening_verified` 不代表存在可用 live connector。
+
+### Phase 4 准备：离线 HTTP connector 与 runner
+
+状态：下一步 Step L4-A1；尚未实现。
+
+工作：
+
+- 使用标准库实现可注入 opener 的 HTTPS GET transport；
+- 仅从显式启动参数或进程环境读取敏感 URL 与 state dir，不加载 `.env`；
+- 组合现有 session、connector 与 `NoTributeRuleBasedHandler`，提供前台 module runner；
+- 在 fake gateway 下验证批量 Header、pending resend/ack、重启、退避和退出；
+- 默认 Agent 保持 RuleBasedAI，不自动建桌、不使用 runmatch、不联网。
+
+验收：
+
+- URL、Header、match ID、请求/响应正文和手牌不进入日志、异常、snapshot 或测试 fixture；
+- 只允许 HTTPS，拒绝重定向、Header 注入、无限响应和无限等待；
+- 单次 transport 不重试，runner 采用有上限退避，成功后重置；
+- fake gateway 的 `deal → play → failure → restart → resend → ack` 保持 response/effect 幂等；
+- 配置错误、transport 错误、Ctrl+C 和 unsupported stage 有稳定退出行为；
+- 全程无 socket/真实网络；通过后唯一判定 `botzone_local_connector_offline_verified`。
+
 ### Phase 4：真实 Botzone 小规模 smoke test
 
-前置：用户明确授权联网；Phase 0-3 全部通过；账号权限已确认；URL/密钥只存在进程环境或显式参数中。
+前置：L4-A1 离线 connector 验收通过；用户明确授权联网；账号权限已确认；URL/密钥只存在进程环境或显式参数中。
 
 工作：
 
@@ -378,9 +408,12 @@ L2-A1b 已通过 `botzone_phase3_official_request_contract_verified`。L3-A1 随
 | `tests/test_botzone_session.py` | request 去重、手牌 ID inventory、history 累积、多局隔离、snapshot/restart、无状态中途恢复失败 |
 | `tests/test_botzone_play_adapter.py` | 0/1-based 座位、公开 observation、table constraint、pass、自然牌、配子 carrier/claim |
 | `tests/test_botzone_action_provenance.py` | 所有输出来自原始 legal action ID；非法/过期/其他会话 action ID 拒绝 |
+| `tests/test_botzone_adapter_observation.py` | 轮次重放、精确公开 key、外部 wildcard table action、实体守恒与 context 一致性 |
 | `tests/test_botzone_connector.py` | mock GET、阻塞/超时/断线、pending 重发、批量 Header、敏感信息脱敏 |
 | `tests/test_botzone_rule_agent_e2e.py` | RuleBasedAI 的 deal→关键 play 回合、终局和无贡 profile 边界 |
-| `tests/test_botzone_config.py` | 只读显式环境/参数、缺失配置失败、未导入 dotenv、日志不含配置值 |
+| `tests/test_botzone_http_transport.py` | GET/Header、timeout、重定向、响应上限、错误脱敏与 fake opener |
+| `tests/test_botzone_runtime_config.py` | 只读显式环境/参数、缺失配置失败、未导入 dotenv/根 config、输出不含配置值 |
+| `tests/test_botzone_runner.py` | 依赖装配、退避/重置、有限 cycle、Ctrl+C、fake gateway E2E 与零真实网络 |
 | `tests/test_botzone_rule_compatibility.py` | 官方裁判/Log 脱敏 fixture 与当前 engine 的牌型、比较、配子、接风差异 |
 
 测试 fixture 建议放在 `tests/fixtures/botzone/`，只保留官方文档样例和人工脱敏结构。不得提交真实 URL、密钥、match ID、完整真实手牌或对局 Log。
@@ -407,7 +440,7 @@ L2-A1b 已通过 `botzone_phase3_official_request_contract_verified`。L3-A1 随
 
 ## 10. play 子集的前置状态
 
-Phase 0、L1、L2 与 L3-A1 主链均已完成，当前只允许加固离线 adapter 的公开 observation 和实体牌守恒。仍不得实现真实 HTTP transport、CLI/module runner 或启动 live connector。
+Phase 0、L1、L2、L3-A1 与 L3-A1a 均已完成。当前允许实现真实 HTTP transport 与 module runner 的代码，但只允许通过 fake opener/gateway 做离线验收；仍不得启动 live connector。
 
 理由：
 
@@ -415,6 +448,7 @@ Phase 0、L1、L2 与 L3-A1 主链均已完成，当前只允许加固离线 ada
 - 当前只把 engine 已支持的单配子动作视为合法子集，双配子仍是明确能力缺口；
 - 贡还属于当前 engine 明确 unsupported 的能力，即使未来无贡 profile 通过，也必须对 `tribute/return` fail-closed；
 - 无贡 profile 只有取得该配置的官方证据后才是支持契约，不能由随机对局恰好未发生贡还来替代。
+- HTTP URL 路径包含连接密钥，L4-A1 必须先证明异常、日志和持久化不泄露它，才允许申请 live 授权。
 
 因此里程碑命名必须区分：
 
@@ -438,4 +472,4 @@ Phase 0、L1、L2 与 L3-A1 主链均已完成，当前只允许加固离线 ada
 
 ## 12. 推荐下一动作
 
-执行 Step L3-A1a：先为当前 L3-A1 六个改动文件创建独立检查点，再修复轮次重放、精确 observation、外部 wildcard table action、实体牌守恒和 HandlerContext 一致性。不得修改 engine/agents，不得实现真实 HTTP transport、CLI/module runner，不得读取本地 AI URL/密钥或联网；通过后仍不能启动 live connector。
+执行 Step L4-A1：先为 L3-A1a 四个改动文件创建独立检查点，再实现标准库 HTTPS GET transport、显式 runtime 配置与前台 module runner，并用 fake opener/gateway 完成离线验收。不得读取真实本地 AI URL/密钥或 `.env`，不得联网、自动建桌、使用 runmatch 或接入 DeepSeek；通过后仍需新的明确授权才能启动 live smoke。
