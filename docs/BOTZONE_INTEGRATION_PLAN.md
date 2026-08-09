@@ -477,7 +477,7 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A3a 均已完成并封存；既有 invalid/inconclusive 结论全部保留。L4-A3b 唯一 preflight 的业务条件均通过，但 stdout 固定文本未获合格验证，因此整体 invalid。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A3b1 合成 stdout 契约审计；不得重跑真实 preflight 或启动 live connector。L4-A2c5b2a 暂缓。
+Phase 0 至 L4-A3a 均已完成并封存；既有 invalid/inconclusive 结论全部保留。L4-A3b1 已用直接 main 与两次 binary PIPE module capture 独立锁定 `preflight_ready` 的单行输出、空 stderr、零 transport 与临时 state 清理。该恢复结论不追认 L4-A3b invalid；只有用户另行授权，才可规划全新测试桌的 L4-A3c smoke。L4-A2c5b2a 暂缓。
 
 理由：
 
@@ -512,4 +512,4 @@ Phase 0 至 L4-A3a 均已完成并封存；既有 invalid/inconclusive 结论全
 
 ## 12. 推荐下一动作
 
-执行 L4-A3b1：不读取真实 Botzone 环境，使用显式合成 URL、临时 state、直接 main 捕获和两次 binary PIPE module 子进程，严格验证 `preflight_ready` 的 LF/CRLF 单行输出、零 stderr、零 transport 与空目录。该任务不重跑 L4-A3b；通过后才能以独立恢复结论请求固定预算 L4-A3c 授权。
+L4-A3b1 已完成离线 stdout 契约恢复审计。下一步仅在用户明确授权后执行 L4-A3c：使用全新手动无贡测试桌、全新 LocalAppData state/audit、前台 RuleBasedAI，最多 100 次 GET、timeout 120 秒、最长 900 秒、完成 1 局即停且不重试。
