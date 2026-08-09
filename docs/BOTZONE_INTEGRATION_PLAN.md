@@ -263,7 +263,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ### Phase 0：官方协议核实与差异清单
 
-状态：已完成。官方裁判源码、官方 Wiki 与目标账号脱敏配置页证据已封板，唯一判定为 `botzone_manual_no_tribute_phase0_verified`。下一步 Step L1-A1 只实现离线协议模型、108 ID codec 和测试；runmatch 自动建桌仍是可选后续能力。
+状态：已完成。官方裁判源码、官方 Wiki 与目标账号脱敏配置页证据已封板，唯一判定为 `botzone_manual_no_tribute_phase0_verified`。后续 Step L1-A1 已完成；当前进入 L2-A1 mock connector/session，runmatch 自动建桌仍是可选后续能力。
 
 工作：
 
@@ -282,23 +282,27 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 - 确认账号权限和手动桌选择方式；runmatch 前置可保持独立 unknown；
 - 未读取或持久化任何真实密钥。
 
-以上条件已满足；只允许进入 L1-A1，不得跳过 Phase 1/2 直接真实连接。
+以上条件已满足，L1-A1 已完成；当前只允许进入 L2-A1 mock connector/session，不得跳过 Phase 2/3 直接真实连接。
 
 ### Phase 1：纯协议模型与卡牌映射
 
-工作：实现 `models.py/cards.py/protocol.py`，加入官方脱敏 fixture；不联网、不调用 Agent。
+状态：已完成，唯一判定 `botzone_no_tribute_protocol_verified`。定向 14 项、全量 460 项通过；实现文件尚未形成 Git 检查点。
+
+工作：已实现 `models.py/cards.py/protocol.py` 和三份离线测试；不联网、不调用 Agent。
 
 验收：
 
 - 108 个 ID 全量双向映射；两副同牌 round-trip 后仍保留原 ID；
 - `deal/play` request/response 严格编解码；`tribute/return` 至少严格解析 stage 标识并以 unsupported 结果拒绝；
-- poll 的多 request、多 finished、异常终止和 CRLF/LF 均有测试；
-- Header 名和值拒绝换行注入；未知 stage/字段/type 整体失败；
+- deal/play/pass、claim、多配子、无贡 opening 和 unsupported stage 已有测试；
+- poll 的多 request、finished、CRLF/LF 与 Header 注入明确转入 Phase 2；
 - 不读取配置、环境变量或 `.env`。
 
 ### Phase 2：连接器骨架与 mock Botzone
 
-工作：实现可注入 transport、session store、pending response 事务和独立 module 启动入口；只连 mock transport。
+状态：下一步 Step L2-A1。开始前先为 L1-A1 创建独立检查点。
+
+工作：实现 poll 文本模型、可注入 fake transport、session store 和 pending response 事务；只连 mock transport。本阶段不提供真实 HTTP transport或 live module 启动入口。
 
 验收：
 
@@ -307,6 +311,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 - 重复 request 幂等；多会话手牌/历史完全隔离；
 - 进程重启后从临时 state dir 恢复；无状态中途 request fail-closed；
 - 日志和异常不含 URL、密钥或完整 Header。
+- 通过后唯一判定 `botzone_mock_connector_verified`；仍不得声称 connector 可连接真实 Botzone。
 
 ### Phase 3：连接 RuleBasedAI 的端到端回合测试
 
@@ -391,7 +396,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ## 10. play 子集的前置状态
 
-当前已允许 Step L1-A1 实现纯协议模型、108 ID codec 和离线 fixture；仍不得实现或启动 connector，也不得实现 `deal + play` Agent adapter。
+Step L1-A1 的纯协议模型、108 ID codec 和离线 fixture 已完成。当前只允许实现 mock connector/session；仍不得实现真实 HTTP transport或启动 live connector，也不得实现 `deal + play` Agent adapter。
 
 理由：
 
@@ -422,4 +427,4 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ## 12. 推荐下一动作
 
-执行 Step L1-A1：新增离线协议模型、108 ID codec 和对应单元测试，锁定 deal/play/pass、无贡 profile、claim 多重集与 unsupported stage。不得实现或启动 connector，不得读取本地 AI URL/密钥，不得联网或调用 Agent。L1-A1 通过后才规划 Phase 2 mock connector/session。
+执行 Step L2-A1：先为当前未跟踪的 L1-A1 文件创建独立检查点，再新增 poll 文本模型、按 match 隔离的 durable session、pending response 事务和 fake transport connector 测试。不得实现真实 HTTP transport，不得读取本地 AI URL/密钥，不得联网或调用 Agent；通过后仍不能启动 live connector。

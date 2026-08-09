@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：Phase 0 已完成，唯一判定为 `botzone_manual_no_tribute_phase0_verified`；尚未新增测试或实现。下一步 L1-A1 可以创建纯离线 protocol/codec 测试，但不得实现 connector、联网或调用 Agent。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 与 L1-A1 已完成，唯一判定分别为 `botzone_manual_no_tribute_phase0_verified` 和 `botzone_no_tribute_protocol_verified`。L1-A1 定向 14 项、全量 460 项通过。下一步 L2-A1 增加 poll/session/mock connector 测试，不实现真实 transport、联网或 Agent。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1095,9 +1095,9 @@ Phase 0 证据验收已完成：
 
 最低测试集合：
 
-- `tests/test_botzone_cards.py`：108 个牌 ID、花色/点数/王边界、两副副本 identity；
-- `tests/test_botzone_protocol.py`：本地 AI poll、多个 match、finished/aborted、deal/play 编解码、tribute/return stage 识别和 Header 注入；
-- `tests/test_botzone_profile.py`：无贡 profile、deal/play 允许、tribute/return 明确 unsupported、未知 stage 拒绝；
+- `tests/test_botzone_cards.py`：已完成；108 个牌 ID、花色/点数/王边界、两副副本 identity；
+- `tests/test_botzone_protocol.py`：已完成 deal/play/pass、claim 与 unsupported stage；poll、多个 match、finished/aborted 和 Header 注入转入 L2；
+- `tests/test_botzone_profile.py`：已完成；无贡 opening、tribute/return unsupported 与边界扫描；
 - `tests/test_botzone_session.py`：事件去重、实体手牌、重连恢复、多局隔离和中途无状态 fail-closed；
 - `tests/test_botzone_play_adapter.py`：座位映射、observation、table constraint、pass、自然动作和配子 action/claim；
 - `tests/test_botzone_action_provenance.py`：输出只能来自原始 legal action 对应 `action_id`；

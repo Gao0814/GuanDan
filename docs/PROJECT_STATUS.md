@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：K-A3d3c3a 已封板；Botzone Phase 0 唯一判定为 `botzone_manual_no_tribute_phase0_verified`，下一步为 Step L1-A1 离线协议模型与 108 ID codec
+- 当前工作状态：Botzone L1-A1 唯一判定为 `botzone_no_tribute_protocol_verified`；下一步为 Step L2-A1 mock connector 与会话持久化
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：K-A3d2 定向 7 项、相关 80 项、全量 446 项通过
+- 实际验证结果：Botzone L1-A1 定向 14 项、全量 460 项通过；`git diff --check` 与边界扫描通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | Phase 0 verified | transport、108 ID、claim、双配子、无贡阶段流/先手和账号入口已封板 | 尚无 connector；下一步仅离线 protocol/codec，不得联网 |
+| Botzone 接入 | L1-A1 verified | 108 ID、不可变协议模型、严格 parser、claim 与无贡 opening fixture 已通过 | L1 文件尚未提交；无 connector/session/Agent/live 启动命令 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1204,7 +1204,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 已完成，尚未修改代码。用户确认附件来自 GuanDan 官方详情页“裁判代码”；源码副本为 31,136 bytes，SHA-256 `20d06056689341e1745837564dfae325bd56e54c7b0337bc11c6e8c856bc6b46`。结合官方 Wiki 与脱敏账号配置页，唯一判定为 `botzone_manual_no_tribute_phase0_verified`。下一步 Step L1-A1 只做离线 protocol/codec。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 与 L1-A1 已完成。L1-A1 新增 `cards.py/models.py/protocol.py` 及三份测试，唯一判定 `botzone_no_tribute_protocol_verified`。定向 14 项、全量 460 项通过，未联网或读取敏感配置。当前这些实现文件仍是未跟踪状态，下一步开始前必须先创建独立 L1 检查点。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1226,6 +1226,17 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 - 目标账号可见本地 AI 配置入口；真实 smoke 前必须轮换截图中已暴露的密钥/URL。
 
 推荐实施顺序：L1-A1 codec/protocol → Phase 2 mock connector/session → Phase 3 RuleBasedAI 的 deal + play → Phase 4 用户授权且手动设为无贡的真实 smoke → 可选 runmatch 自动化 → Phase 5 可选 DeepSeek。贡还不在当前范围；收到相关 stage 必须失败，不得绕过。
+
+L1-A1 实现结果：
+
+- 108 实体 ID 全量 round-trip，保留两副副本身份；
+- frozen/slots 的 deal、play、history、action/claim 与 unsupported 模型；
+- 严格拒绝 bool、非法 ID、重复实体 action、错误长度、未知手牌和 malformed history；
+- `tribute/return/unknown` 返回不可执行 `unsupported_stage`；
+- 无贡 fixture 锁定四家完整 deal 后由 Botzone 玩家 0 首个 play；
+- 当前没有 poll parser、session store、pending response 事务、transport 或 runner，因此仍不能启动本机 connector。
+
+下一步 Step L2-A1 只实现 fake transport 下的 poll/session/connector 骨架；不得读取真实 URL、联网或调用 Agent。
 
 ## 6. 当前风险
 
