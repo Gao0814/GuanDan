@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A2a 判定 `botzone_live_smoke_authorization_ready`，用户已授权；下一步为 Step L4-A2b 唯一一次真实无贡 smoke
+- 当前工作状态：Botzone L4-A2b 首次调用因提示词精确 HEAD 门槛误判而停止；未启动 connector、授权未消耗，下一步按祖先加 docs-only 门槛重试唯一一次真实无贡 smoke
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：L4-A2a 工作区/检查点/环境/state dir/preflight 全部通过，preflight 网络请求数为 0；live 尚未启动
+- 实际验证结果：L4-A2a 工作区/检查点/环境/state dir/preflight 全部通过，preflight 网络请求数为 0；`029b8d...` 是当前 HEAD 祖先且之后只有五份规划文档变化，live 尚未启动
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -1204,7 +1204,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 至 L4-A2a 已完成。L4-A1a 已封存为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`，定向 46 项、全量 515 项通过。L4-A2a 已得到 `botzone_live_smoke_authorization_ready`，用户已明确授权固定预算的 L4-A2b；当前尚未启动 connector。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A2a 已完成。L4-A1a 已封存为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`，定向 46 项、全量 515 项通过。L4-A2a 已得到 `botzone_live_smoke_authorization_ready`，用户已明确授权固定预算的 L4-A2b。首次调用因提示词把实现检查点误写成精确 HEAD 门槛而在启动前停止；connector 尚未启动，授权未消耗。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1259,6 +1259,8 @@ L4-A1 已完成标准库 HTTPS GET transport、显式 runtime 配置、前台 ru
 L4-A1a 已关闭 live 准入缺口：runner 聚合 cycle/request/response/header/finished/diagnostics，并按 interrupt、protocol、finished、failure、wall/cycle 固定优先级停止；finished 原子替换为不含 match/手牌/history/response/digest 的最小 tombstone；response 全路径关闭，Header 为严格 ASCII token；退出码、最小 audit 和零网络 `--preflight-only` 已锁定。
 
 L4-A2a 已完成：工作区干净，两个 Botzone 环境变量 present，state dir 与用户确认路径一致且为空；唯一 preflight-only 返回 `preflight_ready`，之后目录仍为空、网络请求为 0。用户随后明确授权 L4-A2b：RuleBasedAI、手动无贡一局、最多 100 次 GET、最长 600 秒、timeout 30 秒、连续失败 5、finished 1 局即停。下一任务按 `docs/NEXT_PROMPT.md` 启动唯一进程，失败不得重跑。
+
+L4-A2b 首次调用返回 `precondition_failed: checkpoint_head_mismatch`。只读复核确认 `029b8d...` 仍是当前 HEAD 的祖先，之后仅有 `docs/BOTZONE_INTEGRATION_PLAN.md`、`docs/NEXT_PROMPT.md`、`docs/PLAN.md`、`docs/PROJECT_STATUS.md`、`docs/TESTS.md` 五份规划文档变化。该失败发生在进程启动前，没有 GET、audit、state 或网络活动，因此不计为 live run，既有一次性授权保持有效。后续门槛改为“实现检查点为祖先且差异严格限于上述 docs allowlist”；发现任何代码、测试、配置或其他路径变化时仍须 `precondition_failed`。
 
 ## 6. 当前风险
 

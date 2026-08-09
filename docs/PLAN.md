@@ -982,8 +982,8 @@ K-A3d3c3a 结果：
 2. Phase 1：已完成；纯数据模型、108 牌 ID codec、无贡 profile 与 action/claim 单测通过；
 3. Phase 2：已完成；mock connector/session、事务加固、官方首个 play 和本地座位契约均通过；
 4. Phase 3：已完成；adapter 主链与 L3-A1a observation/实体守恒均封板；
-5. Phase 4 准备：L4-A1/L4-A1a/L4-A2a 已完成；凭据已轮换、preflight ready、固定预算授权已取得；
-6. Phase 4 live：下一步 L4-A2b 启动唯一进程，由用户手动设置“需要进贡=否”进行一局有界真实 Botzone smoke；
+5. Phase 4 准备：L4-A1/L4-A1a/L4-A2a 已完成；凭据已轮换、preflight ready、固定预算授权已取得；首次 L4-A2b 调用仅因提示词精确 HEAD 门槛误判而停止，未启动进程或消耗授权；
+6. Phase 4 live：下一步按“`029b8d...` 为祖先且之后仅五份规划 docs 变化”的修正门槛启动唯一进程，由用户手动设置“需要进贡=否”进行一局有界真实 Botzone smoke；
 7. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。

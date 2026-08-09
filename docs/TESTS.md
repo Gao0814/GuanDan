@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：Phase 0 至 L4-A2a 已完成。L4-A1a 定向 46 项、全量 515 项通过；L4-A2a 零网络 preflight 返回 ready，state dir 保持为空，用户已授权 L4-A2b。下一步只执行唯一一次真实无贡手动桌 smoke，不重复回归或 preflight。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A2a 已完成。L4-A1a 定向 46 项、全量 515 项通过；L4-A2a 零网络 preflight 返回 ready，state dir 保持为空，用户已授权 L4-A2b。首次调用因提示词错误要求精确 HEAD 而在启动前返回 `checkpoint_head_mismatch`；未创建 connector 或 GET，授权未消耗。下一步按实现检查点祖先加五份规划 docs allowlist 的门槛执行唯一真实无贡手动桌 smoke，不重复回归或 preflight。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 

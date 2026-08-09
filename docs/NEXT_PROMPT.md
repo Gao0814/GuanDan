@@ -6,7 +6,7 @@
 
 ### 已完成前置
 
-- HEAD：`029b8d6034e55c70b83d2b1c8d4b052626895bd2`；
+- L4-A1a 实现检查点：`029b8d6034e55c70b83d2b1c8d4b052626895bd2`；该检查点必须是执行时 HEAD 的祖先，不要求 HEAD 与其精确相等；
 - L4-A1：`e4a4fba99211831c66062ac0f003094edc941c6a`；
 - L4-A1a 判定：`botzone_live_smoke_preflight_ready`；
 - L4-A2a 判定：`botzone_live_smoke_authorization_ready`；
@@ -16,6 +16,7 @@
 - `BOTZONE_LOCAL_AI_URL` 与 `BOTZONE_STATE_DIR` 在当前进程中均 present；
 - state dir 与用户确认路径一致、存在且为空；
 - 唯一一次 `--preflight-only` 返回 `preflight_ready`，之后 state dir 仍为空、仓库仍干净、网络请求数为 0。
+- 首次 L4-A2b 调用因旧提示词错误要求 HEAD 精确等于实现检查点而返回 `precondition_failed: checkpoint_head_mismatch`；该次未创建进程、未发送 GET、未创建 audit/state 证据，授权未消耗。
 
 授权原文：
 
@@ -47,13 +48,17 @@
 
 只做以下快速检查，不重复运行完整回归或 preflight：
 
-1. HEAD 仍为上述值，工作区干净；
-2. 两项环境变量仍为 present，只输出 present/missing；
-3. state dir 仍为空；
-4. 没有已有 `python -m integrations.botzone` 进程；
-5. 为本次运行创建仓库外新 audit 目录，初始为空。
+1. `029b8d6034e55c70b83d2b1c8d4b052626895bd2` 是当前 HEAD 的祖先；
+2. 从该实现检查点到当前 HEAD 的全部变更路径只能属于以下五个文档：`docs/BOTZONE_INTEGRATION_PLAN.md`、`docs/NEXT_PROMPT.md`、`docs/PLAN.md`、`docs/PROJECT_STATUS.md`、`docs/TESTS.md`；不得存在代码、测试、配置或其他文件变化；
+3. 工作区干净；
+4. 两项环境变量仍为 present，只输出 present/missing；
+5. state dir 仍为空；
+6. 没有已有 `python -m integrations.botzone` 进程；
+7. 为本次运行创建仓库外新 audit 目录，初始为空。
 
 任一失败：不启动 connector，判定 `precondition_failed`。不得修复配置、删除未知状态、复用旧 audit 或消耗授权。
+
+上述祖先与 docs-only 检查用于允许授权和计划文档在实现检查点之后提交，同时严格禁止实现漂移。先前的 `checkpoint_head_mismatch` 属于提示词前置误判；按本修订重试不算第二次 live run。只有唯一 connector 进程实际启动后，授权才视为消耗。
 
 ### 唯一进程启动
 

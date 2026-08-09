@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A1、L4-A1a 与 L4-A2a 已完成。L4-A1 检查点为 `e4a4fba99211831c66062ac0f003094edc941c6a`，L4-A1a 检查点为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`；定向 46 项、全量 515 项和零网络 preflight 均通过。下一步执行已授权的 L4-A2b 唯一 live run。
+状态：L4-A1、L4-A1a 与 L4-A2a 已完成。L4-A1 检查点为 `e4a4fba99211831c66062ac0f003094edc941c6a`，L4-A1a 实现检查点为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`；定向 46 项、全量 515 项和零网络 preflight 均通过。L4-A2b 首次调用因提示词精确 HEAD 门槛误判而在启动前停止，授权未消耗；下一步按修正门槛执行唯一 live run。
 
 工作：
 
@@ -396,9 +396,16 @@ L4-A2a 只读前置审计已完成：
 - 不启动 connector、不发送 probe、不创建对局；
 - 判定 `botzone_live_smoke_authorization_ready`；用户已明确授权固定预算的一次 L4-A2b live run。
 
+L4-A2b 启动门槛修正：
+
+- 实现基线固定为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`，要求它是执行时 HEAD 的祖先，不要求精确 HEAD 相等；
+- 实现检查点之后只允许五份规划文档变化：`docs/BOTZONE_INTEGRATION_PLAN.md`、`docs/NEXT_PROMPT.md`、`docs/PLAN.md`、`docs/PROJECT_STATUS.md`、`docs/TESTS.md`；
+- 发现代码、测试、配置或其他路径变化时 fail-closed；
+- 先前 `checkpoint_head_mismatch` 未启动 connector、未发送 GET，属于前置误判，不消耗授权或 live run 次数。
+
 ### Phase 4：真实 Botzone 小规模 smoke test
 
-前置：L4-A2a 判定 `botzone_live_smoke_authorization_ready`，固定预算联网授权已取得；账号权限已确认；URL/密钥只存在进程环境中。当前尚未启动 connector。
+前置：L4-A2a 判定 `botzone_live_smoke_authorization_ready`，固定预算联网授权已取得；账号权限已确认；URL/密钥只存在进程环境中。精确 HEAD 误判未启动 connector，当前仍尚未执行唯一 live run。
 
 工作：
 
