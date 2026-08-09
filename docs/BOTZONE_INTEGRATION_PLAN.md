@@ -1,6 +1,6 @@
 # Botzone 本地 AI 接入计划
 
-更新时间：2026-08-05
+更新时间：2026-08-09
 
 ## 1. 任务目标与可行性结论
 
@@ -8,13 +8,14 @@
 
 目标是在不改变现有 AI 边界的前提下，让本机连接器通过 Botzone 本地 AI 接口参与 GuanDan 测试对局，用真实平台对手验证 RuleBasedAI 或其他本地策略的合法性、稳定性和实际对抗表现。
 
-当前结论：**按“Botzone GuanDan 无贡模式”限定范围后有条件可行；本项目不实现贡牌、还牌、抗贡或双贡，也不宣称支持 Botzone GuanDan 的全部配置。**
+当前结论：**按“Botzone GuanDan 手动建桌无贡模式”限定范围后有条件可行；本项目不实现贡牌、还牌、抗贡或双贡，也不宣称支持 Botzone GuanDan 的全部配置。**
 
 - 本地 AI 传输层可行性高：官方协议是由本机发起的重复长轮询 GET，不需要公开本机端口，也不是上传源码或 WebSocket。
 - play 阶段适配可行：当前 `BaseRuleEngine.generate_legal_actions()` 实际只依赖当前玩家手牌、级牌和桌面领出动作，可由 Botzone 公开请求构造单玩家规则投影。
 - 用户提供的建桌设置截图确认“需要进贡”可选择“否”，且默认测试对局采用该配置；因此首期真实 smoke 的支持范围可以收敛为 `deal + play`。
 - 当前 engine 没有贡还能力不再阻塞无贡模式接入；但 adapter 必须识别 `tribute / return` 并以 `unsupported_stage` fail-closed，不能返回空响应、pass 或任意牌绕过。
-- 规则一致性尚未完全证明：Botzone `claim` 的精确牌 ID 表示、单手配子数量上限仍需从官方裁判源码或脱敏真实 Log 封板。
+- 规则一致性尚未完全证明：Botzone `claim` 的精确牌 ID 表示、单手配子数量上限仍需从官方裁判源码或官方样例封板。
+- 首期使用网页手动建桌并明确选择“需要进贡=否”；`runmatch X-Initdata` 只属于后续自动化能力，其未知状态不再阻塞 Phase 1–3 或手动 smoke。
 - RuleBasedAI 可作为第一阶段默认 AI，但它只保证从合法动作中稳定选择，不代表已有强对抗能力。真实 smoke 只能证明接入正确；实力判断需要座位平衡和固定对手的小批量统计。
 
 本任务不得改变以下边界：
@@ -197,14 +198,14 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ### Phase 0：官方协议核实与差异清单
 
-状态：已完成基础调研，仍有阻塞项待封板。
+状态：已完成基础调研；下一步 Step L0-A1 封板手动建桌无贡路径的 claim、配子数量、阶段流和账号权限。runmatch initdata 单独作为可选自动化未知项。
 
 工作：
 
 - 保存官方页面固定版本、核对本地 AI poll/Header/runmatch 协议；
 - 从官方 GuanDan 裁判源码或脱敏真实调试 Log 确认 claim、配子数量和无贡模式的 request 顺序；
 - 把“需要进贡=否”定义为唯一支持的 Botzone profile，并确认手动建桌可以稳定选择该配置；
-- 核实 `runmatch` 的 `X-Initdata` 如何无歧义表达“需要进贡=否”；未确认前不使用 runmatch 创建正式 smoke 对局；
+- 核实 `runmatch` 的 `X-Initdata` 如何无歧义表达“需要进贡=否”；未确认前不使用 runmatch，但不阻塞手动建桌路径；
 - 在登录后的账号设置页确认当前部署的本地 AI 等级门槛；
 - 建立不含真实 URL、密钥、match ID 或手牌的协议差异表和脱敏 fixture 清单。
 
@@ -213,7 +214,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 - 所有字段标为 confirmed/unsupported/unknown，不以第三方实现补官方空白；
 - `deal/play` 的字段与顺序有官方依据；`tribute/return` 能被精确识别并返回统一 unsupported 诊断；
 - claim 编码可无歧义映射当前 canonical action；
-- 确认账号权限、手动桌选择方式和 runmatch 前置条件；
+- 确认账号权限和手动桌选择方式；runmatch 前置可保持独立 unknown；
 - 未读取或持久化任何真实密钥。
 
 未满足以上条件时，唯一状态为 `botzone_protocol_research_blocked`，不得进入真实连接。
@@ -309,7 +310,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 1. **claim 编码仍不充分。** 当前 canonical `declared_cards` 的同点数组合通常没有声明花色，而 Botzone claim 使用牌 ID；必须确认 judge 对 claim 中花色/副本的要求。
 2. **配子数量规则未封板。** 当前 engine 每手最多一个配子，官方 Wiki 没有明确同一手的数量上限。
-3. **无贡 runmatch initdata 未封板。** 手动建桌 UI 已确认可选择“需要进贡=否”，但 `X-Initdata` 的对应 JSON/文本形式不能靠截图猜测。
+3. **无贡 runmatch initdata 未封板。** 手动建桌 UI 已确认可选择“需要进贡=否”，但 `X-Initdata` 的对应 JSON/文本形式不能靠截图猜测。该项只阻塞自动建桌，不阻塞手动建桌的首期接入。
 4. **账号等级门槛信息冲突。** 官方不同当前页面/缓存出现“1级以上”和“6级以上”两种文本；必须以目标账号登录后的设置页为准。
 
 ### P1 风险
@@ -356,4 +357,4 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ## 12. 推荐下一动作
 
-在写 Phase 1 代码前，先完成 Phase 0 的剩余阻塞项收口：从 Botzone 官方 GuanDan 游戏详情取得裁判源码，或导出一份包含 deal 与配子 play 的脱敏调试 Log，以确认 claim 和配子上限；同时在目标账号中确认本地 AI 权限等级。手动 smoke 明确选择“需要进贡=否”。在官方资料确认无贡 `X-Initdata` 形式前，不使用 runmatch 创建对局，但可以先实现卡牌 ID codec、poll parser 和无贡 profile。
+在写 Phase 1 代码前，先完成 Step L0-A1：从 Botzone 官方 GuanDan 游戏详情取得裁判源码或官方样例，确认 claim、配子上限、无贡阶段流和先手字段；同时在目标账号中确认本地 AI 权限等级。手动 smoke 明确选择“需要进贡=否”。在官方资料确认无贡 `X-Initdata` 形式前，不使用 runmatch 创建对局，但该未知项不阻塞手动桌所需的卡牌 ID codec、poll parser 和无贡 profile。

@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：K-A3d3c2 完成 48 请求但 completion/manifest 链断裂并判定 invalid；下一步为 K-A3d3c3a 独立只读恢复审计
+- 当前工作状态：K-A3d3c3a 只读恢复完整但未达到 changed 门槛，strategy-intent 分支封板；下一步为 Step L0-A1 Botzone 手动无贡协议收口
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：K-A3d2 定向 7 项、相关 80 项、全量 446 项通过
 - 当前规则范围：单局掼蛋核心规则
@@ -1200,9 +1200,11 @@ K-A3d3c2 前置通过并取得一次性新授权后，唯一 live run 完成 48/
 
 下一步 K-A3d3c3a 只允许在新目录运行双份独立只读 verifier，复核原文件 hash、48 条 ledger、report 守恒、状态链和已确认路径缺陷。不得修改原证据或补写 completion/manifest，不得联网。只有恢复完整性全部通过后，才能按原预注册门槛形成新的只读恢复描述性结论；K-A3d3c2 原 invalid 永久保留。
 
+K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，独立 verifier 双运行逐字节一致，48 个请求、24 pair、三策略四阶段及 provider/branch/W-D-L/quality 守恒全部通过，第 244–245 行路径错误得到确认。重新计算 changed=`7`、on/off better=`2/1`、team wins=`8/6`；按预注册顺序首先触发 changed<8，因此唯一新判定 `no_observed_strategy_intent_action_quality_gain`。这不追认 K-A3d3c2，不构成因果或胜率结论，也不授权默认启用。strategy-intent prompt 保持默认关闭，K-A3d3 分支封板。
+
 ### Step L：Botzone 本地 AI 接入
 
-状态：调研与架构计划已建立，尚未修改代码。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：调研与架构计划已建立，尚未修改代码。支持范围收敛为手动建桌、明确无贡；下一步 Step L0-A1 继续查官方裁判与账号权限。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1219,11 +1221,11 @@ K-A3d3c2 前置通过并取得一次性新授权后，唯一 live run 完成 48/
 
 - 官方 claim 对花色/副本 ID 的精确要求；
 - 单手配子数量上限是否与当前 engine 的 1 张一致；
-- runmatch `X-Initdata` 中“需要进贡=否”的精确表示；
+- runmatch `X-Initdata` 中“需要进贡=否”的精确表示；该项只阻塞自动建桌，不阻塞已明确选择“否”的手动建桌路径；
 - 目标账号当前本地 AI 等级门槛；
 - 真实 smoke 前必须从官方裁判源码或脱敏 Log 封板，不能从第三方代码猜测。
 
-推荐实施顺序：Phase 0 官方差异封板与无贡 profile 确认 → Phase 1 codec/protocol → Phase 2 mock connector/session → Phase 3 RuleBasedAI 的 deal + play → Phase 4 用户授权且手动设为无贡的真实 smoke → Phase 5 可选 DeepSeek。贡还不在当前范围；收到相关 stage 必须失败，不得绕过。
+推荐实施顺序：Phase 0-A 手动建桌无贡差异、claim 与权限封板 → Phase 1 codec/protocol → Phase 2 mock connector/session → Phase 3 RuleBasedAI 的 deal + play → Phase 4 用户授权且手动设为无贡的真实 smoke → 可选 runmatch 自动化 → Phase 5 可选 DeepSeek。贡还不在当前范围；收到相关 stage 必须失败，不得绕过。
 
 ## 6. 当前风险
 

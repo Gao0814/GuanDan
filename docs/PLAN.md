@@ -955,11 +955,19 @@ K-A3d3c3a 方向：
 - 在全新恢复目录运行两次自包含 verifier，不信任原 summary verdict，不补写原 manifest/completion；
 - 完整性失败只产生 readonly recovery invalid；完整性通过后才按原 changed/on-off/team-win 顺序给出描述性判定；
 - 无论恢复结果如何，K-A3d3c2 原 invalid 永久保留。
+
+K-A3d3c3a 结果：
+
+- 独立 verifier 双运行逐字节一致，完整重算 48 个请求、24 pair、三策略四阶段和全部 branch/W-D-L/quality 守恒；
+- 源证据前后文件集合和 SHA-256 不变，第 244–245 行 manifest 路径缺陷得到确认；
+- changed pair=`7`，在预注册第一道 `changed>=8` 门槛失败；后续 on/off better=`2/1`、team wins=`8/6` 不得越级解释；
+- 新只读恢复判定 `no_observed_strategy_intent_action_quality_gain`；K-A3d3c2 原 invalid 不变；
+- strategy-intent prompt 继续默认关闭，本分支封板，不进入扩大质量评估。
 - 完整性通过后才解释 RuleBased 续局代理；小样本只决定是否保留到扩大验收，不构成因果或胜率结论。
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：已新增规划任务；基础官方调研完成，并将支持范围锁定为 `Botzone GuanDan no-tribute profile`。Phase 0 仍有 claim、配子和账号权限等协议阻塞项。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：已新增规划任务；基础官方调研完成，并将支持范围进一步锁定为 `Botzone GuanDan manual-table no-tribute profile`。下一步 Step L0-A1 只做官方 claim、配子、无贡阶段流和账号权限封板。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -970,7 +978,7 @@ K-A3d3c3a 方向：
 
 阶段：
 
-1. Phase 0：官方协议、裁判语义、账号权限和差异清单封板；
+1. Phase 0：先封板手动建桌无贡协议、裁判语义、账号权限和差异清单；runmatch initdata 可作为后续自动化未知项；
 2. Phase 1：纯数据模型、108 牌 ID codec 和阶段协议单测；
 3. Phase 2：可注入 transport 的 connector、session persistence 与 mock Botzone；
 4. Phase 3：无贡 `deal + play` adapter 接入 RuleBasedAI；`tribute/return` 只识别并 fail-closed；

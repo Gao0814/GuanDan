@@ -1043,7 +1043,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 #### K-A3d3c3a：独立只读恢复审计
 
-状态：下一步，尚未实施。
+状态：已完成，唯一判定 `no_observed_strategy_intent_action_quality_gain`。
 
 - 原证据目录只读，前后文件集合、bytes、SHA-256 必须一致；
 - verifier 独立重算 48 条 ledger、report、三策略四阶段、provider/pair/branch/W-D-L/quality 守恒；
@@ -1051,6 +1051,9 @@ K-A2b1 当时尚未覆盖的严格反例：
 - 在新目录运行两次，canonical 输出逐字节一致，生成独立 recovery summary/manifest；
 - 不补写原 manifest/completion，不联网、不调用模型、不读取 `.env` 或 key；
 - 恢复完整性通过后才按 changed≥8、on/off better、team wins 顺序给出描述性判定。
+- verifier 双运行逐字节一致，原 9 文件集合/hash 不变；48 request、24 pair 和全部质量守恒通过；
+- changed=`7`，先于 on/off better=`2/1`、team wins=`8/6` 触发第一道门槛；
+- K-A3d3c2 原 invalid 保持不变；strategy-intent prompt 默认关闭，不进入扩大验收。
 
 #### 持续约束：软信号边界
 
@@ -1081,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：仅规划，尚未新增测试或实现。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：仅规划，尚未新增测试或实现。下一步先完成手动建桌无贡 Phase 0-A 官方语义封板；完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 最低测试集合：
 
