@@ -1011,7 +1011,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 #### K-A3d3c1：离线启动状态链加固
 
-状态：首次尝试因四份规划文档未提交而 `strategy_intent_live_startup_hardening_invalid`；提交 docs 后重试同一步。
+状态：已完成，唯一判定 `strategy_intent_live_startup_hardening_verified`。
 
 - 首次尝试只读复核原 runner bytes/hash、PID 和启动边界，均与 K-A3d3b 失败报告一致；
 - 因工作区不干净，在创建 recovery candidate 前停止；未运行 offline self-check、未创建第二进程、未联网或调用模型；
@@ -1020,7 +1020,21 @@ K-A2b1 当时尚未覆盖的严格反例：
 - 子 runner 必须在 project import 前写 bootstrap state，所有参数、目录、写入和 import 错误进入最外层保护；
 - `--offline-self-check` 必须禁止 client/网络，request count=0，并覆盖正常、参数、目录、import 和写入失败；
 - 正常 self-check 独立运行两次，易变字段外的结构化结果一致；
-- 通过后才能使用全新 seed `700..709` 规划 K-A3d3c2，并重新取得明确联网授权。
+- 该结果只解锁使用全新 seed `700..709` 的 K-A3d3c2 前置；实际联网仍须重新取得明确授权。
+- 父启动器与子 runner 的 SHA-256 分别为 `6a186d7c...e5ca84a`、`776f4504...b01e445`；最终审计 SHA-256 为 `aabebaeb...59af6e`；
+- 两次正常 self-check 结构 hash 均为 `ede8bfc3...41e80ec`；缺失参数、无效目录、import 失败和原子写入失败均产生预期状态；
+- request/network/client/suggest count 均为 0；未联网、未调用模型、未读取 `.env` 或 key 值。
+
+#### K-A3d3c2：独立恢复 live 前置与授权
+
+状态：下一步，尚未执行或授权。
+
+- 只读复核 K-A3d3b invalid 与 K-A3d3c1 bootstrap 证据；
+- 配置锁定 `https://api.deepseek.com` / `deepseek-v4-flash`，key 仅检查 presence；
+- 使用全新 seed `700..709`，策略 0/50/100、每 phase 2 对、24 pair/48 请求；
+- timeout 60 秒、retries 0、持久后台上限 65 分钟，formal live run 恰好一次；
+- 授权前不得创建 live runner、启动进程或联网；必须重新取得明确授权，旧 K-A3d3b 授权无效；
+- 授权后 runner 必须保留父 spawn 前和子 import 前状态、连续 ledger、脱敏失败证据与全部质量守恒。
 
 #### 持续约束：软信号边界
 

@@ -922,6 +922,23 @@ K-A3d3c1 方向：
 - 通过 `--offline-self-check` 验证正常/失败状态链，request count 必须为 0；
 - 不能从缺失证据猜测唯一根因，只能锁定 `startup_failure_before_state_write`；
 - 通过后才允许以全新 seed `700..709` 规划 K-A3d3c2，并重新请求用户授权。
+
+K-A3d3c1 验证结果：
+
+- 原失败 runner bytes/hash 与 PID 退出状态保持不变，只能确认 `startup_failure_before_state_write`；
+- 新父启动器与子 runner 位于仓库外，SHA-256 分别为 `6a186d7c...e5ca84a`、`776f4504...b01e445`；
+- 正常 self-check 两次结构 hash 均为 `ede8bfc3...41e80ec`；
+- 缺失参数、无效目录、import 失败和原子写入失败均有预期 exit/status 证据；
+- request/network/client/suggest count 均为 0；
+- 唯一判定 `strategy_intent_live_startup_hardening_verified`。
+
+K-A3d3c2 方向：
+
+- 先只读复核 K-A3d3c1 证据、环境元数据和新预算，停下请求新的明确授权；
+- 使用全新 seed `700..709`，旧 `600..609` 与 K-A3d3b 授权永久停用；
+- 授权后恰好运行一次，策略 `(0,50,100)`、每 phase 2 对、24 pair/48 请求；
+- endpoint/model 继续锁定 `https://api.deepseek.com` / `deepseek-v4-flash`，60 秒、零重试、65 分钟；
+- live runner 必须继承父 spawn 前与子 import 前状态链；任何完整性失败只产生 recovery invalid。
 - 完整性通过后才解释 RuleBased 续局代理；小样本只决定是否保留到扩大验收，不构成因果或胜率结论。
 
 ### Step L：Botzone 本地 AI 接入

@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：K-A3d3c1 首次尝试仅因四份规划文档未提交而 invalid；形成 docs 检查点后重试离线启动加固
+- 当前工作状态：K-A3d3c1 离线启动加固已验证；下一步为 K-A3d3c2 独立恢复前置与重新授权
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：K-A3d2 定向 7 项、相关 80 项、全量 446 项通过
 - 当前规则范围：单局掼蛋核心规则
@@ -1191,6 +1191,10 @@ K-A3d3a 随后完成全部前置：HEAD `f0a087a4146b0950764b8b08bf03ff6c15723d9
 只读行号审计显示原 runner 的项目 imports 位于顶层，`main()` 在第 168 行，audit directory 参数读取/校验在 169..171，首次 state 写入在 181，而异常保护从 190 才开始。没有 stderr、exit code 或 traceback，当前只能锁定 `startup_failure_before_state_write`，不能确认是 import、参数、目录还是首次写入。下一步 K-A3d3c1 必须离线建立父级 spawn 前状态与子级 import 前状态；不得联网或沿用旧授权。
 
 K-A3d3c1 首次尝试只读复核 runner 仍为 14,724 bytes，SHA-256 不变，PID `33612` 已退出；随后因 `docs/NEXT_PROMPT.md`、`docs/PLAN.md`、`docs/PROJECT_STATUS.md`、`docs/TESTS.md` 未提交而判定 `strategy_intent_live_startup_hardening_invalid`。该次没有创建 recovery candidate、第二个 live 进程、runner 状态或网络请求，也未读取 `.env`。该判定只表示工作区前置失败，不增加新的 runner 根因证据。
+
+形成 docs 检查点后，K-A3d3c1 在 HEAD `cf9d29cb31fcff2e9b3401b6d68a2db5fe1a37fd` 完成。新 candidate 位于仓库外；`bootstrap_runner.py` 为 5,502 bytes / `776f4504...b01e445`，`launch_bootstrap.py` 为 7,269 bytes / `6a186d7c...e5ca84a`，最终离线审计为 1,281 bytes / `aabebaeb...59af6e`。两次正常 self-check 结构 hash 均为 `ede8bfc3...41e80ec`；四类失败场景均产生预期父/子状态证据。request/network/client/suggest count 全为 0，唯一判定 `strategy_intent_live_startup_hardening_verified`。
+
+下一步 K-A3d3c2 只先完成独立恢复前置并重新请求授权。锁定 seed `700..709`、`deepseek-v4-flash`、策略 0/50/100、24 pair/48 请求、60 秒、零重试和 65 分钟；不得复用 `600..609` 或旧授权。实际 live runner 必须继承父 spawn 前与子 import 前状态链。
 
 ### Step L：Botzone 本地 AI 接入
 
