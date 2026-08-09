@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A1 已完成；定向 42 项、全量 511 项通过，判定 `botzone_local_connector_offline_verified`。下一步 L4-A1a 关闭 live smoke 准入缺口。
+状态：L4-A1 与 L4-A1a 已完成。L4-A1 检查点为 `e4a4fba99211831c66062ac0f003094edc941c6a`；L4-A1a 定向 46 项、全量 515 项通过，判定 `botzone_live_smoke_preflight_ready`。下一步 L4-A2a 只读审计并请求授权。
 
 工作：
 
@@ -377,7 +377,7 @@ L4-A1 已实现：
 - fake gateway 的 pending failure/restart/resend/ack 与多 match 回归；
 - 未读取 `.env`、未联网、未调用 DeepSeek。
 
-L4-A1a live 准入硬门槛：
+L4-A1a 已通过的 live 准入硬门槛：
 
 - runner 按 `stop_after_finished`、wall time、cycle、failure 与 fatal diagnostic 有界停止；
 - 非 transport diagnostic、尤其 `unsupported_stage`，立即 fail-closed；
@@ -387,13 +387,22 @@ L4-A1a live 准入硬门槛：
 - `preflight-only` 验证仓库外绝对 state dir 与配置，但零 opener/零网络；
 - 通过后唯一判定 `botzone_live_smoke_preflight_ready`，仍不得自动联网。
 
+L4-A2a 只读前置审计：
+
+- 先把 L4-A1a 十个 runtime/session/test 文件独立封存并保持工作区干净；
+- 用户明确确认截图中暴露过的 Botzone 连接凭据已轮换；不得读取或比较 URL 来代替确认；
+- 只检查 `BOTZONE_LOCAL_AI_URL` / `BOTZONE_STATE_DIR` 在当前进程中存在，不输出值、host、path、长度或 hash；
+- state dir 与 audit dir 为仓库外全新目录；运行一次 `--preflight-only` 后仍为空；
+- 不启动 connector、不发送 probe、不创建对局；
+- 通过后判定 `botzone_live_smoke_authorization_ready`，再以固定预算请求用户明确授权。
+
 ### Phase 4：真实 Botzone 小规模 smoke test
 
-前置：L4-A1a 判定 `botzone_live_smoke_preflight_ready`；用户确认截图中暴露过的 URL/密钥已轮换；随后另行明确授权联网；账号权限已确认；URL/密钥只存在进程环境中。
+前置：L4-A2a 判定 `botzone_live_smoke_authorization_ready`；用户随后对固定预算另行明确授权联网；账号权限已确认；URL/密钥只存在进程环境中。
 
 工作：
 
-1. 先启动一个有 wall/cycle/failure/finished 上限的前台 connector，再手动创建测试桌，明确把“需要进贡”设为“否”，只验证一局 deal 到终局；
+1. 使用锁定预算启动前台 connector：RuleBasedAI、100 cycles、600 秒、30 秒 timeout、连续失败 5、finished 1 局即停；再手动创建测试桌，明确把“需要进贡”设为“否”，只验证一局 deal 到终局；
 2. 只有在官方资料确认 `X-Initdata` 的无贡表达后，才用 runmatch 与三个指定现有 Bot 创建至多四局，并让 `me` 轮换四个座位；
 3. smoke 通过后，可另行预注册固定对手的小批量观察性对抗评测。
 
@@ -460,7 +469,7 @@ L4-A1a live 准入硬门槛：
 
 ## 10. play 子集的前置状态
 
-Phase 0、L1、L2、L3-A1、L3-A1a 与 L4-A1 均已完成。当前只允许执行 L4-A1a 的离线 live-admission 加固；仍不得启动 live connector。
+Phase 0、L1、L2、L3-A1、L3-A1a、L4-A1 与 L4-A1a 均已完成。当前只允许执行 L4-A2a 的只读 preflight 与授权请求；仍不得启动 live connector。
 
 理由：
 
@@ -469,7 +478,7 @@ Phase 0、L1、L2、L3-A1、L3-A1a 与 L4-A1 均已完成。当前只允许执�
 - 贡还属于当前 engine 明确 unsupported 的能力，即使未来无贡 profile 通过，也必须对 `tribute/return` fail-closed；
 - 无贡 profile 只有取得该配置的官方证据后才是支持契约，不能由随机对局恰好未发生贡还来替代。
 - HTTP URL 路径包含连接密钥，L4-A1 必须先证明异常、日志和持久化不泄露它，才允许申请 live 授权。
-- 当前 finished session 仍包含活动局敏感状态，必须在 L4-A1a 清理后才能申请 live 授权。
+- finished session 已降为最小 tombstone；后续 live 仍必须扫描 state/audit，确认没有敏感内容残留。
 
 因此里程碑命名必须区分：
 
@@ -493,4 +502,4 @@ Phase 0、L1、L2、L3-A1、L3-A1a 与 L4-A1 均已完成。当前只允许执�
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A1a：先把 L4-A1 七个文件独立封存，再补齐 finished/wall/cycle 有界停止、fatal diagnostics、finished 敏感状态清理、response close、严格 Header、退出码、最小 audit 与 preflight-only。全程只用 fake opener/gateway，不得读取真实本地 AI URL/密钥或 `.env`，不得联网、自动建桌、使用 runmatch 或接入 DeepSeek；通过后还需确认凭据已轮换并重新请求 live 授权。
+执行 Step L4-A2a：先把 L4-A1a 十个文件独立封存，再复核检查点、回归和干净工作区；要求用户明确确认旧凭据已轮换，仅检查两个环境变量存在，执行一次零网络 preflight-only。全部通过后，以 RuleBasedAI、100 GET、600 秒、30 秒 timeout、连续失败 5、finished 1 局即停的固定预算请求明确 live 授权；在用户授权前不得启动 connector。

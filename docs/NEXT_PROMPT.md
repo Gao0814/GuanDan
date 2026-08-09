@@ -1,122 +1,120 @@
 # 下一步实施提示词
 
-## Step L4-A1a：Botzone live smoke 准入加固与离线前置审计
+## Step L4-A2a：Botzone 一局 live smoke 只读前置审计与授权请求
 
-请在 GuanDan 项目中完成 Step L4-A1a。本步只加固真实 Botzone smoke 前的启动、停止、状态清理和审计边界；全部验证使用 fake opener/fake gateway，不得连接 Botzone、不得读取真实 URL/密钥、不得创建或加入真实对局。
+请在 GuanDan 项目中完成 Step L4-A2a。本步只做检查点、回归、运行时配置和零网络 preflight 审计，最后向用户请求一次明确的 Botzone 联网授权。不得启动 connector、不得发送探测请求、不得创建或加入对局、不得修改代码。
 
 ### 前置与检查点
 
 历史判定保持：
 
 ```text
-botzone_local_connector_offline_verified
+botzone_live_smoke_preflight_ready
 ```
 
-L3-A1a 已封存为：
+L4-A1 检查点为：
 
 ```text
-253159f7cf00e9995cc986bac816bf67a8596a4e
+e4a4fba99211831c66062ac0f003094edc941c6a
 ```
 
-当前 L4-A1 只有以下七个未跟踪文件，已复核定向 42 项、全量 511 项和 `git diff --check`：
+当前 L4-A1a 实际修改范围为以下十个文件，已复核定向 46 项、全量 515 项和 `git diff --check`：
 
-- `integrations/botzone/http_transport.py`
-- `integrations/botzone/runtime_config.py`
-- `integrations/botzone/runner.py`
 - `integrations/botzone/__main__.py`
+- `integrations/botzone/http_transport.py`
+- `integrations/botzone/runner.py`
+- `integrations/botzone/runtime_config.py`
+- `integrations/botzone/session.py`
+- `tests/test_botzone_connector.py`
 - `tests/test_botzone_http_transport.py`
-- `tests/test_botzone_runtime_config.py`
 - `tests/test_botzone_runner.py`
+- `tests/test_botzone_session.py`
+- `tests/test_botzone_live_preflight.py`
 
-开始本步前必须先把这七个文件独立封存，不得混入 docs 或 L4-A1a 修改。
+开始本步前必须先把这十个文件独立封存。不得把 docs、运行时 state、audit 或其他文件混入检查点。提交后工作区必须干净。
 
-### 当前必须关闭的 live 缺口
+### 只读审计顺序
 
-1. runner 只能按 cycle 数或 Ctrl+C 停止，不能按完成对局数停止，也没有 wall-clock 硬上限；
-2. `unsupported_stage`、malformed poll、session/handler 错误只进入 diagnostics，runner 仍可能继续 poll；
-3. `RunnerSummary` 未聚合 request/response/header/finished 数，无法形成最小 smoke 守恒审计；
-4. finished session 当前仍持久化 match ID、本家实体手牌、完整累计 history、缓存 response 和 request digest；
-5. HTTP response 未明确保证关闭；Header 名仍需锁定为严格 ASCII HTTP token；
-6. module 入口对 failure limit、协议失败和未完成的 cycle/wall limit 没有区分退出码；
-7. 缺少不联网的 `preflight-only`，无法在 live 授权前验证配置、state dir 和启动输出脱敏。
+1. 复核 L1 至 L4-A1a 所需检查点存在，L4-A1a 提交范围精确；
+2. 运行 46 项定向测试、515 项全量基线和 `git diff --check`；
+3. 确认工作区干净；若不干净，立即返回 `precondition_failed`，不检查环境、不运行 preflight；
+4. 由用户明确确认截图中曾暴露的 Botzone 本地 AI 连接密钥/URL 已在 Botzone 设置页轮换；不得通过读取、比较、散列或输出 URL 自行推断；
+5. 仅检查当前进程中 `BOTZONE_LOCAL_AI_URL` 与 `BOTZONE_STATE_DIR` 是否存在，不输出值、长度、hash、host、path 或任何片段；
+6. state dir 必须是仓库外全新绝对目录，运行前不含 session/tombstone；audit file 也必须位于仓库外新目录；
+7. 执行一次 `python -m integrations.botzone --preflight-only`；该调用只能输出固定 `preflight_ready`，必须为零 opener、零 socket、零 HTTP；
+8. preflight 后确认 state dir 仍为空，仓库状态仍干净；
+9. 只有全部通过后，输出 `botzone_live_smoke_authorization_ready` 并请求授权。
 
-### 允许修改
+任何前置失败都不得尝试修复真实配置、读取 `.env`、回显 URL、启动 connector 或联网。只报告规范化缺失项。
 
-- `integrations/botzone/http_transport.py`
-- `integrations/botzone/runtime_config.py`
-- `integrations/botzone/runner.py`
-- `integrations/botzone/__main__.py`
-- 必要时最小修改 `integrations/botzone/connector.py` 与 `integrations/botzone/session.py`
-- 对应 Botzone 测试；可新增 `tests/test_botzone_live_preflight.py`
+### 凭据轮换要求
 
-不得修改 `engine/`、`agents/`、现有 `cli/`、RAG、evaluation、DeepSeek 或协议/adapter 的动作语义。不得新增第三方依赖。
+- 截图中出现过的旧密钥和旧 URL 视为已泄露，不能用于 smoke；
+- 用户必须在 Botzone 本地 AI 设置页生成/提交新连接密钥，再把新 URL 注入启动 Codex 的进程环境；
+- 不得把新 URL 粘贴到聊天、命令行参数、文档、测试、audit、日志或 Git；
+- 本次 live 推荐只使用环境变量，不使用 `--url`，避免进入命令历史或进程参数；
+- 审计只记录 `credential_rotation_confirmed=true` 与配置 `present`，不记录任何值。
 
-### bounded smoke runner
+如果用户尚未明确确认轮换，只返回：
 
-- `RunnerSummary` 至少聚合 cycles、successful cycles、transport failures、headers sent、requests seen、responses prepared、finished seen、diagnostics 和 stop reason；
-- 支持严格正整数 `max_cycles`、`max_wall_seconds`、`stop_after_finished`；bool 不得冒充整数；
-- wall-clock 在每次 poll 前后检查；单次阻塞仍受 transport timeout 限制，并明确总时间最多超出一个 timeout；
-- 达到 `stop_after_finished=1` 后不得再发下一次 poll；
-- transport failure 可按现有有界退避重试，成功后清零连续失败；
-- 除 `transport_failure` 外，任何非零 connector diagnostic 均按 live fail-closed 停止，不得继续轮询或伪造响应；
-- `unsupported_stage` 必须产生独立 stop reason 和非零退出码；
-- `KeyboardInterrupt` 正常、安全停止，但不得把它算作完成 smoke；
-- 同时满足多个停止条件时使用固定优先级并测试。
+```text
+precondition_failed: botzone_credential_rotation_unconfirmed
+```
 
-### 退出码与前台输出
+不得替用户假设已经轮换。
 
-锁定稳定分类，具体数字可按现有风格选择，但必须测试并写入模块帮助：
+### 锁定的一局 smoke 预算
 
-- 配置/preflight 失败；
-- transport 连续失败上限；
-- 协议、session、handler 或 unsupported-stage 失败；
-- cycle/wall 上限到达但没有 finished；
-- 完成指定 finished 数；
-- 用户中断。
+授权请求必须精确说明后续 L4-A2b 将使用：
 
-stdout/stderr 只允许固定状态与聚合整数。不得输出 URL、state dir、match ID、Header 名/值、请求/响应、手牌、history、action、异常原文或账号信息。
+- Agent：`RuleBasedAIAgent`；
+- 建桌：用户手动创建，仅一局；明确“需要进贡=否”；
+- connector：前台单进程，正式 live run 恰好一次；
+- `timeout_seconds=30`；
+- `max_cycles=100`，即最多 100 次 GET poll；
+- `max_wall_seconds=600`；
+- `stop_after_finished=1`；
+- `max_consecutive_failures=5`；
+- `backoff_seconds=1`，按现有确定性指数退避；
+- state/audit：仓库外全新目录；
+- 不使用 runmatch，不自动建桌，不接入 DeepSeek，不做自动重启；
+- transport failure 只按 runner 已封板的有界重试；协议、session、handler 或 unsupported stage 立即 fail-closed；
+- 达到 finished、wall、cycle、failure、diagnostic 或用户中断任一边界后停止，不补采、不启动第二进程。
 
-### finished session 最小化
+### live 后预注册判定
 
-- 收到 finished row 后，必须删除活动 session 中的手牌、history、pending/cached response、request bytes/digest 和原始 match ID；
-- 可直接原子删除活动文件，或写入仅含 schema/version、不可逆内部 key、finished 标志及必要聚合结果的 tombstone；
-- tombstone 不得包含 match ID、座位明细、手牌、history、response、Header 或 URL；
-- 重复 finished 必须幂等；finished 后不得再发送旧 pending response；
-- crash/restart 前的活动 session 仍需保留恢复所需状态，因此只在已收到 finished 后清理；
-- state dir 在 live 中必须使用仓库外绝对路径，不能位于项目目录、`logs/` 或 `archive_legacy/`。
+完整性优先，按以下顺序：
 
-### HTTP 与配置加固
+1. 进程恰好一次，参数与预算一致；
+2. `finished_seen=1`、stop reason=`finished_target`、exit code=0；
+3. requests/responses/headers/cycles 守恒，diagnostics 为空；
+4. state dir 只剩最小 tombstone，扫描不含 match ID、手牌、history、response、digest、URL 或 Header；
+5. audit schema 合法且只含聚合字段；
+6. Botzone 桌面实际设置为“需要进贡=否”，请求只出现 deal/play；
+7. 未出现非法响应、超时终止、跨局污染或 unsupported stage。
 
-- response 必须在成功、过大、状态错误和解析异常路径全部关闭；
-- Header 名严格限制为 ASCII HTTP token，并继续只允许 `X-Match-<validated-id>`；值保持严格 ASCII、无控制字符；
-- redirect、timeout、TLS、HTTP、DNS 和未知 opener 错误保持脱敏分类；异常链不得保留 URL；
-- `preflight-only` 只做 URL 结构、数值边界和 state dir 可创建/原子写/清理检查，不构造真实请求、不调用 opener；
-- state dir 检查不得删除已有 session；测试使用临时目录；
-- runtime 仍只接受显式参数或 `BOTZONE_LOCAL_AI_URL` / `BOTZONE_STATE_DIR`，不加载 `.env` 或根 `config.py`；
-- 实际 live 推荐只用环境变量，避免 URL 出现在命令历史和进程参数中。
+任一完整性门槛失败，唯一 live 判定为：
 
-### 最小审计报告
+```text
+botzone_no_tribute_local_ai_smoke_invalid
+```
 
-可增加显式 `--audit-file`，但必须：
+全部通过才可判定：
 
-- 由调用方指定仓库外路径并原子写入；
-- 只含固定 schema/version、起止状态、上述聚合计数、stop reason、退出分类和规范化 diagnostics；
-- 不含 URL、state dir、match ID、Header、请求/响应、手牌、history、action、平台原始 score 或时间戳型样本身份；
-- 同一 fake corpus 结果确定性可序列化；malformed audit path fail-closed。
+```text
+botzone_no_tribute_local_ai_smoke_verified
+```
 
-### 必测场景
+该判定只证明一局真实平台接入闭环可用，不证明 AI 对抗能力、胜率、稳定性或完整 Botzone GuanDan 支持。
 
-- `stop_after_finished=1` 精确停止且不多发 poll；
-- wall/cycle/failure/diagnostic/unsupported/interrupt 停止优先级和退出码；
-- transport 失败后 pending response 保留，成功 ack 后 effect 只提交一次；
-- finished 清除活动敏感状态，重复 finished 幂等，重启不恢复已结束手牌；
-- malformed/tribute/return 不调用 Agent，并立即结束该 smoke；
-- response 在成功和全部异常路径关闭；
-- 非 ASCII Header、CR/LF、控制字符、重定向和未知 opener 异常安全失败且不泄露 URL；
-- preflight-only 零 opener/零 socket/零 HTTP 调用，并验证仓库内、相对、不可写 state dir 拒绝；
-- audit/stdout/stderr/source scan 不含敏感字段或真实配置值；
-- fake gateway 完成一局的 deal/play/finished 聚合守恒；
-- 所有 L1-L4 回归与全量测试保持通过。
+### 本步禁止事项
+
+- 不读取 `.env`、真实 URL、密钥、Cookie、Header、账号或浏览器存储；
+- 不联网、不调用 Botzone、不发送 GET probe；
+- 不创建 runner 副本、后台进程、state 或 live audit；
+- 不调用 DeepSeek 或其他外部服务；
+- 不修改任何仓库文件；
+- 不提交或保存 Botzone 页面截图中的敏感值。
 
 ### 建议验证命令
 
@@ -126,18 +124,20 @@ python -m unittest discover -q
 git diff --check
 ```
 
-如未新增 `tests/test_botzone_live_preflight.py`，从定向命令删除该模块，不要创建空测试文件。
+环境存在性和 `--preflight-only` 检查只能在上述仓库门槛通过、用户确认凭据轮换之后执行。
 
-### 验收判定
+### 验收与授权请求
 
-全部离线启动、停止、清理、审计、安全边界和回归通过时，唯一判定：
+全部只读门槛通过时，唯一判定：
 
 ```text
-botzone_live_smoke_preflight_ready
+botzone_live_smoke_authorization_ready
 ```
 
-该判定只允许下一步检查运行时三项前置：工作区干净、截图中暴露过的 Botzone URL/密钥已轮换、显式进程环境配置存在。之后仍必须向用户说明一局 smoke 的固定预算并取得新的明确联网授权；不得在本步启动 connector 或发送探测请求。
+随后必须原样说明 endpoint 为“当前进程中已配置且已脱敏的 Botzone 本地 AI URL”，不得输出 host/path；列出上述固定预算，并询问：
 
-### 最终报告
+```text
+是否明确授权使用当前进程中已配置且已轮换的 Botzone 本地 AI URL，执行一次 L4-A2b 无贡手动桌 smoke：RuleBasedAI、最多 100 次 GET、最长 600 秒、30 秒单次 timeout、连续失败上限 5、完成 1 局即停止？
+```
 
-报告 L4-A1 检查点、修改文件、停止优先级、退出码、finished 清理、response close、preflight-only、审计字段、定向/全量测试和边界扫描。明确说明未读取真实 URL/密钥、未读取 `.env`、未联网、未创建对局、未修改 engine/agents、未接入 DeepSeek。
+没有用户明确回答“授权”前，不得启动 connector。

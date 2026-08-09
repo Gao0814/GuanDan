@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：Phase 0、L1、L2、L3-A1、L3-A1a 与 L4-A1 已完成；L4-A1 判定 `botzone_local_connector_offline_verified`，定向 42 项、全量 511 项通过。下一步 L4-A1a 增加有界 live 停止、finished 清理、退出码和 preflight-only 的纯离线测试，不连接 Botzone。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0、L1、L2、L3-A1、L3-A1a、L4-A1 与 L4-A1a 已完成；L4-A1a 判定 `botzone_live_smoke_preflight_ready`，定向 46 项、全量 515 项通过。下一步 L4-A2a 只复跑基线并执行零网络 preflight，成功后请求一局 live 授权。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1105,10 +1105,10 @@ Phase 0 证据验收已完成：
 - `tests/test_botzone_action_provenance.py`：已完成；输出只能来自原始 legal action 对应 `action_id`，矛盾 context 不创建 Agent；
 - `tests/test_botzone_rule_agent_e2e.py`：RuleBasedAI 的 deal→play 关键回合、终局和无贡 profile 边界；
 - `tests/test_botzone_adapter_observation.py`：已完成；轮次重放、精确 key set、wildcard table action、实体守恒与 context 一致性；
-- `tests/test_botzone_http_transport.py`：已完成基础契约；GET/Header、timeout、重定向、响应上限、错误脱敏和 fake opener；L4-A1a 补 response close 与严格 ASCII Header；
-- `tests/test_botzone_runtime_config.py`：已完成基础契约；只读显式环境/参数、缺失配置失败、不导入 dotenv/根 config、输出不含配置值；L4-A1a 补仓库外绝对 state dir 与 preflight-only；
-- `tests/test_botzone_runner.py`：已完成基础契约；依赖装配、退避/重置、有限 cycle、Ctrl+C、fake gateway E2E 和零真实网络；L4-A1a 补 finished/wall/diagnostic 停止和退出码；
-- `tests/test_botzone_live_preflight.py`：下一步；零网络启动审计、finished 敏感状态清理、最小 audit schema 和一局 fake smoke 守恒；
+- `tests/test_botzone_http_transport.py`：已完成；GET/Header、timeout、重定向、响应上限、错误脱敏、response close、严格 ASCII Header 和 fake opener；
+- `tests/test_botzone_runtime_config.py`：已完成；只读显式环境/参数、缺失配置、不导入 dotenv/根 config、仓库外绝对 state dir 与 preflight-only；
+- `tests/test_botzone_runner.py`：已完成；退避/重置、finished/wall/cycle/failure/diagnostic 停止、退出码、fake gateway E2E 和零真实网络；
+- `tests/test_botzone_live_preflight.py`：已完成；零网络启动审计、finished 敏感状态清理、最小 audit schema 和一局 fake smoke 守恒；
 - `tests/test_botzone_rule_compatibility.py`：官方裁判/脱敏 Log 与当前 engine 的差分 fixture。
 
 验收边界：
