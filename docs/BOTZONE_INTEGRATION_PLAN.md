@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A2c5a 可审计 preflight 契约已离线通过，三个文件尚待独立封存。下一步 L4-A2c5b 执行唯一一次真实环境 instrumented 零网络 preflight。
+状态：L4-A2c5a 可审计 preflight 契约已封存并离线通过；L4-A2c5b 唯一真实环境运行在 `directory_ready` 后超时并判定 invalid。下一步 L4-A2c5b1 只执行文件原子操作离线诊断。
 
 工作：
 
@@ -476,7 +476,7 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留。instrumented preflight 已在合成环境通过，但尚未封存或消费真实进程配置。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c5b；不得启动 launcher/connector 或联网。
+Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留。L4-A2c5a instrumented preflight 契约已封存并通过离线验证，但 L4-A2c5b 的唯一真实环境运行在 `directory_ready` 后超时，判定 invalid。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c5b1 的本地文件原子操作离线诊断；不得重跑 preflight、启动 launcher/connector 或联网。
 
 理由：
 
@@ -509,4 +509,4 @@ Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A2c5b：先把 `live_preflight.py`、`runtime_config.py` 和专属测试独立封存，再对当前真实环境执行恰好一次专用 preflight，30 秒上限且不重试。成功必须完整到 `state_preflight_completed`、state 仍为空且网络计数为 0；失败保留最后 audit 阶段并封板。ready 也只进入 L4-A2c5c launcher offline 准入，不直接 live。
+执行 Step L4-A2c5b1：不修改仓库、不重复既有 preflight，先用临时目录资格验证仓库外标准库诊断载体，再对真实 state 目录执行恰好一次候选名生成、独占创建、写入、同步、替换与清理的逐操作诊断。最后阶段只能用于定位原子操作边界，不得据此猜测系统根因；无论结果如何都不能直接 live。
