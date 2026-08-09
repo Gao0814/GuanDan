@@ -7,7 +7,7 @@ from engine.cards import Card
 from engine.game import GuanDanGame
 from engine.patterns import PatternType
 
-from integrations.botzone.cards import ALL_CARDS, card_id_for
+from integrations.botzone.cards import ALL_CARDS, card_from_id, card_id_for
 from integrations.botzone.models import ActionClaim, GlobalState, HistoryEntry, PlayRequest
 from integrations.botzone.play_adapter import (
     botzone_id_to_engine_card,
@@ -23,12 +23,21 @@ def _request(history: tuple[HistoryEntry, ...] = ()) -> PlayRequest:
 
 
 def _context(hand: tuple[int, ...], history: tuple[HistoryEntry, ...] = (), *, local: int = 0) -> HandlerContext:
+    used = {card_id for entry in history for card_id in entry.response.action}
+    protected_ranks = {card_from_id(card_id).rank for card_id in hand}
+    complete_hand = list(hand)
+    complete_hand.extend(
+        card_id
+        for card_id in range(108)
+        if card_id not in used and card_id not in complete_hand and card_from_id(card_id).rank not in protected_ranks
+    )
+    complete_hand = complete_hand[:27]
     return HandlerContext(
         match_key="unit",
         request_digest="digest",
         request=_request(history),
         local_player_id=local,
-        own_hand=hand,
+        own_hand=tuple(complete_hand),
         history=history,
         latest_window=history[-4:],
         global_state=GlobalState("2", 0, None, None, False),
@@ -52,9 +61,11 @@ class BotzonePlayAdapterTests(unittest.TestCase):
         self.assertTrue(projection.table_view_free)
         pair = next(
             action for action_id, action in projection.provenance.items()
-            if action.action_type == ActionType.PLAY and action.declared_pattern == PatternType.PAIR
+            if action.action_type == ActionType.PLAY
+            and action.declared_pattern == PatternType.PAIR
+            and all(card.rank == "3" and card.suit == "H" for card in action.carrier_cards)
         )
-        encoded = encode_action_claim(pair, hand, "2")
+        encoded = encode_action_claim(pair, _context(hand).own_hand, "2")
         self.assertEqual(encoded.action, tuple(sorted(hand[:2])))
         self.assertEqual(encoded.action, encoded.claim)
         self.assertEqual([action["action_id"] for action in projection.legal_actions], list(range(1, len(projection.legal_actions) + 1)))
@@ -63,7 +74,7 @@ class BotzonePlayAdapterTests(unittest.TestCase):
         leader = HistoryEntry(player_id=1, response=ActionClaim((card_id_for("3", "h"),), (card_id_for("3", "h"),)))
         projection = project_decision(_context((card_id_for("4", "d"),), (leader,)))
         self.assertFalse(projection.table_view_free)
-        self.assertEqual(projection.observation["current_round"]["constraint"], "single")
+        self.assertEqual(projection.observation["current_round"]["constraint"], "single:3")
         self.assertIn("pass", [action["declared_pattern"] for action in projection.legal_actions])
 
     def test_wildcard_straight_claim_avoids_accidental_straight_flush(self) -> None:
@@ -74,23 +85,25 @@ class BotzonePlayAdapterTests(unittest.TestCase):
             card_id_for("5", "h"),
             card_id_for("6", "h"),
         )
-        projection = project_decision(_context(hand))
+        context = _context(hand)
+        projection = project_decision(context)
         straight = next(
             action for action in projection.provenance.values()
             if action.declared_pattern == PatternType.STRAIGHT and action.wildcard_count == 1
         )
-        encoded = encode_action_claim(straight, hand, "2")
+        encoded = encode_action_claim(straight, context.own_hand, "2")
         self.assertEqual(len(encoded.action), 5)
         self.assertNotEqual(len({botzone_id_to_engine_card(card_id).suit for card_id in encoded.claim}), 1)
 
     def test_public_legal_actions_match_a_constructed_public_engine_fixture(self) -> None:
         hand = (card_id_for("3", "h", 1), card_id_for("3", "h", 0), card_id_for("4", "d", 0))
-        projection = project_decision(_context(hand))
+        context = _context(hand)
+        projection = project_decision(context)
         game = GuanDanGame(
             current_level_rank="2",
             starting_player_id=1,
             preset_hands={
-                1: tuple(botzone_id_to_engine_card(card_id) for card_id in hand),
+                1: tuple(botzone_id_to_engine_card(card_id) for card_id in context.own_hand),
                 2: (Card("5", "S"),),
                 3: (Card("6", "S"),),
                 4: (Card("7", "S"),),

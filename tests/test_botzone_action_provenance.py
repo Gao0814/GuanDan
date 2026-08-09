@@ -11,12 +11,14 @@ from integrations.botzone.session import HandlerContext
 
 
 def _context() -> HandlerContext:
+    hand = (card_id_for("3", "h"), card_id_for("4", "d"))
+    hand = hand + tuple(card_id for card_id in range(108) if card_id not in hand)[:25]
     return HandlerContext(
         match_key="unit",
         request_digest="digest",
         request=PlayRequest((), (), -1, GlobalState("2", 0, None, None, False)),
         local_player_id=0,
-        own_hand=(card_id_for("3", "h"), card_id_for("4", "d")),
+        own_hand=hand,
         history=(),
         latest_window=(),
         global_state=GlobalState("2", 0, None, None, False),
@@ -60,6 +62,25 @@ class BotzoneActionProvenanceTests(unittest.TestCase):
 
         with self.assertRaises(AdapterError):
             NoTributeRuleBasedHandler(lambda _: Exploding())(_context())
+
+    def test_inconsistent_context_is_rejected_before_agent_creation(self) -> None:
+        context = _context()
+        inconsistent = HandlerContext(
+            match_key=context.match_key,
+            request_digest=context.request_digest,
+            request=context.request,
+            local_player_id=context.local_player_id,
+            own_hand=context.own_hand,
+            history=context.history,
+            latest_window=context.latest_window,
+            global_state=GlobalState("3", 0, None, None, False),
+            finished=context.finished,
+        )
+        factory_calls: list[int] = []
+        handler = NoTributeRuleBasedHandler(lambda player_id: factory_calls.append(player_id))
+        with self.assertRaises(AdapterError):
+            handler(inconsistent)
+        self.assertEqual(factory_calls, [])
 
     def test_adapter_has_no_network_or_configuration_dependencies(self) -> None:
         source = (Path(__file__).parents[1] / "integrations" / "botzone" / "play_adapter.py").read_text(encoding="utf-8")

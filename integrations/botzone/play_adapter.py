@@ -12,7 +12,7 @@ from types import MappingProxyType
 from agents.base import require_legal_action_id
 from agents.rule_based_ai import RuleBasedAIAgent
 from engine.actions import Action, ActionType, public_action_id
-from engine.cards import Card, card_to_token
+from engine.cards import Card, card_to_token, sort_cards
 from engine.patterns import PatternType, detect_pattern
 from engine.rules import BaseRuleEngine
 from engine.state import GameState, PlayerState, TableConstraint
@@ -62,6 +62,7 @@ def team_for_engine_player(player_id: int) -> str:
 
 def project_decision(context: HandlerContext) -> DecisionProjection:
     request = require_no_tribute_context(context)
+    _validate_context(context, request)
     if not isinstance(request, PlayRequest):
         raise AdapterError("deal_has_no_decision")
     if context.finished:
@@ -69,7 +70,7 @@ def project_decision(context: HandlerContext) -> DecisionProjection:
     if context.local_player_id in request.done:
         raise AdapterError("local_player_finished")
     local_player_id = botzone_player_to_engine_player(context.local_player_id)
-    own_hand = tuple(botzone_id_to_engine_card(card_id) for card_id in context.own_hand)
+    own_hand = sort_cards(tuple(botzone_id_to_engine_card(card_id) for card_id in context.own_hand))
     if len(own_hand) != len(context.own_hand):
         raise AdapterError("invalid_hand")
 
@@ -89,13 +90,15 @@ def project_decision(context: HandlerContext) -> DecisionProjection:
         pending_player_ids=(),
     )
     player = PlayerState(player_id=local_player_id, hand_cards=own_hand)
+    replay = _replay_rounds(context.history)
+    current_round = 1 if not replay else replay[-1][1] + (1 if table_view.free_lead else 0)
     state = GameState(
         players=(player,),
         current_player_id=local_player_id,
         current_level_rank=context.global_state.level,
         table_constraint=table_constraint,
         step_no=len(context.history),
-        round_no=_verified_round_no(context.history, context.latest_window),
+        round_no=current_round,
         finish_order=tuple(botzone_player_to_engine_player(player_id) for player_id in request.done),
     )
     engine_actions = BaseRuleEngine().generate_legal_actions(state)
@@ -105,7 +108,7 @@ def project_decision(context: HandlerContext) -> DecisionProjection:
     if len(provenance) != len(engine_actions):
         raise AdapterError("action_id_collision")
     public_actions = tuple(_public_action(action, action_id) for action_id, action in provenance.items())
-    observation = _public_observation(context, request, state, public_actions, leading_action)
+    observation = _public_observation(context, request, state, public_actions, leading_action, replay)
     return DecisionProjection(
         observation=MappingProxyType(observation),
         legal_actions=tuple(MappingProxyType(dict(action)) for action in public_actions),
@@ -122,6 +125,7 @@ class NoTributeRuleBasedHandler:
 
     def __call__(self, context: HandlerContext) -> HandlerResult:
         request = require_no_tribute_context(context)
+        _validate_context(context, request)
         if isinstance(request, DealRequest):
             return HandlerResult(b"[]")
         projection = project_decision(context)
@@ -237,18 +241,29 @@ def _virtual_suit_assignments(action: Action, claim: Sequence[int | None], posit
 def _history_entry_to_action(entry: HistoryEntry, level: str) -> Action:
     if entry.response.is_pass:
         return Action.make_pass(botzone_player_to_engine_player(entry.player_id))
-    carrier_cards = tuple(botzone_id_to_engine_card(card_id) for card_id in entry.response.action)
-    declared_cards = tuple(botzone_id_to_engine_card(card_id) for card_id in entry.response.claim)
-    pattern = detect_pattern(declared_cards)
+    try:
+        parsed = parse_action_claim(
+            [list(entry.response.action), list(entry.response.claim)],
+            level=level,
+        )
+    except ProtocolValidationError as exc:
+        raise AdapterError("invalid_table_action") from exc
+    carrier_cards = sort_cards(tuple(botzone_id_to_engine_card(card_id) for card_id in parsed.action))
+    raw_declared = sort_cards(tuple(botzone_id_to_engine_card(card_id) for card_id in parsed.claim))
+    pattern = detect_pattern(raw_declared)
     if pattern.type in {PatternType.UNKNOWN, PatternType.PASS}:
         raise AdapterError("unsupported_table_action")
+    declared_cards = _canonical_declared_cards(raw_declared, pattern.type)
+    wildcard_info = _rebuild_wildcard_info(carrier_cards, raw_declared, level, pattern.type)
     return Action(
         player_id=botzone_player_to_engine_player(entry.player_id),
         action_type=ActionType.PLAY,
         declared_pattern=pattern.type,
         declared_cards=declared_cards,
         carrier_cards=carrier_cards,
-        display_text=pattern.type.value,
+        wildcard_count=len(wildcard_info),
+        wildcard_info=wildcard_info,
+        display_text=_display_text(pattern.type, declared_cards),
     )
 
 
@@ -258,13 +273,7 @@ def _pattern_for_ids(card_ids: Sequence[int]) -> PatternType | None:
     return detect_pattern(tuple(botzone_id_to_engine_card(card_id) for card_id in card_ids)).type
 
 
-def _verified_round_no(history: Sequence[HistoryEntry], latest_window: Sequence[HistoryEntry]) -> int:
-    if len(latest_window) > len(history) or (latest_window and tuple(history[-len(latest_window):]) != tuple(latest_window)):
-        raise AdapterError("history_alignment_failed")
-    return 1 + sum(1 for entry in history if not entry.response.is_pass)
-
-
-def _public_action(action: Action, action_id: int) -> dict[str, object]:
+def _public_action(action: Action, action_id: int | None) -> dict[str, object]:
     pattern = action.declared_pattern.value if action.declared_pattern is not None else "pass"
     return {
         "action_id": action_id,
@@ -290,6 +299,7 @@ def _public_observation(
     state: GameState,
     legal_actions: Sequence[Mapping[str, object]],
     leading_action: Action | None,
+    replay: Sequence[tuple[HistoryEntry, int]],
 ) -> dict[str, object]:
     local = state.current_player_id
     played_counts = Counter(entry.player_id for entry in context.history for _ in entry.response.action)
@@ -312,12 +322,18 @@ def _public_observation(
             }
         )
     history_actions: list[dict[str, object]] = []
-    for index, entry in enumerate(context.history, start=1):
+    for index, (entry, round_no) in enumerate(replay, start=1):
         action = _history_entry_to_action(entry, context.global_state.level)
-        public = _public_action(action, action_id=index)
-        public.pop("action_id")
-        public.update({"step_no": index, "round_no": 1, "player_id": action.player_id})
-        history_actions.append(public)
+        history_actions.append(
+            {
+                "step_no": index,
+                "round_no": round_no,
+                "player_id": action.player_id,
+                "declared_pattern": action.declared_pattern.value if action.declared_pattern is not None else "pass",
+                "declared_cards": [_declared_token(card) for card in action.declared_cards],
+                "carrier_cards": [card_to_token(card) for card in action.carrier_cards],
+            }
+        )
     hand_counts = Counter(card.rank for card in state.get_player(local).hand_cards)
     return {
         "my_info": {
@@ -333,10 +349,117 @@ def _public_observation(
             "round_no": state.round_no,
             "current_player_id": local,
             "current_level_rank": context.global_state.level,
-            "table_action": _public_action(leading_action, 0) if leading_action is not None else None,
+            "table_action": _public_action(leading_action, None) if leading_action is not None else None,
             "constraint": "free" if leading_action is None else leading_action.display_text,
         },
         "other_players": other_players,
         "history": {"actions": history_actions, "finish_order": list(state.finish_order)},
         "legal_actions": [dict(action) for action in legal_actions],
     }
+
+
+def _canonical_declared_cards(cards: Sequence[Card], pattern: PatternType) -> tuple[Card, ...]:
+    if pattern == PatternType.STRAIGHT_FLUSH:
+        return sort_cards(tuple(cards))
+    return sort_cards(tuple(Card(rank=card.rank) for card in cards))
+
+
+def _rebuild_wildcard_info(
+    carrier_cards: Sequence[Card],
+    declared_cards: Sequence[Card],
+    level: str,
+    pattern: PatternType,
+) -> tuple[object, ...]:
+    from engine.actions import WildcardInfo
+
+    wildcards = tuple(card for card in carrier_cards if card.rank == level and card.suit == "H")
+    if not wildcards:
+        return ()
+    natural_faces = Counter((card.rank, card.suit) for card in carrier_cards if card not in wildcards)
+    declared_faces = Counter((card.rank, card.suit) for card in declared_cards)
+    if any(declared_faces[face] < count for face, count in natural_faces.items()):
+        raise AdapterError("wildcard_claim_alignment_failed")
+    declared_faces.subtract(natural_faces)
+    remainders = [
+        Card(rank=rank, suit=suit if pattern == PatternType.STRAIGHT_FLUSH else None)
+        for (rank, suit), count in declared_faces.items()
+        for _ in range(count)
+        if count > 0
+    ]
+    if len(remainders) != len(wildcards) or any(card.rank in {"SJ", "BJ"} for card in remainders):
+        raise AdapterError("wildcard_claim_alignment_failed")
+    return tuple(WildcardInfo(carrier_card=carrier, declared_as=declared) for carrier, declared in zip(wildcards, remainders))
+
+
+def _display_text(pattern: PatternType, cards: Sequence[Card]) -> str:
+    return f"{pattern.value}:{','.join(_declared_token(card) for card in cards)}"
+
+
+def _is_free_before(events: Sequence[HistoryEntry], player_id: int) -> bool:
+    for entry in reversed(events[-4:]):
+        if entry.player_id == player_id:
+            break
+        if not entry.response.is_pass:
+            return False
+    return True
+
+
+def _replay_rounds(history: Sequence[HistoryEntry]) -> tuple[tuple[HistoryEntry, int], ...]:
+    replayed: list[tuple[HistoryEntry, int]] = []
+    round_no = 0
+    for entry in history:
+        free = _is_free_before(tuple(item for item, _round in replayed), entry.player_id)
+        if entry.response.is_pass and free:
+            raise AdapterError("invalid_history_pass")
+        if free:
+            round_no += 1
+        if round_no == 0:
+            raise AdapterError("invalid_history_round")
+        replayed.append((entry, round_no))
+    return tuple(replayed)
+
+
+def _validate_context(context: HandlerContext, request: DealRequest | PlayRequest) -> None:
+    if context.global_state != request.global_state:
+        raise AdapterError("context_global_mismatch")
+    if type(context.local_player_id) is not int or not 0 <= context.local_player_id <= 3:
+        raise AdapterError("context_local_player_invalid")
+    if (
+        any(type(card_id) is not int or not 0 <= card_id <= 107 for card_id in context.own_hand)
+        or len(set(context.own_hand)) != len(context.own_hand)
+    ):
+        raise AdapterError("context_hand_invalid")
+    if isinstance(request, DealRequest):
+        if context.local_player_id != request.your_id:
+            raise AdapterError("context_local_player_mismatch")
+        return
+    if context.latest_window != request.history:
+        raise AdapterError("context_latest_window_mismatch")
+    if bool(context.history) != bool(context.latest_window):
+        raise AdapterError("context_history_mismatch")
+    if len(context.latest_window) > len(context.history) or (
+        context.latest_window and context.history[-len(context.latest_window):] != context.latest_window
+    ):
+        raise AdapterError("context_history_mismatch")
+    if context.finished or context.local_player_id in request.done:
+        raise AdapterError("context_finished_mismatch")
+    seen: dict[int, int] = {}
+    played_by_player: Counter[int] = Counter()
+    for entry in context.history:
+        for card_id in entry.response.action:
+            if card_id in seen:
+                raise AdapterError("duplicate_public_entity")
+            seen[card_id] = entry.player_id
+            played_by_player[entry.player_id] += 1
+    if set(context.own_hand) & set(seen):
+        raise AdapterError("own_hand_contains_played_entity")
+    if len(context.own_hand) + played_by_player[context.local_player_id] != 27:
+        raise AdapterError("local_hand_conservation_failed")
+    for player_id in range(4):
+        remaining = 27 - played_by_player[player_id]
+        if not 0 <= remaining <= 27:
+            raise AdapterError("public_capacity_invalid")
+        if player_id in request.done and remaining != 0:
+            raise AdapterError("done_capacity_invalid")
+        if player_id not in request.done and remaining == 0:
+            raise AdapterError("unfinished_zero_capacity")
