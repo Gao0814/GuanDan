@@ -512,4 +512,15 @@ Phase 0 至 L4-A3b1 均已完成并封存；既有 invalid/inconclusive 结论�
 
 ## 12. 推荐下一动作
 
-执行已授权的 L4-A3c：核对授权消息后启动唯一前台 RuleBasedAI connector，提示用户刷新 Botzone 并新建“需要进贡=否”的全新测试桌；使用全新 LocalAppData state/audit，最多 100 次 GET、timeout 120 秒、最长 900 秒、完成 1 局即停且不重试。
+执行离线 L4-A3c1：把 `malformed_request` 拆分为固定白名单的 JSON、envelope、inner request、历史 response 与 replay 错误类别，并以合成 fixture 验证不泄露原始请求。不得在该任务联网或复用 L4-A3c 授权。
+
+## 13. L4-A3c 实际结果
+
+唯一判定：`botzone_no_tribute_local_ai_smoke_invalid`。
+
+- 唯一 connector 收到 1 个请求后以 exit 5、`diagnostic_failure` 停止。
+- `responses_prepared=0`、`headers_sent=0`、`finished_seen=0`、`transport_failures=0`。
+- 唯一诊断为 `malformed_request=1`；state 目录为空。
+- 用户尚未确认创建全新无贡测试桌，请求已先到达；来源可能是平台保留或重放的旧 match，但当前证据不能确认。
+- L4-A3a 的合法合成 envelope 回归仍成立；本次 live 只说明仍存在未分类的真实输入差异，不能定位到具体字段或规则。
+- 下一次 live 前必须先完成安全分层诊断，并在 connector 已连接后再由用户创建全新无贡桌。

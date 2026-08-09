@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A3b1 已完成；用户已明确授权固定预算的 L4-A3c，下一执行任务可在核对授权消息后启动一次前台 RuleBasedAI 无贡 smoke
+- 当前工作状态：Botzone L4-A3c 已执行并永久判为 `botzone_no_tribute_local_ai_smoke_invalid`；下一步是离线 L4-A3c1 分层脱敏诊断，禁止复用授权或直接重跑 live
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：L4-A3b1 direct main 与两次 binary PIPE 捕获通过；定向 2、相关 18、全量 534 项通过，检查点 `28de0cb3...b1f331`
+- 实际验证结果：L4-A3b1 direct main 与两次 binary PIPE 捕获通过；定向 2、相关 18、全量 534 项通过，检查点 `28de0cb3...b1f331`。L4-A3c 单次 live 收到 1 个请求后以 `malformed_request`、exit 5 停止，未准备 response 或发送 Header
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -1320,3 +1320,13 @@ L4-A3b1 已完成，唯一判定 `botzone_live_smoke_recovery_authorization_read
 - 新增依赖前必须说明理由；
 - 不修改 `.env`、密钥或生产配置；
 - 临时运行输出不得纳入源码提交。
+
+## 8. Botzone L4-A3c 封板
+
+- 唯一判定：`botzone_no_tribute_local_ai_smoke_invalid`。
+- 唯一前台 connector 自行退出：`cycles=1`、`finished=0`、exit 5。
+- 脱敏 audit：`requests_seen=1`、`responses_prepared=0`、`headers_sent=0`、`transport_failures=0`，诊断为 `malformed_request=1`。
+- state 目录为空；未产生可发送 response，未完成任何一局。
+- 请求在用户确认新建无贡测试桌前到达，不能证明来自新桌，也不能排除旧 match 重放。
+- 现有 `malformed_request` 同时覆盖 JSON 与 envelope 多类错误，无法定位失败层级。
+- 本次授权已消耗，不得重试或补采。下一步只做 L4-A3c1 离线分层脱敏诊断。

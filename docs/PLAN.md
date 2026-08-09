@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：既有 invalid/inconclusive 永久保留。L4-A3b1 已封存为 `28de0cb3...b1f331`，唯一判定 `botzone_live_smoke_recovery_authorization_ready`。用户已明确授权固定预算 L4-A3c；下一执行任务核对授权消息后执行一次前台 RuleBasedAI 无贡 smoke。L4-A2c5b2a 暂缓。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：既有 invalid/inconclusive 永久保留。L4-A3c 已执行并判定 `botzone_no_tribute_local_ai_smoke_invalid`：唯一请求落入过宽的 `malformed_request`，且请求先于用户确认新建无贡桌到达。下一执行任务为离线 L4-A3c1 分层脱敏诊断；不得复用授权或直接 live。L4-A2c5b2a 暂缓。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -987,9 +987,10 @@ K-A3d3c3a 结果：
 7. Phase 4 协议恢复：L4-A3a 已完成，离线区分外层 Bot JSON 与内层 GuanDan stage，重放历史并包装 response；
 8. Phase 4 新准入：L4-A3b 已封存实现，但 stdout gate 导致 preflight invalid；
 9. Phase 4 输出恢复：L4-A3b1 已完成，direct main 与 binary PIPE 跨平台单行输出通过；
-10. Phase 4 live：L4-A3c 等待明确授权，执行一次前台无贡新桌 smoke，不重试；
-11. Phase 4 文件系统诊断：L4-A2c5b2a 暂缓，既有 invalid 不追认；
-12. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
+10. Phase 4 live：L4-A3c 已执行一次并 invalid；未生成 response/Header，授权已消耗；
+11. Phase 4 请求诊断：L4-A3c1 离线拆分固定安全错误类别，禁止联网；
+12. Phase 4 文件系统诊断：L4-A2c5b2a 暂缓，既有 invalid 不追认；
+13. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。
 

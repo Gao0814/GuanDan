@@ -1274,6 +1274,22 @@ L4-A3c live smoke 验收口径：
 - 报告只保留聚合计数，不读取或展示 URL、Header、match ID、手牌、history 或 session 正文；
 - verified 只证明一局无贡接入可用，不形成胜率或策略提升结论。
 
+L4-A3c 实际结果：唯一前台 connector 在首个请求后以 `malformed_request`、exit 5 停止；`requests_seen=1`，response/header/finished 均为 0，transport failure 为 0。用户未在进程结束前确认新建无贡桌，因此不能证明请求属于新桌。该结果永久为 `botzone_no_tribute_local_ai_smoke_invalid`，不得重试或补采。
+
+L4-A3c1 最低测试口径：
+
+- JSON 解码错误与 envelope 结构错误使用不同固定诊断；
+- 当前 inner request、历史 response 与 replay/history 对齐错误分别归类；
+- 所有对外诊断经过集中 allowlist，不使用异常正文或动态字段；
+- 未知异常统一回退 `malformed_request`，不泄露 `str/repr`；
+- 非法输入不调用 Agent、不准备 response、不发送 Header；
+- connector 聚合准确的安全错误码并保持既有 `diagnostic_failure` 停止行为；
+- 合法 deal/play/replay/pass/自然牌/配子路径逐字段不变；
+- fixture 只使用人工合成最小结构，不复制真实 live 请求或完整手牌；
+- audit 与输出不含 payload、match ID、牌 ID 列表、手牌、history、URL、Header、Cookie、密钥或异常正文；
+- 运行定向测试、全量 `python -m unittest discover -q`、`git diff --check` 和边界扫描；
+- 本步严格离线，request/GET/network/connector count 为 0。
+
 ## 6. 对局评测
 
 单元测试不能代替策略评测。每次策略改动应使用固定种子进行 A/B 对局，并轮换座位，至少记录：
