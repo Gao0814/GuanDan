@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：L4-A2c2 已封存且 5 / 17 / 520 项通过；L4-A2c3a invalid 保留。L4-A2c4a 因诊断子进程 import path 缺口判定 inconclusive，阶段 3–8 未执行。下一步 L4-A2c4b 先验证 harness 再恢复矩阵；完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：L4-A2c4b qualification 双通过，八阶段与 module 复验全部少于 1 秒并退出 0，但真实超时未复现，判定 recovery inconclusive。下一步 L4-A2c5a 建立可审计专用 preflight 入口；完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1170,6 +1170,17 @@ L4-A2c4a 实际仅完成 startup；runtime import 的 `ModuleNotFoundError` 来�
 - 每个正式阶段执行前重复同一自检；
 - 有效矩阵才允许形成 verified/inconclusive，harness 错误必须独立 invalid；
 - 全程只用合成 URL/临时 state，网络与 connector 计数严格为 0。
+
+L4-A2c4b 实际结果：qualification 与全部正式阶段通过，根因为 `not_reproduced`。L4-A2c5a 最低测试要求：
+
+- 专用 module 在 runtime import 前先原子写 `bootstrapping`；
+- 配置、state resolve/boundary/mkdir/tempfile/write/flush/fsync/replace/unlink、完成阶段均可审计；
+- runtime callback 默认关闭时现有行为不变；
+- 每类配置/file-op/callback/audit/interrupt/未知异常有稳定脱敏结果；
+- audit 路径外部、绝对、新建且原子 JSON；
+- 合成子进程 10 秒内完成、state 为空、阶段完整；
+- 不导入主入口/runner/transport/connector/Agent，不读取 dotenv；
+- request/GET/network/connector/live-launcher count 严格为 0。
 
 ## 6. 对局评测
 

@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：L4-A2b/L4-A2c3a invalid 永久保留。L4-A2c4a 因临时诊断子进程缺少仓库 import path 而 inconclusive，不能归因项目。下一步 L4-A2c4b 先双运行验证 harness，再独立恢复合成矩阵。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：L4-A2b/L4-A2c3a invalid 永久保留。L4-A2c4b 的有效合成矩阵全部成功但未复现真实超时，判定 recovery inconclusive。下一步 L4-A2c5a 新增可审计零网络 preflight 契约。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -984,7 +984,7 @@ K-A3d3c3a 结果：
 4. Phase 3：已完成；adapter 主链与 L3-A1a observation/实体守恒均封板；
 5. Phase 4 准备：L4-A1/L4-A1a/L4-A2a 已完成；凭据轮换与 preflight ready 已确认；
 6. Phase 4 live：L4-A2b 已执行唯一启动尝试并因 launcher environment error 判定 invalid，未实际联网；
-7. Phase 4 恢复：L4-A2c1/A2c2 已完成 launcher 根因与加固；L4-A2c3a preflight 超时并 invalid；L4-A2c4a 诊断载体无效而 inconclusive；下一步 L4-A2c4b 先 qualification 后恢复八阶段矩阵；
+7. Phase 4 恢复：launcher 已加固；黑盒 preflight 超时未能在有效合成矩阵中复现；下一步 L4-A2c5a 增加导入前与 state file-op 的原子阶段审计，随后另做真实环境零网络准入；
 8. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。

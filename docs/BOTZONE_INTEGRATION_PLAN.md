@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A2c2 已封存。L4-A2c3a invalid 永久保留；L4-A2c4a 因临时诊断脚本缺少仓库 import path 而 inconclusive。下一步 L4-A2c4b 先验证 harness，再恢复合成矩阵。
+状态：L4-A2c4b 有效合成矩阵全部快速通过，但真实 preflight 超时未复现。下一步 L4-A2c5a 新增分阶段、原子落盘的专用零网络 preflight 入口。
 
 工作：
 
@@ -476,7 +476,7 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A2a 均已完成；L4-A2b 与 L4-A2c3a invalid、L4-A2c4a inconclusive 均保留。preflight 超时根因仍未知。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c4b：先做双份 import harness qualification，再运行合成矩阵；不得启动真实 connector 或联网。
+Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留。合成环境无法复现超时，不能靠继续重跑或提高 timeout 恢复。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c5a 可审计 preflight 契约；不得消费真实配置或联网。
 
 理由：
 
@@ -509,4 +509,4 @@ Phase 0 至 L4-A2a 均已完成；L4-A2b 与 L4-A2c3a invalid、L4-A2c4a inconcl
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A2c4b：在新目录使用 `cwd=repo root` 与 `python -c + runpy.run_path`，先两次证明 cwd/path/spec/origin 全部正确；只有资格门槛通过才重新执行八阶段合成诊断。资格失败单独判 harness invalid，不得误归因项目；即使矩阵全部通过，也只能保留 diagnosis inconclusive，不能直接恢复 live。
+执行 Step L4-A2c5a：新增只依赖标准库和 runtime config 的 `live_preflight` 入口，在延迟 import 前写入 bootstrapping，并通过可选 state stage callback 持续原子更新脱敏 audit。使用合成环境验证完整阶段、稳定退出码、异常分类与零网络；通过后只进入 L4-A2c5b 单次真实环境零网络准入，不直接 live。
