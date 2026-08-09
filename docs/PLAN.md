@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 基础官方调研已完成，唯一判定为 `botzone_manual_no_tribute_phase0_blocked`。三份固定版 Wiki 已封板，但 claim 实体 ID 约束、多配子裁判规则、无贡手动桌请求序列/先手和目标账号权限仍缺官方证据。下一步 Step L0-A2 只接受并审计用户辅助取得的官方裁判源码、官方 fixture 与脱敏账号可用性证据；不得进入 L1-A1。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 已由官方 Wiki、GuanDan 游戏详情的官方裁判源码和目标账号脱敏配置页证据封板，唯一判定为 `botzone_manual_no_tribute_phase0_verified`。下一步 Step L1-A1 只实现离线协议模型、108 ID codec 和测试；当前仍没有可启动的 connector。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -978,7 +978,7 @@ K-A3d3c3a 结果：
 
 阶段：
 
-1. Phase 0：当前 blocked；通过 L0-A2 补齐手动建桌无贡协议、裁判语义、账号权限和差异清单；runmatch initdata 可作为后续自动化未知项；
+1. Phase 0：已完成；claim、双配子、无贡 `deal→play`、首个玩家和账号入口已封板；runmatch 自动化仍为可选项；
 2. Phase 1：纯数据模型、108 牌 ID codec 和阶段协议单测；
 3. Phase 2：可注入 transport 的 connector、session persistence 与 mock Botzone；
 4. Phase 3：无贡 `deal + play` adapter 接入 RuleBasedAI；`tribute/return` 只识别并 fail-closed；

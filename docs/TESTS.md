@@ -1084,16 +1084,14 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：仅规划，尚未新增测试或实现。Phase 0 当前唯一判定为 `botzone_manual_no_tribute_phase0_blocked`；下一步 L0-A2 先取得并审计官方裁判源码/fixture 与脱敏账号可用性证据，未 verified 前不得创建下列测试文件。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 已完成，唯一判定为 `botzone_manual_no_tribute_phase0_verified`；尚未新增测试或实现。下一步 L1-A1 可以创建纯离线 protocol/codec 测试，但不得实现 connector、联网或调用 Agent。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
-Phase 0 不运行代码测试，证据验收至少包括：
+Phase 0 证据验收已完成：
 
-- 官方文件来源、大小与 SHA-256 可复核；
-- claim 的实体 ID、花色、副本、重复、排序与 canonical 规则可定位到官方源码/fixture；
-- 单手配子上限及多配子复合牌型约束有官方裁判依据；
-- “需要进贡=否”的 `deal → play` 序列和首个先手字段有官方证据；
-- 账号只记录本地 AI 可用/不可用/未知，不记录 URL、密钥、Cookie 或身份信息；
-- 任一必需证据缺失时保持 blocked，不以单元测试假设替代协议真值。
+- 官方裁判源码来源、31,136 bytes 与 SHA-256 已记录；
+- claim 多重集、副本等价、顺序、非王替代和最多两张配子已定位到官方源码；
+- 无贡 `deal×4 → player 0 play` 已定位到官方源码；
+- 账号配置入口已脱敏确认；真实 URL/密钥不进入仓库，截图中暴露的值必须轮换。
 
 最低测试集合：
 

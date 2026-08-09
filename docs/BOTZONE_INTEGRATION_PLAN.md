@@ -2,13 +2,13 @@
 
 更新时间：2026-08-09
 
-## 0. Step L0-A1：手动建桌无贡 profile 官方协议封板（2026-08-09）
+## 0. Phase 0：手动建桌无贡 profile 官方协议封板（2026-08-09）
 
 ### 0.1 唯一判定
 
-`botzone_manual_no_tribute_phase0_blocked`
+`botzone_manual_no_tribute_phase0_verified`
 
-此判定只针对 `Botzone GuanDan manual-table no-tribute profile` 的 Phase 0；它不改变 K-A3d3b、K-A3d3c2 或 K-A3d3c3a 的任何结论。阻塞不是网络、账号密钥或本地 engine 的问题，而是手动 `play` adapter 所必需的官方裁判 claim 语义尚未公开可核。不得据此实现 connector、adapter、创建桌子、加入对局或调用本地 AI。
+此判定只针对 `Botzone GuanDan manual-table no-tribute profile` 的官方协议前置；它不改变 K-A3d3b、K-A3d3c2 或 K-A3d3c3a 的任何结论，也不表示 connector 已实现或可启动。该判定只允许进入 L1-A1 的离线协议模型、108 ID codec 和测试，不授权联网、创建桌子、加入对局或调用本地 AI。
 
 ### 0.2 仅采用的官方来源
 
@@ -17,8 +17,8 @@
 | [本地 AI](https://wiki.botzone.org.cn/index.php?title=%E6%9C%AC%E5%9C%B0AI&oldid=2230) | `oldid=2230`；2026-08-09 | 官方 Wiki 词条与官方 Python/C++ 样例 | GET 长轮询、`m n` 首行、`2*m` match/request 行、finished row、`X-Match-<match_id>`、多 match、`runmatch` Headers。 |
 | [Bot](https://wiki.botzone.org.cn/index.php?title=Bot&oldid=2245) | `oldid=2245`；2026-08-09 | 官方 Wiki 词条 | 常规 Bot 的 JSON/simple-IO 历史语义；不能把它当作 local-AI 网关重放保证。 |
 | [GuanDan](https://wiki.botzone.org.cn/index.php?title=GuanDan&oldid=2497) | `oldid=2497`；2026-08-09 | 官方 Wiki 规则、字段定义与 request/response 样例 | 108 ID、`deal`/`tribute`/`return`/`play`、`[action, claim]`、pass、近四手 history、`global` 字段。 |
-| [GuanDan 游戏详情](https://www.botzone.org.cn/game/GuanDan) | 2026-08-09 | 官方详情页访问尝试 | 官方页面在本次核对中未返回可读取的裁判源码、样例或调试 fixture；不能用搜索摘要、第三方实现或 UI 截图替代。 |
-| 目标账号“本地 AI 配置”页面 | 2026-08-09 | 登录后非敏感权限元数据 | **未核验**：本次没有可用的已登录账号页面。官方公开账号页面说明功能面向等级 6 及以上的活跃用户；目标账号是否满足仍须由该页面的非敏感状态确认。 |
+| [GuanDan 游戏详情](https://www.botzone.org.cn/game/GuanDan) | 2026-08-09 | 用户从官方详情页“裁判代码”提供的源码副本 | 31,136 bytes，SHA-256 `20d06056689341e1745837564dfae325bd56e54c7b0337bc11c6e8c856bc6b46`；确认 claim 校验、双配子能力、无贡 initdata、四次 deal 后首个 play。 |
+| 目标账号“本地 AI 配置”页面 | 2026-08-09 | 登录后脱敏权限截图 | **confirmed**：目标账号可见密钥、连接 URL、连接状态和提交控件，页面显示当前账号适用门槛；真实密钥/URL 已暴露后必须轮换，文档不记录其值。 |
 
 所有 URL、版本和内容只用于文档引用；不记录本地 AI URL、连接密钥、match ID、Header 值、账号身份或个人资料。
 
@@ -32,15 +32,15 @@
 | `play.history` | **confirmed** | 仅近四手，包含 pass；每项含 `player` 与同结构 `response`。 | session 必须持久化近四手之外所需的公开状态；不能从单 request 重建完整本局。 |
 | `global.level`、`done`、`pass_on` | **partially confirmed** | `global.level` 是本局等级；`done` 标记已出完玩家；`pass_on` 标定接风上下文，官方样例给出 `-1`。 | `done/pass_on` 的完整状态机和值域未封板，adapter 不能自行推断先手或接风转移。 |
 | 配子实体 | **confirmed** | 红桃级牌是配子，可代替任意非大小王牌。 | 与本地 `carrier_cards` / `wildcard_info` 的概念可对接，但不足以编码 claim。 |
-| 配子 claim 的花色、副本、排序、重复和 canonical 规则 | **unknown — P0 blocked** | Wiki 只说 claim 是整数 ID 的“宣称牌型”；未规定声明 ID 是否必须保留具体花色/副本、两个同牌副本是否可交换、是否排序、ID 重复/范围的 judge 规则。 | 不能把本地常规 `declared_cards`（常常无花色）无歧义编码为 claim；禁止实现 play adapter。 |
-| 单手配子数量及多配子牌型约束 | **unknown — P0 blocked** | Wiki 未给出单手最大数量，也未给出炸弹、顺子、连对、钢板、同花顺中多配子的裁判约束。 | 当前 engine 每手最多一个配子只是本地规则，不能假定等价。 |
-| 无贡手动桌首个 `play` 先手 | **unknown — P0 blocked** | Wiki 只说明“如不需贡牌，则由上游者领出”；没有官方无贡手动桌的第一局/新桌 `first` 或首个 `play` fixture。 | 不得从贡还规则、截图或本地默认 player 1 推导。 |
-| 无贡时严格跳过 `tribute/return` | **unknown — P0 blocked** | 用户明确要求手动选择“需要进贡=否”，但本次仅有官方通用阶段文档，未得到该配置的官方请求序列。 | profile 必须在未来识别 `tribute/return` 并 fail-closed；不能宣称其不会出现。 |
+| 配子 claim 的花色、副本、排序、重复和 canonical 规则 | **confirmed with strict adapter policy** | 裁判源码 `isLegalClaim()` 按牌面多重集匹配所有非配子 action，剩余 claim 牌对应配子且不得为王；ID 经单副牌牌面投影，因此两副副本等价，顺序不参与校验。裁判未严格拒绝 claim 重复实体 ID 或越界整数。 | adapter 必须比裁判更严格：只输出 `0..107`，自然牌固定 `claim=action`，声明使用确定性 canonical ID，不依赖裁判宽松行为。 |
+| 单手配子数量及多配子牌型约束 | **confirmed** | 物理牌池只有两张红桃级牌；源码允许所有红桃级牌从自然牌匹配中豁免，并明确存在“bomb with 2 coverings”路径，随后统一用 claim 做牌型判断。 | Botzone 最多允许两张配子；当前 engine 每手最多一个配子，只实现合法子集并记录能力缺口，不修改 engine。 |
+| 无贡手动桌首个 `play` 先手 | **confirmed** | 源码把缺失/0 `tribute` 规范为 0，`first/last=None`；四家 deal response 完成后直接生成 `stage="play"`，`nextplayer=0`。 | adapter/session 以 Botzone 玩家 0 为无贡新桌首个先手，再映射为本地玩家 1。 |
+| 无贡时严格跳过 `tribute/return` | **confirmed** | 源码在 `tribute==0` 分支直接发首个 play；只有 truthy tribute 才进入 tribute 分支。 | 无贡 profile 正常阶段为 deal→play；仍需识别意外 `tribute/return` 并 fail-closed。 |
 | 贡/还/抗贡/双贡/跨局升级 | **unsupported** | 当前项目只实现单局 play；无 tribute/return/resist/升级状态模型。 | 任何此类 stage 一律 `unsupported_stage`，不调用 Agent、不伪造 pass。 |
 | local-AI GET / Header / 批量 match | **confirmed** | 本地 AI词条规定 GET、首行 `m n`、request/finished 行和 `X-Match-<match_id>`；样例按每 match 维护 pending response。 | connector 只能作为后续实现；当前不实现。 |
 | local-AI 重放、提交成功确认、服务端超时秒数 | **unknown** | 官方样例在 URL/HTTP error 后重试，但没有给出 exactly-once ack 或固定长轮询秒数。 | 后续 connector 需保守持久化 pending response；不得承诺重放语义。 |
 | `runmatch` / `X-Initdata` 无贡表达 | **unknown — optional** | 官方只定义 `X-Initdata` 为可选初始化数据，未给 GuanDan 无贡值。 | 仅阻塞自动建桌；不阻塞手动建桌的 Phase 1–3。 |
-| 目标账号可用本地 AI | **unknown — account prerequisite** | 官方账户说明的公开门槛为等级 6 及以上活跃用户；目标账号必须在登录后页面显示可用才可进入真实 smoke。 | 不阻塞离线 Phase 1–3；阻塞任何真实 local-AI 使用。 |
+| 目标账号可用本地 AI | **confirmed** | 登录后页面显示本地 AI 配置入口、提交按钮和连接状态。 | 不再阻塞离线实现；真实 smoke 前必须轮换已暴露密钥并重新取得联网授权。 |
 
 ### 0.4 action / claim 与当前 engine 的封板
 
@@ -51,18 +51,19 @@
 - action 是真实 carrier，claim 是配子替代后的声明；两副相同牌必须在 session inventory 中保留原 ID，不能仅按 token 扣牌；
 - 当前 `Action.carrier_cards`、`Action.declared_cards` 和 `WildcardInfo` 是 adapter 输入候选，而不是 Botzone 输出真值。
 
-未确认且因此禁止编码的部分：
+官方源码确认的 claim 行为：
 
-- 用于普通单张/对子/三张/炸弹/顺子/连对/钢板的 `declared_cards` 通常没有具体花色；官方未说明 claim 应如何选择对应实体 ID；
-- 配子把红桃级牌声明成同花顺或其他指定花色时，claim 是否必须是该花色实体 ID、可否使用另一副同牌副本、是否要求 canonical 排序；
-- 多配子在同一手、各类牌型和炸弹中的上限与 judge 行为；
-- claim 中 ID 的范围、重复、重复副本的交换性和非法排序的裁判处理。
+- action 与 claim 必须等长；所有非红桃级牌按花色+点数多重集出现在 claim 中；
+- 剩余 claim 项与配子一一对应，不能声明为大小王；同花顺等牌型由 claim 的声明花色参与判断；
+- 两副相同牌在 claim 中等价，顺序不参与裁判语义；自然牌仍采用更严格、稳定的 `claim=action`；
+- 两张红桃级牌可以同时作为配子，最终声明统一进入牌型识别；
+- 裁判对 claim ID 范围和重复实体 ID 的检查较宽松，integration 必须自行限制 `0..107` 并生成确定性 canonical 声明。
 
-必须从 GuanDan 游戏详情页可下载的官方裁判源码、官方样例程序或官方调试 request/response fixture 取得上述证据后，才允许 L1-A1 实现 codec 或 play adapter。
+上述证据允许 L1-A1 实现离线 codec/protocol；play adapter 仍属于 Phase 3，必须经过 Phase 1/2 测试后才能实现。
 
 ### 0.5 无贡手动桌与 transport 的操作边界
 
-用户侧手动操作的唯一目标 profile 为“建桌时选择需要进贡=否”。在官方配置序列尚未取得前，Phase 0 不承诺 `deal` 后一定直接 `play`，也不承诺首个 player；未来 dispatcher 只允许已确认的 `deal` 与可验证的 `play`，遇到 `tribute`、`return` 或未知 stage 必须停在 `unsupported_stage`。
+用户侧手动操作的唯一目标 profile 为“建桌时选择需要进贡=否”。官方裁判源码确认四家依次完成 `deal` 后直接向 Botzone 玩家 0 发出首个 `play`。未来 dispatcher 只允许该 profile 的 `deal/play`，遇到 `tribute`、`return` 或未知 stage 必须停在 `unsupported_stage`。
 
 本地 AI 官方词条确认：手动创建或加入桌后可选择“用本地AI替代我”；local-AI 是本机向 opaque URL 发起 GET 的长轮询，不是本机开放端口。一次 GET 可以包含多个 match，finished row 的玩家数为 `0` 表示异常结束。真实 URL、Header 值和 response 内容均不进入文档、日志或测试 fixture。
 
@@ -72,13 +73,13 @@
 
 目标是在不改变现有 AI 边界的前提下，让本机连接器通过 Botzone 本地 AI 接口参与 GuanDan 测试对局，用真实平台对手验证 RuleBasedAI 或其他本地策略的合法性、稳定性和实际对抗表现。
 
-第 0 节的 `botzone_manual_no_tribute_phase0_blocked` 是当前唯一 Phase 0 判定。本节保留的规划只说明解除第 0 节列明阻塞后的候选范围，不构成 connector、adapter 或真实桌授权。
+第 0 节的 `botzone_manual_no_tribute_phase0_verified` 是当前唯一 Phase 0 判定；它只允许进入离线 Phase 1，不构成 connector、adapter 或真实桌授权。
 
 - 本地 AI 传输层可行性高：官方协议是由本机发起的重复长轮询 GET，不需要公开本机端口，也不是上传源码或 WebSocket。
-- play 阶段 adapter 尚被第 0 节列明的官方 claim、配子数量和无贡阶段证据缺口阻塞；不得实现或声称可用。
+- claim、双配子和无贡阶段流已由官方裁判源码封板；下一步先实现离线协议模型和 codec，不跨越到 connector/adapter。
 - 用户提供的建桌设置截图确认“需要进贡”可选择“否”，且默认测试对局采用该配置；因此首期真实 smoke 的支持范围可以收敛为 `deal + play`。
 - 当前 engine 没有贡还能力不再阻塞无贡模式接入；但 adapter 必须识别 `tribute / return` 并以 `unsupported_stage` fail-closed，不能返回空响应、pass 或任意牌绕过。
-- 规则一致性尚未完全证明：Botzone `claim` 的精确牌 ID 表示、单手配子数量上限仍需从官方裁判源码或官方样例封板。
+- Botzone 允许最多两张配子，而当前 engine 每手最多一个配子；首期 adapter 只能声明支持当前 engine 可生成的合法子集。
 - 首期使用网页手动建桌并明确选择“需要进贡=否”；`runmatch X-Initdata` 只属于后续自动化能力，其未知状态不再阻塞 Phase 1–3 或手动 smoke。
 - RuleBasedAI 可作为第一阶段默认 AI，但它只保证从合法动作中稳定选择，不代表已有强对抗能力。真实 smoke 只能证明接入正确；实力判断需要座位平衡和固定对手的小批量统计。
 
@@ -147,14 +148,14 @@
 | 发牌 | `reset()` 自己洗牌并给四家 27 张 | `deal.deliver` 只给本家 27 张 | 不调用随机 reset；session 接受平台发牌 |
 | 副本身份 | 两张同花同点不可区分 | 两张同牌有不同 ID | 输出前按当前 ID multiset 决定实体 ID，不能只反向 token |
 | 局前阶段 | 无 | 建桌可选择是否进贡；协议定义 `tribute / return / resist / double tribute` | 仅支持“需要进贡=否”；识别其他 stage 后 `unsupported_stage`，不实现策略 |
-| 开局领牌者 | 构造参数 `starting_player_id` | 无贡模式的领牌信息仍须以官方 request/global fixture 为准 | session 只消费已确认字段，不从贡还规则或截图猜测 |
+| 开局领牌者 | 构造参数 `starting_player_id` | 官方裁判无贡分支在四次 deal 后选择玩家 0 | adapter 映射为本地玩家 1；非无贡 profile 不适用 |
 | 出牌历史 | engine 保存完整 history | request 只给近四手 | session 去重累计公开事件；不能只看单次 request 做全局统计 |
 | 完赛/接风 | engine 内部推进并公开 finish order | `done`、`pass_on` | adapter 转为公开 observation；过渡需去重 |
 | 合法动作 | `BaseRuleEngine` 输出 `Action`，`GuanDanGame` 分配 `action_id` | 平台要求 ID 数组 | integration 构造单玩家 `GameState` 投影并序列化 canonical actions |
 | pass | canonical pass action | `[[], []]` | action adapter 固定转换 |
 | 普通出牌 | `carrier_cards` 与 `declared_cards` | `action` 与 `claim` 相同 | 用 inventory 中实际 ID 同时填两边 |
-| 配子出牌 | carrier 与 declared 分离，`wildcard_info` 显式 | `action` 与 `claim` 可不同 | 只从被选 canonical action 转换；精确 claim 编码仍是 Phase 0 阻塞项 |
-| 配子数量 | 当前实现每手最多 1 张 | Wiki 未明确每手最多几张 | **不确定**；必须查官方裁判源码，不得假设相同 |
+| 配子出牌 | carrier 与 declared 分离，`wildcard_info` 显式 | `action` 与 `claim` 等长；非配子牌面守恒，剩余声明非王 | 只从被选 canonical action 转换；输出严格 canonical ID |
+| 配子数量 | 当前实现每手最多 1 张 | 两副牌最多两张红桃级牌，裁判允许两张同时替代 | 当前 engine 仅覆盖合法子集；不为接入修改 engine |
 | 牌型/比较 | 当前 SPEC 的单局规则 | Wiki 规则文字相近，但未完整给出所有 judge 比较细节 | Phase 0 建立官方差异 fixture；不以名称相同视为等价 |
 | 终局结果 | engine 自己计算 winner/draw | gateway 结束行给各玩家 score | 以平台结束结果为审计真值；本地结果只用于测试 |
 | 跨局升级 | 不支持 | 建桌可显式设置双方等级和上一轮名次 | 只消费当前测试桌给出的本局公开配置；不实现升级赛或贡还 |
@@ -262,7 +263,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ### Phase 0：官方协议核实与差异清单
 
-状态：基础调研已完成，唯一判定为 `botzone_manual_no_tribute_phase0_blocked`。下一步 Step L0-A2 需要用户辅助取得并审计官方裁判源码、官方 fixture 和脱敏账号可用性证据；不得通过重复检索已封板 Wiki 推断缺失语义。runmatch initdata 单独作为可选自动化未知项。
+状态：已完成。官方裁判源码、官方 Wiki 与目标账号脱敏配置页证据已封板，唯一判定为 `botzone_manual_no_tribute_phase0_verified`。下一步 Step L1-A1 只实现离线协议模型、108 ID codec 和测试；runmatch 自动建桌仍是可选后续能力。
 
 工作：
 
@@ -281,7 +282,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 - 确认账号权限和手动桌选择方式；runmatch 前置可保持独立 unknown；
 - 未读取或持久化任何真实密钥。
 
-未满足以上条件时，唯一状态为 `botzone_manual_no_tribute_phase0_blocked`，不得进入 L1-A1 或真实连接。
+以上条件已满足；只允许进入 L1-A1，不得跳过 Phase 1/2 直接真实连接。
 
 ### Phase 1：纯协议模型与卡牌映射
 
@@ -370,13 +371,13 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ## 9. 风险与阻塞项
 
-### P0 阻塞
+### Phase 0 已解除项
 
-1. **claim 编码仍不充分。** 当前 canonical `declared_cards` 的同点数组合通常没有声明花色，而 Botzone claim 使用牌 ID；必须确认 judge 对 claim 中花色/副本的要求。
-2. **配子数量规则未封板。** 当前 engine 每手最多一个配子，官方 Wiki 没有明确同一手的数量上限。
-3. **无贡手动桌阶段流与首个先手未封板。** 仅有的官方文字不足以证明“需要进贡=否”的新桌严格跳过 `tribute/return`，也没有该配置的首个 `play` fixture；不得从贡还规则或 UI 推断。
-4. **目标账号权限未核验。** 官方公开门槛信息不能替代目标账号登录后的非敏感“本地 AI 可用”状态。
-5. **无贡 runmatch initdata 未封板。** `X-Initdata` 的对应 JSON/文本形式不能靠截图猜测；该项只阻塞自动建桌，不单独阻塞手动路径。
+1. claim 的牌面多重集、副本等价、顺序和非王替代规则已由官方裁判源码确认；adapter 采用更严格 canonical 输出。
+2. Botzone 最多两张配子已确认；当前 engine 一张上限保留为明确能力差异。
+3. 无贡 `deal×4 → player 0 play` 与严格跳过 tribute/return 已确认。
+4. 目标账号本地 AI 配置入口已确认；截图中暴露的密钥/URL 必须轮换。
+5. runmatch initdata 仍不属于首期手动路径，后续自动化前再单独封板。
 
 ### P1 风险
 
@@ -390,7 +391,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ## 10. play 子集的前置状态
 
-当前不得实现 `Botzone GuanDan no-tribute profile` 的 `deal + play` adapter。必须先取得第 0 节和第 9 节列出的官方裁判/fixture 与无贡阶段证据，并重新得到 `botzone_manual_no_tribute_phase0_verified`；届时才允许 Step L1-A1 的纯协议模型、108 ID codec 和离线 fixture。
+当前已允许 Step L1-A1 实现纯协议模型、108 ID codec 和离线 fixture；仍不得实现或启动 connector，也不得实现 `deal + play` Agent adapter。
 
 理由：
 
@@ -411,14 +412,14 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 | 不确定项 | 当前状态 | 必须查阅的位置 |
 |---|---|---|
-| claim 中替代牌的花色、副本 ID 和排序要求 | 不确定 | GuanDan 游戏详情的“裁判代码”及一份含配子的官方调试 Log |
-| 单手可使用几张配子 | 不确定 | GuanDan 裁判源码，不能仅按 Wiki 单数措辞推断 |
-| runmatch `X-Initdata` 中“需要进贡=否”的精确表示 | 不确定 | 官方 runmatch 文档、GuanDan 裁判 initdata schema 或登录后创建请求；不得从 UI 字段名猜 JSON |
-| 本地 AI 当前账号等级门槛 | 不确定，官方页面文字冲突 | 目标账号登录后的“本地 AI 配置”区域 |
+| claim 中替代牌的花色、副本 ID 和排序要求 | 已由裁判源码确认；integration 采用更严格 canonical 输出 | L1-A1 单测锁定 |
+| 单手可使用几张配子 | 已确认物理上限 2；当前 engine 上限 1 | Phase 3 标注合法子集，不修改 engine |
+| runmatch `X-Initdata` 中“需要进贡=否”的精确表示 | 裁判 schema 接受 `tribute=0`；自动建桌 Header 的完整产品流程仍可选 | 启用 runmatch 前另行 mock/官方页面核对 |
+| 本地 AI 当前账号等级门槛 | 目标账号配置入口已确认可用 | Phase 4 前轮换密钥并复核连接状态 |
 | 网关服务端长轮询具体超时秒数 | 未公布 | 当前本地 AI 设置页/接口响应 Header；Phase 4 smoke 记录 |
 | 本地 AI 是否在重启后重放历史 | 官方未承诺 | 本地 AI 当前词条、实际断线 smoke；设计按“不重放”处理 |
 | GuanDan 是否有官方可执行 Bot 样例 | 当前游戏详情只链接 Wiki，Wiki 只有交互样例 | 游戏详情、裁判源码入口；若平台另有下载需登录后确认 |
 
 ## 12. 推荐下一动作
 
-执行 Step L0-A2：由用户从 GuanDan 游戏详情提供可下载的官方裁判源码、官方样例或含配子的官方调试 fixture，并在目标账号登录后的“本地 AI 配置”区域只确认可用性状态。Codex 只记录来源、文件大小、SHA-256、相关函数/行号和脱敏结论，不接收 URL/密钥/Cookie/账号身份。还需要“需要进贡=否”的官方 `deal → play` 阶段与先手证据。若用户尚未取得这些材料，应立即保持 blocked，不重复搜索同一 Wiki；取得并重新审计前不得进入 L1-A1。`X-Initdata` 仍只阻塞自动建桌，不单独阻塞手动路径。
+执行 Step L1-A1：新增离线协议模型、108 ID codec 和对应单元测试，锁定 deal/play/pass、无贡 profile、claim 多重集与 unsupported stage。不得实现或启动 connector，不得读取本地 AI URL/密钥，不得联网或调用 Agent。L1-A1 通过后才规划 Phase 2 mock connector/session。
