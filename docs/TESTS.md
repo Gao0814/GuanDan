@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：L4-A2c5b1 已将真实 state 目录失败边界定位到独占创建操作，资格验证、精确清理和零网络守恒通过。下一步 L4-A2c5b2 获取脱敏 errno/winerror 并执行三目录范围对照；完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：L4-A2c5b2 qualification 与前两项探针有效，但第三目标因 evidence/target 同名未执行，整体 invalid。下一步 L4-A2c5b2a 先验证路径拓扑，再用全新目录独立执行完整矩阵；完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1210,6 +1210,16 @@ L4-A2c5b1 实际结果：资格验证成功；真实目录单次探测 exit code
 - 每个目标使用独立任务前缀并只清理精确任务文件，所有目录事后为空；
 - 结果只能划定目录/卷/进程范围，不得解释系统根因；
 - request/GET/network/connector/live-launcher 严格为 0。
+
+L4-A2c5b2 实际结果：qualification 成功；configured 与 same-volume 均返回 `PermissionError`、errno 13、winerror null并清空。local-appdata 因父载体将 evidence 子目录与 target 设为同名而未启动，summary/manifest 缺失，唯一判定 `botzone_exclusive_open_scope_diagnosis_invalid`。L4-A2c5b2a 恢复测试口径：
+
+- 使用新 run ID、新 runner、全新 evidence root 和全新目标目录；
+- 探针前验证所有 evidence/target resolve 路径两两不等、互不包含；
+- 新目标前置不存在，configured state 前置存在且为空；
+- 资格验证后，configured、same-volume、local-appdata 按固定顺序各执行一次；
+- 旧 b2 的两项部分结果不得进入新 summary 或替代任何目标；
+- 三目标完成后必须原子生成 summary.json 和 manifest.json；
+- 异常脱敏、精确清理、空目录、进程与零网络守恒全部通过。
 
 ## 6. 对局评测
 

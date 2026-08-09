@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A2c5a 契约已封存；L4-A2c5b 真实环境 preflight invalid；L4-A2c5b1 已定位到独占创建原子操作。下一步 L4-A2c5b2 只做脱敏错误分类和目录范围对照。
+状态：L4-A2c5b1 已定位独占创建边界；L4-A2c5b2 因第三目标路径与证据路径冲突而 invalid。下一步 L4-A2c5b2a 使用全新、拓扑预验证的三目录矩阵独立恢复。
 
 工作：
 
@@ -476,7 +476,7 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留。L4-A2c5b1 已证明真实 state 目录的失败边界位于 `os.open(O_CREAT|O_EXCL|O_RDWR)`，但没有证据解释根因或确认路径范围。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c5b2 的脱敏错误分类和三目录离线对照；不得重跑 preflight、修改永久配置、启动 launcher/connector 或联网。
+Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留。L4-A2c5b2 前两项目录均观测到 errno 13，但第三项因载体目录冲突未执行，整体 invalid 且不能形成范围结论。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c5b2a 的独立恢复矩阵；必须先验证 evidence/target 路径拓扑，不得复用旧部分结果、重跑 preflight、修改永久配置、启动 launcher/connector 或联网。
 
 理由：
 
@@ -509,4 +509,4 @@ Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A2c5b2：不修改仓库和永久环境配置，不运行 preflight；使用仓库外标准库载体记录严格脱敏的 errno/winerror，并按固定顺序各探测一次当前配置目录、同卷全新目录和本地应用数据全新目录。矩阵只用于确认失败范围，不得推断权限、杀毒、磁盘、Python 或 Windows 根因；无论结果如何都不能直接 live。
+执行 Step L4-A2c5b2a：使用新 run ID、新仓库外 evidence root 和全新目标目录；先以八项 bool 门槛证明 evidence/target 两两不同且互不包含，再按固定顺序各探测一次 configured、same-volume、local-appdata。必须生成完整 summary/manifest，旧 b2 部分结果不参与恢复结论；本步不修改配置、仓库或 live 状态。

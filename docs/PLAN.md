@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：既有 invalid/inconclusive 永久保留。L4-A2c5b1 已将真实 state 目录失败边界定位到独占创建；下一步 L4-A2c5b2 只做脱敏错误分类和当前/同卷/本地应用数据三目录对照。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：既有 invalid/inconclusive 永久保留。L4-A2c5b2 因第三目标与证据目录同名而 invalid；前两项 errno 13 不能形成范围结论。下一步 L4-A2c5b2a 使用路径拓扑预验证的全新矩阵独立恢复。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -984,7 +984,7 @@ K-A3d3c3a 结果：
 4. Phase 3：已完成；adapter 主链与 L3-A1a observation/实体守恒均封板；
 5. Phase 4 准备：L4-A1/L4-A1a/L4-A2a 已完成；凭据轮换与 preflight ready 已确认；
 6. Phase 4 live：L4-A2b 已执行唯一启动尝试并因 launcher environment error 判定 invalid，未实际联网；
-7. Phase 4 恢复：launcher 与 instrumented preflight 契约均已离线通过；真实环境失败已定位到独占创建，但错误分类和目录范围未知，尚不具备修改 state 配置或 launcher offline 准入资格；
+7. Phase 4 恢复：独占创建边界已定位；首个范围矩阵因载体路径冲突 invalid，仍不具备修改 state 配置或 launcher offline 准入资格；
 8. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。
