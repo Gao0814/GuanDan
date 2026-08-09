@@ -1,29 +1,18 @@
 # 下一步实施提示词
 
-## Step L2-A1：Botzone mock connector 与会话持久化
+## Step L2-A1a：Botzone Phase 3 准入契约加固
 
-请在 GuanDan 项目中完成 Step L2-A1。本步实现可注入 transport 的 connector 状态机、local-AI poll 文本模型、按 match 隔离的持久化 session 和纯 mock 测试。不得实现真实 HTTP transport，不得读取或使用本地 AI URL/密钥、`.env`、Cookie、账号或真实 Header 值，不得联网，不得创建/加入对局，不得调用 Agent、DeepSeek、engine 或现有 CLI。
+请在 GuanDan 项目中完成 Step L2-A1a。本步不接 Agent、不实现 adapter、不实现真实 HTTP transport、不联网；只修复官方 claim 虚拟声明的 multiplicity，并补齐 mock connector 向后续 Phase 3 提供安全 session context 与实体手牌提交事务的契约。
 
 ### 前置与检查点
 
-L1-A1 唯一判定：
+L2-A1 唯一判定保持：
 
 ```text
-botzone_no_tribute_protocol_verified
+botzone_mock_connector_verified
 ```
 
-已验证定向 14 项、全量 460 项、`git diff --check` 与边界扫描。当前 L1-A1 文件若仍为未跟踪状态，开始 L2-A1 前必须先复核上述测试，并创建一个只包含以下文件的独立检查点；不得把 docs 或 L2 文件混入：
-
-- `integrations/__init__.py`
-- `integrations/botzone/__init__.py`
-- `integrations/botzone/cards.py`
-- `integrations/botzone/models.py`
-- `integrations/botzone/protocol.py`
-- `tests/test_botzone_cards.py`
-- `tests/test_botzone_protocol.py`
-- `tests/test_botzone_profile.py`
-
-### 建议新增文件
+已验证定向 28 项、全量 474 项、`git diff --check` 和边界扫描。开始本步前，必须把当前 L2-A1 的以下改动建立为独立检查点，不与本步修复混合：
 
 - `integrations/botzone/poll.py`
 - `integrations/botzone/session.py`
@@ -31,66 +20,103 @@ botzone_no_tribute_protocol_verified
 - `tests/test_botzone_poll.py`
 - `tests/test_botzone_session.py`
 - `tests/test_botzone_connector.py`
+- `tests/test_botzone_profile.py` 的 Phase 2 扫描范围修正
 
-不得修改 L1-A1 的协议契约，除非定向反例证明其存在明确 bug；任何修复必须单独说明并保持 L1 测试通过。
+### 已证明的阻塞
 
-### Poll 契约
+#### 1. claim 虚拟 ID 重复
 
-1. 严格解析首行 `m n`，随后 `2*m` 行按 match ID/request JSON 成对出现，再解析 `n` 条 finished row。
-2. 同一次 poll 支持多个 match；报告顺序保持输入顺序，不依赖 mapping 或 canonical JSON 键序。
-3. request JSON 交给现有 `parse_stage_request()`；malformed request 只阻断对应 match，不污染其他 match。
-4. finished row 模型保留 match ID、本地座位、玩家数和整数分数；玩家数 0 明确表示异常结束。
-5. 严格处理 LF/CRLF、空尾行、计数不符、额外行、非法 UTF-8/JSON、重复 match ID、Header 注入字符和超长输入。
-6. match ID 只作为不透明会话键；不得解释其格式，不得出现在异常正文或普通日志。
+当前 `parse_action_claim()` 对 claim 使用实体 ID 唯一性校验。官方裁判 `isLegalClaim()` 只按牌面多重集验证 claim，不要求 claim 中的虚拟实体 ID 唯一。
 
-### Session 契约
+两副牌同一点数最多只有 8 个不同实体 ID。合法的 9 张炸弹（8 张自然牌 + 1 配子）和 10 张炸弹（8 张自然牌 + 2 配子）必须在 claim 中重复一个或两个同点数虚拟 ID。当前实现会错误返回：
 
-1. 每个 match 独立保存 schema version、request digest、已解析 stage、必要公开状态、pending response、pending/inflight 状态和最后完成状态。
-2. 初始 deal 的本家实体手牌可以存入用户显式指定的 state directory，用于重启恢复；不得写入日志、测试快照或最终报告。
-3. 使用标准库和原子替换写入；损坏、版本不兼容、缺文件或中途 play 无状态时 fail-closed，不创建猜测状态。
-4. 重复 request digest 必须幂等：如果已有同 digest 的 response，复用完全相同的 pending response，不再次调用 handler。
-5. pending response 只有在一次 transport 调用成功返回后才能转为 acknowledged/清除；异常、超时或 transport 失败必须保留原始字节内容。
-6. finished row 结束对应 session，但不得影响其他 match；异常结束也必须清除可执行 pending 状态。
+```text
+ProtocolValidationError: claim contains duplicate physical IDs
+```
 
-### Connector 契约
+必须保持 action 和 known hand 的实体 ID 唯一，但允许含配子的 claim 使用重复 `0..107` ID。自然牌仍严格要求 claim 与 action 为同一实体集合；pass 仍为 `[[], []]`。
 
-1. 通过调用方注入的 `Transport` 和 `RequestHandler` 工作；本步只使用 fake/mock，不创建 `urllib`、`requests`、socket 或真实 URL transport。
-2. 每轮先从 session store 加载 pending response，构造抽象的 `X-Match-<match_id>` header mapping，再调用 fake transport。
-3. Header 名和值拒绝 CR/LF；日志和异常只允许规范化类别与计数，不含 URL、match ID、request JSON、response JSON、牌或 Header。
-4. 一侧 match malformed/handler 异常不能破坏其他 match；没有 handler response 时不得伪造 pass、空数组或任意动作。
-5. `tribute`、`return`、未知 stage 和 L1 `UnsupportedStage` 不调用 handler、不产生 pending response，并记录规范化 unsupported 诊断。
-6. 不提供可连接真实 Botzone 的默认 transport、CLI 或 module runner；Phase 2 通过仍不能启动 live connector。
+#### 2. handler 缺少 session 上下文
+
+当前 `RequestHandler` 只接收 `DealRequest | PlayRequest`。`PlayRequest` 不包含本家当前实体手牌，且多 match 时 handler 无法知道应读取哪个 session，因此不能安全进入 Phase 3。
+
+新增冻结、slots 的 handler context/view，至少包含：
+
+- opaque match key；
+- request digest 与已解析 request；
+- 本家当前实体手牌；
+- 当前持久化公开 history/window；
+- global state 与 finished 状态；
+- 不可变、JSON 安全的必要字段。
+
+match key 只供内部路由，不得出现在日志、异常、测试快照或最终报告。
+
+#### 3. pending response 尚未携带手牌提交效果
+
+当前 session 在平台确认 pending response 后只清除 bytes，不扣减本家已出的实体牌。新增类型化 pending effect/result：
+
+- deal response 不改变手牌；
+- play response 持久化精确 action 实体 ID；
+- action ID 必须非 bool、唯一且为当前本家手牌子集；
+- transport 失败、异常或重启时 response bytes 与 effect 一起保持 pending，本家手牌不提前变化；
+- 只有 transport 成功 acknowledge 后才原子扣减一次；
+- 重复 acknowledge、重复 request 或重启不得重复扣牌；
+- finished/aborted 清除可执行 pending effect。
+
+### 公开 history 累积
+
+session 不能只覆盖保存最新四手。增加 latest window 与累计公开事件的确定性合并：
+
+- 重复 window 不重复追加；
+- 滑动 window 使用最长可验证 suffix/prefix 合并；
+- 玩家、response 和顺序共同参与事件等价；
+- finished 玩家跳过、pass 和相同牌面重复出现均有测试；
+- 无法唯一对齐时 fail-closed，诊断 `history_alignment_failed`，不得猜测；
+- 累计结果只来自 Botzone 公开 history 和本机已确认 response，不读取隐藏牌。
+
+### 允许修改
+
+- `integrations/botzone/protocol.py`
+- `integrations/botzone/session.py`
+- `integrations/botzone/connector.py`
+- 必要时 `integrations/botzone/models.py`
+- `tests/test_botzone_protocol.py`
+- `tests/test_botzone_session.py`
+- `tests/test_botzone_connector.py`
+- `tests/test_botzone_profile.py`
+
+不得修改 `engine/`、`agents/`、`cli/`、RAG、evaluation 或 DeepSeek。
 
 ### 测试要求
 
-- 单/多 match poll、多个 finished、aborted、LF/CRLF 和输入顺序；
-- 计数、行数、JSON、重复 match、超长/注入和 malformed 隔离；
-- pending prepare→transport failure→重启恢复→成功 acknowledge 的完整事务；
-- 重复 request 幂等、handler 每 digest 最多调用一次；
-- 两个以上 session 的手牌、history、pending 和 finished 完全隔离；
-- state schema/version、损坏文件、原子写失败和无状态中途 play fail-closed；
-- unsupported stage 不调用 handler、不生成 response；
-- fake transport 验证待回传 header mapping，但测试不得包含真实 URL、真实 match ID 或密钥；
-- 扫描确认无网络库、`.env`、环境变量、API key、真实 URL、engine/agents/CLI 导入和私有状态读取。
+- 9 张炸弹：8 个自然实体 ID + 1 配子，claim 含一个重复虚拟 ID，验证通过；
+- 10 张炸弹：8 个自然实体 ID + 2 配子，claim 含两个重复虚拟 ID，验证通过；
+- action/known hand 重复实体 ID仍失败；自然牌重复/换副本 claim 仍失败；claim 越界、王替代、牌面不守恒仍失败；
+- 两个 match 的 handler context 能看到各自不同的 own hand，且不能交叉；
+- pending play effect 在 transport failure、重启、成功 ack、重复 ack 全链路精确扣牌一次；
+- malformed handler result、越权 action ID、Header 注入和 finished pending effect fail-closed；
+- latest-window 重复、滑动、pass、finished skip、无法对齐与输入不变性；
+- 保持 L1/L2 既有事务、幂等和隔离测试通过；
+- 边界扫描继续禁止网络库、真实 URL、`.env`、环境变量、Agent/engine/CLI 导入和敏感值。
 
 验证命令：
 
 ```text
-python -m unittest tests.test_botzone_poll tests.test_botzone_session tests.test_botzone_connector tests.test_botzone_cards tests.test_botzone_protocol tests.test_botzone_profile -q
+python -m unittest tests.test_botzone_protocol tests.test_botzone_session tests.test_botzone_connector tests.test_botzone_poll tests.test_botzone_cards tests.test_botzone_profile -q
 python -m unittest discover -q
 git diff --check
 ```
 
 ### 验收判定
 
-全部事务、隔离、重启和回归通过时，唯一判定：
+全部修复与回归通过时，唯一判定：
 
 ```text
-botzone_mock_connector_verified
+botzone_phase3_admission_contract_verified
 ```
 
-该判定只允许进入 Phase 3 RuleBasedAI adapter。它不代表存在 live 启动命令，不授权联网，不证明真实 Botzone 可用，也不支持贡还或升级规则。
+该判定才允许下一步实现 Phase 3 RuleBasedAI adapter。它不表示 Agent 已接入、存在 live 启动命令、可以联网或支持贡还/升级。
 
 ### 最终报告
 
-报告 L1 检查点、修改文件、poll/session/connector 契约、mock 调用和事务计数、定向/全量测试、边界扫描及剩余风险。明确说明没有真实 transport、没有 URL/密钥读取、没有联网、没有 Agent、没有可启动的 live connector。
+报告 L2 检查点、三个修复契约、9/10 张炸弹反例、handler context、pending effect 事务、history 合并测试、定向/全量回归和边界扫描。明确说明未调用 Agent、未修改 engine、无真实 transport、未读取 URL/密钥、未联网。

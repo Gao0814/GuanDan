@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L1-A1 唯一判定为 `botzone_no_tribute_protocol_verified`；下一步为 Step L2-A1 mock connector 与会话持久化
+- 当前工作状态：Botzone L2-A1 唯一判定为 `botzone_mock_connector_verified`；下一步为 Step L2-A1a Phase 3 准入契约加固
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：Botzone L1-A1 定向 14 项、全量 460 项通过；`git diff --check` 与边界扫描通过
+- 实际验证结果：Botzone L2-A1 定向 28 项、全量 474 项通过；`git diff --check` 与边界扫描通过
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L1-A1 verified | 108 ID、不可变协议模型、严格 parser、claim 与无贡 opening fixture 已通过 | L1 文件尚未提交；无 connector/session/Agent/live 启动命令 |
+| Botzone 接入 | L2-A1 verified | L1 已提交；poll、durable session、pending 事务和 fake transport connector 已通过 | claim 重复虚拟 ID、handler context、ack 后扣牌仍需加固；无 Agent/live |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1204,7 +1204,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 与 L1-A1 已完成。L1-A1 新增 `cards.py/models.py/protocol.py` 及三份测试，唯一判定 `botzone_no_tribute_protocol_verified`。定向 14 项、全量 460 项通过，未联网或读取敏感配置。当前这些实现文件仍是未跟踪状态，下一步开始前必须先创建独立 L1 检查点。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0、L1-A1 与 L2-A1 已完成。L1 已提交为 `db8f351f2b416a67ab13ae35de6923aefa2ae859`。L2 新增 poll/session/mock connector 与三份测试，定向 28 项、全量 474 项通过，唯一判定 `botzone_mock_connector_verified`；L2 文件当前仍未形成独立检查点。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1225,7 +1225,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 - runmatch `X-Initdata` 中“需要进贡=否”的精确表示；该项只阻塞自动建桌，不阻塞已明确选择“否”的手动建桌路径；
 - 目标账号可见本地 AI 配置入口；真实 smoke 前必须轮换截图中已暴露的密钥/URL。
 
-推荐实施顺序：L1-A1 codec/protocol → Phase 2 mock connector/session → Phase 3 RuleBasedAI 的 deal + play → Phase 4 用户授权且手动设为无贡的真实 smoke → 可选 runmatch 自动化 → Phase 5 可选 DeepSeek。贡还不在当前范围；收到相关 stage 必须失败，不得绕过。
+推荐实施顺序：L1-A1 codec/protocol → Phase 2 mock connector/session → L2-A1a Phase 3 准入加固 → Phase 3 RuleBasedAI 的 deal + play → Phase 4 用户授权且手动设为无贡的真实 smoke → 可选 runmatch 自动化 → Phase 5 可选 DeepSeek。贡还不在当前范围；收到相关 stage 必须失败，不得绕过。
 
 L1-A1 实现结果：
 
@@ -1234,9 +1234,16 @@ L1-A1 实现结果：
 - 严格拒绝 bool、非法 ID、重复实体 action、错误长度、未知手牌和 malformed history；
 - `tribute/return/unknown` 返回不可执行 `unsupported_stage`；
 - 无贡 fixture 锁定四家完整 deal 后由 Botzone 玩家 0 首个 play；
-- 当前没有 poll parser、session store、pending response 事务、transport 或 runner，因此仍不能启动本机 connector。
+- L2-A1 已提供 poll parser、session store、pending response 基础事务和注入式 fake transport connector；仍没有真实 HTTP transport、runner 或可启动的 live connector。
 
-下一步 Step L2-A1 只实现 fake transport 下的 poll/session/connector 骨架；不得读取真实 URL、联网或调用 Agent。
+Phase 3 准入审计发现：
+
+- 当前 claim parser 拒绝重复实体 ID，但官方裁判按牌面多重集接受虚拟重复；9/10 张炸弹无法通过当前 parser；
+- 当前 handler 只收到 request，不含 opaque match/session 和本家当前实体手牌，多 match 下无法安全接 Agent；
+- pending response acknowledge 后未应用本家 action 实体 ID，session 手牌会保持 27 张并在后续重复出牌；
+- session 只保存最新 history window，尚未建立可审计的公开事件累积。
+
+下一步 Step L2-A1a 先修复以上契约并创建 L2 检查点；不得直接进入 Phase 3、读取真实 URL、联网或调用 Agent。
 
 ## 6. 当前风险
 

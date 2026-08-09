@@ -263,7 +263,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ### Phase 0：官方协议核实与差异清单
 
-状态：已完成。官方裁判源码、官方 Wiki 与目标账号脱敏配置页证据已封板，唯一判定为 `botzone_manual_no_tribute_phase0_verified`。后续 Step L1-A1 已完成；当前进入 L2-A1 mock connector/session，runmatch 自动建桌仍是可选后续能力。
+状态：已完成。官方裁判源码、官方 Wiki 与目标账号脱敏配置页证据已封板，唯一判定为 `botzone_manual_no_tribute_phase0_verified`。后续 L1-A1 与 L2-A1 均已完成；runmatch 自动建桌仍是可选后续能力。
 
 工作：
 
@@ -282,11 +282,11 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 - 确认账号权限和手动桌选择方式；runmatch 前置可保持独立 unknown；
 - 未读取或持久化任何真实密钥。
 
-以上条件已满足，L1-A1 已完成；当前只允许进入 L2-A1 mock connector/session，不得跳过 Phase 2/3 直接真实连接。
+以上条件已满足，L1-A1 与 L2-A1 已完成；当前必须先完成 L2-A1a 准入加固，不得跳过 Phase 3 直接真实连接。
 
 ### Phase 1：纯协议模型与卡牌映射
 
-状态：已完成，唯一判定 `botzone_no_tribute_protocol_verified`。定向 14 项、全量 460 项通过；实现文件尚未形成 Git 检查点。
+状态：已完成，唯一判定 `botzone_no_tribute_protocol_verified`。定向 14 项、全量 460 项通过；实现已形成独立检查点 `db8f351f2b416a67ab13ae35de6923aefa2ae859`。
 
 工作：已实现 `models.py/cards.py/protocol.py` 和三份离线测试；不联网、不调用 Agent。
 
@@ -300,7 +300,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ### Phase 2：连接器骨架与 mock Botzone
 
-状态：下一步 Step L2-A1。开始前先为 L1-A1 创建独立检查点。
+状态：L2-A1 已完成，唯一判定 `botzone_mock_connector_verified`。定向 28 项、全量 474 项通过；实现仍为未提交改动。Phase 3 前先执行 L2-A1a 准入加固。
 
 工作：实现 poll 文本模型、可注入 fake transport、session store 和 pending response 事务；只连 mock transport。本阶段不提供真实 HTTP transport或 live module 启动入口。
 
@@ -312,6 +312,15 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 - 进程重启后从临时 state dir 恢复；无状态中途 request fail-closed；
 - 日志和异常不含 URL、密钥或完整 Header。
 - 通过后唯一判定 `botzone_mock_connector_verified`；仍不得声称 connector 可连接真实 Botzone。
+
+Phase 3 准入审计新增硬门槛：
+
+- claim 对虚拟声明 ID 必须允许官方裁判接受的重复，覆盖 9/10 张配子炸弹；action/known hand 仍保持实体唯一；
+- handler 必须接收按 match 隔离的不可变 session context，不能只收到无手牌的 `PlayRequest`；
+- pending response 必须携带 action 实体 ID effect，只在 transport 成功 acknowledge 后原子扣牌一次；
+- latest four history 必须可验证地并入累计公开事件；无法对齐时 fail-closed。
+
+L2-A1a 通过后的唯一判定为 `botzone_phase3_admission_contract_verified`，之后才允许 Phase 3。
 
 ### Phase 3：连接 RuleBasedAI 的端到端回合测试
 
@@ -427,4 +436,4 @@ Step L1-A1 的纯协议模型、108 ID codec 和离线 fixture 已完成。当�
 
 ## 12. 推荐下一动作
 
-执行 Step L2-A1：先为当前未跟踪的 L1-A1 文件创建独立检查点，再新增 poll 文本模型、按 match 隔离的 durable session、pending response 事务和 fake transport connector 测试。不得实现真实 HTTP transport，不得读取本地 AI URL/密钥，不得联网或调用 Agent；通过后仍不能启动 live connector。
+执行 Step L2-A1a：先为当前 L2-A1 文件创建独立检查点，再修复 claim 虚拟 ID multiplicity，补齐 handler session context、ack 后实体手牌 effect 和累计公开 history。不得实现真实 HTTP transport，不得读取本地 AI URL/密钥，不得联网或调用 Agent；通过后才允许 Phase 3，仍不能启动 live connector。

@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 与 L1-A1 已完成。L1-A1 新增离线协议模型、108 ID codec 和 14 项定向测试，全量 460 项通过，唯一判定 `botzone_no_tribute_protocol_verified`。当前文件仍未形成 Git 检查点，且没有可启动的 connector。下一步 Step L2-A1 先封板 L1 检查点，再实现只连 mock transport 的 connector/session。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0、L1-A1 与 L2-A1 已完成。L1 检查点为 `db8f351f2b416a67ab13ae35de6923aefa2ae859`；L2 定向 28 项、全量 474 项通过，唯一判定 `botzone_mock_connector_verified`。进入 Phase 3 前发现 claim 虚拟 ID multiplicity、handler session context 和 pending 手牌 effect 三项准入缺口，下一步 Step L2-A1a 先加固，不直接接 Agent。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -980,7 +980,7 @@ K-A3d3c3a 结果：
 
 1. Phase 0：已完成；claim、双配子、无贡 `deal→play`、首个玩家和账号入口已封板；runmatch 自动化仍为可选项；
 2. Phase 1：已完成；纯数据模型、108 牌 ID codec、无贡 profile 与 action/claim 单测通过；
-3. Phase 2：可注入 transport 的 connector、session persistence 与 mock Botzone；
+3. Phase 2：mock connector/session 已完成；L2-A1a 补齐 Phase 3 准入契约后封板；
 4. Phase 3：无贡 `deal + play` adapter 接入 RuleBasedAI；`tribute/return` 只识别并 fail-closed；
 5. Phase 4：经用户明确授权、手动设置“需要进贡=否”的小规模真实 Botzone smoke；
 6. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
