@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：Phase 0、L1-A1、L2-A1、L2-A1a 与 L2-A1b 已完成；L2-A1b 唯一判定 `botzone_phase3_official_request_contract_verified`，定向 39 项、全量 485 项通过。下一步 L3-A1 增加规则投影、实体 action/claim、provenance 和 RuleBasedAI mock E2E 测试；不实现真实 transport、CLI 或联网。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0、L1、L2 与 L3-A1 已完成；L3-A1 历史判定 `botzone_no_tribute_adapter_verified`，定向 39 项、全量 494 项通过。额外 observation fixture 发现 round/history/table action ID 错误；下一步 L3-A1a 增加精确公开字段、wildcard table action、实体牌守恒与 context 一致性测试，不实现真实 transport、CLI 或联网。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1104,6 +1104,7 @@ Phase 0 证据验收已完成：
 - `tests/test_botzone_play_adapter.py`：座位映射、observation、table constraint、pass、自然动作和配子 action/claim；
 - `tests/test_botzone_action_provenance.py`：输出只能来自原始 legal action 对应 `action_id`；
 - `tests/test_botzone_rule_agent_e2e.py`：RuleBasedAI 的 deal→play 关键回合、终局和无贡 profile 边界；
+- `tests/test_botzone_adapter_observation.py`：下一步新增或并入 play adapter 测试；轮次重放、精确 key set、wildcard table action、实体守恒与 `GuanDanGame.observe()` 对照；
 - `tests/test_botzone_config.py`：不读取真实 `.env`，缺失配置安全失败，日志不包含配置值；
 - `tests/test_botzone_rule_compatibility.py`：官方裁判/脱敏 Log 与当前 engine 的差分 fixture。
 

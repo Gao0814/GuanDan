@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L2-A1b 唯一判定 `botzone_phase3_official_request_contract_verified`；下一步为 Step L3-A1 离线 RuleBasedAI play adapter
+- 当前工作状态：Botzone L3-A1 历史判定 `botzone_no_tribute_adapter_verified`；公开 observation 精确性审计发现缺口，下一步为 Step L3-A1a
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：Botzone L2-A1b 定向 39 项、全量 485 项通过；`git diff --check` 与边界扫描通过
+- 实际验证结果：Botzone L3-A1 定向 39 项、全量 494 项通过；额外 fixture 复现 current round=3、history rounds=[1,1]、table action ID=0
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L2-A1b verified | 官方首个 play、座位、TableView、claim、事务和 mock connector 已通过 | 尚无 RuleBased adapter、真实 transport 或 live 启动入口 |
+| Botzone 接入 | L3-A1 完成，live 准入重开 | RuleBased adapter、实体 response、provenance 和 mock E2E 已通过 | round/history/table-action observation 尚需加固；无真实 transport/live |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1204,7 +1204,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0、L1-A1、L2-A1、L2-A1a 与 L2-A1b 已完成。L1 已提交为 `db8f351f2b416a67ab13ae35de6923aefa2ae859`，L2 为 `3b1b75ba1811f629f91718e5997ec9955c524b73`，L2-A1a 为 `9752f500498717b050440d24586e47ea287eeb07`。L2-A1b 补全官方首个 play、local player、schema v3 与 `TableView`，定向 39 项、全量 485 项通过，唯一判定 `botzone_phase3_official_request_contract_verified`；其七个修改文件当前仍未形成独立检查点。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0、L1、L2 与 L3-A1 已完成。L2-A1b 已提交为 `1766c91895874b963ca7f78ea2a39810183028d6`。L3-A1 新增 `profile.py/play_adapter.py`、三份 adapter 测试并最小更新 connector 边界扫描，定向 39 项、全量 494 项通过，历史判定 `botzone_no_tribute_adapter_verified`；其六个改动文件当前仍未形成独立检查点。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1250,7 +1250,11 @@ L2-A1b 已解决随后发现的官方请求差异：
 - session schema v3 持久化 `local_player_id`，重启、多 match、冲突 deal 和旧 schema 均 fail-closed；
 - 纯函数完成 `0..3 → 1..4`，`TableView` 可验证地推导 free lead、桌面领牌和 `pass_on`。
 
-下一步 Step L3-A1 先封存 L2-A1b 七个文件，再实现单回合规则投影、RuleBasedAI action-id 选择、实体 ID/claim 回写和 mock connector E2E。不得修改 engine/agents、实现真实 transport、读取敏感配置或联网。
+L3-A1 已完成单本家规则投影、RuleBasedAI action-id 选择、实体 ID/claim 回写与 mock connector failure/restart/ack E2E。它保持 engine/agents 不变，只覆盖单配子合法子集。
+
+后续精确 observation 审计复现：同一轮 single 3→single 4 后轮到第三家，当前实现给出 `current_round.round_no=3`，history round 为 `[1,1]`，桌面 action 使用伪 `action_id=0`；正确值应是同一 round 1 和桌面 `action_id=None`。此外外部配子 table action 尚未重建完整 wildcard info，实体牌全局守恒也未封板。
+
+下一步 Step L3-A1a 先封存 L3-A1 六个文件，再修复轮次重放、精确 observation、外部 wildcard action、实体牌守恒和 context 一致性。不得直接实现真实 transport、CLI、读取敏感配置或联网。
 
 ## 6. 当前风险
 
