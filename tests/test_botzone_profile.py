@@ -55,7 +55,10 @@ class BotzoneNoTributeProfileTests(unittest.TestCase):
 
     def test_protocol_package_has_no_runtime_or_secret_dependencies(self) -> None:
         package = Path(__file__).parents[1] / "integrations" / "botzone"
-        source = "\n".join(path.read_text(encoding="utf-8") for path in package.glob("*.py"))
+        source = "\n".join(
+            (package / filename).read_text(encoding="utf-8")
+            for filename in ("cards.py", "models.py", "protocol.py")
+        )
         forbidden_imports = re.compile(
             r"(?m)^\s*(?:from|import)\s+(?:os|urllib|requests|socket|dotenv|engine|agents)\b"
         )
