@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：L4-A3a 已完成，定向 47、全量 532 项通过。下一步 L4-A3b 先建立独立检查点，再用 `%LOCALAPPDATA%` 全新目录运行一次零网络 preflight；不得直接 live。L4-A2c5b2a 文件系统矩阵暂缓。完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：L4-A3a 已封存，定向 50、全量 532 项通过。L4-A3b 真实环境 preflight exit 0、stderr/state/零网络门槛通过，但 stdout 固定文本未获合格验证，整体 invalid。下一步 L4-A3b1 只新增合成 stdout 契约测试，不重跑真实 preflight。L4-A2c5b2a 暂缓。
 
 Phase 0 证据验收已完成：
 
@@ -1247,6 +1247,19 @@ L4-A3b 最低测试口径：
 - `python -m integrations.botzone --preflight-only` 恰好运行一次，30 秒内 exit 0 且固定输出 `preflight_ready`；
 - preflight 前后目录为空，request/GET/network/connector count 全部为 0；
 - 通过后只请求 L4-A3c 授权，不在同一步启动 connector。
+
+L4-A3b 实际结果：L4-A3a 已提交为 `2ac51fb2...e11f1498`，提交后工作区干净；定向 50、全量 532 与 diff check 通过。唯一 preflight 在 30 秒内 exit 0、stderr 空、state 前后为空并删除，网络计数全为 0，但 `stdout_is_preflight_ready=false`。由于未保留合格 raw stdout，唯一判定 `botzone_envelope_live_smoke_preflight_invalid`，不得重试或追认。
+
+L4-A3b1 最低测试口径：
+
+- 新增 `tests/test_botzone_preflight_output.py`，只使用显式合成 HTTPS URL 和临时目录；
+- direct `main(..., environ={})` 返回 0，文本精确为 `preflight_ready\n`，transport/opener 构造即失败；
+- 两个独立 module 子进程从仓库根运行，环境移除全部 `BOTZONE_*`，stdout/stderr 用 binary PIPE；
+- raw stdout 只允许 UTF-8 的 `preflight_ready\n` 或 Windows `preflight_ready\r\n`，normalized lines 精确一行；
+- 拒绝 BOM、NUL、空格、额外行或文本，stderr 必须为空，state 必须为空；
+- 两次 normalized 结果完全一致，request/GET/network/connector 为 0；
+- 运行专属、相关、全量测试和 `git diff --check`；
+- 通过只形成独立 `botzone_live_smoke_recovery_authorization_ready`，不改写 L4-A3b invalid。
 
 ## 6. 对局评测
 

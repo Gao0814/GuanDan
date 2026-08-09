@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：既有 invalid/inconclusive 永久保留。L4-A3a 已离线验证外层 Bot JSON、历史重放、无贡 global 和 response wrapper；实现尚未独立提交。下一步 L4-A3b 先封存检查点，再执行一次零网络 preflight 并请求新的固定预算 live 授权。L4-A2c5b2a 暂缓。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：既有 invalid/inconclusive 永久保留。L4-A3a 已封存为 `2ac51fb2...e11f1498`。L4-A3b preflight exit 0、stderr/state/网络门槛通过，但 stdout 固定文本未获合格验证，唯一判定 invalid。下一步 L4-A3b1 只做合成 stdout 捕获契约，不重跑真实 preflight。L4-A2c5b2a 暂缓。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -985,9 +985,10 @@ K-A3d3c3a 结果：
 5. Phase 4 准备：L4-A1/L4-A1a/L4-A2a 已完成；凭据轮换与 preflight ready 已确认；
 6. Phase 4 live：历史 L4-A2b 启动失败永久保留；后续人工前台运行已连接网关，但首个真实请求因协议 envelope 缺口失败；
 7. Phase 4 协议恢复：L4-A3a 已完成，离线区分外层 Bot JSON 与内层 GuanDan stage，重放历史并包装 response；
-8. Phase 4 新准入：L4-A3b 封存实现检查点并运行一次零网络 preflight；通过后另行申请 L4-A3c live 授权；
-9. Phase 4 文件系统诊断：L4-A2c5b2a 暂缓，既有 invalid 不追认；
-10. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
+8. Phase 4 新准入：L4-A3b 已封存实现，但 stdout gate 导致 preflight invalid；
+9. Phase 4 输出恢复：L4-A3b1 用 direct main 与 binary PIPE 锁定跨平台单行输出；通过后另行申请 L4-A3c live 授权；
+10. Phase 4 文件系统诊断：L4-A2c5b2a 暂缓，既有 invalid 不追认；
+11. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。
 
