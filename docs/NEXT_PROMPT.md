@@ -1,81 +1,30 @@
 # 下一步实施提示词
 
-## Step L4-A2c2：Windows Botzone live launcher 离线加固
+## Step L4-A2c3a：Windows launcher 零网络恢复准入审计
 
-请在 GuanDan 项目中执行 Step L4-A2c2。目标是替换已验证会在 Windows PowerShell 5.1 中失败的 `Start-Process -RedirectStandardOutput/-RedirectStandardError` 编排，新增一个最小、可测试、默认不联网的 Python launcher。只实现和验证启动/流重定向边界，不执行真实 Botzone 请求。
+请在 GuanDan 项目中执行 Step L4-A2c3a。先把已验证的 L4-A2c2 两个文件独立封存为代码检查点，再使用新 launcher 做一次严格零网络的恢复准入审计。不得启动真实 Botzone connector、不得发送 GET、不得创建或加入对局。
 
 ### 已封板事实
 
-- 当前文档基线 HEAD：`493a76443b74ed4f724c66d5879d20a920bf6894`；
-- L4-A1a 实现检查点：`029b8d6034e55c70b83d2b1c8d4b052626895bd2`；
+- 文档基线：`fc5e537dc81ec17ed7605fadc766eb86ec4a5bfd`；
 - L4-A2b 永久判定：`botzone_no_tribute_local_ai_smoke_invalid`；
-- L4-A2c1 判定：`botzone_launcher_environment_diagnosis_verified`；
-- PowerShell Desktop 5.1 支持 `Start-Process` 的隐藏窗口、工作目录、PassThru 和 Wait，但分流 stdout/stderr 重定向稳定在创建进程前抛出 `ArgumentException`；
-- 去除 PowerShell 内建重定向后，等价无网络启动连续两次成功；
-- 已验证根因类别：`stream_redirection`，不是仅由父环境继承导致；
-- L4-A2c1 request/GET/network/connector count 均为 0。
+- L4-A2c1：`botzone_launcher_environment_diagnosis_verified`；
+- L4-A2c2：`botzone_windows_live_launcher_hardening_verified`；
+- L4-A2c2 定向 5 项、相关 17 项、全量 520 项通过；
+- 两次 Windows PowerShell 合成 probe 均为退出码 17，环境、工作目录、参数和 stdout/stderr 分流正确；
+- PowerShell live 调用已移除 `RedirectStandardOutput` / `RedirectStandardError`；
+- L4-A2c2 network/GET/connector count=0。
 
-L4-A2c1 证据目录 `C:\Users\86166\AppData\Local\Temp\guandan-botzone-launch-diagnosis-b7e96cb1b1ec4fbe8ec6ff497735382f` 和既有文件必须只读保持，不复制进仓库、不修改、不补写。本步不继承任何 live 授权。
+本步不继承任何 live 授权。L4-A2b invalid 不得追认、重跑或改写。
 
-### 启动前门槛
+### A. 独立封存 L4-A2c2
 
-1. 工作区干净；
-2. `493a76443b74ed4f724c66d5879d20a920bf6894` 是当前 HEAD 的祖先；
-3. 从该基线到当前 HEAD 的变化仅限 `docs/BOTZONE_INTEGRATION_PLAN.md`、`docs/NEXT_PROMPT.md`、`docs/PLAN.md`、`docs/PROJECT_STATUS.md`、`docs/TESTS.md`；
-4. L4-A2c1 三份证据的 bytes/SHA-256 仍分别为：`child_probe.py` 700 / `56f885eb44f41860e4f7ee19a843d96015e3e97e18332625f5477cd36a3f0d2b`，`sentinel_probe.py` 348 / `76da7669356e7f62ffcc46cf68f6d2434f38120a527d9ee34402857738ae4faa`，`diagnosis.json` 1,358 / `274f01535beb79b64167edcaaf63322a91961ebaf216efe7e86443691fa2489e`；
-5. 没有正在运行的 `python -m integrations.botzone` 或 live launcher 进程。
-
-只允许读取证据 metadata/hash，不读取或修改其内容。任一门槛失败即 `precondition_failed`，不得修改代码、创建 launcher、联网或清理状态。
-
-### 允许修改范围
-
-仅允许新增或最小修改：
+启动时工作区必须只有以下两个未跟踪文件：
 
 - `integrations/botzone/live_launcher.py`；
-- `tests/test_botzone_live_launcher.py`；
-- 如 module 入口确有必要，可最小修改 `integrations/botzone/__init__.py`，但不得修改现有 `__main__.py`、runner、transport、session、adapter、engine 或 agents。
+- `tests/test_botzone_live_launcher.py`。
 
-不得修改 docs；项目规划文档由后续任务统一更新。不得新增第三方依赖。
-
-### launcher 契约
-
-1. 生产启动方式固定为：PowerShell `Start-Process` 只负责以隐藏窗口、指定仓库工作目录创建 `python -m integrations.botzone.live_launcher`；不得再使用 PowerShell 的两个 Redirect 参数。
-2. launcher 在自身进程内用 Python 标准库分别打开 stdout 与 stderr 文件，再调用既有 `integrations.botzone.__main__.main()`；不得创建第二个 connector 子进程。
-3. stdout、stderr、connector audit 必须是仓库外绝对路径、三者互不相同；stdout/stderr 必须位于同一个本次专用空目录，并以拒绝覆盖既有文件的方式创建。
-4. launcher 只把固定允许的 connector 参数传给既有 main：timeout、max cycles、max wall、stop-after-finished、audit file。不得接受或转发 `--url`、`--state-dir`、preflight 或任意未知参数。
-5. URL 和 state dir 仍只能由子进程继承的现有环境提供；launcher 不读取、记录、输出、复制、散列或持久化其值。
-6. stdout/stderr 必须在正常返回、异常和中断路径 flush/close；launcher 返回既有 connector exit code。launcher 自身验证失败使用独立稳定退出码和固定脱敏错误类别，不输出路径、命令行、环境值或异常链。
-7. launcher 不改变 foreground runner、audit schema、session 持久化或 Botzone 协议行为。
-8. 不实现自动重启、runmatch、DeepSeek、daemon 管理、第二进程或 live retry。
-
-### 可测试性
-
-核心执行函数必须支持注入 entrypoint 或等价无网络 seam，使单元测试无需导入/运行真实 connector transport，即可验证：
-
-- 合成环境变量可见性只以 present/missing 表示；
-- stdout/stderr 分别进入不同文件；
-- 参数、工作目录和固定退出码保持；
-- entrypoint 异常被规范化且两个流关闭；
-- 路径相同、仓库内路径、相对路径、已存在文件、非法参数和 bool 冒充整数均 fail-closed；
-- 输入 argv/mapping 不被修改；
-- 错误、repr、审计和测试 fixture 不包含真实 URL、密钥、Header、match ID 或手牌。
-
-### Windows 平台离线回归
-
-新增一项仅使用合成子脚本的 Windows PowerShell 5.1 回归：
-
-1. 在仓库外临时目录创建无网络 probe；
-2. 用 `Start-Process` 的隐藏窗口、工作目录、PassThru 和 Wait 启动 launcher，但不使用 PowerShell Redirect 参数；
-3. 由 launcher 内部创建两个独立流文件；
-4. 验证合成 sentinel present、参数和工作目录正确、stdout/stderr 分流、固定退出码正确；
-5. 连续执行两次，每次使用全新目录，结果结构一致；
-6. 明确记录 network/GET/connector count 为 0。
-
-非 Windows 平台可以按明确原因 skip 该平台测试，但通用单元测试必须运行。不得为了测试读取真实 `BOTZONE_*` 变量值；平台 probe 不得导入 connector 或网络模块。
-
-### 验证
-
-至少运行：
+不得存在其他修改或未跟踪文件。只读复核实现与报告一致，并重新运行：
 
 ```text
 python -m unittest tests.test_botzone_live_launcher -q
@@ -84,33 +33,78 @@ python -m unittest discover -q
 git diff --check
 ```
 
-边界扫描必须确认新模块和测试没有 `.env`/dotenv、真实 URL、API key、Cookie、Header 值、DeepSeek、runmatch、ground truth、`game._state` 或额外网络客户端依赖。
+全部通过后，只提交上述两个文件为独立 L4-A2c2 检查点。提交范围必须精确，不得包含 docs、配置、日志或外部证据。提交后工作区必须干净。任一门槛失败即 `precondition_failed`，不得继续准入审计。
 
-### 判定
+### B. 零网络准入前置
 
-全部通用和 Windows 离线测试通过，且两次平台 probe 均证明环境继承与分流正确：
+只检查非敏感元数据：
+
+1. L4-A2c2 检查点存在且只包含上述两个文件；
+2. `BOTZONE_LOCAL_AI_URL` 与 `BOTZONE_STATE_DIR` 在当前进程中均为 present，只输出 present/missing；
+3. `CODEX_LAUNCHER_OFFLINE_PROBE`、`CODEX_LAUNCH_SENTINEL`、`CODEX_LAUNCH_EXPECTED_CWD` 在正式环境中初始均为 missing；
+4. state dir 与用户此前确认的仓库外目录一致、存在且为空；只报告 matched/exists/empty，不输出 URL、目录内容或敏感值；
+5. 没有正在运行的 `integrations.botzone` 或 `live_launcher` 进程；
+6. 新建仓库外本次专用 audit 目录，初始为空。
+
+不得读取 `.env`、URL 值、密钥、Cookie、Header、账号信息或浏览器存储；不得删除未知 state。任一失败即 `precondition_failed`。
+
+### C. 恢复 preflight
+
+正式执行恰好两项零网络检查：
+
+1. 运行一次既有 `python -m integrations.botzone --preflight-only`，必须返回 `preflight_ready`；该路径不得构造 transport/opener 或发送请求。
+2. 使用 PowerShell Desktop 5.1 `Start-Process` 启动一次 `python -m integrations.botzone.live_launcher` 的 offline probe：只使用 `-WindowStyle Hidden`、`-WorkingDirectory`、`-PassThru`、`-Wait`，不得使用两个 PowerShell Redirect 参数。
+
+offline probe 规则：
+
+- 仅对子进程临时注入三项合成 probe 变量，probe 结束后恢复为 missing；
+- launcher 的 stdout/stderr/audit 参数指向同一个仓库外专用空目录中的三个互异路径；
+- 预期退出码精确为 17；
+- stdout/stderr 必须分别为固定 probe 文本；connector audit 不应生成；
+- 不调用 `_connector_main`、transport、opener、session、Agent 或网络；
+- 不启动第二个进程，不重试失败 probe。
+
+### D. 结束审计
+
+确认：
+
+- preflight 前后 state dir 都为空；
+- audit 目录只含预期的 probe stdout/stderr 与脱敏汇总；
+- 没有残留 connector/launcher 进程；
+- request/GET/network/connector count 均为 0；
+- 工作区保持干净；
+- stdout/stderr、固定输出和汇总不含 URL、密钥、Header、match ID、手牌、环境值或绝对敏感路径。
+
+仓库外写入一个原子、确定性的 `preflight_summary.json`，只保留 schema/version、检查布尔值、退出码、计数和规范化 diagnostics，不保留命令行、PID、环境值或真实路径。
+
+### 判定与授权边界
+
+全部门槛通过：
 
 ```text
-botzone_windows_live_launcher_hardening_verified
+botzone_live_launcher_recovery_preflight_ready
 ```
 
-任一实现、平台、隐私、流关闭或回归门槛失败：
+任一门槛失败：
 
 ```text
-botzone_windows_live_launcher_hardening_invalid
+botzone_live_launcher_recovery_preflight_invalid
 ```
 
-不得在本步启动真实 connector、请求 live 授权或形成 smoke 通过结论。通过只允许进入 L4-A2c3a 的零网络准入审计；L4-A2b invalid 永久保留。
+失败不得重试、补采或转为 live。通过也不得在本任务中联网；只能在最终报告后向用户请求一次新的 L4-A2c3b 明确授权。
+
+授权请求必须锁定并展示：RuleBasedAI、用户手动创建一局且“需要进贡=否”、最多 100 GET、最长 600 秒、timeout 30 秒、连续失败 5、finished 1、零自动重试、不使用 runmatch/DeepSeek、PowerShell 不使用 Redirect 参数。没有用户后续明确同意，不得启动 live launcher。
 
 ### 最终报告
 
-报告需列出：
+报告必须包含：
 
-- 修改文件与 launcher 契约；
-- PowerShell 调用中已移除的 Redirect 参数；
-- 定向、相关、全量测试结果；
-- 两次 Windows 合成平台 probe 结果；
-- network/GET/connector count=0；
-- 边界扫描与 `git diff --check`；
-- 未修改 engine、agents、协议、runner/session/transport；
-- 下一步仍是零网络 L4-A2c3a，不得直接 live。
+- L4-A2c2 检查点 hash 与精确提交范围；
+- 5 / 17 / 520 回归复核；
+- 两项零网络检查结果；
+- launcher probe 退出码和分流校验；
+- state/audit/worktree 清洁性；
+- request/GET/network/connector count=0；
+- summary 文件 bytes/SHA-256；
+- L4-A2b invalid 永久保留；
+- 若 ready，附上固定预算的新授权问题，但不得自行继续 live。

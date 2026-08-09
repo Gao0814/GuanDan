@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A1、L4-A1a 与 L4-A2a 已完成。L4-A1 检查点为 `e4a4fba99211831c66062ac0f003094edc941c6a`，L4-A1a 实现检查点为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`；L4-A2b invalid 永久保留。L4-A2c1 已离线定位 PowerShell 5.1 `stream_redirection` 根因；下一步 L4-A2c2 实现最小 Python launcher。
+状态：L4-A1、L4-A1a 与 L4-A2a 已完成。L4-A2b invalid 永久保留。L4-A2c1 已定位 PowerShell 5.1 `stream_redirection`；L4-A2c2 已完成最小 Python launcher 和两次 Windows 离线 probe。下一步先独立封存 L4-A2c2，再执行 L4-A2c3a 零网络恢复准入。
 
 工作：
 
@@ -476,7 +476,7 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A2a 均已完成；L4-A2b 已封板为 invalid，不得重跑或补采。L4-A2c1 已验证根因为 PowerShell 5.1 的内建流重定向。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c2 离线 launcher 加固；不得启动真实 connector 或联网。
+Phase 0 至 L4-A2a 均已完成；L4-A2b 已封板为 invalid，不得重跑或补采。L4-A2c2 已验证 Windows-safe launcher，但实现尚待独立提交和恢复准入。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c3a；不得启动真实 connector 或联网。
 
 理由：
 
@@ -509,4 +509,4 @@ Phase 0 至 L4-A2a 均已完成；L4-A2b 已封板为 invalid，不得重跑或�
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A2c2：新增最小 `integrations/botzone/live_launcher.py`，让 PowerShell 只无重定向地创建隐藏进程，由 Python 在进程内分别打开 stdout/stderr 并调用既有 connector main。新增通用单测及 Windows PowerShell 5.1 合成平台回归，连续两次证明环境继承、参数、工作目录、分流和退出码正确。全程零网络；通过后只进入 L4-A2c3a 准入审计，不直接 live。
+执行 Step L4-A2c3a：先把 `live_launcher.py` 与对应测试独立封存并恢复干净工作区；随后只读检查环境 presence、空 state dir 和无残留进程，运行一次既有 preflight-only 与一次 launcher offline probe。两项都必须零网络，state dir 保持为空，probe 退出 17 且 stdout/stderr 精确分流。通过后只能向用户请求新的固定预算 L4-A2c3b 授权，不得自动 live。

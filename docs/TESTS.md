@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：Phase 0 至 L4-A2a 已完成。L4-A2b 永久判定 `botzone_no_tribute_local_ai_smoke_invalid`。L4-A2c1 已验证 PowerShell Desktop 5.1 的 `stream_redirection` 根因：内建双流重定向稳定失败，移除后等价合成启动连续两次成功；request/GET/network/connector count=0。下一步 L4-A2c2 新增 Python 进程内分流 launcher 与离线平台回归。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A2a 已完成，L4-A2b invalid 永久保留。L4-A2c2 已新增 Windows-safe launcher 与测试，定向 5、相关 17、全量 520 项通过；两次平台 probe 均退出 17，network/GET/connector count=0。下一步 L4-A2c3a 先封存这两个文件，再执行一次 preflight-only 和一次 offline launcher probe。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1140,6 +1140,16 @@ L4-A2c1 实际结果：六步矩阵通过，根因类别为 `stream_redirection`
 - entrypoint 异常、非法路径、非法整数/bool 的稳定 fail-closed；
 - Windows PowerShell 5.1 不带 Redirect 参数启动 launcher 的两次独立离线回归；
 - network/GET/connector count 严格为 0。
+
+L4-A2c2 实际结果：上述 launcher 测试全部通过，PowerShell 已不再承担流重定向；Python launcher 同进程分流并保持既有 connector 参数和退出码。L4-A2c3a 追加准入检查：
+
+- L4-A2c2 检查点只含 launcher 与对应测试；
+- 实际环境只查两项 Botzone 变量 presence，三项 probe 变量必须初始 missing；
+- state dir 与专用 audit 目录前置为空；
+- 既有 preflight-only 恰好一次并保持零网络；
+- Start-Process 无 Redirect 参数的 offline probe 恰好一次，退出 17；
+- probe 后无 connector/audit/state/进程残留，stdout/stderr 精确分流；
+- 只有准入 ready 后才能请求新的固定预算 live 授权。
 
 ## 6. 对局评测
 
