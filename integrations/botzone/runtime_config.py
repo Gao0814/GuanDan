@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,3 +81,30 @@ def load_runtime_config(
         max_consecutive_failures=_positive_int(max_consecutive_failures, "invalid_failure_limit"),
         backoff_seconds=_positive_int(backoff_seconds, "invalid_backoff"),
     )
+
+
+def preflight_state_directory(config: RuntimeConfig) -> None:
+    """Check a repository-external state directory without opening a transport."""
+
+    state_dir = config.state_directory.resolve()
+    project_root = Path(__file__).resolve().parents[2]
+    if not state_dir.is_absolute() or state_dir.is_relative_to(project_root):
+        raise RuntimeConfigError("invalid_state_directory")
+    probe: Path | None = None
+    try:
+        state_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=state_dir, delete=False) as handle:
+            probe = Path(handle.name)
+            handle.write(b"probe")
+            handle.flush()
+            os.fsync(handle.fileno())
+        replacement = probe.with_name(probe.name + ".replace")
+        os.replace(probe, replacement)
+        replacement.unlink()
+    except OSError:
+        try:
+            if probe is not None and probe.exists():
+                probe.unlink()
+        except OSError:
+            pass
+        raise RuntimeConfigError("state_preflight_failed") from None

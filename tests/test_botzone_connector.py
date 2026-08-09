@@ -101,7 +101,7 @@ class BotzoneConnectorTests(unittest.TestCase):
             second = MockConnector(store, _FakeTransport([(f"1 1\nunit-b\n{_deal(1)}\nunit-a 0 0").encode()]), lambda _: HandlerResult(b"b"))
             cycle = second.cycle()
             self.assertEqual(cycle.finished_seen, 1)
-            self.assertEqual(store.load("unit-a").delivery_state, "finished")
+            self.assertIsNone(store.load("unit-a"))
             self.assertEqual(store.load("unit-b").pending_response, b"b")
 
     def test_handler_context_is_match_isolated_and_play_effect_commits_once(self) -> None:

@@ -58,12 +58,13 @@ def validate_https_url(value: object) -> str:
 
 def _safe_headers(headers: Mapping[str, bytes]) -> dict[str, str]:
     encoded: dict[str, str] = {}
+    token_characters = "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
     for name, value in headers.items():
         if (
             not isinstance(name, str)
             or not name.startswith("X-Match-")
             or not name[8:]
-            or any(ord(char) < 33 or ord(char) == 127 for char in name)
+            or any(char not in token_characters for char in name)
             or not isinstance(value, bytes)
             or not value
             or any(byte < 32 or byte == 127 for byte in value)
@@ -102,6 +103,7 @@ class LocalAIHttpTransport:
     def poll(self, headers: Mapping[str, bytes]) -> bytes:
         safe_headers = _safe_headers(headers)
         request = Request(self._url, headers=safe_headers, method="GET")
+        response = None
         try:
             response = self._opener.open(request, timeout=self._timeout_seconds)
             status = getattr(response, "status", None)
@@ -130,3 +132,11 @@ class LocalAIHttpTransport:
             raise TransportError("network_error") from None
         except OSError:
             raise TransportError("network_error") from None
+        except Exception:
+            raise TransportError("opener_error") from None
+        finally:
+            if response is not None and hasattr(response, "close"):
+                try:
+                    response.close()
+                except Exception:
+                    pass

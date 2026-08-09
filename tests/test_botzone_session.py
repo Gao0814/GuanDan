@@ -177,11 +177,9 @@ class BotzoneSessionTests(unittest.TestCase):
             before = valid.own_hand
             store.complete_handler(store.reserve_handler(valid), HandlerResult(b"play", PlayEffect((before[0],))))
             store.finish(FinishedRow("unit-a", 0, 0, ()))
-            finished = store.load("unit-a")
-            assert finished is not None
-            self.assertTrue(finished.finished is not None)
-            self.assertIsNone(finished.pending_effect)
-            self.assertEqual(finished.own_hand, before)
+            self.assertIsNone(store.load("unit-a"))
+            snapshot = json.loads(next(Path(root).glob("*.json")).read_text(encoding="utf-8"))
+            self.assertEqual(snapshot, {"schema": "botzone_no_tribute_finished", "version": 3, "finished": True})
 
     def test_local_seat_persists_and_conflicting_deal_or_old_schema_fails_closed(self) -> None:
         with TemporaryDirectory() as root:

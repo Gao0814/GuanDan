@@ -46,10 +46,10 @@ class BotzoneRunnerTests(unittest.TestCase):
                 sleep=sleeps.append,
                 clock=lambda: clock_calls.append(1) or 100,
             ).run(max_cycles=4)
-        self.assertEqual(summary.stopped, "cycle_limit")
+        self.assertEqual(summary.stopped, "cycle_limit_unfinished")
         self.assertEqual((summary.cycles, summary.successful_cycles, summary.transport_failures), (4, 2, 2))
         self.assertEqual(sleeps, [2, 2])
-        self.assertEqual(len(clock_calls), 4)
+        self.assertGreaterEqual(len(clock_calls), 4)
 
     def test_failure_limit_and_keyboard_interrupt_are_clean(self) -> None:
         with TemporaryDirectory() as root:

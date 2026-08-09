@@ -19,6 +19,7 @@ from .protocol import ProtocolValidationError, parse_action_claim
 
 SESSION_SCHEMA: Final[str] = "botzone_no_tribute_session"
 SESSION_VERSION: Final[int] = 3
+TOMBSTONE_SCHEMA: Final[str] = "botzone_no_tribute_finished"
 
 
 class SessionStorageError(ValueError):
@@ -341,6 +342,8 @@ class SessionStore:
             decoded = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise SessionStorageError("corrupt_session") from exc
+        if _is_tombstone(decoded):
+            return None
         record = _record_from_json(decoded)
         if record.match_id != match_id:
             raise SessionStorageError("session_key_mismatch")
@@ -351,9 +354,11 @@ class SessionStore:
 
     def save(self, record: SessionRecord) -> None:
         path = self._path(record.match_id)
+        self._atomic_write(path, json.dumps(record.to_json(), ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+
+    def _atomic_write(self, path: Path, encoded: bytes) -> None:
         try:
             self._root.mkdir(parents=True, exist_ok=True)
-            encoded = json.dumps(record.to_json(), ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
             with tempfile.NamedTemporaryFile(dir=self._root, delete=False) as handle:
                 temporary = Path(handle.name)
                 handle.write(encoded)
@@ -473,7 +478,10 @@ class SessionStore:
         deliveries: list[PendingDelivery] = []
         for path in sorted(self._root.glob("*.json")):
             try:
-                record = _record_from_json(json.loads(path.read_text(encoding="utf-8")))
+                decoded = json.loads(path.read_text(encoding="utf-8"))
+                if _is_tombstone(decoded):
+                    continue
+                record = _record_from_json(decoded)
             except (OSError, UnicodeDecodeError, json.JSONDecodeError, SessionStorageError) as exc:
                 raise SessionStorageError("corrupt_session") from exc
             if record.pending_response is not None and record.delivery_state in {"pending", "inflight"}:
@@ -509,10 +517,32 @@ class SessionStore:
                 self.save(replace(record, own_hand=own_hand, pending_response=None, pending_effect=None, delivery_state="idle"))
 
     def finish(self, row: FinishedRow) -> None:
-        record = self.load(row.match_id)
-        if record is None:
+        path = self._path(row.match_id)
+        if not path.exists():
             return
-        self.save(replace(record, pending_response=None, pending_effect=None, delivery_state="finished", finished=row))
+        try:
+            decoded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SessionStorageError("corrupt_session") from exc
+        if _is_tombstone(decoded):
+            return
+        _record_from_json(decoded)
+        self._atomic_write(
+            path,
+            json.dumps(
+                {"schema": TOMBSTONE_SCHEMA, "version": SESSION_VERSION, "finished": True},
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8"),
+        )
+
+
+def _is_tombstone(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and value == {"schema": TOMBSTONE_SCHEMA, "version": SESSION_VERSION, "finished": True}
+    )
 
 
 def merge_history(
