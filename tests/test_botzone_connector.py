@@ -11,23 +11,31 @@ from integrations.botzone.models import DealRequest, PlayRequest
 from integrations.botzone.session import HandlerContext, HandlerResult, PlayEffect, SessionStore
 
 
+def _deal_inner(player: int = 0) -> dict[str, object]:
+    return {
+        "stage": "deal",
+        "deliver": list(range(player * 27, (player + 1) * 27)),
+        "your_id": player,
+        "global": {"level": "2", "tribute": 0, "first": None, "last": None},
+    }
+
+
 def _deal(player: int = 0) -> str:
     return json.dumps(
-        {
-            "stage": "deal",
-            "deliver": list(range(player * 27, (player + 1) * 27)),
-            "your_id": player,
-            "global": {"level": "2", "tribute": 0, "first": None, "last": None},
-        },
+        {"requests": [_deal_inner(player)], "responses": []},
         separators=(",", ":"),
     )
 
 
-def _play() -> str:
+def _play(player: int = 0) -> str:
     return json.dumps(
-        {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False}},
+        {"requests": [_deal_inner(player), {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False, "tribute_cards": {}, "return_cards": {}}}], "responses": [[]]},
         separators=(",", ":"),
     )
+
+
+def _unsupported(player: int = 0) -> str:
+    return json.dumps({"requests": [_deal_inner(player), {"stage": "tribute"}], "responses": [[]]}, separators=(",", ":"))
 
 
 class _FakeTransport:
@@ -44,14 +52,42 @@ class _FakeTransport:
 
 
 class BotzoneConnectorTests(unittest.TestCase):
+    def test_cold_envelope_replay_wraps_header_and_commits_effect_after_ack(self) -> None:
+        with TemporaryDirectory() as root:
+            deal = _deal_inner(0)
+            play = {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1,
+                    "global": {"level": "2", "tribute": 0, "first": None, "last": None,
+                               "resist": False, "tribute_cards": {}, "return_cards": {}}}
+            envelope = json.dumps({"requests": [deal, play], "responses": [[]]}, separators=(",", ":"))
+            transport = _FakeTransport([(f"1 0\nunit-a\n{envelope}").encode(), RuntimeError("offline"), b"0 0\n"])
+            calls: list[HandlerContext] = []
+
+            def handler(context: HandlerContext) -> HandlerResult:
+                calls.append(context)
+                return HandlerResult(b"[[0],[0]]", PlayEffect((0,)))
+
+            store = SessionStore(root)
+            MockConnector(store, transport, handler).cycle()
+            before = store.load("unit-a")
+            assert before is not None
+            self.assertEqual(before.own_hand, tuple(range(27)))
+            self.assertEqual(before.pending_response, b'{"response":[[0],[0]]}')
+            MockConnector(store, transport, handler).cycle()
+            self.assertEqual(store.load("unit-a").own_hand, tuple(range(27)))
+            MockConnector(SessionStore(root), transport, handler).cycle()
+            after = SessionStore(root).load("unit-a")
+            assert after is not None
+            self.assertEqual(after.own_hand, tuple(range(1, 27)))
+            self.assertEqual(len(calls), 1)
+
     def test_pending_response_survives_transport_failure_then_acknowledges(self) -> None:
         with TemporaryDirectory() as root:
             transport = _FakeTransport([(f"1 0\nunit-a\n{_deal()}").encode(), RuntimeError("offline"), b"0 0\n"])
             calls: list[object] = []
-            connector = MockConnector(SessionStore(root), transport, lambda context: calls.append(context) or HandlerResult(b'{"reply":1}'))
+            connector = MockConnector(SessionStore(root), transport, lambda context: calls.append(context) or HandlerResult(b"[]"))
             first = connector.cycle()
             failed = connector.cycle()
-            recovered = MockConnector(SessionStore(root), transport, lambda context: calls.append(context) or HandlerResult(b'{"reply":1}')).cycle()
+            recovered = MockConnector(SessionStore(root), transport, lambda context: calls.append(context) or HandlerResult(b"[]")).cycle()
             self.assertEqual(first.responses_prepared, 1)
             self.assertEqual(failed.diagnostics, (("transport_failure", 1),))
             self.assertEqual(recovered.headers_sent, 1)
@@ -67,7 +103,7 @@ class BotzoneConnectorTests(unittest.TestCase):
             def handler(_: HandlerContext) -> HandlerResult:
                 nonlocal calls
                 calls += 1
-                return HandlerResult(b'{"reply":1}')
+                return HandlerResult(b"[]")
 
             connector = MockConnector(SessionStore(root), transport, handler)
             connector.cycle()
@@ -79,14 +115,14 @@ class BotzoneConnectorTests(unittest.TestCase):
 
     def test_malformed_unsupported_and_handler_failure_are_isolated(self) -> None:
         with TemporaryDirectory() as root:
-            body = ("4 0\nunit-a\n{bad}\nunit-b\n" + _deal(1) + "\nunit-c\n{\"stage\":\"tribute\"}\nunit-d\n" + _deal(2)).encode()
+            body = ("4 0\nunit-a\n{bad}\nunit-b\n" + _deal(1) + "\nunit-c\n" + _unsupported(2) + "\nunit-d\n" + _deal(3)).encode()
             calls: list[int] = []
 
             def handler(request: HandlerContext) -> HandlerResult:
                 calls.append(1)
                 if len(calls) == 2:
                     raise RuntimeError("handler")
-                return HandlerResult(b"ok")
+                return HandlerResult(b"[]")
 
             cycle = MockConnector(SessionStore(root), _FakeTransport([body]), handler).cycle()
             self.assertEqual(cycle.responses_prepared, 1)
@@ -96,26 +132,27 @@ class BotzoneConnectorTests(unittest.TestCase):
     def test_finished_row_clears_only_the_finished_session(self) -> None:
         with TemporaryDirectory() as root:
             store = SessionStore(root)
-            first = MockConnector(store, _FakeTransport([(f"1 0\nunit-a\n{_deal(0)}").encode()]), lambda _: HandlerResult(b"a"))
+            first = MockConnector(store, _FakeTransport([(f"1 0\nunit-a\n{_deal(0)}").encode()]), lambda _: HandlerResult(b"[]"))
             first.cycle()
-            second = MockConnector(store, _FakeTransport([(f"1 1\nunit-b\n{_deal(1)}\nunit-a 0 0").encode()]), lambda _: HandlerResult(b"b"))
+            second = MockConnector(store, _FakeTransport([(f"1 1\nunit-b\n{_deal(1)}\nunit-a 0 0").encode()]), lambda _: HandlerResult(b"[]"))
             cycle = second.cycle()
             self.assertEqual(cycle.finished_seen, 1)
             self.assertIsNone(store.load("unit-a"))
-            self.assertEqual(store.load("unit-b").pending_response, b"b")
+            self.assertEqual(store.load("unit-b").pending_response, b'{"response":[]}')
 
     def test_handler_context_is_match_isolated_and_play_effect_commits_once(self) -> None:
         with TemporaryDirectory() as root:
             first_poll = (f"2 0\nunit-a\n{_deal(0)}\nunit-b\n{_deal(1)}").encode()
-            second_poll = (f"2 0\nunit-a\n{_play()}\nunit-b\n{_play()}").encode()
+            second_poll = (f"2 0\nunit-a\n{_play(0)}\nunit-b\n{_play(1)}").encode()
             transport = _FakeTransport([first_poll, second_poll, RuntimeError("offline"), b"0 0\n", b"0 0\n"])
             contexts: list[HandlerContext] = []
 
             def handler(context: HandlerContext) -> HandlerResult:
                 contexts.append(context)
                 if isinstance(context.request, DealRequest):
-                    return HandlerResult(b"deal")
-                return HandlerResult(b"play", PlayEffect((context.own_hand[0],)))
+                    return HandlerResult(b"[]")
+                selected = context.own_hand[0]
+                return HandlerResult(json.dumps([[selected], [selected]], separators=(",", ":")).encode(), PlayEffect((selected,)))
 
             store = SessionStore(root)
             connector = MockConnector(store, transport, handler)

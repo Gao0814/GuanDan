@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone 手工连接已到达真实无贡对局请求，但 connector 将完整 Bot JSON 交互信封误作单条 GuanDan stage 解析，首请求以 `malformed_request` 退出；下一步为离线 L4-A3a 信封解析、历史重放与响应包装
+- 当前工作状态：Botzone L4-A3a 已完成离线外层信封、历史重放和 response wrapper 契约；实现尚未独立提交，下一步 L4-A3b 先封存检查点并执行一次零网络 live preflight
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：L4-A2c5a 定向 10、相关 23、全量 526 项通过；合成 module 退出 0、audit 阶段完整，全部网络/connector 计数为 0
+- 实际验证结果：L4-A3a 定向 47、全量 532 项通过，`git diff --check` 通过；未联网、未启动 connector
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | 手工 smoke 到达协议解析 | 本地 AI 显示已连接；真实无贡请求到达 connector | 外层 Bot JSON 信封未解析，Agent 尚未被调用；先完成 L4-A3a |
+| Botzone 接入 | L4-A3a 离线契约完成 | 外层 Bot JSON、历史重放、空贡还字段与 response wrapper 已验证 | 尚未形成检查点或重新验证 live；下一步 L4-A3b |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1204,7 +1204,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 至离线 connector/adapter 已完成。人工前台 smoke 已证明 Botzone 本地 AI 长轮询能够连接并收到真实无贡对局消息，但当前 parser 在调用 Agent 前以 `malformed_request` 退出。根因是外层 Bot JSON 交互信封与内层 GuanDan stage 请求未分层；下一步只做离线 L4-A3a。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A3a 已完成。外层 Bot JSON、历史重放、无贡 global 加固和 canonical response wrapper 已通过离线回归；当前实现仍在工作区，下一步 L4-A3b 只做独立检查点、零网络 preflight 和新授权请求。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1288,6 +1288,10 @@ L4-A2c5b2 已完成，唯一判定 `botzone_exclusive_open_scope_diagnosis_inval
 用户提供的真实消息结构与官方 Bot JSON 文档共同确认：顶层是 `requests/responses` 交互信封，首条内层 `deal` 提供本家座位和 27 张实体牌，最新内层请求为 `play`；不能只提取最后一项。当前 `poll.py` 直接把顶层对象传给只接受顶层 `stage` 的 `parse_stage_request()`，因此必然触发 `malformed_request`。真实 `play.global` 还包含空的 `tribute_cards/return_cards`，标准 Bot 输出需要 `{"response": ...}` 包装。真实牌 ID 和原始请求不得进入仓库。
 
 L4-A2c5b2a 文件系统恢复矩阵暂缓，既有 invalid 结论不变。当前关键路径改为 L4-A3a：离线实现外层信封模型、完整历史重放、无贡 global 加固和 canonical response wrapper；通过后才允许规划全新的手工 smoke。
+
+L4-A3a 已完成，唯一判定 `botzone_bot_json_envelope_contract_verified`。新增 `integrations/botzone/bot_io.py`，并更新 poll、connector、session 与 protocol：外层严格校验 `requests/responses` 基数，首条无贡 deal 与历史 play response 可冷启动恢复实体手牌，Header 前统一包装 `{"response": ...}`，空 `tribute_cards/return_cards` 纳入无贡契约；pending/ack/effect 与多 match 隔离边界保持不变。定向 47、全量 532 项和 `git diff --check` 通过，敏感与网络边界扫描通过。本步未联网、未修改 engine/agents/CLI/RAG/evaluation，也不追认旧 smoke。
+
+当前 L4-A3a 文件尚未提交。下一步 L4-A3b 必须先确认工作区差异严格属于 L4-A3a 与五份规划文档，复跑回归并创建独立检查点；随后仅在 `%LOCALAPPDATA%` 全新目录执行一次零网络 `--preflight-only`。只有得到 `preflight_ready` 才能请求新的固定预算 L4-A3c live 授权。
 
 ## 6. 当前风险
 

@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：人工前台 connector 已连接 Botzone，但真实无贡请求在 Agent 调用前以 `malformed_request` 退出。下一步 L4-A3a 用纯离线合成 fixture 补齐 Bot JSON 外层信封、历史重放和 response wrapper；L4-A2c5b2a 文件系统矩阵暂缓。完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：L4-A3a 已完成，定向 47、全量 532 项通过。下一步 L4-A3b 先建立独立检查点，再用 `%LOCALAPPDATA%` 全新目录运行一次零网络 preflight；不得直接 live。L4-A2c5b2a 文件系统矩阵暂缓。完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1110,9 +1110,8 @@ Phase 0 证据验收已完成：
 - `tests/test_botzone_runner.py`：已完成；退避/重置、finished/wall/cycle/failure/diagnostic 停止、退出码、fake gateway E2E 和零真实网络；
 - `tests/test_botzone_live_preflight.py`：已完成；零网络启动审计、finished 敏感状态清理、最小 audit schema 和一局 fake smoke 守恒；
 - `tests/test_botzone_rule_compatibility.py`：官方裁判/脱敏 Log 与当前 engine 的差分 fixture。
-- `tests/test_botzone_bot_io.py`：待新增；外层 `requests/responses` 模型、可选官方字段、基数与 inner-stage 解析。
-- `tests/test_botzone_envelope_replay.py`：待新增；从合成 deal 和既往 play response 冷启动恢复实体手牌、history 与 no-tribute profile。
-- `tests/test_botzone_response_wrapper.py`：待新增；deal/pass/自然牌/配子的 canonical `{"response": ...}` 编码及 Header mock E2E。
+- `tests/test_botzone_bot_io.py`：已完成；外层 `requests/responses` 模型、可选官方字段、基数、inner-stage 解析、历史重放与 canonical response。
+- envelope replay 与 response wrapper 场景已并入 bot_io、poll、connector、session、protocol 和 RuleBased E2E 相关测试，不另建含真实数据的 fixture。
 
 验收边界：
 
@@ -1235,6 +1234,19 @@ L4-A3a 最低测试口径：
 - mock connector 验证 full-envelope digest、pending resend、ack 后 effect 提交和多 match 隔离；
 - fixture 只用合成 ID，不保存真实 live 请求、完整真实手牌、URL、密钥、match ID 或 Header 值；
 - 定向测试、全量 `python -m unittest discover -q`、`git diff --check` 与敏感内容扫描全部通过。
+
+L4-A3a 实际结果：上述契约全部通过；Botzone 定向相关集合 47 项、全量 532 项通过，`git diff --check` 与敏感边界扫描通过。唯一判定 `botzone_bot_json_envelope_contract_verified`。该结果只覆盖离线合成输入，不能追认旧 smoke 或证明 live 可用。
+
+L4-A3b 最低测试口径：
+
+- 工作区差异严格限制为 L4-A3a 实现、对应测试和五份规划文档；
+- 重跑 Botzone 定向集合、全量 532 基线和 `git diff --check`；
+- 只暂存 allowlist，并以独立提交恢复干净工作区；
+- 当前进程只检查 Botzone URL 为 present，不读取或输出值，不加载 `.env`；
+- `%LOCALAPPDATA%` 下创建本任务独占的新空 state 目录；
+- `python -m integrations.botzone --preflight-only` 恰好运行一次，30 秒内 exit 0 且固定输出 `preflight_ready`；
+- preflight 前后目录为空，request/GET/network/connector count 全部为 0；
+- 通过后只请求 L4-A3c 授权，不在同一步启动 connector。
 
 ## 6. 对局评测
 

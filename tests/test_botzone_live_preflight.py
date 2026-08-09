@@ -26,7 +26,7 @@ class _Gateway:
 class BotzoneLivePreflightTests(unittest.TestCase):
     def test_finished_target_stops_before_another_poll_and_aggregates_counts(self) -> None:
         deal = json.dumps(
-            {"stage": "deal", "deliver": list(range(27)), "your_id": 0, "global": {"level": "2", "tribute": 0, "first": None, "last": None}},
+            {"requests": [{"stage": "deal", "deliver": list(range(27)), "your_id": 0, "global": {"level": "2", "tribute": 0, "first": None, "last": None}}], "responses": []},
             separators=(",", ":"),
         )
         with TemporaryDirectory() as root:
@@ -46,7 +46,7 @@ class BotzoneLivePreflightTests(unittest.TestCase):
 
     def test_protocol_diagnostics_fail_closed_with_stable_exit_class(self) -> None:
         with TemporaryDirectory() as root:
-            gateway = _Gateway([b"1 0\nunit\n{\"stage\":\"tribute\"}"])
+            gateway = _Gateway([b'1 0\nunit\n{"requests":[{"stage":"deal","deliver":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26],"your_id":0,"global":{"level":"2","tribute":0,"first":null,"last":null}},{"stage":"tribute"}],"responses":[[]]}'])
             runner = ForegroundRunner(
                 MockConnector(SessionStore(root), gateway, lambda _: HandlerResult(b"[]")),
                 max_consecutive_failures=2,

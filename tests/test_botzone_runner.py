@@ -13,7 +13,7 @@ from integrations.botzone.session import HandlerResult, SessionStore
 
 def _deal() -> bytes:
     payload = json.dumps(
-        {"stage": "deal", "deliver": list(range(27)), "your_id": 0, "global": {"level": "2", "tribute": 0, "first": None, "last": None}},
+        {"requests": [{"stage": "deal", "deliver": list(range(27)), "your_id": 0, "global": {"level": "2", "tribute": 0, "first": None, "last": None}}], "responses": []},
         separators=(",", ":"),
     )
     return f"1 0\nunit\n{payload}".encode()
@@ -69,7 +69,7 @@ class BotzoneRunnerTests(unittest.TestCase):
             first.run(max_cycles=2)
             before = SessionStore(root).load("unit")
             assert before is not None
-            self.assertEqual(before.pending_response, b"[]")
+            self.assertEqual(before.pending_response, b'{"response":[]}')
             build_foreground_runner(config, transport, sleep=lambda _: None).run(max_cycles=1)
             after = SessionStore(root).load("unit")
             assert after is not None

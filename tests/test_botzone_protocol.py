@@ -31,7 +31,7 @@ def _play(
     events = [] if history is None else history
     slots: list[object] = events if len(events) > 4 else ([[]] * (4 - len(events)) + events)
     global_state = _global()
-    global_state["resist"] = False
+    global_state.update({"resist": False, "tribute_cards": {}, "return_cards": {}})
     return {
         "stage": "play",
         "history": slots,
@@ -167,9 +167,11 @@ class BotzoneProtocolTests(unittest.TestCase):
 
         invalid_globals = (
             {"level": "2", "tribute": 0, "first": None, "last": None},
-            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": True},
-            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": 0},
-            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False, "extra": False},
+            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": True, "tribute_cards": {}, "return_cards": {}},
+            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": 0, "tribute_cards": {}, "return_cards": {}},
+            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False, "tribute_cards": {}, "return_cards": {}, "extra": False},
+            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False, "tribute_cards": {"0": [1]}, "return_cards": {}},
+            {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False, "tribute_cards": {}, "return_cards": []},
         )
         for global_state in invalid_globals:
             with self.subTest(global_state=global_state):

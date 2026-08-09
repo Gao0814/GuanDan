@@ -22,7 +22,7 @@ def _deal(player: int, cards: list[int]) -> dict[str, object]:
 
 def _first_play() -> dict[str, object]:
     global_state = _global()
-    global_state["resist"] = False
+    global_state.update({"resist": False, "tribute_cards": {}, "return_cards": {}})
     return {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": global_state}
 
 

@@ -351,7 +351,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：离线 HTTP connector 与 runner 已完成。人工前台 smoke 已成功连接 Botzone 并收到一条真实对局请求；当前阻塞转为外层 Bot JSON 信封未解析。L4-A2c5b2a 文件系统矩阵暂缓，下一步为 L4-A3a 离线协议修复。
+状态：离线 HTTP connector 与 runner 已完成。L4-A3a 已完成外层 Bot JSON 信封、首条 `deal`/既往 `play` response 重放、无贡空 `tribute_cards`/`return_cards` 校验，以及 Header 前的 canonical `{"response": ...}` 包装；仅合成 fixture 验证，尚未恢复 live 资格。L4-A2c5b2a 文件系统矩阵继续暂缓。
 
 工作：
 
@@ -406,7 +406,7 @@ L4-A2b 启动门槛修正：
 
 ### Phase 4：真实 Botzone 小规模 smoke test
 
-结果：历史 L4-A2b 仍保持 `botzone_no_tribute_local_ai_smoke_invalid`。后续人工前台运行已建立真实 GET 长轮询连接，但进入无贡测试桌后的第一条消息以 `malformed_request` 退出；平台超时是未返回 response 的结果，不是 AI 推理超时。该运行确认传输可达，同时暴露外层 Bot JSON 信封契约缺失，不能记为 smoke 通过。
+结果：历史 L4-A2b 仍保持 `botzone_no_tribute_local_ai_smoke_invalid`。后续人工前台运行已建立真实 GET 长轮询连接，但进入无贡测试桌后的第一条消息以 `malformed_request` 退出；平台超时是未返回 response 的结果，不是 AI 推理超时。L4-A3a 已离线修复该外层 Bot JSON 信封缺口，但不能追认该次运行或记为 smoke 通过。
 
 工作：
 
@@ -477,13 +477,13 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至离线 connector/adapter 均已完成；既有 invalid/inconclusive 结论全部保留。真实人工连接确认网关下发标准 Bot JSON 外层信封，而现有实现只解析内层 GuanDan stage。当前只允许按 `docs/NEXT_PROMPT.md` 执行离线 L4-A3a；不得再次启动 live connector 或复制真实请求正文。L4-A2c5b2a 暂缓，不用于阻塞协议修复。
+Phase 0 至 L4-A3a 均已完成；既有 invalid/inconclusive 结论全部保留。外层 Bot JSON、完整交互重放、无贡空贡还字段和 canonical response wrapper 已离线验证。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A3b：先封存实现检查点，再运行一次零网络 preflight；不得启动 live connector。L4-A2c5b2a 暂缓。
 
 理由：
 
 - 108 ID、官方首个 play、四槽 history、座位、claim、pending effect 与 `tribute/return` fail-closed 边界已有测试契约；
 - 外层 Bot JSON 需要 `requests/responses` 完整历史重放，不能把整个顶层对象直接传给 inner-stage parser，也不能只取最后一条请求；
-- 标准 Bot 输出需要 `{"response": ...}` wrapper；当前内部 deal/play response 仍需在 Header 前包装；
+- 标准 Bot 输出的 `{"response": ...}` wrapper 已在 Header 前统一编码并通过 mock 回归；
 - 当前只把 engine 已支持的单配子动作视为合法子集，双配子仍是明确能力缺口；
 - 贡还属于当前 engine 明确 unsupported 的能力，即使未来无贡 profile 通过，也必须对 `tribute/return` fail-closed；
 - 无贡 profile 只有取得该配置的官方证据后才是支持契约，不能由随机对局恰好未发生贡还来替代。
@@ -507,9 +507,9 @@ Phase 0 至离线 connector/adapter 均已完成；既有 invalid/inconclusive �
 | runmatch `X-Initdata` 中“需要进贡=否”的精确表示 | 裁判 schema 接受 `tribute=0`；自动建桌 Header 的完整产品流程仍可选 | 启用 runmatch 前另行 mock/官方页面核对 |
 | 本地 AI 当前账号等级门槛 | 目标账号配置入口已确认可用 | Phase 4 前轮换密钥并复核连接状态 |
 | 网关服务端长轮询具体超时秒数 | 未公布 | 当前本地 AI 设置页/接口响应 Header；Phase 4 smoke 记录 |
-| 本地 AI 是否在重启后重放历史 | 官方未承诺 | 本地 AI 当前词条、实际断线 smoke；设计按“不重放”处理 |
+| 本地 AI 是否在重启后重放历史 | 实测单次请求含累计 `requests/responses`；跨连接重放仍未单独 live 验证 | L4-A3a 按完整信封冷启动恢复，durable session 保留 pending/ack |
 | GuanDan 是否有官方可执行 Bot 样例 | 当前游戏详情只链接 Wiki，Wiki 只有交互样例 | 游戏详情、裁判源码入口；若平台另有下载需登录后确认 |
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A3a：离线新增 Bot JSON 外层模型，严格校验 `requests/responses` 基数，重放首条 deal 与既往 play response 恢复本家实体手牌，接受无贡 play 中空的 `tribute_cards/return_cards`，并在 `X-Match-*` Header 前输出 canonical `{"response": ...}`。使用合成 fixture，不联网；通过后再规划全新的手工 smoke。
+执行 L4-A3b：复核并独立提交 L4-A3a allowlist，恢复干净工作区；随后在 `%LOCALAPPDATA%` 全新空目录运行一次零网络 `--preflight-only`。通过后只锁定前台 RuleBasedAI、无贡新桌、100 GET、120 秒 timeout、900 秒 wall、完成一局即停的 L4-A3c 预算并向用户请求明确授权，不得在本步联网。

@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from .bot_io import BotEnvelope, BotEnvelopeError, BotReplay, parse_bot_envelope
 from .models import DealRequest, PlayRequest, UnsupportedStage
-from .protocol import ProtocolValidationError, parse_stage_request
 
 
 MAX_POLL_BYTES = 1_048_576
@@ -25,6 +25,7 @@ class PollRequest:
     match_id: str
     request_bytes: bytes
     stage: DealRequest | PlayRequest | UnsupportedStage | None
+    replay: BotReplay | None = None
     diagnostic: str | None = None
 
 
@@ -79,10 +80,10 @@ def _parse_request(match_id: str, request_line: str) -> PollRequest:
     except (TypeError, ValueError, json.JSONDecodeError):
         return PollRequest(match_id=match_id, request_bytes=raw, stage=None, diagnostic="malformed_request")
     try:
-        stage = parse_stage_request(payload)
-    except ProtocolValidationError:
+        envelope: BotEnvelope = parse_bot_envelope(payload)
+    except BotEnvelopeError:
         return PollRequest(match_id=match_id, request_bytes=raw, stage=None, diagnostic="malformed_request")
-    return PollRequest(match_id=match_id, request_bytes=raw, stage=stage)
+    return PollRequest(match_id=match_id, request_bytes=raw, stage=envelope.current_request, replay=envelope.replay)
 
 
 def _parse_finished(line: str) -> FinishedRow:

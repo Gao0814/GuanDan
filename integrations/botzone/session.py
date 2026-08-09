@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
+from .bot_io import BotReplay
 from .cards import RANKS
 from .models import ActionClaim, DealRequest, GlobalState, HistoryEntry, PlayRequest
 from .poll import FinishedRow
@@ -373,7 +374,13 @@ class SessionStore:
                 pass
             raise SessionStorageError("atomic_write_failed") from exc
 
-    def prepare(self, match_id: str, request_bytes: bytes, stage: DealRequest | PlayRequest) -> tuple[SessionRecord, bool]:
+    def prepare(
+        self,
+        match_id: str,
+        request_bytes: bytes,
+        stage: DealRequest | PlayRequest,
+        replay: BotReplay | None = None,
+    ) -> tuple[SessionRecord, bool]:
         digest = request_digest(request_bytes)
         record = self.load(match_id)
         if record is not None and record.finished is not None:
@@ -387,15 +394,25 @@ class SessionStore:
             raise SessionStorageError("conflicting_deal")
         if record is not None and record.pending_response is not None:
             raise SessionStorageError("pending_response_exists")
-        if isinstance(stage, PlayRequest) and record is None:
+        if replay is not None and replay.current_request != stage:
+            raise SessionStorageError("invalid_envelope_replay")
+        if isinstance(stage, PlayRequest) and record is None and replay is None:
             raise SessionStorageError("play_without_state")
-        own_hand = stage.deliver if isinstance(stage, DealRequest) else record.own_hand
-        local_player_id = stage.your_id if isinstance(stage, DealRequest) else record.local_player_id
-        latest_window, history = ((), ()) if isinstance(stage, DealRequest) else merge_history(
-            record.latest_window,
-            record.history,
-            stage.history,
-        )
+        if isinstance(stage, DealRequest):
+            own_hand = stage.deliver
+            local_player_id = stage.your_id
+            latest_window, history = (), ()
+        elif record is None:
+            assert replay is not None
+            own_hand = replay.own_hand
+            local_player_id = replay.local_player_id
+            latest_window, history = replay.latest_window, replay.history
+        else:
+            if replay is not None and (replay.local_player_id != record.local_player_id or replay.own_hand != record.own_hand):
+                raise SessionStorageError("envelope_replay_conflict")
+            own_hand = record.own_hand
+            local_player_id = record.local_player_id
+            latest_window, history = merge_history(record.latest_window, record.history, stage.history)
         global_state = stage.global_state
         prepared = SessionRecord(
             match_id=match_id,

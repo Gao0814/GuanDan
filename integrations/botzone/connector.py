@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Protocol
 
+from .bot_io import BotEnvelopeError, encode_bot_response
 from .models import DealRequest, PlayRequest, UnsupportedStage
 from .poll import PollFormatError, PollRequest, parse_poll
 from .session import HandlerContext, HandlerResult, PendingDelivery, SessionStorageError, SessionStore
@@ -83,7 +84,7 @@ class MockConnector:
             diagnostics["malformed_request"] += 1
             return 0, diagnostics
         try:
-            record, call_handler = self._store.prepare(request.match_id, request.request_bytes, request.stage)
+            record, call_handler = self._store.prepare(request.match_id, request.request_bytes, request.stage, request.replay)
         except SessionStorageError as exc:
             diagnostics[_normalized_session_error(exc)] += 1
             return 0, diagnostics
@@ -97,8 +98,14 @@ class MockConnector:
             diagnostics["handler_failure"] += 1
             return 0, diagnostics
         try:
+            if not isinstance(result, HandlerResult):
+                raise SessionStorageError("malformed_handler_result")
+            if result.response is not None:
+                if b"\r" in result.response or b"\n" in result.response:
+                    raise SessionStorageError("header_injection")
+                result = HandlerResult(encode_bot_response(request.stage, result.response), result.effect)
             completed = self._store.complete_handler(record, result)
-        except SessionStorageError as exc:
+        except (BotEnvelopeError, SessionStorageError) as exc:
             diagnostics[_normalized_session_error(exc)] += 1
             return 0, diagnostics
         return int(completed.pending_response is not None), diagnostics

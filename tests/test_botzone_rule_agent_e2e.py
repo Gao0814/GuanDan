@@ -9,16 +9,17 @@ from integrations.botzone.play_adapter import NoTributeRuleBasedHandler
 from integrations.botzone.session import SessionStore
 
 
+def _deal_inner() -> dict[str, object]:
+    return {"stage": "deal", "deliver": list(range(27)), "your_id": 0, "global": {"level": "2", "tribute": 0, "first": None, "last": None}}
+
+
 def _deal() -> str:
-    return json.dumps(
-        {"stage": "deal", "deliver": list(range(27)), "your_id": 0, "global": {"level": "2", "tribute": 0, "first": None, "last": None}},
-        separators=(",", ":"),
-    )
+    return json.dumps({"requests": [_deal_inner()], "responses": []}, separators=(",", ":"))
 
 
 def _play() -> str:
     return json.dumps(
-        {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False}},
+        {"requests": [_deal_inner(), {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False, "tribute_cards": {}, "return_cards": {}}}], "responses": [[]]},
         separators=(",", ":"),
     )
 

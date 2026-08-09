@@ -26,7 +26,7 @@ def _deal(player: int) -> DealRequest:
 
 def _play() -> PlayRequest:
     global_state = _global()
-    global_state["resist"] = False
+    global_state.update({"resist": False, "tribute_cards": {}, "return_cards": {}})
     parsed = parse_stage_request({"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": global_state})
     assert isinstance(parsed, PlayRequest)
     return parsed
@@ -135,7 +135,7 @@ class BotzoneSessionTests(unittest.TestCase):
     def test_history_windows_merge_only_a_verifiable_suffix(self) -> None:
         def play(history: list[dict[str, object]], done: list[int] | None = None) -> PlayRequest:
             global_state = _global()
-            global_state["resist"] = False
+            global_state.update({"resist": False, "tribute_cards": {}, "return_cards": {}})
             slots: list[object] = [[]] * (4 - len(history)) + history
             parsed = parse_stage_request(
                 {"stage": "play", "history": slots, "done": [] if done is None else done, "pass_on": -1, "global": global_state}

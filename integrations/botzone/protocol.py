@@ -56,7 +56,7 @@ def _mapping(value: object, label: str, required: frozenset[str]) -> Mapping[str
 def _global_state(value: object, *, stage: str) -> GlobalState:
     expected = frozenset({"level", "tribute", "first", "last"})
     if stage == "play":
-        expected = expected | {"resist"}
+        expected = expected | {"resist", "tribute_cards", "return_cards"}
     data = _mapping(value, "global", expected)
     level = data["level"]
     if not isinstance(level, str) or level not in RANKS:
@@ -71,6 +71,10 @@ def _global_state(value: object, *, stage: str) -> GlobalState:
         resist = data["resist"]
         if type(resist) is not bool or resist:
             raise ProtocolValidationError("no-tribute play requires resist=false")
+        if type(data["tribute_cards"]) is not dict or data["tribute_cards"]:
+            raise ProtocolValidationError("no-tribute play requires empty tribute_cards")
+        if type(data["return_cards"]) is not dict or data["return_cards"]:
+            raise ProtocolValidationError("no-tribute play requires empty return_cards")
     return GlobalState(level=level, tribute=tribute, first=None, last=None, resist=resist)
 
 
