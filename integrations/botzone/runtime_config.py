@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -83,28 +83,58 @@ def load_runtime_config(
     )
 
 
-def preflight_state_directory(config: RuntimeConfig) -> None:
+def preflight_state_directory(
+    config: RuntimeConfig,
+    *,
+    stage_callback: Callable[[str], None] | None = None,
+) -> None:
     """Check a repository-external state directory without opening a transport."""
 
+    def stage(name: str) -> None:
+        if stage_callback is not None:
+            stage_callback(name)
+
     state_dir = config.state_directory.resolve()
+    stage("resolve")
     project_root = Path(__file__).resolve().parents[2]
     if not state_dir.is_absolute() or state_dir.is_relative_to(project_root):
         raise RuntimeConfigError("invalid_state_directory")
+    stage("boundary_checked")
     probe: Path | None = None
+    replacement: Path | None = None
     try:
         state_dir.mkdir(parents=True, exist_ok=True)
+        stage("directory_ready")
         with tempfile.NamedTemporaryFile(dir=state_dir, delete=False) as handle:
             probe = Path(handle.name)
+            stage("temporary_opened")
             handle.write(b"probe")
+            stage("written")
             handle.flush()
+            stage("flushed")
             os.fsync(handle.fileno())
+            stage("synced")
         replacement = probe.with_name(probe.name + ".replace")
         os.replace(probe, replacement)
+        stage("replaced")
         replacement.unlink()
+        replacement = None
+        stage("cleaned")
     except OSError:
         try:
             if probe is not None and probe.exists():
                 probe.unlink()
+            if replacement is not None and replacement.exists():
+                replacement.unlink()
         except OSError:
             pass
         raise RuntimeConfigError("state_preflight_failed") from None
+    except Exception:
+        try:
+            if probe is not None and probe.exists():
+                probe.unlink()
+            if replacement is not None and replacement.exists():
+                replacement.unlink()
+        except OSError:
+            pass
+        raise
