@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：K-A3d3c1 离线启动加固已验证；下一步为 K-A3d3c2 独立恢复前置与重新授权
+- 当前工作状态：K-A3d3c2 完成 48 请求但 completion/manifest 链断裂并判定 invalid；下一步为 K-A3d3c3a 独立只读恢复审计
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：K-A3d2 定向 7 项、相关 80 项、全量 446 项通过
 - 当前规则范围：单局掼蛋核心规则
@@ -1194,7 +1194,11 @@ K-A3d3c1 首次尝试只读复核 runner 仍为 14,724 bytes，SHA-256 不变，
 
 形成 docs 检查点后，K-A3d3c1 在 HEAD `cf9d29cb31fcff2e9b3401b6d68a2db5fe1a37fd` 完成。新 candidate 位于仓库外；`bootstrap_runner.py` 为 5,502 bytes / `776f4504...b01e445`，`launch_bootstrap.py` 为 7,269 bytes / `6a186d7c...e5ca84a`，最终离线审计为 1,281 bytes / `aabebaeb...59af6e`。两次正常 self-check 结构 hash 均为 `ede8bfc3...41e80ec`；四类失败场景均产生预期父/子状态证据。request/network/client/suggest count 全为 0，唯一判定 `strategy_intent_live_startup_hardening_verified`。
 
-下一步 K-A3d3c2 只先完成独立恢复前置并重新请求授权。锁定 seed `700..709`、`deepseek-v4-flash`、策略 0/50/100、24 pair/48 请求、60 秒、零重试和 65 分钟；不得复用 `600..609` 或旧授权。实际 live runner 必须继承父 spawn 前与子 import 前状态链。
+K-A3d3c2 随后完成独立恢复前置并取得新授权，锁定 seed `700..709`、`deepseek-v4-flash`、策略 0/50/100、24 pair/48 请求、60 秒、零重试和 65 分钟；未复用 `600..609` 或旧授权，live runner 继承父 spawn 前与子 import 前状态链。
+
+K-A3d3c2 前置通过并取得一次性新授权后，唯一 live run 完成 48/48 请求，off/on 各 24，全部 returned、零重试和零请求失败。父状态链完整，子状态经过 completed 后转为 failed，child exit code=1；report 和 audit summary 已落盘，但 manifest/completion 缺失。源码第 244–245 行错误地从 `audit/` 查找实际位于 candidate root 的 `live_quality_runner.py`，导致 manifest metadata 读取失败。按完整性优先规则，唯一判定 `strategy_intent_live_quality_recovery_invalid`；已生成 report 不进入质量或胜率解释，授权已用尽且未重跑。
+
+下一步 K-A3d3c3a 只允许在新目录运行双份独立只读 verifier，复核原文件 hash、48 条 ledger、report 守恒、状态链和已确认路径缺陷。不得修改原证据或补写 completion/manifest，不得联网。只有恢复完整性全部通过后，才能按原预注册门槛形成新的只读恢复描述性结论；K-A3d3c2 原 invalid 永久保留。
 
 ### Step L：Botzone 本地 AI 接入
 

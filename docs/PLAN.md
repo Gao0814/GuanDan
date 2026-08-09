@@ -939,6 +939,22 @@ K-A3d3c2 方向：
 - 授权后恰好运行一次，策略 `(0,50,100)`、每 phase 2 对、24 pair/48 请求；
 - endpoint/model 继续锁定 `https://api.deepseek.com` / `deepseek-v4-flash`，60 秒、零重试、65 分钟；
 - live runner 必须继承父 spawn 前与子 import 前状态链；任何完整性失败只产生 recovery invalid。
+
+K-A3d3c2 结果：
+
+- 唯一授权 live run 完成 48/48 请求，off/on 各 24，全部 returned、零重试、零请求失败；
+- report 与 audit summary 已写入，但 manifest/completion 缺失，子进程 exit code=1；
+- 根因已定位到 runner 第 244–245 行错误地从 audit 目录读取实际位于 candidate root 的 runner metadata；
+- 父状态完整，子状态为 bootstrapping→imports_ready→startup_ready→running→completed→failed；
+- 按预注册完整性优先规则，唯一判定 `strategy_intent_live_quality_recovery_invalid`，不得解释已生成 report；
+- 未重跑、补采或启动第二进程，旧授权已用尽。
+
+K-A3d3c3a 方向：
+
+- 不再次联网，独立只读验证原 report、48 条 ledger、状态链和源码路径缺陷；
+- 在全新恢复目录运行两次自包含 verifier，不信任原 summary verdict，不补写原 manifest/completion；
+- 完整性失败只产生 readonly recovery invalid；完整性通过后才按原 changed/on-off/team-win 顺序给出描述性判定；
+- 无论恢复结果如何，K-A3d3c2 原 invalid 永久保留。
 - 完整性通过后才解释 RuleBased 续局代理；小样本只决定是否保留到扩大验收，不构成因果或胜率结论。
 
 ### Step L：Botzone 本地 AI 接入

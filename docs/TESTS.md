@@ -1027,7 +1027,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 #### K-A3d3c2：独立恢复 live 前置与授权
 
-状态：下一步，尚未执行或授权。
+状态：已执行唯一 live run，判定 `strategy_intent_live_quality_recovery_invalid`。
 
 - 只读复核 K-A3d3b invalid 与 K-A3d3c1 bootstrap 证据；
 - 配置锁定 `https://api.deepseek.com` / `deepseek-v4-flash`，key 仅检查 presence；
@@ -1035,6 +1035,22 @@ K-A2b1 当时尚未覆盖的严格反例：
 - timeout 60 秒、retries 0、持久后台上限 65 分钟，formal live run 恰好一次；
 - 授权前不得创建 live runner、启动进程或联网；必须重新取得明确授权，旧 K-A3d3b 授权无效；
 - 授权后 runner 必须保留父 spawn 前和子 import 前状态、连续 ledger、脱敏失败证据与全部质量守恒。
+- 实际完成 48/48 请求，off/on 各 24，全部 returned、零重试、零失败请求；
+- report/audit summary 已写入，但 manifest/completion 缺失，child exit code=1；
+- 子状态为 bootstrapping→imports_ready→startup_ready→running→completed→failed；
+- 第 244–245 行错误地从 audit 目录读取 candidate-root runner metadata，导致 report_validation 阶段失败；
+- 按完整性优先规则不解释 report 的质量、W/D/L 或策略结果；未重跑，授权已用尽。
+
+#### K-A3d3c3a：独立只读恢复审计
+
+状态：下一步，尚未实施。
+
+- 原证据目录只读，前后文件集合、bytes、SHA-256 必须一致；
+- verifier 独立重算 48 条 ledger、report、三策略四阶段、provider/pair/branch/W-D-L/quality 守恒；
+- 验证 completed→failed 状态与第 244–245 行 manifest 路径错误，不信任原 summary verdict；
+- 在新目录运行两次，canonical 输出逐字节一致，生成独立 recovery summary/manifest；
+- 不补写原 manifest/completion，不联网、不调用模型、不读取 `.env` 或 key；
+- 恢复完整性通过后才按 changed≥8、on/off better、team wins 顺序给出描述性判定。
 
 #### 持续约束：软信号边界
 

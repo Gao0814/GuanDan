@@ -1,155 +1,143 @@
 # 下一步实施提示词
 
-## Step K-A3d3c2：独立恢复 live 实验前置复核与重新授权
+## Step K-A3d3c3a：K-A3d3c2 源证据独立只读恢复审计
 
-请在 GuanDan 项目中完成 K-A3d3c2 的授权前置。本轮只复核检查点、离线 bootstrap 证据、配置元数据、全新 seed、请求预算和审计边界，最后向用户请求一次新的明确联网授权。不得创建 live runner、启动后台进程、发送 probe、调用 DeepSeek/HTTP 或其他网络。
+请在 GuanDan 项目中完成 K-A3d3c3a。本步只读取 K-A3d3c2 已落盘的 runner、ledger、aggregate report 和状态文件，在全新的仓库外目录运行两次独立恢复 verifier。不得修改原证据、不得联网、不得调用模型、不得读取 `.env` 或 API key，也不得创建新的 live runner。
 
-### 已完成结论
+### 必须保留的原结论
 
-- K-A3d3a：`strategy_intent_live_quality_preflight_ready`；
-- K-A3d3b：`strategy_intent_live_quality_benchmark_invalid`；
-- K-A3d3c1：`strategy_intent_live_startup_hardening_verified`。
-
-K-A3d3b 永久保持无效：唯一 PID `33612` 在首次状态写入前退出，request/ledger count=0，没有模型、pair、rollout 或质量结果。seed `600..609` 永久停用，旧授权不得沿用。
-
-### K-A3d3c1 离线证据
-
-checkpoint：
-
-```text
-cf9d29cb31fcff2e9b3401b6d68a2db5fe1a37fd
-```
-
-candidate 目录：
-
-```text
-C:\Users\86166\AppData\Local\Temp\guandan-strategy-intent-quality-k-a3d3c1-cf9d29c-9b21a36e
-```
-
-锁定文件：
-
-```text
-bootstrap_runner.py
-bytes = 5502
-sha256 = 776f45040a9acab40f575262bd53a249738e6a9c3487eca40884c6039b01e445
-
-launch_bootstrap.py
-bytes = 7269
-sha256 = 6a186d7c024bccd89d98a2156bf53e89c8503d6b6c80546648e472fe8e5ca84a
-
-offline_audit_final/offline_self_check.json
-bytes = 1281
-sha256 = aabebaeb5da15caf9b35a96c919157dd5c88b7cbbbab14c7d0119dc8fb59af6e
-```
-
-正常 offline self-check 两次结构 hash：
-
-```text
-ede8bfc3c69443f65b0d8cbac578fdefb8565dcb7b97d0c3c422c40cf41e80ec
-```
-
-K-A3d3c1 已覆盖正常、缺失参数、无效目录、project import 失败和原子写入失败；request/network/client/suggest counts 均为 0。
-
-### 仓库与证据前置
-
-1. 记录当前 HEAD 和 `git status --short`；工作区必须干净。
-2. 确认 K-A3d1 `b75dace...`、K-A3d2 `415c86d...`、K-A3d3b `f0a087a...` 和 K-A3d3c1 docs checkpoint 均存在。
-3. 只读复核 K-A3d3b 原失败目录仍未改变，原 runner SHA-256 仍为 `a390ce8bc98aa92592f046c425ec9d0fe7c2313c5727dbd48918f2350033ffbd`。
-4. 只读复核 K-A3d3c1 三个文件的 bytes/hash 和 offline 结构 hash。
-5. 不得删除、改写、补写、重命名或清理 K-A3d3b/K-A3d3c1 证据目录。
-6. 本轮不得修改或提交仓库文件。
-
-### 配置元数据门槛
-
-只检查当前进程环境：
-
-- `DEEPSEEK_BASE_URL` 必须精确为 `https://api.deepseek.com`；
-- `DEEPSEEK_MODEL` 必须精确为 `deepseek-v4-flash`；
-- `DEEPSEEK_API_KEY` 只检查非空并报告 `present/missing`。
-
-禁止打开 `.env`、调用会加载 `.env` 的配置入口、输出或持久化 key 内容/长度/hash/前后缀。任一条件不满足立即报告 `precondition_failed` 并停止。
-
-### 独立恢复参数
-
-```text
-endpoint = https://api.deepseek.com
-model = deepseek-v4-flash
-seeds = 700..709
-strategic_pass_rates = (0, 50, 100)
-samples_per_phase = 2
-current_level_rank = "2"
-max_steps = 5000
-max_samples_per_phase_per_game = 128
-max_rollout_steps = 5000
-paired samples = 24
-logical/physical request cap = 48/48
-request timeout = 60 seconds
-retries = 0
-persistent background wall-clock cap = 65 minutes
-formal live runs = exactly 1
-```
-
-不得复用 `600..609`、补采、换 seed、加入 25% 策略、减少样本、重试失败请求或运行第二份 live 报告。
-
-### 授权后 runner 强制边界
-
-授权后的 live runner 必须在全新的仓库外目录构建，并继承 K-A3d3c1 已验证架构：
-
-- 父启动器在 spawn 前写 `launch_state.json`，记录 spawning/spawned/exited、PID、exit code 和脱敏 stdout/stderr；
-- 子 runner 在 project import 前写 `process_state.json` 的 bootstrapping；
-- 项目 imports 延迟到受保护区域；
-- 状态链至少覆盖 imports_ready、startup_ready、running、completed/failed；
-- heartbeat 在首次请求前存在，并随每次请求更新；
-- ledger 在每个物理请求前先写 started，返回后写 returned/failed；
-- 所有 48 次请求使用同一 endpoint 与 `deepseek-v4-flash`，禁止模型替换或 fallback；
-- 不保存 prompt、action ID、response body、reasoning、observation、手牌、玩家、样本 ID、Header 或 key；
-- 任一启动/请求/rollout 失败仍必须留下父级和子级规范化失败证据。
-
-### 正式完整性与描述性门槛
-
-完整性优先级不变：三策略 10/10/0、每 policy×phase selected=2 和 AB/BA=1/1、24 pair/48 ledger、全部 provider valid、全部必要 rollout branch complete、所有计数守恒、零未解释 diagnostics。任一失败只能判定：
+K-A3d3c2 唯一正式结论永久保持：
 
 ```text
 strategy_intent_live_quality_recovery_invalid
 ```
 
-完整性全部通过后才按顺序解释：
+原因是原运行缺少 `manifest.json` 和 `completion.json`。独立恢复审计即使成功，也不能追认或改写 K-A3d3c2，只能产生新的 K-A3d3c3a 只读恢复结论。
+
+K-A3d3b 仍为 `strategy_intent_live_quality_benchmark_invalid`，seed `600..609` 继续禁用；K-A3d3c2 的 seed `700..709` 也不得再次用于 live 运行。
+
+### 原证据位置
+
+候选根目录：
+
+```text
+C:\Users\86166\AppData\Local\Temp\guandan-strategy-intent-quality-k-a3d3c2-4cb68ee-a41e72a630154366b4ae0ecda18fe594
+```
+
+原 audit 目录：
+
+```text
+C:\Users\86166\AppData\Local\Temp\guandan-strategy-intent-quality-k-a3d3c2-4cb68ee-a41e72a630154366b4ae0ecda18fe594\audit
+```
+
+已知文件：
+
+```text
+candidate root/
+  launch_live_quality.py       3013 bytes
+  live_quality_runner.py      15901 bytes
+  audit/
+    audit_summary.json          728 bytes
+    call_ledger.jsonl         10982 bytes
+    failure.json                189 bytes
+    heartbeat.json              144 bytes
+    launch_state.json           606 bytes
+    process_state.json          351 bytes
+    report.json               28488 bytes
+```
+
+锁定 hash：
+
+```text
+report.json        d931a5cf...5457b05
+call_ledger.jsonl  1d786476...3484a6aa
+audit_summary.json 26a583fb...bb7be1a4
+failure.json       f32add93...152fd00a
+process_state.json 2ace9141...5a51afff
+```
+
+执行时必须计算并报告全部完整 SHA-256，不得只保留缩写。还要计算父启动器、子 runner、heartbeat 和 launch state 的 bytes/hash。
+
+### 已确认的故障机制
+
+只读复核 `live_quality_runner.py`：
+
+- report 读取和独立 `validate()`：第 237–238 行；
+- verdict 计算：第 239 行；
+- `audit_summary.json` 写入：第 240–241 行；
+- process state 转为 `completed`、heartbeat completed：第 242–243 行；
+- manifest 文件列表和写入：第 244–245 行；
+- completion 写入：第 246 行。
+
+第 244–245 行把 `live_quality_runner.py` 作为 `audit_dir/live_quality_runner.py` 读取 metadata，但实际 runner 位于 candidate root。该路径不存在，导致 manifest 写入前抛出异常，随后外层失败处理把子状态从 `completed` 转为 `failed`。这只能证明完成审计链的路径错误；不能在 verifier 通过前假设 report、ledger 或质量指标有效。
+
+### 仓库与安全前置
+
+1. 记录 HEAD 和 `git status --short`；工作区必须干净。
+2. 只读复核原目录文件集合、bytes 和完整 SHA-256；不得修改时间戳或内容。
+3. 确认原目录仍缺少 manifest/completion，且没有新增文件。
+4. 不导入或执行原 live runner，不调用其 `main()` 或 provider。
+5. 不读取 `.env`、进程 key 内容、prompt、action ID、response body 或 reasoning。
+6. verifier 只能使用 Python 标准库和纯离线聚合逻辑；不得导入 `DeepSeekClient`。
+7. 原授权已用尽，本步不得发出任何网络请求。
+
+### 独立 verifier
+
+在新的仓库外恢复目录创建 verifier。它必须从零实现并交叉验证，不得直接信任原 `audit_summary.json` 的 `integrity_pass` 或 verdict：
+
+- JSON/JSONL 可解析、无 NaN/Infinity；
+- ledger sequence 连续 1..48，off/on 各 24；
+- 每条请求均有 started 后的唯一 terminal 记录；terminal 均为 returned，failed=0；
+- timeout=60、retries=0、endpoint/model 与锁定值一致；
+- report 的三策略、四阶段、selected、AB/BA、provider validity、pair、branch、W/D/L、质量比较和 phase-to-overall 守恒；
+- 三策略均 10/10/0，每 policy×phase selected=2，整体 24 pair；
+- 所有必要 rollout branch complete，diagnostics/invalid/timeout/step-limit 为 0；
+- report、ledger 与原 audit summary 的非 verdict 聚合字段逐项一致；
+- 原状态链确实为 `bootstrapping → imports_ready → startup_ready → running → completed → failed`；
+- 父状态为 `spawning → spawned → exited`，child exit code=1；
+- failure class/stage 与 `unexpected_failure / report_validation` 一致；
+- 源码与文件布局精确支持第 244–245 行路径错误，且该错误发生在 report/summary 后、manifest/completion 前。
+
+verifier 不得通过生成或补写原目录的 manifest/completion 来“修复”证据。所有恢复输出只能写入新的恢复目录。
+
+### 双运行与恢复输出
+
+verifier 必须运行两次，分别写入 `run1.json`、`run2.json`：
+
+- 两份输出逐字节和 canonical JSON 完全一致；
+- 不包含时间、PID、绝对 key、prompt、action、response、手牌、玩家或样本身份；
+- 输出完整源文件 manifest、全部完整性检查和重新计算的 aggregate metrics；
+- 生成独立 `recovery_summary.json` 与 `manifest.json`，记录所有恢复文件 bytes/SHA-256；
+- 原证据目录在前后 hash/文件集合完全一致。
+
+### 判定顺序
+
+先做恢复完整性。任一输入、守恒、文件、状态链、双运行或隐私检查失败，唯一判定：
+
+```text
+strategy_intent_live_quality_readonly_recovery_invalid
+```
+
+不得解释质量指标。
+
+只有恢复完整性全部通过，才按 K-A3d3c2 预注册顺序解释：
 
 1. changed pair < 8：`no_observed_strategy_intent_action_quality_gain`；
 2. `on_better_count <= off_better_count`：同上；
-3. on team wins < off team wins：同上；
+3. on team win count < off team win count：同上；
 4. 否则：`retain_for_expanded_strategy_intent_quality_evaluation`。
 
-这是小样本描述性门槛，不是显著性检验，不授权默认启用、完整 DeepSeek 对局或胜率声明。
-
-### 本轮唯一判定与授权问题
-
-全部前置满足时判定：
-
-```text
-strategy_intent_live_quality_recovery_preflight_ready
-```
-
-然后必须停在以下问题，不得继续执行：
-
-```text
-已完成 K-A3d3c2 独立恢复前置审计。API key present，Endpoint=https://api.deepseek.com，Model=deepseek-v4-flash。
-拟使用全新 seed 700..709、策略 0/50/100、每阶段 2 对执行恰好一次恢复实验，共最多 48 次外部请求；单次 timeout 60 秒、零重试、持久后台最长 65 分钟，并使用已验证的父/子 bootstrap 状态链。是否明确授权向该 endpoint 的 deepseek-v4-flash 发起本次请求？
-```
-
-只有用户后续明确授权，才允许执行 live 恢复。历史 K-A3d3b 授权无效。
-
-任一前置失败且未联网时判定 `precondition_failed`。
+恢复结论仍是小样本、RuleBased 续局代理下的描述性结果，不是显著性、因果或胜率结论，也不授权默认启用 strategy intent prompt。
 
 ### 最终报告
 
 必须包含：
 
-- 唯一判定、HEAD 和工作区；
-- K-A3d3b invalid 与 seed 禁用声明；
-- K-A3d3c1 文件 bytes/hash、offline 结构 hash 和 request=0 复核；
-- endpoint/model 和 key presence，不含 key 内容；
-- 全新 seed、pair/request、timeout/retries/时间预算；
-- 父/子 bootstrap、ledger、隐私和完整性门槛摘要；
-- 明确说明本轮未创建 runner、未联网、未调用模型；
-- ready 时输出上述授权问题。
+- K-A3d3c3a 唯一判定；
+- K-A3d3c2 invalid 永久保留声明；
+- HEAD、工作区、原目录前后文件集合与完整 SHA-256；
+- 第 237–246 行执行顺序和已确认路径缺陷；
+- 48/48 ledger、off/on、report/策略/阶段/branch 守恒；
+- verifier 双运行 hash 和恢复目录全部文件 manifest；
+- 若完整性通过，报告 changed、on/off better、team wins 和按预注册顺序得到的描述性判定；
+- 明确说明未修改源证据、未联网、未调用模型、未读取 `.env` 或 key。
