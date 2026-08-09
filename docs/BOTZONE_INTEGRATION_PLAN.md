@@ -29,8 +29,8 @@
 | 108 ID 映射 | **confirmed** | 每副为 `0..53`；普通牌按 `h,d,s,c`，从 A、2 到 K；`52` 小王、`53` 大王；`54..107` 重复。 | 可进入后续离线 codec 设计；当前 `engine.cards` 的 `S,H,C,D` 和无副本模型不能直接当作平台 ID。 |
 | `deal` | **confirmed** | `stage="deal"`，`deliver` 为本家 27 张实体 ID，`your_id` 为座位；response 是 `[]`。 | 可作为无贡 profile 的允许 stage。 |
 | `play` 基础形状 | **confirmed** | response 是 `[action, claim]`；两者均为整数 ID 数组；无配子时二者相同；pass 精确为 `[[], []]`。 | 普通牌和 pass 的协议形状可封板。 |
-| `play.history` | **confirmed** | 仅近四手，包含 pass；每项含 `player` 与同结构 `response`。 | session 必须持久化近四手之外所需的公开状态；不能从单 request 重建完整本局。 |
-| `global.level`、`done`、`pass_on` | **partially confirmed** | `global.level` 是本局等级；`done` 标记已出完玩家；`pass_on` 标定接风上下文，官方样例给出 `-1`。 | `done/pass_on` 的完整状态机和值域未封板，adapter 不能自行推断先手或接风转移。 |
+| `play.history` | **confirmed** | 裁判固定维护四槽窗口；无贡首个 play 为 `[[],[],[],[]]`，之后以 `history[1:] + current_move` 滑动，真实项含 `player/response`。 | parser 必须规范化前缀空槽；session 仍需持久化近四手之外的公开状态。 |
+| `global.level/resist`、`done`、`pass_on` | **confirmed from referee source** | 无贡 play 的 `global.resist=false`；`done` 按出完顺序追加；`pass_on` 为 `-1` 或刚出完、尚待接风处理的玩家。 | 必须 stage-specific 严格解析；adapter 按裁判的 latest-window 扫描语义重建 free/follow，不自行猜测。 |
 | 配子实体 | **confirmed** | 红桃级牌是配子，可代替任意非大小王牌。 | 与本地 `carrier_cards` / `wildcard_info` 的概念可对接，但不足以编码 claim。 |
 | 配子 claim 的花色、副本、排序、重复和 canonical 规则 | **confirmed with strict adapter policy** | 裁判源码 `isLegalClaim()` 按牌面多重集匹配所有非配子 action，剩余 claim 牌对应配子且不得为王；ID 经单副牌牌面投影，因此两副副本等价，顺序不参与校验。裁判未严格拒绝 claim 重复实体 ID 或越界整数。 | adapter 必须比裁判更严格：只输出 `0..107`，自然牌固定 `claim=action`，声明使用确定性 canonical ID，不依赖裁判宽松行为。 |
 | 单手配子数量及多配子牌型约束 | **confirmed** | 物理牌池只有两张红桃级牌；源码允许所有红桃级牌从自然牌匹配中豁免，并明确存在“bomb with 2 coverings”路径，随后统一用 claim 做牌型判断。 | Botzone 最多允许两张配子；当前 engine 每手最多一个配子，只实现合法子集并记录能力缺口，不修改 engine。 |
@@ -282,7 +282,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 - 确认账号权限和手动桌选择方式；runmatch 前置可保持独立 unknown；
 - 未读取或持久化任何真实密钥。
 
-以上条件已满足，L1-A1 与 L2-A1 已完成；当前必须先完成 L2-A1a 准入加固，不得跳过 Phase 3 直接真实连接。
+以上条件已满足，L1-A1、L2-A1 与 L2-A1a 已完成；当前必须先完成 L2-A1b 官方请求契约补全，不得跳过 Phase 3 直接真实连接。
 
 ### Phase 1：纯协议模型与卡牌映射
 
@@ -300,7 +300,7 @@ Botzone `play.history` 只有近四手，不足以恢复本家当前手牌和完
 
 ### Phase 2：连接器骨架与 mock Botzone
 
-状态：L2-A1 已完成，唯一判定 `botzone_mock_connector_verified`。定向 28 项、全量 474 项通过；实现仍为未提交改动。Phase 3 前先执行 L2-A1a 准入加固。
+状态：L2-A1 已提交为 `3b1b75ba1811f629f91718e5997ec9955c524b73`。L2-A1a 定向 34 项、全量 480 项通过，历史判定 `botzone_phase3_admission_contract_verified`；其六个修改文件尚未形成独立检查点。官方首个 play 精确复核后，Phase 3 前还需执行 L2-A1b。
 
 工作：实现 poll 文本模型、可注入 fake transport、session store 和 pending response 事务；只连 mock transport。本阶段不提供真实 HTTP transport或 live module 启动入口。
 
@@ -320,9 +320,11 @@ Phase 3 准入审计新增硬门槛：
 - pending response 必须携带 action 实体 ID effect，只在 transport 成功 acknowledge 后原子扣牌一次；
 - latest four history 必须可验证地并入累计公开事件；无法对齐时 fail-closed。
 
-L2-A1a 通过后的唯一判定为 `botzone_phase3_admission_contract_verified`，之后才允许 Phase 3。
+L2-A1a 已通过并给出历史判定 `botzone_phase3_admission_contract_verified`。随后精确官方首个 play fixture 发现 `resist=false`、四槽空 history 和本地座位未持久化三项遗漏；Phase 3 准入重新打开。L2-A1b 通过 `botzone_phase3_official_request_contract_verified` 后才允许 Phase 3。
 
 ### Phase 3：连接 RuleBasedAI 的端到端回合测试
+
+状态：被 L2-A1b 阻塞，尚未开始。
 
 工作：实现 `profile.py/play_adapter.py/runner.py`，完成无贡 profile 的 `deal + play` 链路；不联网、不实现贡还路径。
 
@@ -436,4 +438,4 @@ Step L1-A1 的纯协议模型、108 ID codec 和离线 fixture 已完成。当�
 
 ## 12. 推荐下一动作
 
-执行 Step L2-A1a：先为当前 L2-A1 文件创建独立检查点，再修复 claim 虚拟 ID multiplicity，补齐 handler session context、ack 后实体手牌 effect 和累计公开 history。不得实现真实 HTTP transport，不得读取本地 AI URL/密钥，不得联网或调用 Agent；通过后才允许 Phase 3，仍不能启动 live connector。
+执行 Step L2-A1b：先为当前 L2-A1a 六个修改文件创建独立检查点，再补全官方无贡首个 play 的 `resist=false`、四槽空 history、本地座位持久化和桌面语义 fixture。不得实现真实 HTTP transport、adapter，不得读取本地 AI URL/密钥，不得联网或调用 Agent；通过后才允许 Phase 3，仍不能启动 live connector。

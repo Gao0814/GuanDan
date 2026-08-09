@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：Phase 0、L1-A1 与 L2-A1 已完成；L2 唯一判定 `botzone_mock_connector_verified`，定向 28 项、全量 474 项通过。下一步 L2-A1a 增加 claim 虚拟重复、handler context、pending 扣牌 effect 和 history 累积测试；不实现真实 transport、联网或 Agent。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0、L1-A1、L2-A1 与 L2-A1a 已完成；L2-A1a 历史判定 `botzone_phase3_admission_contract_verified`，定向 34 项、全量 480 项通过。精确官方首个无贡 play 复核发现现有测试未覆盖 `resist=false`、四槽空 history 与本地座位持久化；下一步 L2-A1b 补齐这些 fixture，不实现真实 transport、联网或 Agent。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1096,11 +1096,11 @@ Phase 0 证据验收已完成：
 最低测试集合：
 
 - `tests/test_botzone_cards.py`：已完成；108 个牌 ID、花色/点数/王边界、两副副本 identity；
-- `tests/test_botzone_protocol.py`：已完成 deal/play/pass、claim 与 unsupported stage；poll、多个 match、finished/aborted 和 Header 注入转入 L2；
+- `tests/test_botzone_protocol.py`：已完成 deal/play/pass、claim 重复与 unsupported stage；下一步加入官方 `resist=false` 和固定四槽 history 原文；
 - `tests/test_botzone_profile.py`：已完成；无贡 opening、tribute/return unsupported 与边界扫描；
 - `tests/test_botzone_poll.py`：已完成；批量 request、finished/aborted、计数、UTF-8、CRLF 和注入防护；
-- `tests/test_botzone_session.py`：L2 基础事务、事件去重、实体手牌、重连恢复、多局隔离和中途无状态 fail-closed 已完成；下一步补 ack 后实体手牌 effect 和 history window 累积；
-- `tests/test_botzone_connector.py`：L2 fake transport 已完成；下一步补多 match handler context 和类型化 handler result；
+- `tests/test_botzone_session.py`：基础事务、实体手牌、重连、多局、ack 后 effect 与 history merge 已完成；下一步补本地座位、schema 升级和官方空槽窗口；
+- `tests/test_botzone_connector.py`：fake transport、match context 和类型化 handler result 已完成；下一步补四座位 context 与官方首个 play；
 - `tests/test_botzone_play_adapter.py`：座位映射、observation、table constraint、pass、自然动作和配子 action/claim；
 - `tests/test_botzone_action_provenance.py`：输出只能来自原始 legal action 对应 `action_id`；
 - `tests/test_botzone_rule_agent_e2e.py`：RuleBasedAI 的 deal→play 关键回合、终局和无贡 profile 边界；
