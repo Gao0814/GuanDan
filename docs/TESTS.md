@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：L4-A2c5a 已封存并通过定向 10、相关 23、全量 526 项；L4-A2c5b 唯一真实环境 preflight 在 `directory_ready` 后超时并判定 invalid。下一步 L4-A2c5b1 只做真实 state 目录文件原子操作边界的离线诊断；完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：L4-A2c5b1 已将真实 state 目录失败边界定位到独占创建操作，资格验证、精确清理和零网络守恒通过。下一步 L4-A2c5b2 获取脱敏 errno/winerror 并执行三目录范围对照；完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1200,6 +1200,16 @@ L4-A2c5b 实际结果：检查点范围和 10/23/526 回归均通过；唯一真
 - 每个 probe 路径由本任务唯一拥有，禁止通配删除和扫描未知文件；
 - 超时只报告最后未完成的原子操作和脱敏栈，不推断系统根因；
 - state 前后为空，request/GET/network/connector/live-launcher 严格为 0。
+
+L4-A2c5b1 实际结果：资格验证成功；真实目录单次探测 exit code 5，最后阶段 `exclusive_open_started`，清理 exit code 0，唯一判定 `botzone_state_tempfile_operation_boundary_verified`。L4-A2c5b2 诊断测试口径：
+
+- 新载体先在第四个全新临时目录完成一次资格验证；
+- 当前配置目录、同卷全新目录、本地应用数据全新目录按固定顺序各探测一次；
+- 每次只执行一个 `os.open(O_CREAT|O_EXCL|O_RDWR)`，不重试、不补采；
+- 异常只记录白名单类型、整数 errno/winerror、filename presence 和 candidate existence，不记录异常文本或路径；
+- 每个目标使用独立任务前缀并只清理精确任务文件，所有目录事后为空；
+- 结果只能划定目录/卷/进程范围，不得解释系统根因；
+- request/GET/network/connector/live-launcher 严格为 0。
 
 ## 6. 对局评测
 

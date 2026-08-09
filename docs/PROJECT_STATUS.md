@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A2c5b 真实环境 instrumented preflight 已封板为 invalid；最后完成阶段为 `directory_ready`，下一步仅允许 L4-A2c5b1 离线定位临时文件创建原子操作边界
+- 当前工作状态：Botzone L4-A2c5b1 已把失败边界定位到 `os.open(..., O_CREAT|O_EXCL|O_RDWR)`；下一步 L4-A2c5b2 只获取脱敏错误分类并验证目录范围
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：L4-A2c5a 定向 10、相关 23、全量 526 项通过；合成 module 退出 0、audit 阶段完整，全部网络/connector 计数为 0
 - 当前规则范围：单局掼蛋核心规则
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L4-A2c5b invalid | Windows-safe launcher与可审计 preflight 契约均离线通过；真实环境 audit 定位到 `directory_ready` | 临时文件创建调用超时，根因未知；真实 smoke 未执行 |
+| Botzone 接入 | L4-A2c5b1 boundary verified | 独占创建失败边界已定位，清理和零网络守恒通过 | errno/winerror 与目录影响范围未知；真实 smoke 未执行 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1276,7 +1276,9 @@ L4-A2c4b 已完成，判定 `botzone_preflight_timeout_diagnosis_recovery_inconc
 
 L4-A2c5a 已完成，判定 `botzone_instrumented_live_preflight_contract_verified`。新增 `live_preflight.py` 与专属测试，并为 `preflight_state_directory()` 增加默认关闭的 keyword-only stage callback。专用入口在延迟 runtime import 前原子写 bootstrapping，累计记录配置和 `resolve` 至 `cleaned` 的 state 阶段；退出码 2/3/4/5/70/130 与固定成功输出已锁定。定向 10、相关 23、全量 526 项通过；合成子进程 10 秒内退出 0，state 为空、audit 完整，边界扫描无 transport/runner/connector/session/adapter 导入，全部网络计数为 0。三个文件随后已独立封存为 `8ceb038d3dc6d6a4cfae3525b2bc92b2cc6da78c`；该契约通过不代表真实环境 preflight 或 live 已通过。
 
-L4-A2c5b 已完成，唯一判定 `botzone_instrumented_live_preflight_invalid`。L4-A2c5a 已独立封存为 `8ceb038d3dc6d6a4cfae3525b2bc92b2cc6da78c`，范围精确且 10/23/526 回归与 `git diff --check` 通过。唯一真实环境 preflight 在 30 秒上限内未返回，终止后 audit 最后为 `running / directory_ready`，未到 `temporary_opened`，stdout/stderr 为空；state 仍为空且全部网络计数为 0。证据为 preflight 262 bytes / `770f567b...36a4365b2`，两个空流文件均为 `e3b0c442...b855`。这只能把阻塞区间限定在 `NamedTemporaryFile(...)` 返回前，不能推断权限、杀毒软件、磁盘或 Python 根因。下一步 L4-A2c5b1 只允许仓库外标准库载体逐项诊断候选名生成、独占创建、写入、同步、替换和清理；不得重跑 preflight 或直接 live。
+L4-A2c5b 已完成，唯一判定 `botzone_instrumented_live_preflight_invalid`。L4-A2c5a 已独立封存为 `8ceb038d3dc6d6a4cfae3525b2bc92b2cc6da78c`，范围精确且 10/23/526 回归与 `git diff --check` 通过。唯一真实环境 preflight 在 30 秒上限内未返回，终止后 audit 最后为 `running / directory_ready`，未到 `temporary_opened`，stdout/stderr 为空；state 仍为空且全部网络计数为 0。证据为 preflight 262 bytes / `770f567b...36a4365b2`，两个空流文件均为 `e3b0c442...b855`。这只能把阻塞区间限定在 `NamedTemporaryFile(...)` 返回前，不能推断权限、杀毒软件、磁盘或 Python 根因。随后执行的 L4-A2c5b1 只使用仓库外标准库载体逐项诊断候选名生成、独占创建、写入、同步、替换和清理，未重跑 preflight 或进入 live。
+
+L4-A2c5b1 已完成，唯一判定 `botzone_state_tempfile_operation_boundary_verified`。临时目录资格验证低于 1 秒完成；真实 state 目录唯一诊断 exit code 5，最后阶段为 `exclusive_open_started`，没有 `exclusive_open_completed`，规范化诊断 `operation_error`。任务自有候选文件随后精确清理成功，真实目录前后均为空，全部网络计数为 0。证据为 `state_probe.py` 6,192 / `f86ea0c6...468c320`、`driver.py` 4,587 / `ba34fd1d...434488`、`summary.json` 3,127 / `0851b694...52bbc1` bytes/hash。该结果只定位到 `os.open(O_CREAT|O_EXCL|O_RDWR)`，未记录足以解释原因的脱敏 errno/winerror，也没有目录对照。下一步 L4-A2c5b2 必须保持零网络和仓库不变，用当前目录、同卷全新目录、本地应用数据全新目录的固定矩阵确认错误分类和影响范围。
 
 ## 6. 当前风险
 
