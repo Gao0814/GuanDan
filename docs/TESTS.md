@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：L4-A2c4b qualification 双通过，八阶段与 module 复验全部少于 1 秒并退出 0，但真实超时未复现，判定 recovery inconclusive。下一步 L4-A2c5a 建立可审计专用 preflight 入口；完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：L4-A2c5a 已完成可审计专用 preflight，定向 10、相关 23、全量 526 项通过。下一步先封存三个文件，再执行 L4-A2c5b 唯一真实环境零网络 preflight；完整计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1181,6 +1181,16 @@ L4-A2c4b 实际结果：qualification 与全部正式阶段通过，根因为 `n
 - 合成子进程 10 秒内完成、state 为空、阶段完整；
 - 不导入主入口/runner/transport/connector/Agent，不读取 dotenv；
 - request/GET/network/connector/live-launcher count 严格为 0。
+
+L4-A2c5a 实际结果：专用 module、stage callback、稳定退出分类、原子 audit、异常清理与合成子进程均通过。L4-A2c5b 实际环境准入门槛：
+
+- L4-A2c5a 检查点只含 `runtime_config.py`、`live_preflight.py` 和专属测试；
+- 真实配置只由专用 module 内部消费，外部仅查 presence；
+- state dir 前后为空，audit 目录前置为空；
+- 专用 preflight 恰好一次、30 秒上限、不重试；
+- 成功阶段精确完整，失败保留最后阶段；
+- 不执行 live launcher、旧 preflight-only、connector 或 GET；
+- ready 后仍需 L4-A2c5c，不直接申请 live。
 
 ## 6. 对局评测
 

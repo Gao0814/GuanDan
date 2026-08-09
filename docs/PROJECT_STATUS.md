@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A2c4b 有效合成矩阵全部通过但未复现真实超时；下一步 L4-A2c5a 建立分阶段原子落盘的专用零网络 preflight
+- 当前工作状态：Botzone L4-A2c5a 可审计 preflight 契约已通过；三个实现/测试文件尚未提交，下一步先独立封存，再执行 L4-A2c5b 唯一真实环境零网络 preflight
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：L4-A2c4b qualification 双通过，八阶段及 module 复验均退出 0、少于 1 秒；根因 `not_reproduced`，全部网络/connector 计数为 0
+- 实际验证结果：L4-A2c5a 定向 10、相关 23、全量 526 项通过；合成 module 退出 0、audit 阶段完整，全部网络/connector 计数为 0
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L4-A2c4b inconclusive | Windows-safe launcher 已封存；有效合成 preflight 矩阵全部快速通过 | 真实环境超时未复现；需增加可审计 preflight 入口后再准入 |
+| Botzone 接入 | L4-A2c5a verified | Windows-safe launcher 与可审计 preflight 契约均离线通过 | instrumented preflight 尚未封存并在真实环境运行；真实 smoke 未执行 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1273,6 +1273,8 @@ L4-A2c3a 已先将 L4-A2c2 独立封存为 `30d9b5897d97939f64dab32b97772118c72e
 L4-A2c4a 随后判定 `botzone_preflight_timeout_diagnosis_inconclusive`。`python_startup` 在 1 秒内成功；第二阶段 `runtime_config_import` 在 1 秒内以 `ModuleNotFoundError` 退出，因为仓库外临时脚本被直接执行时仓库根不在子进程 import path。该结果不是项目 import 超时的有效复现，根因保持 `unknown`；阶段 3–8 未执行。新证据为 `phase_probe.py` 5,122 / `d794c5a2...b58c4f`、`driver.py` 2,757 / `0eedb86a...41cfb9`、`diagnosis.json` 575 / `d479ea2f...47b718` bytes/hash。旧证据未改，所有网络/connector 计数为 0。下一步 L4-A2c4b 必须在正式阶段前用 `cwd=repo root`、`python -c + runpy` 连续两次验证 cwd/sys.path/spec/origin；资格失败不得再次消耗正式矩阵。
 
 L4-A2c4b 已完成，判定 `botzone_preflight_timeout_diagnosis_recovery_inconclusive`。两次 qualification 的 cwd/path/spec/origin 全部为 true；八阶段和阶段 8 的全新目录复验全部在 1 秒内退出 0，最后 heartbeat 均为 `completed / exit`。有效合成环境未复现 30 秒超时，根因规范化为 `not_reproduced`。新证据为 `runpy_probe.py` 5,797 / `87a385bf...dcdb7b`、`driver.py` 3,941 / `51e5fb96...e20012`、`summary.json` 2,432 / `38d7bda0...fbd3e`、`manifest.json` 1,425 / `30f01deb...08376` bytes/hash；旧证据不变，所有网络/connector 计数为 0。下一步不再重复黑盒 preflight；L4-A2c5a 新增轻量专用入口，在导入 runtime 前先写 audit，并通过 state file-op callback 持续原子记录阶段。通过后才允许单独运行一次真实环境零网络 preflight。
+
+L4-A2c5a 已完成，判定 `botzone_instrumented_live_preflight_contract_verified`。新增 `live_preflight.py` 与专属测试，并为 `preflight_state_directory()` 增加默认关闭的 keyword-only stage callback。专用入口在延迟 runtime import 前原子写 bootstrapping，累计记录配置和 `resolve` 至 `cleaned` 的 state 阶段；退出码 2/3/4/5/70/130 与固定成功输出已锁定。定向 10、相关 23、全量 526 项通过；合成子进程 10 秒内退出 0，state 为空、audit 完整，边界扫描无 transport/runner/connector/session/adapter 导入，全部网络计数为 0。当前三个文件尚未提交；下一步 L4-A2c5b 必须先独立封存并恢复干净工作区，再对真实进程环境执行恰好一次 instrumented preflight。无论结果如何，本步之后仍不能直接 live。
 
 ## 6. 当前风险
 

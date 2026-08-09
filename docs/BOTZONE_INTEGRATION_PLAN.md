@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A2c4b 有效合成矩阵全部快速通过，但真实 preflight 超时未复现。下一步 L4-A2c5a 新增分阶段、原子落盘的专用零网络 preflight 入口。
+状态：L4-A2c5a 可审计 preflight 契约已离线通过，三个文件尚待独立封存。下一步 L4-A2c5b 执行唯一一次真实环境 instrumented 零网络 preflight。
 
 工作：
 
@@ -476,7 +476,7 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留。合成环境无法复现超时，不能靠继续重跑或提高 timeout 恢复。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c5a 可审计 preflight 契约；不得消费真实配置或联网。
+Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留。instrumented preflight 已在合成环境通过，但尚未封存或消费真实进程配置。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c5b；不得启动 launcher/connector 或联网。
 
 理由：
 
@@ -509,4 +509,4 @@ Phase 0 至 L4-A2a 均已完成；既有 invalid/inconclusive 结论全部保留
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A2c5a：新增只依赖标准库和 runtime config 的 `live_preflight` 入口，在延迟 import 前写入 bootstrapping，并通过可选 state stage callback 持续原子更新脱敏 audit。使用合成环境验证完整阶段、稳定退出码、异常分类与零网络；通过后只进入 L4-A2c5b 单次真实环境零网络准入，不直接 live。
+执行 Step L4-A2c5b：先把 `live_preflight.py`、`runtime_config.py` 和专属测试独立封存，再对当前真实环境执行恰好一次专用 preflight，30 秒上限且不重试。成功必须完整到 `state_preflight_completed`、state 仍为空且网络计数为 0；失败保留最后 audit 阶段并封板。ready 也只进入 L4-A2c5c launcher offline 准入，不直接 live。
