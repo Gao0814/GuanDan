@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A1、L4-A1a 与 L4-A2a 已完成。L4-A1 检查点为 `e4a4fba99211831c66062ac0f003094edc941c6a`，L4-A1a 实现检查点为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`；定向 46 项、全量 515 项和零网络 preflight 均通过。L4-A2b 首次调用因提示词精确 HEAD 门槛误判而在启动前停止，授权未消耗；下一步按修正门槛执行唯一 live run。
+状态：L4-A1、L4-A1a 与 L4-A2a 已完成。L4-A1 检查点为 `e4a4fba99211831c66062ac0f003094edc941c6a`，L4-A1a 实现检查点为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`；定向 46 项、全量 515 项和零网络 preflight 均通过。L4-A2b 唯一启动尝试在创建 connector 前发生 `launcher_environment_error`，判定 invalid；下一步为 L4-A2c1 纯离线 launcher 诊断。
 
 工作：
 
@@ -405,7 +405,7 @@ L4-A2b 启动门槛修正：
 
 ### Phase 4：真实 Botzone 小规模 smoke test
 
-前置：L4-A2a 判定 `botzone_live_smoke_authorization_ready`，固定预算联网授权已取得；账号权限已确认；URL/密钥只存在进程环境中。精确 HEAD 误判未启动 connector，当前仍尚未执行唯一 live run。
+结果：L4-A2b 启动前门槛全部通过，但唯一 `Start-Process` 调用在 connector 进程创建前失败。未发送 GET，未产生 live audit/state，未重试或启动第二进程；唯一判定 `botzone_no_tribute_local_ai_smoke_invalid`。该结果不证明 connector 或 Botzone 协议失败，只证明本次启动链不完整。
 
 工作：
 
@@ -476,7 +476,7 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A2a 均已完成。当前只允许按 `docs/NEXT_PROMPT.md` 执行已授权的唯一一次 L4-A2b live connector；不得改变预算、启动第二进程、重跑或补采。
+Phase 0 至 L4-A2a 均已完成；L4-A2b 已封板为 invalid，不得重跑或补采。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c1 纯离线 launcher 环境诊断；不得启动 connector 或联网。
 
 理由：
 
@@ -509,4 +509,4 @@ Phase 0 至 L4-A2a 均已完成。当前只允许按 `docs/NEXT_PROMPT.md` 执�
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A2b：使用当前已轮换且脱敏的进程环境，启动唯一一个前台型后台进程；由用户手动创建“需要进贡=否”的一局 GuanDan 桌。本次预算锁定为 RuleBasedAI、100 GET、600 秒、30 秒 timeout、连续失败 5、finished 1 局即停。结束后只读审计聚合 audit、固定输出和最小 tombstone；任一门槛失败即 `botzone_no_tribute_local_ai_smoke_invalid`，不得重跑；全部通过才是 `botzone_no_tribute_local_ai_smoke_verified`。
+执行 Step L4-A2c1：在仓库外使用标准库无网络子脚本和合成环境变量，逐步验证 PowerShell capability、Python resolution、参数引用、工作目录、环境继承与分离 stdout/stderr 重定向。不得调用 connector、Botzone URL 或 `.env`。只有稳定复现并让修正启动方式连续两次离线成功，才可规划 L4-A2c2；任何后续 live 必须使用新任务、新预算和新的明确授权。

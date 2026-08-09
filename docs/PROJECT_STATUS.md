@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A2b 首次调用因提示词精确 HEAD 门槛误判而停止；未启动 connector、授权未消耗，下一步按祖先加 docs-only 门槛重试唯一一次真实无贡 smoke
+- 当前工作状态：Botzone L4-A2b 已封板为 `botzone_no_tribute_local_ai_smoke_invalid`；唯一启动尝试在创建进程前发生 `launcher_environment_error`，下一步为 L4-A2c1 纯离线启动环境诊断
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：L4-A2a 工作区/检查点/环境/state dir/preflight 全部通过，preflight 网络请求数为 0；`029b8d...` 是当前 HEAD 祖先且之后只有五份规划文档变化，live 尚未启动
+- 实际验证结果：L4-A2b 启动前门槛通过，但 connector 进程未创建、GET=0、无 live audit/state；未重试或启动第二进程
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L4-A2a ready，已授权 L4-A2b | HTTPS transport、RuleBased adapter、有界 runner、finished tombstone、audit、凭据轮换与零网络 preflight 已通过 | 尚未执行唯一一次真实无贡 smoke |
+| Botzone 接入 | L4-A2b invalid | HTTPS transport、RuleBased adapter、有界 runner、finished tombstone、audit、凭据轮换与零网络 preflight 已通过 | 唯一启动尝试发生 launcher environment error；真实 smoke 未执行 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1204,7 +1204,7 @@ K-A3d3c3a 随后完成：原 9 个文件集合与完整 SHA-256 前后不变，�
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 至 L4-A2a 已完成。L4-A1a 已封存为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`，定向 46 项、全量 515 项通过。L4-A2a 已得到 `botzone_live_smoke_authorization_ready`，用户已明确授权固定预算的 L4-A2b。首次调用因提示词把实现检查点误写成精确 HEAD 门槛而在启动前停止；connector 尚未启动，授权未消耗。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A2a 已完成。L4-A1a 已封存为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`，定向 46 项、全量 515 项通过。L4-A2b 已执行唯一启动尝试并封板为 `botzone_no_tribute_local_ai_smoke_invalid`：启动前门槛通过，但 `Start-Process` 返回 `launcher_environment_error`，未创建 connector 或发送 GET。详细计划见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 已确认：
 
@@ -1261,6 +1261,8 @@ L4-A1a 已关闭 live 准入缺口：runner 聚合 cycle/request/response/header
 L4-A2a 已完成：工作区干净，两个 Botzone 环境变量 present，state dir 与用户确认路径一致且为空；唯一 preflight-only 返回 `preflight_ready`，之后目录仍为空、网络请求为 0。用户随后明确授权 L4-A2b：RuleBasedAI、手动无贡一局、最多 100 次 GET、最长 600 秒、timeout 30 秒、连续失败 5、finished 1 局即停。下一任务按 `docs/NEXT_PROMPT.md` 启动唯一进程，失败不得重跑。
 
 L4-A2b 首次调用返回 `precondition_failed: checkpoint_head_mismatch`。只读复核确认 `029b8d...` 仍是当前 HEAD 的祖先，之后仅有 `docs/BOTZONE_INTEGRATION_PLAN.md`、`docs/NEXT_PROMPT.md`、`docs/PLAN.md`、`docs/PROJECT_STATUS.md`、`docs/TESTS.md` 五份规划文档变化。该失败发生在进程启动前，没有 GET、audit、state 或网络活动，因此不计为 live run，既有一次性授权保持有效。后续门槛改为“实现检查点为祖先且差异严格限于上述 docs allowlist”；发现任何代码、测试、配置或其他路径变化时仍须 `precondition_failed`。
+
+修正门槛后的 L4-A2b 启动前检查全部通过，但唯一 `Start-Process` 启动尝试因 `launcher_environment_error` 失败。没有 connector PID、GET、live audit 或 state 证据，未重试或启动第二进程。按预注册完整性边界，唯一判定 `botzone_no_tribute_local_ai_smoke_invalid`，该结论不得追认为通过。现有授权未产生实际联网请求，但不得直接用于重试；下一步 L4-A2c1 只使用合成变量和无网络子进程定位 launcher 根因，后续 live 必须重新申请授权。
 
 ## 6. 当前风险
 

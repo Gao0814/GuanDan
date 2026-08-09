@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：Phase 0 至 L4-A2a 已完成。L4-A1a 定向 46 项、全量 515 项通过；L4-A2a 零网络 preflight 返回 ready，state dir 保持为空，用户已授权 L4-A2b。首次调用因提示词错误要求精确 HEAD 而在启动前返回 `checkpoint_head_mismatch`；未创建 connector 或 GET，授权未消耗。下一步按实现检查点祖先加五份规划 docs allowlist 的门槛执行唯一真实无贡手动桌 smoke，不重复回归或 preflight。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A2a 已完成。L4-A1a 定向 46 项、全量 515 项通过；L4-A2a 零网络 preflight 返回 ready。L4-A2b 启动前门槛通过，但唯一 `Start-Process` 调用发生 `launcher_environment_error`，没有 connector、GET、live audit 或 state，唯一判定 `botzone_no_tribute_local_ai_smoke_invalid`。下一步 L4-A2c1 只验证合成环境和无网络子进程，不重复 live。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1119,6 +1119,17 @@ Phase 0 证据验收已完成：
 - 真实测试桌必须显式设置“需要进贡=否”；收到 tribute/return 时该局验收失败，不生成替代动作；
 - smoke 完成只证明接入可用，不证明胜率或策略提升；
 - fixture 不得包含真实 URL、密钥、match ID、完整真实手牌或原始 Log。
+
+L4-A2c1 离线诊断最低覆盖：
+
+- PowerShell/`Start-Process` 参数能力；
+- Python executable 前台基线与后台解析；
+- 合成环境变量继承，只记录 present/missing；
+- working directory 和参数引用；
+- stdout/stderr 分离重定向；
+- 短超时、PID/exit code 与脱敏异常；
+- 修正启动方式连续两次离线成功；
+- connector/GET/network count 严格为 0。
 
 ## 6. 对局评测
 
