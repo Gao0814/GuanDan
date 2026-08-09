@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A2c2 已通过 Windows launcher 离线加固；两个实现/测试文件尚未提交，下一步先独立封存，再执行 L4-A2c3a 零网络恢复准入审计
+- 当前工作状态：Botzone L4-A2c3a 零网络恢复准入因既有 preflight-only 30 秒未返回而 invalid；下一步 L4-A2c4a 用合成配置分阶段定位超时
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：L4-A2c2 定向 5、相关 17、全量 520 项通过；两次 PowerShell probe 均退出 17 且流分离正确，network/GET/connector count=0
+- 实际验证结果：L4-A2c2 已封存为 `30d9b58...`；L4-A2c3a 未执行 launcher probe，state/worktree 仍干净，request/GET/network/connector count=0
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L4-A2c2 verified | Windows-safe Python launcher、HTTPS transport、RuleBased adapter、有界 runner、finished tombstone 与 audit 已离线通过 | launcher 尚未封存和重新准入；真实 smoke 未执行 |
+| Botzone 接入 | L4-A2c3a invalid | Windows-safe launcher 已封存，HTTPS transport/adapter/runner 离线测试通过 | preflight-only 30 秒未返回；需先定位超时，真实 smoke 未执行 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1267,6 +1267,8 @@ L4-A2b 首次调用返回 `precondition_failed: checkpoint_head_mismatch`。只�
 L4-A2c1 随后完成，唯一判定 `botzone_launcher_environment_diagnosis_verified`。证据目录为仓库外 `guandan-botzone-launch-diagnosis-b7e96cb1b1ec4fbe8ec6ff497735382f`；三份证据分别为 700 / `56f885eb...a3f0d2b`、348 / `76da7669...8ae4faa`、1,358 / `274f0153...a2489e` bytes/hash。PowerShell Desktop 5.1 可用隐藏窗口、工作目录、PassThru 和 Wait，但使用 `RedirectStandardOutput`/`RedirectStandardError` 时可稳定在创建进程前触发 `ArgumentException`；加 `UseNewEnvironment` 仍失败，排除仅环境继承根因。去除 PowerShell 内建重定向、保留合成 sentinel 和其余启动形状后连续两次成功，固定退出码均为 17。根因类别锁定为 `stream_redirection`，全程 request/GET/network/connector count=0。下一步 L4-A2c2 只新增 Python 进程内分流 launcher 与离线平台测试，不修改规则、协议或 Agent；通过后仍须先完成零网络 L4-A2c3a，再申请新的 live 授权。
 
 L4-A2c2 已完成，唯一判定 `botzone_windows_live_launcher_hardening_verified`。新增 `integrations/botzone/live_launcher.py` 与 `tests/test_botzone_live_launcher.py`；PowerShell 只负责无 Redirect 参数的隐藏进程创建，Python 在同一进程内拒绝覆盖地创建独立 stdout/stderr 并调用既有入口。路径、参数、异常、文件关闭与敏感边界均 fail-closed；定向 5、相关 17、全量 520 项通过。两次 Windows 合成平台 probe 均退出 17，sentinel、工作目录、参数和流分离正确，network/GET/connector count=0。当前两个文件仍未跟踪，下一步 L4-A2c3a 必须先独立提交它们并恢复干净工作区，再执行一次新的零网络 preflight；不得直接 live。
+
+L4-A2c3a 已先将 L4-A2c2 独立封存为 `30d9b5897d97939f64dab32b97772118c72ef3d1`，提交范围精确且 5 / 17 / 520 项回归通过。恢复准入 metadata、空 state dir、无残留进程和工作区均通过，但第一项 `python -m integrations.botzone --preflight-only` 在 30 秒离线上限内没有返回 `preflight_ready`；因此第二项 launcher probe 未执行，未重试。脱敏 summary 为 522 bytes / `9c4ed801...bc00b2`。唯一判定 `botzone_live_launcher_recovery_preflight_invalid`；state 与工作区事后仍为空/干净，request/GET/network/connector count=0。本结果不能通过增加 timeout 或重跑来覆盖；下一步 L4-A2c4a 只用合成 URL、临时 state 和独立阶段 heartbeat 区分 import/config/file-op/process-exit 阻塞，不请求 live 授权。
 
 ## 6. 当前风险
 

@@ -1084,7 +1084,7 @@ K-A2b1 当时尚未覆盖的严格反例：
 
 ## 6. Step L：Botzone 本地 AI 接入测试计划
 
-状态：Phase 0 至 L4-A2a 已完成，L4-A2b invalid 永久保留。L4-A2c2 已新增 Windows-safe launcher 与测试，定向 5、相关 17、全量 520 项通过；两次平台 probe 均退出 17，network/GET/connector count=0。下一步 L4-A2c3a 先封存这两个文件，再执行一次 preflight-only 和一次 offline launcher probe。完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：L4-A2c2 已封存且 5 / 17 / 520 项通过。L4-A2c3a metadata 门槛通过，但 preflight-only 在 30 秒内未返回，launcher probe 未执行，唯一判定 `botzone_live_launcher_recovery_preflight_invalid`。下一步 L4-A2c4a 仅用合成配置分阶段定位超时；完整矩阵见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 Phase 0 证据验收已完成：
 
@@ -1150,6 +1150,16 @@ L4-A2c2 实际结果：上述 launcher 测试全部通过，PowerShell 已不再
 - Start-Process 无 Redirect 参数的 offline probe 恰好一次，退出 17；
 - probe 后无 connector/audit/state/进程残留，stdout/stderr 精确分流；
 - 只有准入 ready 后才能请求新的固定预算 live 授权。
+
+L4-A2c3a 实际结果：L4-A2c2 检查点范围和回归通过；环境 presence、probe 变量 missing、空 state、无残留进程与干净工作区均通过。preflight-only 超时后按序停止，未执行 launcher probe或任何 GET。L4-A2c4a 最低诊断覆盖：
+
+- Python startup、runtime config import、main import graph；
+- 合成显式配置加载；
+- resolve/boundary/mkdir/tempfile/write/flush/fsync/replace/unlink 分阶段 heartbeat；
+- `preflight_state_directory()`、main 函数与 module 子进程分别执行；
+- 每阶段独立 10 秒上限和脱敏 faulthandler；
+- 不使用真实 URL/state，不构造 transport/opener；
+- request/GET/network/connector/live-launcher count 严格为 0。
 
 ## 6. 对局评测
 

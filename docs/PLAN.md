@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 至 L4-A2a 已完成。L4-A2b invalid 永久保留；L4-A2c1 已定位 `stream_redirection`；L4-A2c2 已完成 Windows-safe launcher，判定 `botzone_windows_live_launcher_hardening_verified`。下一步先独立封存两个新增文件，再执行零网络 L4-A2c3a。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A2a 已完成。L4-A2b invalid 永久保留；L4-A2c2 已封存为 `30d9b58...`。L4-A2c3a 的第一项 preflight-only 超时，判定 `botzone_live_launcher_recovery_preflight_invalid`，launcher probe 未执行。下一步 L4-A2c4a 纯离线分阶段诊断。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -984,7 +984,7 @@ K-A3d3c3a 结果：
 4. Phase 3：已完成；adapter 主链与 L3-A1a observation/实体守恒均封板；
 5. Phase 4 准备：L4-A1/L4-A1a/L4-A2a 已完成；凭据轮换与 preflight ready 已确认；
 6. Phase 4 live：L4-A2b 已执行唯一启动尝试并因 launcher environment error 判定 invalid，未实际联网；
-7. Phase 4 恢复：L4-A2c1/A2c2 已完成根因定位与 launcher 加固；下一步 L4-A2c3a 先封存实现，再运行一次 preflight-only 和一次 offline launcher probe，全部零网络；
+7. Phase 4 恢复：L4-A2c1/A2c2 已完成根因定位与 launcher 加固；L4-A2c3a preflight-only 超时并 invalid；下一步 L4-A2c4a 用合成配置拆分 import/config/state file-op/main/process-exit 阶段；
 8. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。

@@ -350,7 +350,7 @@ L3-A1a 验收补充：
 
 ### Phase 4 准备：离线 HTTP connector 与 runner
 
-状态：L4-A1、L4-A1a 与 L4-A2a 已完成。L4-A2b invalid 永久保留。L4-A2c1 已定位 PowerShell 5.1 `stream_redirection`；L4-A2c2 已完成最小 Python launcher 和两次 Windows 离线 probe。下一步先独立封存 L4-A2c2，再执行 L4-A2c3a 零网络恢复准入。
+状态：L4-A2c2 已封存为 `30d9b5897d97939f64dab32b97772118c72ef3d1`。L4-A2c3a 因既有 preflight-only 30 秒未返回而 invalid，launcher probe 未执行；下一步 L4-A2c4a 纯离线定位 preflight 超时阶段。
 
 工作：
 
@@ -476,7 +476,7 @@ L4-A2b 启动门槛修正：
 
 ## 10. play 子集的前置状态
 
-Phase 0 至 L4-A2a 均已完成；L4-A2b 已封板为 invalid，不得重跑或补采。L4-A2c2 已验证 Windows-safe launcher，但实现尚待独立提交和恢复准入。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c3a；不得启动真实 connector 或联网。
+Phase 0 至 L4-A2a 均已完成；L4-A2b 与 L4-A2c3a 均已封板为 invalid，不得重跑或补采。Windows-safe launcher 已提交，但 preflight-only 超时根因未知。当前只允许按 `docs/NEXT_PROMPT.md` 执行 L4-A2c4a 合成分阶段诊断；不得启动真实 connector 或联网。
 
 理由：
 
@@ -509,4 +509,4 @@ Phase 0 至 L4-A2a 均已完成；L4-A2b 已封板为 invalid，不得重跑或�
 
 ## 12. 推荐下一动作
 
-执行 Step L4-A2c3a：先把 `live_launcher.py` 与对应测试独立封存并恢复干净工作区；随后只读检查环境 presence、空 state dir 和无残留进程，运行一次既有 preflight-only 与一次 launcher offline probe。两项都必须零网络，state dir 保持为空，probe 退出 17 且 stdout/stderr 精确分流。通过后只能向用户请求新的固定预算 L4-A2c3b 授权，不得自动 live。
+执行 Step L4-A2c4a：不再调用真实环境的 preflight-only，而是在仓库外用合成 `.invalid` URL 和全新临时 state 目录，把 Python 启动、runtime/main import、配置加载、state 原子文件步骤、main 函数和 module 子进程拆为独立短时阶段。以 heartbeat/faulthandler 定位最后完成点；若不可复现则明确 inconclusive，不得通过延长 timeout 直接恢复 live。

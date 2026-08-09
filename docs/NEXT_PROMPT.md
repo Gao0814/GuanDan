@@ -1,110 +1,109 @@
 # 下一步实施提示词
 
-## Step L4-A2c3a：Windows launcher 零网络恢复准入审计
+## Step L4-A2c4a：Botzone preflight 超时纯离线分阶段诊断
 
-请在 GuanDan 项目中执行 Step L4-A2c3a。先把已验证的 L4-A2c2 两个文件独立封存为代码检查点，再使用新 launcher 做一次严格零网络的恢复准入审计。不得启动真实 Botzone connector、不得发送 GET、不得创建或加入对局。
+请在 GuanDan 项目中执行 Step L4-A2c4a。本步只诊断 L4-A2c3a 中既有 `python -m integrations.botzone --preflight-only` 为何在 30 秒内未返回。不得再次对真实环境/state dir 运行该命令，不得启动 live launcher、connector 或网络请求，也不得修改仓库文件。
 
 ### 已封板事实
 
-- 文档基线：`fc5e537dc81ec17ed7605fadc766eb86ec4a5bfd`；
-- L4-A2b 永久判定：`botzone_no_tribute_local_ai_smoke_invalid`；
-- L4-A2c1：`botzone_launcher_environment_diagnosis_verified`；
-- L4-A2c2：`botzone_windows_live_launcher_hardening_verified`；
-- L4-A2c2 定向 5 项、相关 17 项、全量 520 项通过；
-- 两次 Windows PowerShell 合成 probe 均为退出码 17，环境、工作目录、参数和 stdout/stderr 分流正确；
-- PowerShell live 调用已移除 `RedirectStandardOutput` / `RedirectStandardError`；
-- L4-A2c2 network/GET/connector count=0。
+- L4-A2c2 检查点：`30d9b5897d97939f64dab32b97772118c72ef3d1`，只含 `live_launcher.py` 与对应测试；
+- L4-A2c2 复核：定向 5、相关 17、全量 520 项及 `git diff --check` 通过；
+- L4-A2c3a 判定：`botzone_live_launcher_recovery_preflight_invalid`；
+- 实际环境 metadata、空 state dir、无残留进程和干净工作区门槛均通过；
+- 第一项零网络检查在 30 秒上限内没有返回 `preflight_ready`；
+- 第二项 launcher offline probe 未执行；
+- 未重试、未启动 connector/live launcher，request/GET/network/connector count 均为 0；
+- L4-A2b 的 `botzone_no_tribute_local_ai_smoke_invalid` 永久保留。
 
-本步不继承任何 live 授权。L4-A2b invalid 不得追认、重跑或改写。
+L4-A2c3a 证据文件：`C:\Users\86166\AppData\Local\Temp\guandan-botzone-launcher-recovery-82a5c4c7321b420fa233cfbdffe1a333\preflight_summary.json`，522 bytes，SHA-256 `9c4ed8010a950f11bedae92e5784118f080a5ee95f0bfb8087638f896fbc00b2`。只允许只读解析该脱敏 JSON 和复核 metadata/hash，不得修改或补写。
 
-### A. 独立封存 L4-A2c2
+### 启动前门槛
 
-启动时工作区必须只有以下两个未跟踪文件：
+1. 工作区干净；
+2. `30d9b5897d97939f64dab32b97772118c72ef3d1` 是当前 HEAD 的祖先；
+3. 该检查点之后只允许五份规划 docs 变化；
+4. 上述 summary 的 bytes/hash 不变；
+5. 没有正在运行的 `integrations.botzone` 或 `live_launcher` 进程。
 
-- `integrations/botzone/live_launcher.py`；
-- `tests/test_botzone_live_launcher.py`。
+任一失败即 `precondition_failed`。不得清理 state、重跑 preflight 或修改代码。
 
-不得存在其他修改或未跟踪文件。只读复核实现与报告一致，并重新运行：
+### 安全边界
 
-```text
-python -m unittest tests.test_botzone_live_launcher -q
-python -m unittest tests.test_botzone_runtime_config tests.test_botzone_runner tests.test_botzone_live_preflight tests.test_botzone_live_launcher -q
-python -m unittest discover -q
-git diff --check
-```
+- 不读取 `.env`、真实 `BOTZONE_LOCAL_AI_URL` 值、密钥、Cookie、Header、账号信息或浏览器存储；
+- 不使用实际 `BOTZONE_STATE_DIR`；
+- 所有诊断只使用固定合成 URL（`.invalid` 域名）和仓库外全新临时 state/audit 目录；
+- 不构造 `LocalAIHttpTransport`、opener、socket 或请求；
+- 不调用 RuleBasedAI、adapter、session 或 connector；
+- 不修改仓库，不提交诊断脚本或证据。
 
-全部通过后，只提交上述两个文件为独立 L4-A2c2 检查点。提交范围必须精确，不得包含 docs、配置、日志或外部证据。提交后工作区必须干净。任一门槛失败即 `precondition_failed`，不得继续准入审计。
+### 分阶段诊断
 
-### B. 零网络准入前置
+在仓库外创建标准库诊断脚本。每个阶段都在独立 Python 子进程运行，开始/结束写入原子 heartbeat，单阶段上限 10 秒；超时后只终止该子进程并记录最后完成阶段。禁止执行真实 preflight 命令。
 
-只检查非敏感元数据：
+按顺序运行：
 
-1. L4-A2c2 检查点存在且只包含上述两个文件；
-2. `BOTZONE_LOCAL_AI_URL` 与 `BOTZONE_STATE_DIR` 在当前进程中均为 present，只输出 present/missing；
-3. `CODEX_LAUNCHER_OFFLINE_PROBE`、`CODEX_LAUNCH_SENTINEL`、`CODEX_LAUNCH_EXPECTED_CWD` 在正式环境中初始均为 missing；
-4. state dir 与用户此前确认的仓库外目录一致、存在且为空；只报告 matched/exists/empty，不输出 URL、目录内容或敏感值；
-5. 没有正在运行的 `integrations.botzone` 或 `live_launcher` 进程；
-6. 新建仓库外本次专用 audit 目录，初始为空。
+1. `python_startup`：仅启动 Python、输出固定标记并退出；
+2. `runtime_config_import`：只导入 `integrations.botzone.runtime_config`；
+3. `main_import`：只导入 `integrations.botzone.__main__`，用于覆盖其顶层 transport/runner/adapter import graph；
+4. `config_load`：以显式合成 HTTPS URL、显式临时 state path 和空 mapping 调用 `load_runtime_config()`；
+5. `state_preflight_steps`：在临时 state 目录逐项执行并打点 `resolve → project-boundary-check → mkdir → NamedTemporaryFile → write → flush → fsync → replace → unlink → exit`；
+6. `state_preflight_function`：直接调用 `preflight_state_directory()`，前后目录必须为空；
+7. `main_function`：直接调用 `integrations.botzone.__main__.main()`，显式传入合成 `--url`、`--state-dir` 与 `--preflight-only`，并传空环境 mapping；预期退出码 0、输出精确为 `preflight_ready`；
+8. `module_subprocess`：独立执行 `python -m integrations.botzone`，同样只传显式合成 URL/state 与 `--preflight-only`；预期 10 秒内退出 0。
 
-不得读取 `.env`、URL 值、密钥、Cookie、Header、账号信息或浏览器存储；不得删除未知 state。任一失败即 `precondition_failed`。
+每一步最多运行一次；只有在全部步骤成功后，才允许用全新临时目录把第 8 步再运行一次作为确定性复验。不得对真实环境/state 路径重试。
 
-### C. 恢复 preflight
+### 超时证据
 
-正式执行恰好两项零网络检查：
+诊断子脚本启用 `faulthandler.dump_traceback_later()` 或等价标准库机制，在超时前写入仅含模块/函数/阶段的脱敏栈证据。最终报告和 JSON 不得保留绝对用户路径、命令行、合成 URL 全文或环境值；只保留规范化 stage/category。
 
-1. 运行一次既有 `python -m integrations.botzone --preflight-only`，必须返回 `preflight_ready`；该路径不得构造 transport/opener 或发送请求。
-2. 使用 PowerShell Desktop 5.1 `Start-Process` 启动一次 `python -m integrations.botzone.live_launcher` 的 offline probe：只使用 `-WindowStyle Hidden`、`-WorkingDirectory`、`-PassThru`、`-Wait`，不得使用两个 PowerShell Redirect 参数。
+根因类别只能是：
 
-offline probe 规则：
+- `python_startup`
+- `runtime_config_import`
+- `main_import_graph`
+- `config_load`
+- `path_resolve`
+- `state_mkdir`
+- `tempfile_open`
+- `file_write`
+- `file_flush`
+- `file_fsync`
+- `file_replace`
+- `file_unlink`
+- `main_function`
+- `module_process_exit`
+- `parent_wait`
+- `not_reproduced`
+- `unknown`
 
-- 仅对子进程临时注入三项合成 probe 变量，probe 结束后恢复为 missing；
-- launcher 的 stdout/stderr/audit 参数指向同一个仓库外专用空目录中的三个互异路径；
-- 预期退出码精确为 17；
-- stdout/stderr 必须分别为固定 probe 文本；connector audit 不应生成；
-- 不调用 `_connector_main`、transport、opener、session、Agent 或网络；
-- 不启动第二个进程，不重试失败 probe。
+不得仅凭一次 30 秒超时猜测 fsync、杀毒软件、环境变量或 launcher 是根因。
 
-### D. 结束审计
+### 判定
 
-确认：
-
-- preflight 前后 state dir 都为空；
-- audit 目录只含预期的 probe stdout/stderr 与脱敏汇总；
-- 没有残留 connector/launcher 进程；
-- request/GET/network/connector count 均为 0；
-- 工作区保持干净；
-- stdout/stderr、固定输出和汇总不含 URL、密钥、Header、match ID、手牌、环境值或绝对敏感路径。
-
-仓库外写入一个原子、确定性的 `preflight_summary.json`，只保留 schema/version、检查布尔值、退出码、计数和规范化 diagnostics，不保留命令行、PID、环境值或真实路径。
-
-### 判定与授权边界
-
-全部门槛通过：
-
-```text
-botzone_live_launcher_recovery_preflight_ready
-```
-
-任一门槛失败：
+若某一阶段稳定给出足够证据，并能明确最小后续修复/测试范围：
 
 ```text
-botzone_live_launcher_recovery_preflight_invalid
+botzone_preflight_timeout_diagnosis_verified
 ```
 
-失败不得重试、补采或转为 live。通过也不得在本任务中联网；只能在最终报告后向用户请求一次新的 L4-A2c3b 明确授权。
+若全部合成阶段通过、原问题不可复现，或证据不足以区分类别：
 
-授权请求必须锁定并展示：RuleBasedAI、用户手动创建一局且“需要进贡=否”、最多 100 GET、最长 600 秒、timeout 30 秒、连续失败 5、finished 1、零自动重试、不使用 runmatch/DeepSeek、PowerShell 不使用 Redirect 参数。没有用户后续明确同意，不得启动 live launcher。
+```text
+botzone_preflight_timeout_diagnosis_inconclusive
+```
+
+无论哪种结果，都不得在本步形成 preflight ready、请求 live 授权或运行 launcher probe。
 
 ### 最终报告
 
 报告必须包含：
 
-- L4-A2c2 检查点 hash 与精确提交范围；
-- 5 / 17 / 520 回归复核；
-- 两项零网络检查结果；
-- launcher probe 退出码和分流校验；
-- state/audit/worktree 清洁性；
-- request/GET/network/connector count=0；
-- summary 文件 bytes/SHA-256；
-- L4-A2b invalid 永久保留；
-- 若 ready，附上固定预算的新授权问题，但不得自行继续 live。
+- HEAD、工作区与 L4-A2c2 检查点范围；
+- L4-A2c3a invalid 和 L4-A2b invalid 保留声明；
+- 原 summary bytes/hash 复核；
+- 八阶段 success/timeout/exit/duration 范围及最后 heartbeat；
+- 规范化根因类别；
+- 若可复现，最小修复文件和测试建议；若不可复现，明确不能直接提高 timeout 或重试 live；
+- 新诊断证据目录及非敏感文件 bytes/SHA-256；
+- request/GET/network/connector/live-launcher count 均为 0。
