@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：Phase 0 至 L4-A2a 已完成。L4-A1a 检查点为 `029b8d6034e55c70b83d2b1c8d4b052626895bd2`；L4-A2b 启动前门槛通过，但唯一 `Start-Process` 尝试发生 `launcher_environment_error`，未创建 connector 或发送 GET，判定 `botzone_no_tribute_local_ai_smoke_invalid`。下一步为纯离线 L4-A2c1。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：Phase 0 至 L4-A2a 已完成。L4-A2b 判定 `botzone_no_tribute_local_ai_smoke_invalid` 并永久保留。L4-A2c1 已用合成无网络矩阵定位 PowerShell Desktop 5.1 `stream_redirection` 根因，判定 `botzone_launcher_environment_diagnosis_verified`。下一步为离线 L4-A2c2 launcher 加固。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
 
 目标：
 
@@ -984,7 +984,7 @@ K-A3d3c3a 结果：
 4. Phase 3：已完成；adapter 主链与 L3-A1a observation/实体守恒均封板；
 5. Phase 4 准备：L4-A1/L4-A1a/L4-A2a 已完成；凭据轮换与 preflight ready 已确认；
 6. Phase 4 live：L4-A2b 已执行唯一启动尝试并因 launcher environment error 判定 invalid，未实际联网；
-7. Phase 4 恢复：下一步 L4-A2c1 仅做合成变量、无网络子进程的启动链诊断；定位并离线加固后，另行申请新 live 授权；
+7. Phase 4 恢复：L4-A2c1 已定位根因；下一步 L4-A2c2 用 Python 进程内分流替换 PowerShell Redirect 参数，并完成通用/Windows 离线回归；随后另做零网络准入审计；
 8. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。
