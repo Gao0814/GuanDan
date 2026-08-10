@@ -120,8 +120,24 @@ def project_decision(context: HandlerContext) -> DecisionProjection:
 class NoTributeRuleBasedHandler:
     """Connector callable using RuleBasedAI by default and no hidden game state."""
 
-    def __init__(self, agent_factory: Callable[[int], object] | None = None) -> None:
+    def __init__(
+        self,
+        agent_factory: Callable[[int], object] | None = None,
+        *,
+        fallback_to_rule: bool = False,
+        cache_agents: bool = False,
+    ) -> None:
         self._agent_factory = agent_factory or (lambda player_id: RuleBasedAIAgent(player_id=player_id))
+        self._fallback_to_rule = fallback_to_rule
+        self._cache_agents = cache_agents
+        self._agents: dict[tuple[str, int], object] = {}
+
+    def release_match(self, match_key: str) -> None:
+        """Forget mutable agent state after a match has been durably finished."""
+
+        for key in tuple(self._agents):
+            if key[0] == match_key:
+                del self._agents[key]
 
     def __call__(self, context: HandlerContext) -> HandlerResult:
         request = require_no_tribute_context(context)
@@ -132,18 +148,29 @@ class NoTributeRuleBasedHandler:
         agent_actions = [dict(action) for action in projection.legal_actions]
         agent_observation = copy.deepcopy(dict(projection.observation))
         agent_observation["legal_actions"] = agent_actions
-        agent = self._agent_factory(botzone_player_to_engine_player(context.local_player_id))
+        engine_player = botzone_player_to_engine_player(context.local_player_id)
+        cache_key = (context.match_key, engine_player)
+        agent = self._agents.get(cache_key) if self._cache_agents else None
+        if agent is None:
+            agent = self._agent_factory(engine_player)
+            if self._cache_agents:
+                self._agents[cache_key] = agent
         try:
             selected = agent.select_action(agent_observation, agent_actions)
+            if type(selected) is not int:
+                raise TypeError("invalid_agent_action_id")
+            selected_id = require_legal_action_id(selected, [dict(action) for action in projection.legal_actions])
         except Exception as exc:
-            raise AdapterError("agent_failure") from exc
-        if type(selected) is not int:
-            raise AdapterError("invalid_agent_action_id")
-        canonical_actions = [dict(action) for action in projection.legal_actions]
-        try:
-            selected_id = require_legal_action_id(selected, canonical_actions)
-        except (TypeError, ValueError) as exc:
-            raise AdapterError("invalid_agent_action_id") from exc
+            if not self._fallback_to_rule:
+                raise AdapterError("agent_failure") from exc
+            fallback = RuleBasedAIAgent(player_id=engine_player)
+            try:
+                selected = fallback.select_action(agent_observation, agent_actions)
+                if type(selected) is not int:
+                    raise AdapterError("invalid_rule_fallback_action_id")
+                selected_id = require_legal_action_id(selected, [dict(action) for action in projection.legal_actions])
+            except Exception as fallback_exc:
+                raise AdapterError("rule_fallback_failure") from fallback_exc
         action = projection.provenance.get(selected_id)
         if action is None:
             raise AdapterError("missing_provenance")

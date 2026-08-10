@@ -12,6 +12,7 @@ import os
 import tempfile
 
 from .connector import ConnectorCycle, MockConnector, Transport
+from .agent_runtime import build_agent_factory
 from .play_adapter import NoTributeRuleBasedHandler
 from .runtime_config import RuntimeConfig
 from .session import SessionStore
@@ -125,10 +126,22 @@ def build_foreground_runner(
     config: RuntimeConfig,
     transport: Transport,
     *,
+    agent_mode: str = "rule",
+    agent_factory_builder: Callable[[str], Callable[[int], object]] = build_agent_factory,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> ForegroundRunner:
-    connector = MockConnector(SessionStore(config.state_directory), transport, NoTributeRuleBasedHandler())
+    if agent_mode == "rule":
+        handler = NoTributeRuleBasedHandler()
+    elif agent_mode == "deepseek":
+        handler = NoTributeRuleBasedHandler(
+            agent_factory_builder(agent_mode),
+            fallback_to_rule=True,
+            cache_agents=True,
+        )
+    else:
+        raise ValueError("invalid_agent_mode")
+    connector = MockConnector(SessionStore(config.state_directory), transport, handler)
     return ForegroundRunner(
         connector,
         max_consecutive_failures=config.max_consecutive_failures,

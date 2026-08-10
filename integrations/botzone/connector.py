@@ -88,6 +88,13 @@ class MockConnector:
             ):
                 self._finished_qualified.add(row.match_id)
                 qualified += 1
+            if cleaned:
+                try:
+                    release_match = getattr(self._handler, "release_match", None)
+                    if callable(release_match):
+                        release_match(row.match_id)
+                except Exception:
+                    diagnostics["handler_lifecycle_failure"] += 1
         return _cycle(True, len(headers), len(batch.requests), prepared, len(batch.finished), qualified, diagnostics)
 
     def _process_request(self, request: PollRequest) -> tuple[int, Counter[str]]:

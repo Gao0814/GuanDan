@@ -18,6 +18,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     parser.add_argument("--url")
     parser.add_argument("--state-dir")
     parser.add_argument("--timeout-seconds", default=30)
+    parser.add_argument("--agent", choices=("rule", "deepseek"), default="rule")
     parser.add_argument("--max-cycles", type=int, default=100)
     parser.add_argument("--max-wall-seconds", type=int, default=600)
     parser.add_argument("--stop-after-finished", type=int, default=1)
@@ -42,6 +43,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
                 timeout_seconds=config.timeout_seconds,
                 max_response_bytes=config.max_response_bytes,
             ),
+            agent_mode=arguments.agent,
         )
         summary = runner.run(
             max_cycles=arguments.max_cycles,
