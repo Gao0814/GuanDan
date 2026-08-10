@@ -1412,3 +1412,31 @@ U0-A2 人工准入结果：
 - action ID/provenance 只能映射回候选集合。
 
 进入 U3 后，应增加模型输出分类、短超时、零重试、非法候选回退和 RuleBased 动作可用性测试。进入 U4 长时运行后，还必须覆盖当前 request-only 输入、内存状态、进程重启后的完整 envelope 恢复和 keep-running marker/flush 契约。
+
+## 9. Botzone connector DeepSeek 恢复测试
+
+### 9.1 L5-A1 离线接线
+
+必须新增并通过：
+
+- 默认 rule 模式不加载 AppConfig、DeepSeekClient、RAG 或 DeepSeekAIAgent；
+- 显式 deepseek 模式使用 fake client 选择合法 action ID，并由既有 provenance 生成 Botzone response；
+- deal、pending 重发、ack 重放和本地快捷动作不会产生重复模型调用；
+- 模型异常、超时、malformed suggestion、`None`、严格 bool、字符串、负数、越界和 outside-legal ID 均回退合法 RuleBased 动作；
+- fallback 结果必须再次通过 `require_legal_action_id()` 和 provenance 回查；
+- pass、自然牌和单配子 response 编码保持不变；
+- 同一 match/player 复用 Agent，不同 match/player 隔离，finished 后清理；
+- transport failure、重启、pending resend、ack 不重复调用模型或扣牌；
+- 缺失 key 时 deepseek 模式在 transport 前失败，rule 模式保持可用；
+- Agent 输入不包含 match key、request digest、Botzone 实体 ID、Header 或原始 envelope；
+- 测试只使用 fake client/transport，真实 DNS/socket/HTTP/Botzone/DeepSeek 请求数为 0。
+
+最低回归：
+
+```text
+python -m unittest tests.test_botzone_play_adapter tests.test_botzone_action_provenance tests.test_botzone_rule_agent_e2e tests.test_botzone_runner -q
+python -m unittest discover -q
+git diff --check
+```
+
+通过 L5-A1 只能判定离线接线成立，不代表真实 Botzone connector、DeepSeek 可达、动作质量或胜率已经验证。真实 smoke 必须作为 L5-A2 单独获得授权。

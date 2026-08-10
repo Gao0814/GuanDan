@@ -672,4 +672,62 @@ U0-A2 已完成一次人工新无贡对局：
 2. 若必须实时 DeepSeek，则恢复本机 connector 路线；
 3. 或暂停 Botzone 完整体，保留当前规则 Bot。
 
-项目所有者明确选择前，不进入 U1，不修改上传包，也不重复网络探测。
+项目所有者已明确选择方案 B：恢复本机 connector，通过本机调用 DeepSeek。上传 Bot 的 U0 出网阻塞结论固定保留，不进入上传版 U1，也不重复网络探测。
+
+## 17. L5：本机 connector + DeepSeek 恢复路线
+
+### 17.1 当前可复用能力
+
+- `integrations/botzone/` 已具备 GET/Header transport、Bot JSON envelope、session pending/inflight/ack、重启恢复、无贡协议和 finished provenance。
+- `play_adapter.py` 已将 Botzone 公开请求投影为 engine-compatible observation 与 canonical legal actions，并保留 action ID 到 Botzone `[action, claim]` 的 provenance。
+- `NoTributeRuleBasedHandler` 已有 agent factory 注入点；但当前每个 play 创建新 agent。
+- `runner.py` 的 `build_foreground_runner()` 仍硬编码 `NoTributeRuleBasedHandler()`。
+- `DeepSeekAIAgent` 已能从公开 observation/legal actions 选择合法 action ID，并包含局部快捷路径和内部规则 fallback。
+
+### 17.2 目标消息流
+
+```text
+Botzone local-AI gateway
+  -> GET poll / X-Match response Header
+  -> envelope + durable match session
+  -> no-tribute public-state adapter
+  -> canonical legal_actions + provenance
+  -> match-scoped DeepSeekAIAgent
+  -> legal action_id
+  -> provenance / action-claim encoder
+  -> canonical Botzone response
+```
+
+模型故障路径：
+
+```text
+DeepSeek exception / timeout / malformed / illegal action_id
+  -> same public observation and legal_actions
+  -> RuleBasedAIAgent
+  -> require_legal_action_id
+  -> same provenance encoder
+  -> legal Botzone response
+```
+
+### 17.3 分阶段实施
+
+| 阶段 | 目标 | 网络边界 | 验收 |
+|---|---|---|---|
+| L5-A1 | 默认 rule、显式 deepseek 的离线组合根；match/player Agent 隔离；最终规则降级 | fake client/transport，零真实请求 | `botzone_deepseek_connector_offline_wiring_verified` |
+| L5-A2 | 真实环境配置/preflight 与一次全新无贡 smoke | 必须重新获得明确授权 | deal/play/response/header/ack/qualified finished 闭环 |
+| L5-A3 | 小规模稳定性与降级统计 | 独立预算与授权 | 零非法动作；模型成功/降级/超时聚合可审计 |
+| L5-A4 | 规则基线 vs DeepSeek A/B | 固定设置、轮换座位 | 只报告样本统计，不提前宣称胜率提升 |
+
+### 17.4 L5-A1 不变量
+
+- 默认仍是 RuleBasedAI，只有显式 `--agent deepseek` 才加载模型主链。
+- deal、pending 重发和已缓存 response 不得重复调用模型。
+- Agent 不得看到 match ID、request digest、Botzone 实体牌 ID、Header 或原始 envelope。
+- 不同 match/player 不共享 CardTracker、prompt audit 或其他可变状态；finished 后清理。
+- 模型故障不得转化为 connector `agent_failure` 或 Botzone 决策超时。
+- 贡还、升级、上传 ZIP 和 engine 规则不在 L5-A1 修改范围。
+- L5-A1 不联网、不读取真实 `.env`/key/URL，不申请 live 授权。
+
+### 17.5 当前下一动作
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A1。完成并独立提交前，不进入真实 connector smoke。

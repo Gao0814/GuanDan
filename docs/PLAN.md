@@ -1151,6 +1151,41 @@ Botzone JSON input
 - 记录完成局数、超时/降级、非法输出、模型有效选择、胜负和名次；
 - 没有足够样本前只声明“接入可用”，不声明胜率提升。
 
-### 9.5 当前下一步
+### 9.5 架构分流结果
 
-执行 `docs/NEXT_PROMPT.md` 中的 U0-A3。项目所有者需在三条路线中选择：A）无需 connector 的完整本地 AI；B）恢复 connector + DeepSeek；C）暂停 Botzone 完整体。在选择前不安排代码任务。
+项目所有者已明确选择 **B：恢复 connector，通过本机调用 DeepSeek**。
+
+因此：
+
+- 上传 Bot 路线冻结在 `botzone_deepseek_egress_admission_blocked`，不重复探测 Botzone 评测机出网；
+- `guandan_rule_ai_py36.zip` 继续作为可运行的平台规则基线，不再承担实时 DeepSeek 完整体目标；
+- Botzone 完整体恢复使用本机 Python 3.11 connector、现有 `engine/` 与 `agents/`；
+- 贡还仍不在范围内，真实桌继续固定“需要进贡=否”；
+- 下一阶段不复用任何历史 live 授权。
+
+### 9.6 Connector DeepSeek 恢复阶段
+
+#### L5-A1：离线接线与规则降级
+
+- 将 runner 的硬编码 RuleBased 组合根扩展为默认 `rule`、显式 `deepseek`；
+- DeepSeek agent 按 match/player 隔离并复用，finished 后清理；
+- 只传公开 observation 与 canonical legal actions；
+- 模型异常、超时、错误类型和非法 action ID 均由 adapter 最终降级到 RuleBased 合法动作；
+- 使用 fake client/transport，真实网络计数为 0。
+
+验收：`botzone_deepseek_connector_offline_wiring_verified`。
+
+#### L5-A2：真实环境准入与单局 smoke
+
+仅在 L5-A1 独立提交、工作区干净、离线回归通过后规划：
+
+- 零网络配置/preflight；
+- 明确确认 Botzone connector 已连接后再人工创建全新无贡桌；
+- 使用新的 state/audit、短请求预算和新的明确 live 授权；
+- 先证明 deal/play/response/header/ack/finished 闭环，再记录 DeepSeek model/fallback 聚合计数。
+
+不得把 L5-A1 与真实联网合并，也不得在 smoke 前宣称动作质量或胜率提升。
+
+### 9.7 当前下一步
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A1。当前只实现离线 DeepSeek connector 接线和确定性 RuleBased 降级，不联网、不启动真实 connector。

@@ -1403,4 +1403,30 @@ U0-A2 人工结果：
 
 唯一判定：`botzone_deepseek_egress_admission_blocked`。
 
-下一步 U0-A3：项目所有者选择 A）无需 connector 的完整本地 AI；B）恢复 connector + DeepSeek；C）暂停 Botzone 完整体。未选择前不进入 U1。
+U0-A3 已完成架构选择：项目所有者选择 **B）恢复 connector + DeepSeek**。上传 Bot 的出网阻塞结论永久保留；下一步转入 L5-A1 离线 connector DeepSeek 接线，不进入上传版 U1。
+
+## 12. Botzone DeepSeek connector 恢复主线
+
+### 架构决策
+
+- 目标改为本机 connector 调用 DeepSeek，并复用当前 Python 3.11 `engine/`、`agents/` 和 RAG 主链。
+- Botzone 上传规则 Bot继续保留为稳定平台基线；其 DeepSeek 探测 `probe_dns_or_connect_failed` 不再重试。
+- connector 的 GET/Header、Bot envelope、session pending/ack、无贡 adapter 和 action provenance 已存在。
+- 当前缺口是 runner 仍硬编码 `NoTributeRuleBasedHandler()`，没有显式 DeepSeek 模式、match-scoped Agent 生命周期和 adapter 外层最终规则降级。
+
+### 当前阶段：L5-A1
+
+目标：离线完成默认 rule / 显式 deepseek 的组合根，并封板以下边界：
+
+1. DeepSeek 只读取 adapter 生成的公开 observation 和 canonical legal actions；
+2. 只返回原始合法 action ID，Botzone 实体动作继续由 provenance 编码；
+3. match/player 状态隔离，finished 清理；
+4. 模型异常、超时、错误类型或非法 ID 均回退 RuleBased 合法动作；
+5. rule 默认路径不构造 DeepSeek 配置/client；
+6. fake client/transport 下验证，真实网络计数为 0。
+
+预期判定：`botzone_deepseek_connector_offline_wiring_verified`。
+
+### 后续边界
+
+L5-A1 通过后才规划 L5-A2：全新无贡测试桌、全新 state/audit、显式授权的一次真实 connector smoke。任何历史 live 授权均不可复用。L5-A1 不形成 DeepSeek 可达、动作质量或胜率结论。
