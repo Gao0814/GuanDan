@@ -6,9 +6,10 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from integrations.botzone.connector import MockConnector
+from integrations.botzone.models import DealRequest
 from integrations.botzone.runner import ForegroundRunner, exit_code_for, write_audit
 from integrations.botzone.runtime_config import RuntimeConfig, RuntimeConfigError, preflight_state_directory
-from integrations.botzone.session import HandlerResult, SessionStore
+from integrations.botzone.session import HandlerContext, HandlerResult, PlayEffect, SessionStore
 
 
 class _Gateway:
@@ -29,18 +30,37 @@ class BotzoneLivePreflightTests(unittest.TestCase):
             {"requests": [{"stage": "deal", "deliver": list(range(27)), "your_id": 0, "global": {"level": "2", "tribute": 0, "first": None, "last": None}}], "responses": []},
             separators=(",", ":"),
         )
+        play = json.dumps(
+            {
+                "requests": [
+                    {"stage": "deal", "deliver": list(range(27)), "your_id": 0, "global": {"level": "2", "tribute": 0, "first": None, "last": None}},
+                    {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False, "tribute_cards": {}, "return_cards": {}}},
+                ],
+                "responses": [[]],
+            },
+            separators=(",", ":"),
+        )
         with TemporaryDirectory() as root:
-            gateway = _Gateway([f"1 0\nunit\n{deal}".encode(), b"0 1\nunit 0 0", b"0 0\n"])
+            gateway = _Gateway([f"1 0\nunit\n{deal}".encode(), f"1 0\nunit\n{play}".encode(), b"0 1\nunit 0 4 1 2 3 4", b"0 0\n"])
+
+            def handler(context: HandlerContext) -> HandlerResult:
+                if isinstance(context.request, DealRequest):
+                    return HandlerResult(b"[]")
+                return HandlerResult(b"[[0],[0]]", PlayEffect((0,)))
+
             runner = ForegroundRunner(
-                MockConnector(SessionStore(root), gateway, lambda _: HandlerResult(b"[]")),
+                MockConnector(SessionStore(root), gateway, handler),
                 max_consecutive_failures=2,
                 backoff_seconds=1,
                 sleep=lambda _: None,
             )
-            summary = runner.run(max_cycles=3, max_wall_seconds=60, stop_after_finished=1)
+            summary = runner.run(max_cycles=4, max_wall_seconds=60, stop_after_finished=1)
             self.assertEqual(summary.stopped, "finished_target")
-            self.assertEqual((summary.cycles, summary.headers_sent, summary.requests_seen, summary.responses_prepared, summary.finished_seen), (2, 1, 1, 1, 1))
-            self.assertEqual(gateway.calls, 2)
+            self.assertEqual(
+                (summary.cycles, summary.headers_sent, summary.requests_seen, summary.responses_prepared, summary.finished_seen, summary.finished_qualified),
+                (3, 2, 2, 2, 1, 1),
+            )
+            self.assertEqual(gateway.calls, 3)
             self.assertEqual(exit_code_for(summary), 0)
             self.assertIsNone(SessionStore(root).load("unit"))
 
@@ -80,6 +100,8 @@ class BotzoneLivePreflightTests(unittest.TestCase):
             write_audit(audit, summary, exit_code_for(summary))
             payload = json.loads(audit.read_text(encoding="utf-8"))
             self.assertEqual(payload["schema"], "botzone_local_smoke_audit")
+            self.assertEqual(payload["version"], 2)
+            self.assertEqual(payload["finished_qualified"], 0)
             self.assertNotIn("url", json.dumps(payload).lower())
             self.assertNotIn("match", json.dumps(payload).lower())
 

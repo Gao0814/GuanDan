@@ -521,7 +521,10 @@ class SessionStore:
             if record is not None and record.pending_response == delivery.response and record.finished is None:
                 self.save(replace(record, delivery_state="pending"))
 
-    def acknowledge(self, deliveries: tuple[PendingDelivery, ...]) -> None:
+    def acknowledge(self, deliveries: tuple[PendingDelivery, ...]) -> tuple[str, ...]:
+        """Commit pending effects and return the exact deliveries acknowledged."""
+
+        acknowledged: list[str] = []
         for delivery in deliveries:
             record = self.load(delivery.match_id)
             if record is not None and record.pending_response == delivery.response and record.finished is None:
@@ -532,17 +535,21 @@ class SessionStore:
                         raise SessionStorageError("invalid_play_effect")
                     own_hand = tuple(card_id for card_id in own_hand if card_id not in deductions)
                 self.save(replace(record, own_hand=own_hand, pending_response=None, pending_effect=None, delivery_state="idle"))
+                acknowledged.append(delivery.match_id)
+        return tuple(acknowledged)
 
-    def finish(self, row: FinishedRow) -> None:
+    def finish(self, row: FinishedRow) -> bool:
+        """Tombstone an active session, reporting whether cleanup occurred."""
+
         path = self._path(row.match_id)
         if not path.exists():
-            return
+            return False
         try:
             decoded = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise SessionStorageError("corrupt_session") from exc
         if _is_tombstone(decoded):
-            return
+            return False
         _record_from_json(decoded)
         self._atomic_write(
             path,
@@ -553,6 +560,7 @@ class SessionStore:
                 separators=(",", ":"),
             ).encode("utf-8"),
         )
+        return True
 
 
 def _is_tombstone(value: object) -> bool:

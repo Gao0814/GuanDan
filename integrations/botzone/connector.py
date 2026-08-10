@@ -28,6 +28,7 @@ class ConnectorCycle:
     requests_seen: int
     responses_prepared: int
     finished_seen: int
+    finished_qualified: int
     diagnostics: tuple[tuple[str, int], ...]
 
 
@@ -38,6 +39,9 @@ class MockConnector:
         self._store = store
         self._transport = transport
         self._handler = handler
+        self._play_pending: set[str] = set()
+        self._play_acknowledged: set[str] = set()
+        self._finished_qualified: set[str] = set()
 
     def cycle(self) -> ConnectorCycle:
         diagnostics: Counter[str] = Counter()
@@ -46,31 +50,45 @@ class MockConnector:
             headers = MappingProxyType({item.header_name: item.response for item in deliveries})
             self._store.mark_inflight(deliveries)
         except SessionStorageError:
-            return _cycle(False, 0, 0, 0, 0, {"session_error": 1})
+            return _cycle(False, 0, 0, 0, 0, 0, {"session_error": 1})
 
         try:
             raw_poll = self._transport.poll(headers)
         except Exception:
             self._store.restore_pending(deliveries)
-            return _cycle(True, len(headers), 0, 0, 0, {"transport_failure": 1})
-        self._store.acknowledge(deliveries)
+            return _cycle(True, len(headers), 0, 0, 0, 0, {"transport_failure": 1})
+        try:
+            acknowledged = self._store.acknowledge(deliveries)
+        except SessionStorageError:
+            return _cycle(True, len(headers), 0, 0, 0, 0, {"session_error": 1})
+        self._play_acknowledged.update(match_id for match_id in acknowledged if match_id in self._play_pending)
 
         try:
             batch = parse_poll(raw_poll)
         except PollFormatError:
-            return _cycle(True, len(headers), 0, 0, 0, {"poll_malformed": 1})
+            return _cycle(True, len(headers), 0, 0, 0, 0, {"poll_malformed": 1})
 
         prepared = 0
         for request in batch.requests:
             outcome = self._process_request(request)
             diagnostics.update(outcome[1])
             prepared += outcome[0]
+        qualified = 0
         for row in batch.finished:
             try:
-                self._store.finish(row)
+                cleaned = self._store.finish(row)
             except SessionStorageError:
                 diagnostics["session_error"] += 1
-        return _cycle(True, len(headers), len(batch.requests), prepared, len(batch.finished), diagnostics)
+                continue
+            if (
+                cleaned
+                and row.player_count == 4
+                and row.match_id in self._play_acknowledged
+                and row.match_id not in self._finished_qualified
+            ):
+                self._finished_qualified.add(row.match_id)
+                qualified += 1
+        return _cycle(True, len(headers), len(batch.requests), prepared, len(batch.finished), qualified, diagnostics)
 
     def _process_request(self, request: PollRequest) -> tuple[int, Counter[str]]:
         diagnostics: Counter[str] = Counter()
@@ -108,6 +126,8 @@ class MockConnector:
         except (BotEnvelopeError, SessionStorageError) as exc:
             diagnostics[_normalized_session_error(exc)] += 1
             return 0, diagnostics
+        if isinstance(request.stage, PlayRequest) and completed.pending_response:
+            self._play_pending.add(request.match_id)
         return int(completed.pending_response is not None), diagnostics
 
 
@@ -130,6 +150,7 @@ def _cycle(
     requests_seen: int,
     responses_prepared: int,
     finished_seen: int,
+    finished_qualified: int,
     diagnostics: Mapping[str, int],
 ) -> ConnectorCycle:
     return ConnectorCycle(
@@ -138,5 +159,6 @@ def _cycle(
         requests_seen=requests_seen,
         responses_prepared=responses_prepared,
         finished_seen=finished_seen,
+        finished_qualified=finished_qualified,
         diagnostics=tuple(sorted((name, count) for name, count in diagnostics.items() if count)),
     )

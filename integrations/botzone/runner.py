@@ -26,6 +26,7 @@ class RunnerSummary:
     requests_seen: int
     responses_prepared: int
     finished_seen: int
+    finished_qualified: int
     stopped: str
     diagnostics: tuple[tuple[str, int], ...]
 
@@ -57,7 +58,7 @@ class ForegroundRunner:
     ) -> RunnerSummary:
         if any(type(value) is not int or value <= 0 for value in (max_cycles, max_wall_seconds, stop_after_finished)):
             raise ValueError("invalid_runner_limit")
-        cycles = successes = failures = headers = requests = responses = finished = 0
+        cycles = successes = failures = headers = requests = responses = finished = qualified = 0
         consecutive_failures = 0
         diagnostics: Counter[str] = Counter()
         stopped = "cycle_limit_unfinished"
@@ -74,6 +75,7 @@ class ForegroundRunner:
                 requests += cycle.requests_seen
                 responses += cycle.responses_prepared
                 finished += cycle.finished_seen
+                qualified += cycle.finished_qualified
                 diagnostic_names = {name for name, count in cycle.diagnostics if count}
                 if "unsupported_stage" in diagnostic_names:
                     stopped = "unsupported_stage"
@@ -81,7 +83,7 @@ class ForegroundRunner:
                 if diagnostic_names - {"transport_failure"}:
                     stopped = "diagnostic_failure"
                     break
-                if finished >= stop_after_finished:
+                if qualified >= stop_after_finished:
                     stopped = "finished_target"
                     break
                 if _has_transport_failure(cycle):
@@ -109,6 +111,7 @@ class ForegroundRunner:
             requests,
             responses,
             finished,
+            qualified,
             stopped,
             tuple(sorted(diagnostics.items())),
         )
@@ -138,7 +141,7 @@ def build_foreground_runner(
 def exit_code_for(summary: RunnerSummary) -> int:
     """Stable foreground categories: success, interrupt, transport, protocol, limit."""
 
-    if summary.stopped == "finished_target":
+    if summary.stopped == "finished_target" and summary.finished_qualified > 0:
         return 0
     if summary.stopped == "interrupted":
         return 130
@@ -158,7 +161,7 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
         raise ValueError("invalid_audit_path")
     payload = {
         "schema": "botzone_local_smoke_audit",
-        "version": 1,
+        "version": 2,
         "exit_code": exit_code,
         "stop_reason": summary.stopped,
         "cycles": summary.cycles,
@@ -168,6 +171,7 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
         "requests_seen": summary.requests_seen,
         "responses_prepared": summary.responses_prepared,
         "finished_seen": summary.finished_seen,
+        "finished_qualified": summary.finished_qualified,
         "diagnostics": [[name, count] for name, count in summary.diagnostics],
     }
     try:
