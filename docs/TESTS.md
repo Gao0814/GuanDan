@@ -8,7 +8,7 @@
 python -m unittest discover -q
 ```
 
-当前全量基线：545 项通过（HEAD `cf35a205131cfc9b94c28491e0a8b092abdc0d30`）。
+当前全量基线：556 项通过（U0-A1 实现检查点 `085162972363e634fe224c9f1725063b3cd13686`）。
 
 核心规则回归：
 
@@ -1380,6 +1380,15 @@ L4-A3d1 最低测试口径：
 - DeepSeek 正文永不进入 Botzone response/debug/data；
 - 测试使用合成 key 和 fake opener，真实 DNS/socket/HTTP 调用数为 0；
 - 新 ZIP 与 `guandan_rule_ai_py36.zip` 并存，不能覆盖稳定规则基线。
+
+U0-A1 实际结果：
+
+- `botzone_deepseek_probe_py36/__main__.py`、对应测试和独立 ZIP 已完成；
+- 定向规则基线 + 探测包 12 项通过；
+- 全量 556 项通过；
+- 探测 ZIP 4,982 bytes，SHA-256 `82ba5fd18b333b7a389316478042d53b07a22e0d4e4c00f992ade010fedf239c`；
+- 稳定规则 ZIP hash 保持 `29e7ec827abf0ff6673bfeafab254cb9cc2174edc37bf1c802dcc15a346de351`；
+- 唯一判定 `botzone_deepseek_probe_package_verified`。
 
 ### 8.3 后续完整体 parity 测试
 

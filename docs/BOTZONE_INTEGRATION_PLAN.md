@@ -635,7 +635,7 @@ guandan_bot/
 
 | 阶段 | 目标 | 通过门槛 |
 |---|---|---|
-| U0 | 出网、用户存储凭据与时限探测 | 模型不影响动作；人工结果 `probe_ok` 且有时限余量 |
+| U0 | 出网、用户存储凭据与时限探测 | U0-A1 离线包已完成；待人工结果 `probe_ok` 且无平台超时 |
 | U1 | Python 3.6 完整无贡合法动作 | 与 Python 3.11 engine fixture/parity 一致，逢人配完整 |
 | U2 | 迁移当前本地策略 | 阶段、开局、记牌、路由和 fallback parity 通过 |
 | U3 | DeepSeek 候选选择 | 只返回候选 ID；短超时、零重试、非法输出安全降级 |
@@ -644,4 +644,13 @@ guandan_bot/
 
 ### 16.7 当前下一动作
 
-执行 `docs/NEXT_PROMPT.md` 的 U0-A1：制作独立 `guandan_deepseek_probe_py36.zip`。该包只验证能力，不让 DeepSeek 选择动作；所有离线测试使用 fake opener，禁止真实联网。现有 `guandan_rule_ai_py36.zip` 作为稳定版本 0 保持不变。
+U0-A1 已完成并封存为实现检查点 `085162972363e634fe224c9f1725063b3cd13686`：
+
+- `dist/guandan_deepseek_probe_py36.zip`：4,982 bytes；
+- SHA-256：`82ba5fd18b333b7a389316478042d53b07a22e0d4e4c00f992ade010fedf239c`；
+- 固定凭据路径：`data/deepseek_credentials.json`；
+- 规则动作先计算，探测结果不改变 `response`；
+- 定向 12 项、全量 556 项和 diff check 通过；
+- 未联网、未读取真实 key、未连接 Botzone。
+
+当前执行 `docs/NEXT_PROMPT.md` 的 U0-A2：用户人工上传探测 ZIP，在一个全新无贡测试中确认固定状态。只有 `probe_ok`、无 Botzone 决策超时且规则动作被接受，才判定 `botzone_deepseek_egress_admission_verified` 并进入 U1。

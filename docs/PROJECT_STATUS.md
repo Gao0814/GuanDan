@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：已新开“无需 connector 的 Botzone DeepSeek 完整体 Bot”支线。Python 3.6.5 规则上传基线已由用户在 Botzone 完整运行两局；下一步为 U0-A1 DeepSeek 出网/凭据/时限探测包，模型不参与动作选择
+- 当前工作状态：“无需 connector 的 Botzone DeepSeek 完整体 Bot”支线已完成 U0-A1 离线探测包；下一步为 U0-A2 用户人工上传验收，模型仍不参与动作选择
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：本地 connector 历史 smoke 结论仍为 invalid；独立上传 Bot 已由用户人工报告完成两局。两条路径互不追认，当前主线转向上传 Bot
 - 当前规则范围：单局掼蛋核心规则
@@ -73,7 +73,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
 | Botzone connector 接入 | 暂停 | 协议、adapter、mock connector 与 finished provenance 已实现 | 历史 live smoke 均不作为当前上传 Bot 前置 |
 | Botzone 上传规则 Bot | 基线可用 | Python 3.6.5、无贡、传统 JSON、自然牌动作子集；用户报告完整运行两局 | 未覆盖完整逢人配动作、当前完整策略与 DeepSeek |
-| Botzone DeepSeek 完整体 | U0 规划中 | 目标为无需 connector、候选动作内选择、规则降级 | 沙箱出网、用户存储凭据和 API 时限尚未验证 |
+| Botzone DeepSeek 完整体 | U0-A1 完成 | Python 3.6 探测 ZIP、固定脱敏状态、规则动作等价、零重试 | 待 U0-A2 验证沙箱出网、用户存储凭据和 API 时限 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1380,4 +1380,15 @@ L4-A3b1 已完成，唯一判定 `botzone_live_smoke_recovery_authorization_read
 
 支线名称：**无需 connector 的 Botzone DeepSeek 完整体 Bot**。
 
-当前阶段：U0 准入。下一步执行 U0-A1：制作独立 Python 3.6.5 探测 ZIP，使用 fake opener 完成全部离线测试；人工运行时 DeepSeek 只做一次最小探测，实际动作与规则基线完全相同。通过后再进入完整合法动作和当前策略能力迁移。
+当前阶段：U0 准入。
+
+U0-A1 已完成：
+
+- 实现检查点：`085162972363e634fe224c9f1725063b3cd13686`；
+- `dist/guandan_deepseek_probe_py36.zip`：4,982 bytes；
+- SHA-256：`82ba5fd18b333b7a389316478042d53b07a22e0d4e4c00f992ade010fedf239c`；
+- 固定分类覆盖成功、凭据不可用、超时、连接、TLS、HTTP、非法响应和未知异常；
+- 定向 12 项、全量 556 项、`git diff --check` 通过；
+- 未联网、未读取真实凭据，DeepSeek 未参与动作选择。
+
+下一步 U0-A2：用户在 Botzone 用户存储配置 `data/deepseek_credentials.json`，上传独立探测 ZIP，在新无贡测试中只回报固定状态码、是否超时和动作是否合法。只有 `probe_ok` 且无 Botzone 超时才开放 U1。

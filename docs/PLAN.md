@@ -1057,7 +1057,7 @@ K-A3d3c3a 结果：
 - `botzone_upload_py36/__main__.py`；
 - `dist/guandan_rule_ai_py36.zip`；
 - ZIP 为 4,031 bytes，SHA-256 为 `29e7ec827abf0ff6673bfeafab254cb9cc2174edc37bf1c802dcc15a346de351`；
-- 全量测试基线为 545 项；
+- U0-A1 前全量测试基线为 545 项；当前 U0-A1 后基线为 556 项；
 - 用户人工报告已在 Botzone 完整运行两局且未发现协议或出牌错误。
 
 该人工结果只证明当前规则基线可运行。现有上传代码仍是 traditional JSON interaction、无贡、自然牌动作子集，不主动生成逢人配替代动作，也未迁移当前 `agents/` 的阶段、记牌、RAG、策略路由、confidence 或 DeepSeek 决策。
@@ -1109,8 +1109,8 @@ Botzone JSON input
 
 #### U0：出网、凭据与时限准入
 
-- U0-A1：制作独立探测 ZIP；DeepSeek 只做一次最小请求，实际动作始终使用规则基线；全程 fake opener 离线测试。
-- U0-A2：用户人工上传新版本，在新无贡测试桌中确认固定脱敏分类和延迟。
+- U0-A1：已完成。独立探测 ZIP 只做一次最小请求，实际动作始终使用规则基线；fake opener 离线契约、Python 3.6 grammar 和全量 556 项已通过。实现检查点 `085162972363e634fe224c9f1725063b3cd13686`。
+- U0-A2：当前下一步。用户人工上传新版本，在新无贡测试桌中确认固定脱敏分类和平台耗时。
 - 验收：只有 `probe_ok` 且延迟有稳定余量才进入 U1；出网禁止或稳定超时则支线阻塞。
 
 #### U1：完整无贡合法动作与公开状态迁移
@@ -1153,4 +1153,4 @@ Botzone JSON input
 
 ### 9.5 当前下一步
 
-执行 `docs/NEXT_PROMPT.md` 中的 U0-A1。该步骤是最短准入路径：只新增隔离探测包和测试，不改现有规则 Bot，不联网，不启用长时运行，也不让 DeepSeek 影响动作。
+执行 `docs/NEXT_PROMPT.md` 中的 U0-A2。该步骤不修改代码：用户自行把凭据文件放入 Botzone 用户存储、上传探测 ZIP，并只回报固定状态码、是否超时和动作是否合法。只有 `probe_ok` 才开放 U1。
