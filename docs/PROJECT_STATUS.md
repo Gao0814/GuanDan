@@ -1414,9 +1414,9 @@ U0-A3 已完成架构选择：项目所有者选择 **B）恢复 connector + Dee
 - connector 的 GET/Header、Bot envelope、session pending/ack、无贡 adapter 和 action provenance 已存在。
 - 当前缺口是 runner 仍硬编码 `NoTributeRuleBasedHandler()`，没有显式 DeepSeek 模式、match-scoped Agent 生命周期和 adapter 外层最终规则降级。
 
-### 当前阶段：L5-A1
+### L5-A1 结果
 
-目标：离线完成默认 rule / 显式 deepseek 的组合根，并封板以下边界：
+实现检查点：`71d9119`。已离线完成默认 rule / 显式 deepseek 的组合根，并封板以下边界：
 
 1. DeepSeek 只读取 adapter 生成的公开 observation 和 canonical legal actions；
 2. 只返回原始合法 action ID，Botzone 实体动作继续由 provenance 编码；
@@ -1425,8 +1425,17 @@ U0-A3 已完成架构选择：项目所有者选择 **B）恢复 connector + Dee
 5. rule 默认路径不构造 DeepSeek 配置/client；
 6. fake client/transport 下验证，真实网络计数为 0。
 
-预期判定：`botzone_deepseek_connector_offline_wiring_verified`。
+验证：定向 23 项、全量 565 项和 `git diff --check` 通过。唯一判定：`botzone_deepseek_connector_offline_wiring_verified`。
+
+### 当前阶段：L5-A1a
+
+规划复核发现两个不影响正常动作、但必须在 live 前修复的契约问题：
+
+1. 默认非 fallback handler 的非整数/非法 action ID 诊断由原 `invalid_agent_action_id` 变成了 `agent_failure`；fail-closed 仍成立，但精确兼容性未保持。
+2. CLI 当前先构造 Botzone transport，再验证显式 deepseek 配置。构造本身不联网，但缺 key 应在 transport 构造前失败，且 deepseek preflight 应能以零网络验证本地组合。
+
+L5-A1a 只修复这两个问题并补充参数化测试，不改变正常 response、cache、pending/ack、finished cleanup、协议或策略。预期判定：`botzone_deepseek_connector_hardening_verified`。
 
 ### 后续边界
 
-L5-A1 通过后才规划 L5-A2：全新无贡测试桌、全新 state/audit、显式授权的一次真实 connector smoke。任何历史 live 授权均不可复用。L5-A1 不形成 DeepSeek 可达、动作质量或胜率结论。
+L5-A1a 通过后才规划 L5-A2：全新无贡测试桌、全新 state/audit、显式授权的一次真实 connector smoke。任何历史 live 授权均不可复用。L5-A1/L5-A1a 不形成 DeepSeek 可达、动作质量或胜率结论。

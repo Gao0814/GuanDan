@@ -1440,3 +1440,19 @@ git diff --check
 ```
 
 通过 L5-A1 只能判定离线接线成立，不代表真实 Botzone connector、DeepSeek 可达、动作质量或胜率已经验证。真实 smoke 必须作为 L5-A2 单独获得授权。
+
+L5-A1 实际结果：实现检查点 `71d9119`，定向 23 项、全量 565 项和 `git diff --check` 通过，判定 `botzone_deepseek_connector_offline_wiring_verified`。
+
+### 9.2 L5-A1a 启动与诊断加固
+
+进入 live 前必须补充：
+
+- 默认 handler 精确区分 `agent_failure`、`invalid_agent_action_id` 和 `missing_provenance`；
+- DeepSeek fallback 精确区分主 Agent 失败、`rule_fallback_failure`、`invalid_rule_fallback_action_id` 和 `missing_provenance`；
+- 参数化证明主 Agent/fallback 每次最多各调用一次；
+- deepseek 缺 key 或本地组合失败时，Botzone transport 和 runner 构造次数均为 0；
+- `--preflight-only --agent deepseek` 使用合成配置完成本地组合，输出固定 `preflight_ready`，不调用模型、DNS、socket、HTTP 或 Botzone poll；
+- 默认 rule preflight 与既有 LF/CRLF stdout 契约保持不变；
+- cache、pending/ack、finished cleanup、response provenance 和 RuleBased E2E 回归保持通过。
+
+L5-A1a 通过后只能判定 `botzone_deepseek_connector_hardening_verified`，仍需单独的 L5-A2 真实环境准入和明确授权。

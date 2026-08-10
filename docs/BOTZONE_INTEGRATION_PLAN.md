@@ -714,6 +714,7 @@ DeepSeek exception / timeout / malformed / illegal action_id
 | 阶段 | 目标 | 网络边界 | 验收 |
 |---|---|---|---|
 | L5-A1 | 默认 rule、显式 deepseek 的离线组合根；match/player Agent 隔离；最终规则降级 | fake client/transport，零真实请求 | `botzone_deepseek_connector_offline_wiring_verified` |
+| L5-A1a | 精确诊断兼容、fallback 分类和 deepseek 零网络 preflight | fake factories，零真实请求 | `botzone_deepseek_connector_hardening_verified` |
 | L5-A2 | 真实环境配置/preflight 与一次全新无贡 smoke | 必须重新获得明确授权 | deal/play/response/header/ack/qualified finished 闭环 |
 | L5-A3 | 小规模稳定性与降级统计 | 独立预算与授权 | 零非法动作；模型成功/降级/超时聚合可审计 |
 | L5-A4 | 规则基线 vs DeepSeek A/B | 固定设置、轮换座位 | 只报告样本统计，不提前宣称胜率提升 |
@@ -728,6 +729,17 @@ DeepSeek exception / timeout / malformed / illegal action_id
 - 贡还、升级、上传 ZIP 和 engine 规则不在 L5-A1 修改范围。
 - L5-A1 不联网、不读取真实 `.env`/key/URL，不申请 live 授权。
 
-### 17.5 当前下一动作
+### 17.5 L5-A1 实际结果
 
-执行 `docs/NEXT_PROMPT.md` 中的 L5-A1。完成并独立提交前，不进入真实 connector smoke。
+- 实现检查点：`71d9119`。
+- 新增 `agent_runtime.py`，runner 支持默认 `rule` 和显式 `deepseek`。
+- DeepSeek Agent 按 match/player 缓存，finished cleanup 后释放。
+- 主 Agent 异常、超时、错误类型或非法 ID 最终回退 RuleBased 合法动作；provenance 缺失仍 fail-closed。
+- 定向 23 项、全量 565 项、diff check 和敏感边界扫描通过。
+- 唯一判定：`botzone_deepseek_connector_offline_wiring_verified`。
+
+复核遗留：默认非 fallback 的精确非法 ID 诊断发生兼容性变化；deepseek 配置验证晚于 transport 对象构造。这两项不否定离线功能判定，但阻止直接进入 live。
+
+### 17.6 当前下一动作
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A1a。完成并独立提交前，不进入真实 connector smoke。
