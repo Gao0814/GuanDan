@@ -1,15 +1,15 @@
 # 项目状态看板
 
-更新时间：2026-08-09
+更新时间：2026-08-10
 
 ## 1. 当前基线
 
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A3c 已执行并永久判为 `botzone_no_tribute_local_ai_smoke_invalid`；下一步是离线 L4-A3c1 分层脱敏诊断，禁止复用授权或直接重跑 live
+- 当前工作状态：Botzone L4-A3c1 已验证，五个实现/测试文件待独立封存；下一步 L4-A3c2 只做检查点与零网络恢复准入，不直接 live
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：L4-A3b1 direct main 与两次 binary PIPE 捕获通过；定向 2、相关 18、全量 534 项通过，检查点 `28de0cb3...b1f331`。L4-A3c 单次 live 收到 1 个请求后以 `malformed_request`、exit 5 停止，未准备 response 或发送 Header
+- 实际验证结果：L4-A3c1 新诊断 4、相关 Botzone 22、全量 538 项通过；固定区分 JSON、envelope、inner request、历史 response、replay 与未知异常，未联网
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -1330,3 +1330,12 @@ L4-A3b1 已完成，唯一判定 `botzone_live_smoke_recovery_authorization_read
 - 请求在用户确认新建无贡测试桌前到达，不能证明来自新桌，也不能排除旧 match 重放。
 - 现有 `malformed_request` 同时覆盖 JSON 与 envelope 多类错误，无法定位失败层级。
 - 本次授权已消耗，不得重试或补采。下一步只做 L4-A3c1 离线分层脱敏诊断。
+
+## 9. Botzone L4-A3c1 结果
+
+- 唯一判定：`botzone_malformed_request_safe_diagnostics_verified`。
+- 固定对外诊断：`request_json_invalid`、`envelope_shape_invalid`、`inner_request_invalid`、`historical_response_invalid`、`replay_history_invalid`；未知异常回退 `malformed_request`。
+- 合法 envelope、replay、digest、response wrapper、pending/ack 与 Agent 边界保持不变。
+- 非法输入不调用 Agent、不准备 response、不发送 Header，connector 仍以 `diagnostic_failure` 停止。
+- 新诊断 4 项、相关 Botzone 22 项、全量 538 项、diff check 与边界扫描通过。
+- 当前五个实现/测试改动尚未提交；下一步先独立封存，再做一次零网络 preflight。

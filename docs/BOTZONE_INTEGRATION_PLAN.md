@@ -512,7 +512,7 @@ Phase 0 至 L4-A3b1 均已完成并封存；既有 invalid/inconclusive 结论�
 
 ## 12. 推荐下一动作
 
-执行离线 L4-A3c1：把 `malformed_request` 拆分为固定白名单的 JSON、envelope、inner request、历史 response 与 replay 错误类别，并以合成 fixture 验证不泄露原始请求。不得在该任务联网或复用 L4-A3c 授权。
+执行 L4-A3c2：先把 L4-A3c1 的五个实现/测试文件独立提交，再在干净工作区运行恰好一次零网络 preflight。只有全部门槛通过，才请求用户确认旧测试桌已结束并授予新的固定预算 live 权限。
 
 ## 13. L4-A3c 实际结果
 
@@ -524,3 +524,13 @@ Phase 0 至 L4-A3b1 均已完成并封存；既有 invalid/inconclusive 结论�
 - 用户尚未确认创建全新无贡测试桌，请求已先到达；来源可能是平台保留或重放的旧 match，但当前证据不能确认。
 - L4-A3a 的合法合成 envelope 回归仍成立；本次 live 只说明仍存在未分类的真实输入差异，不能定位到具体字段或规则。
 - 下一次 live 前必须先完成安全分层诊断，并在 connector 已连接后再由用户创建全新无贡桌。
+
+## 14. L4-A3c1 实际结果
+
+唯一判定：`botzone_malformed_request_safe_diagnostics_verified`。
+
+- poll 对外固定区分 JSON、envelope shape、inner request、历史 response 与 replay history；未知异常保守回退 `malformed_request`。
+- Bot envelope 内部错误只携带白名单 code；不向 audit 暴露异常正文或请求字段值。
+- 非法输入继续 fail-closed，合法信封与事务链兼容。
+- 验证为新诊断 4、相关 Botzone 22、全量 538 项通过；未联网、未读取真实配置。
+- 实现尚未提交。L4-A3c2 必须先形成仅含五个实现/测试文件的独立检查点，工作区干净后才允许零网络准入。

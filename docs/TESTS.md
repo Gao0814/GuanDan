@@ -1290,6 +1290,20 @@ L4-A3c1 最低测试口径：
 - 运行定向测试、全量 `python -m unittest discover -q`、`git diff --check` 和边界扫描；
 - 本步严格离线，request/GET/network/connector count 为 0。
 
+L4-A3c1 实际结果：新增固定诊断契约后，新诊断 4 项、相关 Botzone 22 项、全量 538 项通过，`git diff --check` 与边界扫描通过。固定对外码为 `request_json_invalid`、`envelope_shape_invalid`、`inner_request_invalid`、`historical_response_invalid`、`replay_history_invalid`，未知异常为 `malformed_request`。唯一判定 `botzone_malformed_request_safe_diagnostics_verified`。
+
+L4-A3c2 最低测试与准入口径：
+
+- 工作区实现差异必须精确为 L4-A3c1 的五个代码/测试文件；
+- 重跑新诊断、相关 Botzone、全量 538 基线和 `git diff --check`；
+- 只提交五个实现/测试文件，提交后工作区干净；
+- 当前进程只检查 URL 配置为 present，不读取值或 `.env`；
+- 使用全新仓库外 state 目录，恰好运行一次 `--preflight-only`，30 秒内 exit 0；
+- stdout 规范化后精确为 `preflight_ready`，stderr 为空，state 前后为空并精确清理；
+- request/GET/network/connector count 为 0，不启动 launcher 或 connector；
+- ready 后只请求新的 live 授权，且用户必须同时确认旧本地 AI 测试桌已结束；
+- preflight 失败不得重试、联网或申请授权。
+
 ## 6. 对局评测
 
 单元测试不能代替策略评测。每次策略改动应使用固定种子进行 A/B 对局，并轮换座位，至少记录：
