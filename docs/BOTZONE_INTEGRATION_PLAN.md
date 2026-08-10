@@ -512,7 +512,7 @@ Phase 0 至 L4-A3b1 均已完成并封存；既有 invalid/inconclusive 结论�
 
 ## 12. 推荐下一动作
 
-执行 L4-A3c2：先把 L4-A3c1 的五个实现/测试文件独立提交，再在干净工作区运行恰好一次零网络 preflight。只有全部门槛通过，才请求用户确认旧测试桌已结束并授予新的固定预算 live 权限。
+执行离线 L4-A3d1：把网关 raw finished 与本次进程同 match、已发送并 ack 的 play response 所对应的 qualified finished 分离。runner 只能按 qualified 计数成功停止；不得联网或申请授权。
 
 ## 13. L4-A3c 实际结果
 
@@ -533,4 +533,13 @@ Phase 0 至 L4-A3b1 均已完成并封存；既有 invalid/inconclusive 结论�
 - Bot envelope 内部错误只携带白名单 code；不向 audit 暴露异常正文或请求字段值。
 - 非法输入继续 fail-closed，合法信封与事务链兼容。
 - 验证为新诊断 4、相关 Botzone 22、全量 538 项通过；未联网、未读取真实配置。
-- 实现尚未提交。L4-A3c2 必须先形成仅含五个实现/测试文件的独立检查点，工作区干净后才允许零网络准入。
+- 实现已独立提交为 `1924db4a398db2641c4ba8e9dcf8a71a79a9388f`。
+
+## 15. finished-only live 结果
+
+唯一判定：`botzone_no_tribute_local_ai_smoke_invalid`。
+
+- 唯一 poll 返回一条 finished，runner 立即以 `finished_target` 和 exit 0 停止。
+- 本次运行没有 request、response 或 Header，不能证明该 finished 与当前 connector、新桌或任何 deal/play 交互有关。
+- audit 与 state 安全检查通过，但它们只能证明没有敏感残留，不能把零交互解释为 smoke 成功。
+- L4-A3d1 必须按 match 追踪当前 connector 实例中的合法 play response、成功 Header 发送/ack 与后续四人 finished；历史、未知、重复和 aborted finished 不得触发成功。

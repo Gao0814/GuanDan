@@ -1304,6 +1304,22 @@ L4-A3c2 最低测试与准入口径：
 - ready 后只请求新的 live 授权，且用户必须同时确认旧本地 AI 测试桌已结束；
 - preflight 失败不得重试、联网或申请授权。
 
+最新 live 实际结果：唯一运行 exit 0、`finished_target`、finished 1，但 request/response/header 均为 0。该结果永久判为 `botzone_no_tribute_local_ai_smoke_invalid`；它暴露了 finished 停止条件的来源缺口，不是 smoke 成功。
+
+L4-A3d1 最低测试口径：
+
+- `finished_seen` 保留网关原始计数，新增 qualified 完成计数；
+- runner 只按 qualified 完成停止，不能按 raw finished 停止；
+- qualified 必须按同 match 关联当前 connector 实例处理的合法 play response、成功 Header 发送/ack 与四人 finished；
+- 未知、历史、重复、aborted、非四人、只有 deal、play pending 未发送、transport 失败和 cleanup 失败均不合格；
+- 多 match 不得拼接全局 request/response/header 计数形成假成功；
+- 合格 match 最多计数一次；stale 与合格 finished 同批时 raw/qualified 分别守恒；
+- `exit_code_for()` 不允许 qualified 未达标时返回成功；
+- audit schema 同时保存 raw/qualified 聚合，不含 match ID 或请求内容；
+- 既有 pending/ack、重启恢复、tombstone、诊断优先级和合法 E2E 回归通过；
+- 全量测试、`git diff --check` 和敏感边界扫描通过；
+- 本步 request/GET/network/connector live count 为 0。
+
 ## 6. 对局评测
 
 单元测试不能代替策略评测。每次策略改动应使用固定种子进行 A/B 对局，并轮换座位，至少记录：

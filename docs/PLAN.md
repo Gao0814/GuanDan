@@ -967,7 +967,7 @@ K-A3d3c3a 结果：
 
 ### Step L：Botzone 本地 AI 接入
 
-状态：既有 invalid/inconclusive 永久保留。L4-A3c1 已验证固定、脱敏的六类请求诊断，当前五个实现/测试改动待独立封存。下一执行任务 L4-A3c2 只做检查点与零网络准入；ready 后再请求用户确认旧桌已结束并重新授权。L4-A2c5b2a 暂缓。详细设计见 `docs/BOTZONE_INTEGRATION_PLAN.md`。
+状态：L4-A3c1 已封存；后续 live 因 finished-only 假完成判为 invalid。当前 runner 未区分历史 finished 与本进程同 match 的有效完成。下一执行任务 L4-A3d1 只做离线 finished provenance 加固，不 preflight、不 live。L4-A2c5b2a 暂缓。
 
 目标：
 
@@ -989,9 +989,10 @@ K-A3d3c3a 结果：
 9. Phase 4 输出恢复：L4-A3b1 已完成，direct main 与 binary PIPE 跨平台单行输出通过；
 10. Phase 4 live：L4-A3c 已执行一次并 invalid；未生成 response/Header，授权已消耗；
 11. Phase 4 请求诊断：L4-A3c1 已验证，固定安全错误类别且保持合法路径兼容；
-12. Phase 4 诊断恢复准入：L4-A3c2 先封存实现，再做一次零网络 preflight；
-13. Phase 4 文件系统诊断：L4-A2c5b2a 暂缓，既有 invalid 不追认；
-14. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
+12. Phase 4 诊断恢复：L4-A3c1 已封存；后续 live 只收到 finished，零请求假完成；
+13. Phase 4 完成来源：L4-A3d1 离线区分 raw/qualified finished，并按同 match play Header ack 关联；
+14. Phase 4 文件系统诊断：L4-A2c5b2a 暂缓，既有 invalid 不追认；
+15. Phase 5：可选 DeepSeek，默认关闭且不属于基础验收。
 
 关键门槛：本项目不实现贡还，只支持建桌时明确选择“需要进贡=否”的对局。L1 只证明协议模型；L2 必须证明 mock transport、pending response 事务、会话恢复以及官方首个 play 原文可解析，L3 才能接 RuleBasedAI。若收到 `tribute/return`，必须以 unsupported stage 安全失败，不能以空响应、pass 或随意牌绕过。`runmatch` 要等自动建桌流程单独验收后再启用。
 

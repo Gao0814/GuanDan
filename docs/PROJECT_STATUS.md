@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：Botzone L4-A3c1 已验证，五个实现/测试文件待独立封存；下一步 L4-A3c2 只做检查点与零网络恢复准入，不直接 live
+- 当前工作状态：L4-A3c1 已封存为 `1924db4a...9a9388f`；后续唯一 live 因零请求却接受历史 finished 而 invalid。下一步 L4-A3d1 离线加固 finished 同局来源，不直接 live
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：L4-A3c1 新诊断 4、相关 Botzone 22、全量 538 项通过；固定区分 JSON、envelope、inner request、历史 response、replay 与未知异常，未联网
+- 实际验证结果：最新 live 为 exit 0/`finished_target`，但 request/response/header 均为 0，仅观察到 1 条 finished；未形成 deal/play 闭环
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -1338,4 +1338,12 @@ L4-A3b1 已完成，唯一判定 `botzone_live_smoke_recovery_authorization_read
 - 合法 envelope、replay、digest、response wrapper、pending/ack 与 Agent 边界保持不变。
 - 非法输入不调用 Agent、不准备 response、不发送 Header，connector 仍以 `diagnostic_failure` 停止。
 - 新诊断 4 项、相关 Botzone 22 项、全量 538 项、diff check 与边界扫描通过。
-- 当前五个实现/测试改动尚未提交；下一步先独立封存，再做一次零网络 preflight。
+- 实现已独立提交为 `1924db4a398db2641c4ba8e9dcf8a71a79a9388f`。
+
+## 10. Botzone finished 假完成封板
+
+- 唯一判定：`botzone_no_tribute_local_ai_smoke_invalid`。
+- 唯一 connector：exit 0、`finished_target`、cycles 1、finished 1，但 request/response/header 为 `0/0/0`。
+- 无 transport failure、无 diagnostics、state 为空，说明退出路径本身安全，但没有任何协议交互。
+- 根本契约缺口：runner 将全部 finished rows 直接视为完成目标，未验证它们是否属于本进程处理并回传 play response 的 match。
+- 本次授权已消耗，不得重跑。下一步只做 L4-A3d1 离线 finished provenance 加固。
