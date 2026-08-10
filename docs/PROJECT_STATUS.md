@@ -7,9 +7,9 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：L4-A3c1 已封存为 `1924db4a...9a9388f`；后续唯一 live 因零请求却接受历史 finished 而 invalid。下一步 L4-A3d1 离线加固 finished 同局来源，不直接 live
+- 当前工作状态：已新开“无需 connector 的 Botzone DeepSeek 完整体 Bot”支线。Python 3.6.5 规则上传基线已由用户在 Botzone 完整运行两局；下一步为 U0-A1 DeepSeek 出网/凭据/时限探测包，模型不参与动作选择
 - 测试基线：`python -m unittest discover -q`
-- 实际验证结果：最新 live 为 exit 0/`finished_target`，但 request/response/header 均为 0，仅观察到 1 条 finished；未形成 deal/play 闭环
+- 实际验证结果：本地 connector 历史 smoke 结论仍为 invalid；独立上传 Bot 已由用户人工报告完成两局。两条路径互不追认，当前主线转向上传 Bot
 - 当前规则范围：单局掼蛋核心规则
 - 当前 AI 边界：只读取公开 observation 和合法动作，只返回合法 `action_id`
 
@@ -71,7 +71,9 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
-| Botzone 接入 | L4-A3c 已授权待执行 | stdout 单行契约、零 transport 与 state 清理已独立验证 | 尚未启动真实 smoke，未证明一局完成 |
+| Botzone connector 接入 | 暂停 | 协议、adapter、mock connector 与 finished provenance 已实现 | 历史 live smoke 均不作为当前上传 Bot 前置 |
+| Botzone 上传规则 Bot | 基线可用 | Python 3.6.5、无贡、传统 JSON、自然牌动作子集；用户报告完整运行两局 | 未覆盖完整逢人配动作、当前完整策略与 DeepSeek |
+| Botzone DeepSeek 完整体 | U0 规划中 | 目标为无需 connector、候选动作内选择、规则降级 | 沙箱出网、用户存储凭据和 API 时限尚未验证 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1347,3 +1349,35 @@ L4-A3b1 已完成，唯一判定 `botzone_live_smoke_recovery_authorization_read
 - 无 transport failure、无 diagnostics、state 为空，说明退出路径本身安全，但没有任何协议交互。
 - 根本契约缺口：runner 将全部 finished rows 直接视为完成目标，未验证它们是否属于本进程处理并回传 play response 的 match。
 - 本次授权已消耗，不得重跑。下一步只做 L4-A3d1 离线 finished provenance 加固。
+
+## 11. Botzone 直接上传支线状态
+
+### 当前基线
+
+- HEAD：`cf35a205131cfc9b94c28491e0a8b092abdc0d30`。
+- 源码：`botzone_upload_py36/__main__.py`。
+- 产物：`dist/guandan_rule_ai_py36.zip`，4,031 bytes，SHA-256 `29e7ec827abf0ff6673bfeafab254cb9cc2174edc37bf1c802dcc15a346de351`。
+- ZIP 根目录仅有 `__main__.py`，Python 3.6 grammar 检查通过。
+- 全量测试基线：545 项通过。
+- 用户人工结果：该 Bot 已在 Botzone 完整运行两局，未报告协议或出牌错误。
+
+### 已知范围
+
+- 不需要本地 connector；由 Botzone 直接运行上传 ZIP。
+- 固定无贡、传统 JSON interaction。
+- 能重放 `requests/responses` 并维护本家实体手牌。
+- 能生成单张、对子、三张、三带二、顺子、连对、钢板、炸弹、同花顺和王炸的自然牌动作子集。
+- 当前策略为确定性规则选择；不调用 DeepSeek。
+
+### 不能宣称的能力
+
+- 当前上传 Bot 不主动使用逢人配替代，因此不是完整合法动作生成器。
+- 没有迁移 Python 3.11 主项目的阶段、记牌、RAG、策略意图、confidence 或完整 DeepSeek 主链。
+- 两局人工运行只证明基本可运行，不形成强度、胜率或长期稳定性结论。
+- Botzone 沙箱的外部 HTTPS、用户存储凭据读取和 DeepSeek 延迟仍未验证。
+
+### 新支线与下一步
+
+支线名称：**无需 connector 的 Botzone DeepSeek 完整体 Bot**。
+
+当前阶段：U0 准入。下一步执行 U0-A1：制作独立 Python 3.6.5 探测 ZIP，使用 fake opener 完成全部离线测试；人工运行时 DeepSeek 只做一次最小探测，实际动作与规则基线完全相同。通过后再进入完整合法动作和当前策略能力迁移。

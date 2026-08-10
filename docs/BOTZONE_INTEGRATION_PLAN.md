@@ -1,4 +1,4 @@
-# Botzone 本地 AI 接入计划
+# Botzone 接入计划：本地 connector 与直接上传 Bot
 
 更新时间：2026-08-09
 
@@ -543,3 +543,105 @@ Phase 0 至 L4-A3b1 均已完成并封存；既有 invalid/inconclusive 结论�
 - 本次运行没有 request、response 或 Header，不能证明该 finished 与当前 connector、新桌或任何 deal/play 交互有关。
 - audit 与 state 安全检查通过，但它们只能证明没有敏感残留，不能把零交互解释为 smoke 成功。
 - L4-A3d1 必须按 match 追踪当前 connector 实例中的合法 play response、成功 Header 发送/ack 与后续四人 finished；历史、未知、重复和 aborted finished 不得触发成功。
+
+## 16. 直接上传 DeepSeek 完整体支线（2026-08-10）
+
+### 16.1 路线调整
+
+当前新增独立支线：**无需 connector 的 Botzone DeepSeek 完整体 Bot**。
+
+该支线使用 Botzone“创建 Bot → 上传 Python ZIP”的常规执行方式。Botzone 平台直接启动上传程序，因此不需要本地 AI URL、GET 轮询或本机 connector。前述 connector 设计、实现和历史 invalid 结论全部保留，但暂停作为当前交付前置。
+
+两条路径不得混淆：
+
+| 路径 | 运行位置 | 凭据/通信 | 当前状态 |
+|---|---|---|---|
+| 本地 AI connector | 用户本机 | Botzone local-AI URL + GET/Header | 协议与离线实现完成，历史 live 未封板，当前暂停 |
+| 上传 Bot | Botzone 评测机 | stdin/stdout JSON；可读用户存储 | Python 3.6.5 规则基线已由用户人工运行两局，成为当前主线 |
+
+### 16.2 当前上传基线
+
+- HEAD：`cf35a205131cfc9b94c28491e0a8b092abdc0d30`。
+- `botzone_upload_py36/__main__.py`：standalone Python 3.6.5 规则 Bot。
+- `dist/guandan_rule_ai_py36.zip`：4,031 bytes；SHA-256 `29e7ec827abf0ff6673bfeafab254cb9cc2174edc37bf1c802dcc15a346de351`。
+- `tests/test_botzone_upload_py36.py`：grammar、信封、deal/play、历史扣牌和 ZIP 结构回归。
+- 全量测试：545 项通过。
+- 用户人工报告：在 Botzone 完整运行两局，未出现协议或出牌错误。
+
+边界：当前代码头部已明确 `natural-card actions only`。它不主动构造逢人配声明，不是当前 engine 完整合法动作集合；也没有迁移 `agents/` 的 DeepSeek、RAG、阶段、记牌和策略路由。
+
+### 16.3 官方能力与不确定项
+
+Botzone 官方 Bot 文档已确认：
+
+- Python 多文件上传使用 ZIP，根目录需要 `__main__.py`；
+- 数据文件不要打包，应通过用户存储上传并从 `data` 路径读取；
+- 传统模式每回合重新启动并收到完整历史；
+- 长时运行在正常 response 后输出 `>>>BOTZONE_REQUEST_KEEP_RUNNING<<<`，后续只收到当前 request，不再收到历史和 data/globaldata；
+- 长时运行减少冷启动，但单回合时限仍由提交页面和语言倍率约束；回合间后台 CPU 计入下一回合。
+
+DeepSeek 官方文档已确认：
+
+- base URL：`https://api.deepseek.com`；
+- 目标模型：`deepseek-v4-flash`；
+- OpenAI-compatible `chat/completions` 可使用 Bearer key 调用。
+
+仍标为 **不确定/未验证**：
+
+1. Botzone 评测机是否允许访问外部 HTTPS；
+2. `data` 用户存储中凭据文件的实际读取行为；
+3. DeepSeek API 能否稳定在 Python Bot 单回合时限内返回；
+4. 长时运行遇到平台重启、SIGSTOP/SIGCONT 或异常退出后的恢复频率。
+
+官方资料位置：
+
+- Botzone Bot：`https://wiki.botzone.org.cn/index.php?title=Bot`
+- Botzone GuanDan：`https://wiki.botzone.org.cn/index.php?title=GuanDan`
+- DeepSeek API：`https://api-docs.deepseek.com/zh-cn/`
+
+### 16.4 完整体模块建议
+
+最终 ZIP 应为多文件 Python 3.6 包，而不是继续把全部逻辑堆入单个文件：
+
+```text
+__main__.py
+guandan_bot/
+  protocol.py
+  cards.py
+  legal_actions.py
+  public_state.py
+  rule_policy.py
+  phase.py
+  card_memory.py
+  strategy.py
+  rag.py
+  deepseek_client.py
+  decision.py
+```
+
+数据目录由 Botzone 用户存储提供：规则/经验语料与凭据分文件保存。真实 key 不进入 ZIP、仓库、测试、debug、data/globaldata 或错误文本。
+
+### 16.5 决策边界
+
+1. 上传 Bot 自己生成完整合法动作并分配稳定候选 ID。
+2. DeepSeek 只能返回候选 ID，不得返回或自由组合 Botzone 实体牌数组。
+3. 选择结果必须回查候选类型、范围和 provenance。
+4. timeout、HTTP 错误、非法 JSON、非法候选或任何异常均立即使用已计算的 RuleBased fallback。
+5. fallback 必须在发起网络前已准备，网络使用短超时和零重试。
+6. 第一阶段使用 traditional mode；只有模型路径可用后再接长时运行和内存状态。
+7. 默认仍为无贡 profile；`tribute/return` 明确 fail-closed。
+
+### 16.6 实施顺序
+
+| 阶段 | 目标 | 通过门槛 |
+|---|---|---|
+| U0 | 出网、用户存储凭据与时限探测 | 模型不影响动作；人工结果 `probe_ok` 且有时限余量 |
+| U1 | Python 3.6 完整无贡合法动作 | 与 Python 3.11 engine fixture/parity 一致，逢人配完整 |
+| U2 | 迁移当前本地策略 | 阶段、开局、记牌、路由和 fallback parity 通过 |
+| U3 | DeepSeek 候选选择 | 只返回候选 ID；短超时、零重试、非法输出安全降级 |
+| U4 | 长时运行与 RAG | request-only 状态正确，重启可重建，语料预算受控 |
+| U5 | Botzone smoke 与 A/B | 完整局、零非法动作、超时可降级，再评估胜负/名次 |
+
+### 16.7 当前下一动作
+
+执行 `docs/NEXT_PROMPT.md` 的 U0-A1：制作独立 `guandan_deepseek_probe_py36.zip`。该包只验证能力，不让 DeepSeek 选择动作；所有离线测试使用 fake opener，禁止真实联网。现有 `guandan_rule_ai_py36.zip` 作为稳定版本 0 保持不变。

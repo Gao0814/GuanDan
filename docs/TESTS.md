@@ -8,6 +8,8 @@
 python -m unittest discover -q
 ```
 
+当前全量基线：545 项通过（HEAD `cf35a205131cfc9b94c28491e0a8b092abdc0d30`）。
+
 核心规则回归：
 
 ```bash
@@ -1341,3 +1343,52 @@ L4-A3d1 最低测试口径：
 - 失败测试名；
 - 是实现失败、环境问题还是外部 API 问题；
 - 未验证的剩余风险。
+
+## 8. Botzone 直接上传 Bot 测试
+
+### 8.1 当前 Python 3.6.5 规则基线
+
+对应文件：
+
+- `botzone_upload_py36/__main__.py`
+- `tests/test_botzone_upload_py36.py`
+- `dist/guandan_rule_ai_py36.zip`
+
+长期保持：
+
+- 使用 Python 3.6 grammar，可由标准库运行；
+- ZIP 根目录精确包含入口 `__main__.py`，不超过上传大小限制；
+- deal 输出 canonical `{"response":[]}`；
+- play 输出 `[action, claim]`，动作实体来自当前手牌；
+- 历史 response 只扣除一次已出实体牌；
+- free lead、跟单、无可压动作 pass 均有回归；
+- stderr 为空，正常路径只输出一行 JSON；
+- 不读取 `.env`、connector URL 或本机配置。
+
+用户已报告该基线在 Botzone 完整运行两局。此结果是人工 smoke，不替代自动测试，也不覆盖逢人配完整合法动作。
+
+### 8.2 U0 DeepSeek 探测包最低测试
+
+下一步新增测试必须覆盖：
+
+- 与规则基线相同输入下，`response` 逐字段完全相同；
+- 凭据缺失/非法时零网络调用并返回规则动作；
+- fake opener 覆盖成功、超时、DNS/connect、TLS、HTTP 4xx/5xx、非法 JSON和未知异常；
+- 诊断只使用固定脱敏分类，不包含 key、URL、Header、响应正文或异常正文；
+- 每局最多探测一次，后续回合通过非敏感 `data` 标志跳过；
+- HTTPS endpoint、`deepseek-v4-flash`、非流式、短超时、零重试的请求形状；
+- DeepSeek 正文永不进入 Botzone response/debug/data；
+- 测试使用合成 key 和 fake opener，真实 DNS/socket/HTTP 调用数为 0；
+- 新 ZIP 与 `guandan_rule_ai_py36.zip` 并存，不能覆盖稳定规则基线。
+
+### 8.3 后续完整体 parity 测试
+
+进入 U1 后，应使用同一公开局面比较 Python 3.11 engine 与 Python 3.6 上传实现：
+
+- 自然牌与逢人配完整合法动作集合；
+- Botzone 108 实体 ID、carrier/claim 和重复虚拟 claim；
+- 同型压制、炸弹层级、同花顺和王炸；
+- pass、接风、done/pass_on 与历史窗口；
+- action ID/provenance 只能映射回候选集合。
+
+进入 U3 后，应增加模型输出分类、短超时、零重试、非法候选回退和 RuleBased 动作可用性测试。进入 U4 长时运行后，还必须覆盖当前 request-only 输入、内存状态、进程重启后的完整 envelope 恢复和 keep-running marker/flush 契约。

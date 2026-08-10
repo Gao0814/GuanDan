@@ -4,7 +4,7 @@
 
 ## 1. 当前结论
 
-截至 2026-08-03，项目已经完成：
+截至 2026-08-10，项目已经完成：
 
 - 单局掼蛋规则引擎和 4 AI 对局闭环；
 - `observe()` / `legal_actions()` / `step(action_id)` 公开契约；
@@ -32,6 +32,7 @@
 - Step J-D1c2b critical 固定 seed collector 与开发容量验证。
 - Step J-D1c2c 默认 RuleBasedAI 独立语料正式校准。
 - Step J-D1c3a forced/25/50/100 strategic-pass corpus 载体与开发容量验证。
+- Botzone Python 3.6.5 直接上传规则 Bot 基线；用户已报告在平台完整运行两局。该基线不需要 connector，但目前只覆盖无贡、传统交互和自然牌动作子集。
 
 当前优化目标从“能运行”转为“阶段判断一致、推断可审计、策略质量可测”。`record.txt` 联网单局只读复盘新增了三个直接样本：开局公式拆对出高单、同队互相消耗炸弹、危险对手剩两张时未阻断。单局不构成收益证明，但可以作为确定性回归 fixture。
 
@@ -1038,3 +1039,118 @@ K-A3d3c3a 结果：
 3. 做最小实现；
 4. 运行相关测试和全部回归；
 5. 记录指标，不以提示词变长作为能力提升依据。
+
+## 9. 新支线：无需 connector 的 Botzone DeepSeek 完整体 Bot
+
+### 9.1 支线定位
+
+该支线以 Botzone“上传 Bot”运行方式为目标，不再把本地 AI connector 作为上线前置：
+
+- Botzone 平台直接运行上传的 Python 3.6.5 ZIP；
+- ZIP 根目录使用 `__main__.py`；
+- 本地 connector 代码与历史结论保留，用于协议研究和本机调试，但暂停为当前主线；
+- 默认对局继续固定“需要进贡=否”，不实现 `tribute/return`；
+- DeepSeek 只允许从本地生成的合法候选动作中选择，不得直接生成 Botzone 牌 ID 或绕过规则层。
+
+当前基线为 `cf35a205131cfc9b94c28491e0a8b092abdc0d30`：
+
+- `botzone_upload_py36/__main__.py`；
+- `dist/guandan_rule_ai_py36.zip`；
+- ZIP 为 4,031 bytes，SHA-256 为 `29e7ec827abf0ff6673bfeafab254cb9cc2174edc37bf1c802dcc15a346de351`；
+- 全量测试基线为 545 项；
+- 用户人工报告已在 Botzone 完整运行两局且未发现协议或出牌错误。
+
+该人工结果只证明当前规则基线可运行。现有上传代码仍是 traditional JSON interaction、无贡、自然牌动作子集，不主动生成逢人配替代动作，也未迁移当前 `agents/` 的阶段、记牌、RAG、策略路由、confidence 或 DeepSeek 决策。
+
+### 9.2 官方能力边界
+
+已确认：
+
+- Botzone 上传 Bot 不需要 connector；
+- 多文件 Python 可打包为 ZIP，根目录必须有 `__main__.py`；
+- 数据文件应通过用户存储上传，并从 `data` 路径读取；
+- Python 运行时版本为 3.6.5，基础时限按平台页面与语言倍率执行；
+- 长时运行通过固定 marker 保持进程，下一回合只收到当前 request，不再收到完整历史与 data/globaldata；Bot 必须自己维护状态；
+- 长时运行用于减少冷启动，不等于放宽单回合决策时限；
+- DeepSeek 官方 base URL 为 `https://api.deepseek.com`，目标模型为 `deepseek-v4-flash`。
+
+尚未确认：
+
+- Botzone 评测沙箱是否允许访问外部 HTTPS；
+- 用户存储中的凭据文件在评测进程中的权限与可用性；
+- `deepseek-v4-flash` 在 Botzone 单回合时限内的实际成功率和延迟；
+- 平台发生进程重启时，长时运行内存状态的恢复频率与失败形态。
+
+### 9.3 目标架构
+
+```text
+Botzone JSON input
+  -> Python 3.6 protocol/replay
+  -> complete no-tribute public state
+  -> complete legal action enumeration
+  -> opening/phase/card memory/strategy/RAG
+  -> compact candidate list
+  -> DeepSeek selects candidate action_id
+  -> strict candidate/provenance validation
+  -> RuleBased fallback on timeout/error/invalid output
+  -> canonical {"response":[action,claim]}
+```
+
+安全边界：
+
+- API key 只从 Botzone 用户存储读取，不进入源码、ZIP、debug、data/globaldata、异常或测试；
+- 用户存储是平台文件能力，不宣称为专用 secrets manager；
+- 使用 Python 3.6 标准库 `urllib`，不假设 OpenAI SDK 可用；
+- 模型调用短超时、零重试；任何失败必须在时限内返回合法规则动作；
+- RAG 语料可放用户存储，但不得把密钥与可公开语料混在同一文件；
+- 上传 Bot 不导入本机 Python 3.11 项目模块，而是维护经过测试的 Python 3.6 兼容实现。
+
+### 9.4 阶段计划
+
+#### U0：出网、凭据与时限准入
+
+- U0-A1：制作独立探测 ZIP；DeepSeek 只做一次最小请求，实际动作始终使用规则基线；全程 fake opener 离线测试。
+- U0-A2：用户人工上传新版本，在新无贡测试桌中确认固定脱敏分类和延迟。
+- 验收：只有 `probe_ok` 且延迟有稳定余量才进入 U1；出网禁止或稳定超时则支线阻塞。
+
+#### U1：完整无贡合法动作与公开状态迁移
+
+- 把当前 engine 的无贡 play 规则迁移为 Python 3.6 兼容上传模块；
+- 补齐逢人配、重复虚拟 claim、炸弹、顺子、连对、钢板、同花顺和王炸；
+- Botzone 实体 ID 与本地 action provenance 完整映射；
+- 以离线 fixture 对比 Python 3.11 engine 的合法动作集合。
+
+验收：上传版候选必须是规则真值的等价集合或有明确、审计过的安全子集；DeepSeek 仍不参与动作。
+
+#### U2：当前本地策略的 Python 3.6 迁移
+
+- 迁移统一阶段、手牌评分、公式化开局、公开记牌、策略路由和必要剪枝；
+- 保持只读公开请求/历史，不读取裁判隐藏状态；
+- RuleBased fallback 成为上传 Bot 的稳定默认决策；
+- 对当前 Python 3.11 主链建立 fixture/parity 测试。
+
+#### U3：DeepSeek 候选选择
+
+- 使用紧凑候选编号，不发送 Botzone 实体 ID 作为自由生成目标；
+- 模型只能返回候选 ID；类型、范围、合法性和 provenance 任一失败都回退规则动作；
+- 默认 `deepseek-v4-flash`、短超时、零重试；记录仅限聚合成功/超时/降级分类；
+- 先 traditional mode，再评估长时运行，避免同时引入模型与会话状态变量。
+
+#### U4：长时运行、RAG 与状态恢复
+
+- 首回合正常输出后使用官方 keep-running marker；
+- 后续只消费当前 request，并在内存维护 hand/history/phase/card belief；
+- 进程重启后能从传统完整 envelope 重建；
+- 规则库/经验库从用户存储只读加载，限制大小和 prompt 字符预算；
+- 不在回合间后台计算，避免消耗下一回合 CPU 时间。
+
+#### U5：Botzone 人工验收与对抗评测
+
+- 先 smoke：完整一局、零非法动作、超时可降级；
+- 再 A/B：规则基线与 DeepSeek 完整体分开创建版本，固定桌设置并轮换座位；
+- 记录完成局数、超时/降级、非法输出、模型有效选择、胜负和名次；
+- 没有足够样本前只声明“接入可用”，不声明胜率提升。
+
+### 9.5 当前下一步
+
+执行 `docs/NEXT_PROMPT.md` 中的 U0-A1。该步骤是最短准入路径：只新增隔离探测包和测试，不改现有规则 Bot，不联网，不启用长时运行，也不让 DeepSeek 影响动作。
