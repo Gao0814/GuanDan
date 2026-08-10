@@ -126,7 +126,7 @@ class BotzoneConnectorTests(unittest.TestCase):
 
             cycle = MockConnector(SessionStore(root), _FakeTransport([body]), handler).cycle()
             self.assertEqual(cycle.responses_prepared, 1)
-            self.assertEqual(cycle.diagnostics, (("handler_failure", 1), ("malformed_request", 1), ("unsupported_stage", 1)))
+            self.assertEqual(cycle.diagnostics, (("handler_failure", 1), ("request_json_invalid", 1), ("unsupported_stage", 1)))
             self.assertEqual(len(calls), 2)
 
     def test_finished_row_clears_only_the_finished_session(self) -> None:

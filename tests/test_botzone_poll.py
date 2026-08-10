@@ -37,7 +37,7 @@ class BotzonePollTests(unittest.TestCase):
     def test_malformed_request_isolated_from_other_match(self) -> None:
         body = ("2 0\nunit-a\n{not-json}\nunit-b\n" + _envelope(_deal(1))).encode()
         batch = parse_poll(body)
-        self.assertEqual(batch.requests[0].diagnostic, "malformed_request")
+        self.assertEqual(batch.requests[0].diagnostic, "request_json_invalid")
         self.assertIsNotNone(batch.requests[1].stage)
 
     def test_structural_errors_fail_closed(self) -> None:

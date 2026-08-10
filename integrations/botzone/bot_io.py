@@ -17,6 +17,12 @@ from .protocol import ProtocolValidationError, parse_action_claim, parse_stage_r
 class BotEnvelopeError(ValueError):
     """The complete Bot JSON interaction cannot be safely replayed."""
 
+    _CODES = frozenset({"envelope_shape", "inner_request", "historical_response", "replay_history", "unknown"})
+
+    def __init__(self, code: str) -> None:
+        self.code = code if code in self._CODES else "unknown"
+        super().__init__(self.code)
+
 
 StageRequest = DealRequest | PlayRequest | UnsupportedStage
 
@@ -57,7 +63,7 @@ def _json_compatible(value: object) -> bool:
 
 def _require_list(value: object, label: str) -> list[object]:
     if not isinstance(value, list):
-        raise BotEnvelopeError(f"{label}_must_be_list")
+        raise BotEnvelopeError("envelope_shape")
     return value
 
 
@@ -71,32 +77,32 @@ def _merge_history(
     if not latest_window and not accumulated:
         return incoming_window, incoming_window
     if not latest_window or len(accumulated) < len(latest_window) or accumulated[-len(latest_window):] != latest_window:
-        raise BotEnvelopeError("history_alignment_failed")
+        raise BotEnvelopeError("replay_history")
     if incoming_window == latest_window:
         return incoming_window, accumulated
     maximum_overlap = min(len(latest_window), len(incoming_window))
     for overlap in range(maximum_overlap, 0, -1):
         if latest_window[-overlap:] == incoming_window[:overlap]:
             return incoming_window, accumulated + incoming_window[overlap:]
-    raise BotEnvelopeError("history_alignment_failed")
+    raise BotEnvelopeError("replay_history")
 
 
 def _parse_historical_response(stage: DealRequest | PlayRequest, value: object, own_hand: tuple[int, ...]) -> ActionClaim | None:
     if isinstance(stage, DealRequest):
         if value != [] or type(value) is not list:
-            raise BotEnvelopeError("deal_response_invalid")
+            raise BotEnvelopeError("historical_response")
         return None
     try:
         action_claim = parse_action_claim(value, level=stage.global_state.level, known_hand_ids=own_hand)
     except ProtocolValidationError as exc:
-        raise BotEnvelopeError("play_response_invalid") from exc
+        raise BotEnvelopeError("historical_response") from exc
     return action_claim
 
 
 def _deduct(own_hand: tuple[int, ...], action: ActionClaim) -> tuple[int, ...]:
     action_ids = set(action.action)
     if not action_ids.issubset(own_hand):
-        raise BotEnvelopeError("response_action_outside_hand")
+        raise BotEnvelopeError("historical_response")
     return tuple(card_id for card_id in own_hand if card_id not in action_ids)
 
 
@@ -104,22 +110,22 @@ def parse_bot_envelope(value: object) -> BotEnvelope:
     """Validate/replay the standard Bot JSON input without a session dependency."""
 
     if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
-        raise BotEnvelopeError("envelope_must_be_object")
+        raise BotEnvelopeError("envelope_shape")
     allowed = {"requests", "responses", "data", "globaldata", "time_limit", "memory_limit"}
     if set(value) - allowed or not {"requests", "responses"}.issubset(value):
-        raise BotEnvelopeError("envelope_fields_invalid")
+        raise BotEnvelopeError("envelope_shape")
     if any(not _json_compatible(value[field]) for field in set(value) - {"requests", "responses"}):
-        raise BotEnvelopeError("envelope_optional_value_invalid")
+        raise BotEnvelopeError("envelope_shape")
     raw_requests = _require_list(value["requests"], "requests")
     raw_responses = _require_list(value["responses"], "responses")
     if not raw_requests or len(raw_requests) != len(raw_responses) + 1:
-        raise BotEnvelopeError("envelope_history_length_invalid")
+        raise BotEnvelopeError("envelope_shape")
     try:
         stages = tuple(parse_stage_request(item) for item in raw_requests)
     except ProtocolValidationError as exc:
-        raise BotEnvelopeError("inner_request_invalid") from exc
+        raise BotEnvelopeError("inner_request") from exc
     if not isinstance(stages[0], DealRequest):
-        raise BotEnvelopeError("first_request_must_be_deal")
+        raise BotEnvelopeError("replay_history")
     deal = stages[0]
     own_hand = deal.deliver
     latest_window: tuple[HistoryEntry, ...] = ()
@@ -129,13 +135,13 @@ def parse_bot_envelope(value: object) -> BotEnvelope:
         paired = index < len(raw_responses)
         if isinstance(stage, UnsupportedStage):
             if paired or index != len(stages) - 1:
-                raise BotEnvelopeError("unsupported_history_stage")
+                raise BotEnvelopeError("replay_history")
             break
         if stage.global_state.level != deal.global_state.level:
-            raise BotEnvelopeError("global_level_drift")
+            raise BotEnvelopeError("replay_history")
         if isinstance(stage, DealRequest):
             if index != 0:
-                raise BotEnvelopeError("duplicate_deal")
+                raise BotEnvelopeError("replay_history")
         else:
             latest_window, accumulated = _merge_history(latest_window, accumulated, stage.history)
         if paired:
@@ -162,18 +168,18 @@ def encode_bot_response(stage: DealRequest | PlayRequest, response: bytes) -> by
     """Canonicalize an inner GuanDan reply into the outer Bot response object."""
 
     if not isinstance(response, bytes):
-        raise BotEnvelopeError("response_must_be_bytes")
+        raise BotEnvelopeError("unknown")
     try:
         decoded = json.loads(response.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise BotEnvelopeError("response_not_json") from exc
+        raise BotEnvelopeError("unknown") from exc
     if isinstance(stage, DealRequest):
         if decoded != [] or type(decoded) is not list:
-            raise BotEnvelopeError("deal_response_invalid")
+            raise BotEnvelopeError("unknown")
         payload: object = []
     else:
         try:
             payload = parse_action_claim(decoded, level=stage.global_state.level).to_json()
         except ProtocolValidationError as exc:
-            raise BotEnvelopeError("play_response_invalid") from exc
+            raise BotEnvelopeError("unknown") from exc
     return json.dumps({"response": payload}, ensure_ascii=True, separators=(",", ":")).encode("utf-8")

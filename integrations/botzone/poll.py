@@ -14,6 +14,14 @@ MAX_POLL_LINE_BYTES = 131_072
 MAX_MATCHES_PER_POLL = 1_024
 
 
+_ENVELOPE_DIAGNOSTICS = {
+    "envelope_shape": "envelope_shape_invalid",
+    "inner_request": "inner_request_invalid",
+    "historical_response": "historical_response_invalid",
+    "replay_history": "replay_history_invalid",
+}
+
+
 class PollFormatError(ValueError):
     """A poll body is not structurally safe to consume."""
 
@@ -78,10 +86,19 @@ def _parse_request(match_id: str, request_line: str) -> PollRequest:
     try:
         payload = json.loads(request_line)
     except (TypeError, ValueError, json.JSONDecodeError):
+        return PollRequest(match_id=match_id, request_bytes=raw, stage=None, diagnostic="request_json_invalid")
+    except Exception:
         return PollRequest(match_id=match_id, request_bytes=raw, stage=None, diagnostic="malformed_request")
     try:
         envelope: BotEnvelope = parse_bot_envelope(payload)
-    except BotEnvelopeError:
+    except BotEnvelopeError as exc:
+        return PollRequest(
+            match_id=match_id,
+            request_bytes=raw,
+            stage=None,
+            diagnostic=_ENVELOPE_DIAGNOSTICS.get(exc.code, "malformed_request"),
+        )
+    except Exception:
         return PollRequest(match_id=match_id, request_bytes=raw, stage=None, diagnostic="malformed_request")
     return PollRequest(match_id=match_id, request_bytes=raw, stage=envelope.current_request, replay=envelope.replay)
 
