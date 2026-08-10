@@ -1390,6 +1390,17 @@ U0-A1 实际结果：
 - 稳定规则 ZIP hash 保持 `29e7ec827abf0ff6673bfeafab254cb9cc2174edc37bf1c802dcc15a346de351`；
 - 唯一判定 `botzone_deepseek_probe_package_verified`。
 
+U0-A2 人工准入结果：
+
+- 固定状态：`probe_dns_or_connect_failed`；
+- Botzone verdict OK，无决策超时；
+- 规则动作合法，对局完整结束；
+- 首个探测输出约 61 ms；
+- 用户存储凭据契约通过，但没有 HTTP 或模型响应；
+- 唯一判定 `botzone_deepseek_egress_admission_blocked`。
+
+该人工结果只记录固定状态与聚合运行信息；附件中的牌、request、response 和账号相关内容不得复制到 fixture 或仓库。禁止用重复探测、代理、IP 直连、关闭 TLS 或延长重试来改写该结论。
+
 ### 8.3 后续完整体 parity 测试
 
 进入 U1 后，应使用同一公开局面比较 Python 3.11 engine 与 Python 3.6 上传实现：

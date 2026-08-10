@@ -653,4 +653,23 @@ U0-A1 已完成并封存为实现检查点 `085162972363e634fe224c9f1725063b3cd1
 - 定向 12 项、全量 556 项和 diff check 通过；
 - 未联网、未读取真实 key、未连接 Botzone。
 
-当前执行 `docs/NEXT_PROMPT.md` 的 U0-A2：用户人工上传探测 ZIP，在一个全新无贡测试中确认固定状态。只有 `probe_ok`、无 Botzone 决策超时且规则动作被接受，才判定 `botzone_deepseek_egress_admission_verified` 并进入 U1。
+U0-A2 已完成一次人工新无贡对局：
+
+- 固定状态：`probe_dns_or_connect_failed`；
+- Botzone verdict OK，无决策超时；
+- 规则动作被裁判接受，对局完整结束；
+- 首个探测输出约 61 ms；
+- 凭据状态不是 unavailable，说明 `data/deepseek_credentials.json` 的路径、读取和 JSON 契约通过；
+- 没有 HTTP 状态或模型响应，不能声称 DeepSeek API 已被访问。
+
+唯一判定：`botzone_deepseek_egress_admission_blocked`。
+
+该结果不能进一步归因为 Botzone 全局禁网、域名限制或具体出口策略，但足以否决当前“上传 Bot 直接实时调用 DeepSeek”的准入。长时运行只减少冷启动，不能解决连接失败。
+
+当前执行 `docs/NEXT_PROMPT.md` 的 U0-A3 架构分流决策：
+
+1. 推荐：改为“无需 connector 的 Botzone 完整本地 AI”，继续完整合法动作、本地策略和本地 RAG；
+2. 若必须实时 DeepSeek，则恢复本机 connector 路线；
+3. 或暂停 Botzone 完整体，保留当前规则 Bot。
+
+项目所有者明确选择前，不进入 U1，不修改上传包，也不重复网络探测。

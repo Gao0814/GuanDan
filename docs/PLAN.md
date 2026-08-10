@@ -1110,8 +1110,8 @@ Botzone JSON input
 #### U0：出网、凭据与时限准入
 
 - U0-A1：已完成。独立探测 ZIP 只做一次最小请求，实际动作始终使用规则基线；fake opener 离线契约、Python 3.6 grammar 和全量 556 项已通过。实现检查点 `085162972363e634fe224c9f1725063b3cd13686`。
-- U0-A2：当前下一步。用户人工上传新版本，在新无贡测试桌中确认固定脱敏分类和平台耗时。
-- 验收：只有 `probe_ok` 且延迟有稳定余量才进入 U1；出网禁止或稳定超时则支线阻塞。
+- U0-A2：已完成一次人工新无贡对局。结果为 `probe_dns_or_connect_failed`；无 Botzone 超时，规则动作合法，对局完成，首个探测输出约 61 ms。
+- U0 结论：`botzone_deepseek_egress_admission_blocked`。用户存储凭据契约通过，但 Botzone 评测环境未建立到 DeepSeek 的连接；不得进入实时 DeepSeek U1/U2/U3。
 
 #### U1：完整无贡合法动作与公开状态迁移
 
@@ -1153,4 +1153,4 @@ Botzone JSON input
 
 ### 9.5 当前下一步
 
-执行 `docs/NEXT_PROMPT.md` 中的 U0-A2。该步骤不修改代码：用户自行把凭据文件放入 Botzone 用户存储、上传探测 ZIP，并只回报固定状态码、是否超时和动作是否合法。只有 `probe_ok` 才开放 U1。
+执行 `docs/NEXT_PROMPT.md` 中的 U0-A3。项目所有者需在三条路线中选择：A）无需 connector 的完整本地 AI；B）恢复 connector + DeepSeek；C）暂停 Botzone 完整体。在选择前不安排代码任务。

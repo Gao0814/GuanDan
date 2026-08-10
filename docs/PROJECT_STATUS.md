@@ -7,7 +7,7 @@
 - prompt coverage 实现检查点：`bc689a37f462672033d754cce7060897d70c7612`
 - prompt coverage 恢复验收 HEAD：`6b62156a98cfb97dd11e30df5f95a62dba99accd`
 - K-A3d1 检查点：`b75dace33d399704e45909ce31c339a7a7e14226`；K-A3d2 检查点：`415c86dc5034ca85862f52e94d1406aa58042b98`
-- 当前工作状态：“无需 connector 的 Botzone DeepSeek 完整体 Bot”支线已完成 U0-A1 离线探测包；下一步为 U0-A2 用户人工上传验收，模型仍不参与动作选择
+- 当前工作状态：“无需 connector 的 Botzone DeepSeek 完整体 Bot”已在 U0-A2 判定出网阻塞；下一步 U0-A3 由项目所有者选择完整本地 AI、恢复 connector 或暂停
 - 测试基线：`python -m unittest discover -q`
 - 实际验证结果：本地 connector 历史 smoke 结论仍为 invalid；独立上传 Bot 已由用户人工报告完成两局。两条路径互不追认，当前主线转向上传 Bot
 - 当前规则范围：单局掼蛋核心规则
@@ -73,7 +73,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
 | Botzone connector 接入 | 暂停 | 协议、adapter、mock connector 与 finished provenance 已实现 | 历史 live smoke 均不作为当前上传 Bot 前置 |
 | Botzone 上传规则 Bot | 基线可用 | Python 3.6.5、无贡、传统 JSON、自然牌动作子集；用户报告完整运行两局 | 未覆盖完整逢人配动作、当前完整策略与 DeepSeek |
-| Botzone DeepSeek 完整体 | U0-A1 完成 | Python 3.6 探测 ZIP、固定脱敏状态、规则动作等价、零重试 | 待 U0-A2 验证沙箱出网、用户存储凭据和 API 时限 |
+| Botzone DeepSeek 完整体 | U0-A2 blocked | 用户存储凭据契约通过；规则动作合法且整局完成 | `probe_dns_or_connect_failed`，上传沙箱未建立 DeepSeek 连接 |
 | 残局推断 | 未完成 | 外部剩余少时显示完整点数 | 尚未接近逐玩家明牌 |
 | 策略评测 | 部分完成 | 已有信念校准、策略分布、prompt coverage 和真实响应质量代理 | confidence 未观察到净增益；尚无中局路由与完整对局指标 |
 
@@ -1391,4 +1391,16 @@ U0-A1 已完成：
 - 定向 12 项、全量 556 项、`git diff --check` 通过；
 - 未联网、未读取真实凭据，DeepSeek 未参与动作选择。
 
-下一步 U0-A2：用户在 Botzone 用户存储配置 `data/deepseek_credentials.json`，上传独立探测 ZIP，在新无贡测试中只回报固定状态码、是否超时和动作是否合法。只有 `probe_ok` 且无 Botzone 超时才开放 U1。
+U0-A2 人工结果：
+
+- 用户完成一次新无贡对局；
+- 固定状态为 `probe_dns_or_connect_failed`；
+- Botzone verdict 为 OK，无决策超时；
+- 规则动作被裁判接受，对局完整结束；
+- 首个探测输出约 61 ms，属于快速 DNS/连接失败，不是 3 秒模型超时；
+- 状态不是 `credential_unavailable`，因此用户存储路径、文件读取和 JSON 格式门槛已通过；
+- 未得到 HTTP 状态或模型响应，DeepSeek 未参与动作。
+
+唯一判定：`botzone_deepseek_egress_admission_blocked`。
+
+下一步 U0-A3：项目所有者选择 A）无需 connector 的完整本地 AI；B）恢复 connector + DeepSeek；C）暂停 Botzone 完整体。未选择前不进入 U1。
