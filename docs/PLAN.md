@@ -64,6 +64,13 @@
 - 系统 PATH 中的 `python` 所加载版本不具备该能力；项目 `.venv` 的 `dotenv.main.load_dotenv()` 明确先检查 `PYTHON_DOTENV_DISABLED`，命中后在创建 `DotEnv` 或解析文件前直接返回。
 - 不需要代码修复。后续所有 preflight 强制使用 `.venv\Scripts\python.exe`，并在同一子环境设置禁用开关。
 
+### L5-A2b6d 本地结果
+
+- 项目 `.venv` 下的受监督 preflight 已通过：exit 0、`preflight_ready`、stderr 空、206 ms、state/进程清理完成。
+- 全部 Botzone/DeepSeek/DNS/socket/HTTP/connector/action 计数为 0；判定 `botzone_deepseek_connector_local_preflight_ready`。
+- 本地配置调试结束，不再新增诊断任务。
+- 下一步 L5-A2b7 一次性收集三个 Bot ID、`me` 座位、旧桌清理、无贡 fail-closed 接受和完整 live 授权，然后执行唯一 runmatch smoke。
+
 ## 1. 当前结论
 
 截至 2026-08-10，项目已经完成：

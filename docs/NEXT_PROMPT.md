@@ -1,88 +1,66 @@
 # 下一步实施提示词
 
-## Step L5-A2b6d：简化配置修复与 runmatch 实测准备
+## Step L5-A2b7：runmatch 单局 DeepSeek live smoke
 
-本任务停止新增诊断载体，直接使用现有安全错误分类修正本地配置，直到零网络 preflight 通过。只有真实 Botzone/DeepSeek 请求继续采用单次授权和固定预算；纯本地 preflight 允许在每次明确修正后重新运行。
+当前状态为 `botzone_deepseek_connector_local_preflight_ready`。本步骤等待项目所有者一次性提供 runmatch 输入并明确授权；在完整信息到齐前不得联网。
 
-### 已确认基线
+### 已通过门槛
 
-- profile 检查点：`8e8d639011bd095bcf0af74816609c63e8c6199f`。
-- 安全诊断契约检查点：`3f2cadb7f242625ca0978c5b47a5bc6f5ed299e7`。
-- 定向 26 项、全量 578 项和补丁检查已通过。
-- L5-A2b6d 尚未执行；此前 L5-A2b6、L5-A2b6a/b 的 invalid 结果保留，但不再约束新的纯本地 preflight 必须“一次失败永久停止”。
-- Botzone 官方与用户提供的文章均确认 `runmatch`：把本地 AI URL 最后一段 `localai` 改为 `runmatch`，发送 GET，并使用 `X-Game`、`X-Player-0..n` 和可选 `X-Initdata`；玩家中必须恰好一个 `me`。
-- 参考：[Botzone 官方本地 AI](https://wiki.botzone.org.cn/index.php?title=%E6%9C%AC%E5%9C%B0AI)、[用户提供的快速创建对局文章](https://blog.csdn.net/sinat_37574187/article/details/145495160)。
+- 使用项目 `.venv\Scripts\python.exe`。
+- `PYTHON_DOTENV_DISABLED=1` 在文件解析前生效，未读取仓库 `.env`。
+- preflight exit 0，stdout 单行 `preflight_ready`，stderr 空，用时 206 ms。
+- 临时 state 前后为空并删除，无残留 connector。
+- Botzone GET、DeepSeek request、DNS/socket/HTTP、transport、connector cycle、Agent action、`suggest_action_id()` 均为 0。
+- 工作区干净。
+- 该结果只证明本地组合可构造，不证明外部服务可达。
 
-### 第一阶段：直接修复本地配置
-
-1. 不修改代码，不创建新的诊断脚本。
-2. 必须使用项目虚拟环境解释器，不得使用 PATH 中不确定的系统 `python`：
+### 项目所有者需一次性回复
 
 ```text
-D:\VsCodeProject\GuanDan\.venv\Scripts\python.exe -m integrations.botzone --agent deepseek --preflight-only --state-dir <fresh-state-dir>
+Bot ID 1：<可参与 GuanDan 的现有 Bot ID>
+Bot ID 2：<可参与 GuanDan 的现有 Bot ID>
+Bot ID 3：<可参与 GuanDan 的现有 Bot ID>
+me 座位：<0|1|2|3>
+旧本地 AI 测试桌已全部关闭：是
+接受省略 X-Initdata，并在非零 tribute 或贡还阶段立即停止且不重试：是
 ```
 
-3. 在同一个 `.venv` 解释器中只读确认 `dotenv.main.load_dotenv` 支持 `PYTHON_DOTENV_DISABLED`，且禁用判断发生在 `DotEnv` 创建和文件解析之前。不得读取 `.env`。
-4. 子进程显式设置：
+三个 Bot ID 和 `me` 必须组成四个不同座位；runmatch Header 中必须恰好一个 `me`。Bot ID 只用于本次请求，不写入仓库、docs 或普通日志。
+
+### 必须同时给出的明确授权
+
+项目所有者的同一回复还必须包含：
 
 ```text
-PYTHON_DOTENV_DISABLED=1
-DEEPSEEK_TIMEOUT=60
-DEEPSEEK_MAX_RETRIES=0
+我明确授权执行 L5-A2b7：向由当前 BOTZONE_LOCAL_AI_URL 在内存中派生的 runmatch endpoint 发送一次 GET，并向当前 local-AI endpoint 最多发送 100 次 GET；允许将本家未公开手牌、公开局面、engine 合法候选、手牌评估、记牌摘要、场景标签和本地 RAG 片段发送到 https://api.deepseek.com 的 deepseek-v4-flash。DeepSeek timeout 为 60 秒、retries 为 0；只启动一个 connector，只创建一个 runmatch 对局，最长 3600 秒，完成一局即停。若首个请求显示非零 tribute，或出现 tribute/return，立即停止且不重试。
 ```
 
-项目 `.venv` 中的 `python-dotenv` 已确认会在读取文件前处理该开关并直接返回；`config.py` 无需自行识别它。不得读取仓库 `.env`，不得输出 URL、key 或路径值。
-5. 根据固定输出直接处理：
-   - `preflight_runtime_config_missing`：补齐当前进程缺失的 Botzone URL 或 DeepSeek 必需变量；
-   - `preflight_runtime_config_url_invalid`：从 Botzone 本地 AI 配置页重新复制完整 HTTPS URL，仅写入进程环境；
-   - timeout/response/failure/backoff invalid：恢复代码已锁定的正数参数，DeepSeek 保持 60/0；
-   - state directory/operation invalid：换用全新系统临时目录；
-   - `preflight_agent_composition_failed`：只检查显式 DeepSeek endpoint/model/key/60/0 与本地 RAG 文件可读性；
-   - `preflight_configuration_error`：报告固定类别和本地阶段，不再搭建新载体。
-6. 每次只修正当前固定类别对应的一项配置，然后可重新运行纯本地 preflight；本地运行不设“仅一次”限制。
-7. 每轮必须保持 Botzone GET、DeepSeek request、DNS/socket/HTTP、transport、connector cycle、Agent action 和 `suggest_action_id()` 全部为 0。
-8. 达到 exit 0、单行 `preflight_ready`、stderr 空、state 清理完成后停止本地调试。
+### 授权后的固定执行顺序
 
-本阶段通过判定：
+1. 复核工作区干净、配置元数据匹配、无残留 connector；不再重复完整回归。
+2. 创建全新仓库外 state/audit；只记录聚合计数和固定诊断。
+3. 使用项目 `.venv`、`PYTHON_DOTENV_DISABLED=1`、DeepSeek 60/0 启动唯一 connector。
+4. 确认 local-AI poll 已连接后，派生 runmatch URL，仅发送一次：
 
 ```text
-botzone_deepseek_connector_local_preflight_ready
-```
-
-### 第二阶段：runmatch 快速建桌准备
-
-preflight 通过后，不立即联网。先向项目所有者收集并确认：
-
-1. 三个可参与 GuanDan 的现有 Bot ID；
-2. 本地 AI `me` 所在座位 `0..3`；
-3. 所有旧本地 AI 测试桌已关闭；
-4. 接受 `X-Initdata` 暂不发送：官方只说明它可选，尚未给出 GuanDan“需要进贡=否”的确定编码。
-
-计划中的单次 runmatch 请求：
-
-```text
-GET <由当前 localai URL 在内存中替换末段得到的 runmatch URL>
 X-Game: GuanDan
-X-Player-0: me 或 Bot ID
-X-Player-1: me 或 Bot ID
-X-Player-2: me 或 Bot ID
-X-Player-3: me 或 Bot ID
+X-Player-0..3: 三个 Bot ID 与恰好一个 me
 ```
 
-必须恰好一个 `me`。URL、Bot ID、返回 match ID 和响应正文不得写入仓库、docs 或普通日志。
+不发送 `X-Initdata`。
+5. 创建成功后不记录返回 match ID；等待 connector 处理该局。
+6. 首个内层请求必须满足无贡 profile；否则 fail-closed。
+7. DeepSeek 任意异常、超时或非法 action ID 走现有 RuleBased fallback；所有 response 仍必须来自 engine 原始合法 action ID/provenance。
+8. 完成一个 qualified match、达到预算或出现固定失败后停止；不启动第二进程、不创建第二局、不补采。
 
-由于未发送 `X-Initdata`，创建后的首个请求必须验证 `global.tribute == 0`。若收到 `tribute`、`return` 或非零 tribute，立即 fail-closed，结束该局，不以空响应、pass 或随意牌绕过。
+### 验收边界
 
-### 第三阶段：新的 live 授权
+成功至少要求：runmatch 创建成功、非零 request/response/Header、qualified finished=1、transport failure=0、协议 diagnostics 为空、Botzone 无非法动作/决策超时、state 清理完成且无残留进程。
 
-在发起任何外部请求前，必须取得一次新的明确授权，覆盖：
+成功只能判定：
 
-- 向 Botzone 发送一次 `runmatch` GET 以及最多 100 次 local-AI GET；
-- 向 `https://api.deepseek.com` 的 `deepseek-v4-flash` 发送本家未公开手牌、公开局面、合法候选、评估/记牌摘要、场景标签和 RAG 片段；
-- DeepSeek timeout 60 秒、retries 0；
-- 一个 connector、一个 runmatch 对局、最长 3600 秒、完成一局即停；
-- 若对局不是无贡，立即停止且不重试。
+```text
+botzone_deepseek_runmatch_no_tribute_smoke_verified
+```
 
-未获得三个 Bot ID、座位、旧桌清理确认和完整授权前，不得联网。获得后应先启动 connector，确认 Botzone 显示已连接，再发送唯一 runmatch 请求。
-
-本任务不新增诊断载体，不修改 runtime，也不预先宣称 DeepSeek 可达、动作质量或胜率提升。
+该结论只证明一次 Botzone/DeepSeek/RuleBased fallback 闭环可运行，不证明 DeepSeek 一定参与每手、动作质量或胜率提升。

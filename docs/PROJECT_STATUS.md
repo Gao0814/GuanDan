@@ -26,6 +26,8 @@ L5-A2b6c 已完成并封存为 `3f2cadb7f242625ca0978c5b47a5bc6f5ed299e7`，判�
 
 随后出现 `precondition_failed: dotenv_disable_not_honored`，但本地源码复核确认这是解释器版本混淆：系统 `python` 的 dotenv 版本不支持该开关，而项目 `.venv` 版本在文件访问前明确支持并短路。无需修改 `config.py`；L5-A2b6d 仍未执行，下一次必须显式使用项目 `.venv\Scripts\python.exe`。
 
+L5-A2b6d 本地阶段随后通过，判定 `botzone_deepseek_connector_local_preflight_ready`：exit 0、单行 `preflight_ready`、stderr 空、206 ms，state 与进程清理完成，全部网络/模型/动作计数为 0。当前不再阻塞于配置；下一步等待 L5-A2b7 的三个 Bot ID、`me` 座位、旧桌清理确认、无贡 fail-closed 接受和完整 live 授权。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线

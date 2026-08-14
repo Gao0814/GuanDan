@@ -35,6 +35,8 @@ L5-A2b6c 定向 26 项、全量 578 项和 `git diff --check` 通过。测试锁
 
 dotenv 禁用能力已通过项目 `.venv` 内安装源码只读复核：`load_dotenv()` 在任何 `DotEnv` 创建或文件解析前检查 `PYTHON_DOTENV_DISABLED` 并返回。系统 `python` 与 `.venv` 的 dotenv 版本不同，后续命令必须显式使用 `.venv\Scripts\python.exe`；该复核未读取 `.env` 或配置值，网络计数为 0。
 
+最终受监督本地 preflight 使用项目 `.venv`：exit 0、stdout=`preflight_ready`、stderr 空、206 ms；临时 state 前后为空并删除，无残留进程，Botzone/DeepSeek/DNS/socket/HTTP/transport/connector/action/suggestion 计数均为 0。该结果不是 live 或外部可达性测试。
+
 ## 1. 测试入口
 
 全部测试：

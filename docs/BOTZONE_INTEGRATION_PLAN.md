@@ -39,6 +39,8 @@
 
 preflight 必须使用项目 `.venv\Scripts\python.exe`。该环境的 `python-dotenv` 在 `load_dotenv()` 入口先检查 `PYTHON_DOTENV_DISABLED`，命中后不会创建解析器或读取 `.env`；系统 PATH 中其他 Python 版本不作为受支持运行环境。
 
+本地 preflight 已以该解释器通过，耗时 206 ms，所有网络/模型计数为 0。L5-A2b7 将使用三个现有 GuanDan Bot ID、唯一 `me` 和一次 runmatch GET 创建唯一对局；省略 `X-Initdata`，收到非零 tribute 或贡还阶段立即停止。
+
 更新时间：2026-08-09
 
 ## 0. Phase 0：手动建桌无贡 profile 官方协议封板（2026-08-09）
