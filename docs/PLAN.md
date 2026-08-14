@@ -100,6 +100,14 @@
 - 判定仍为 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`。该结果不证明 play ack、DeepSeek 决策或完整对局。
 - 现有 runner 把长轮询 timeout 与真实网络故障合并计入 failure limit，audit 也不能细分 raw finished。下一步 L5-A2b11 直接加固固定 transport category、idle timeout 和 finished provenance，不再增加外部诊断载体。
 
+### L5-A2b11 已完成
+
+- 检查点 `220c648a4629453621f534beaeb95e52d85656ce` 精确包含 3 个 integration 文件和 5 个测试文件。
+- timeout 已成为独立 idle 计数，不触发退避或 failure limit；其他 transport error 保留固定安全 category 与失败预算。
+- audit 升至 v5，在保留既有字段的同时新增 timeout、failure category 和互斥 finished provenance；qualified finished 门槛未降低。
+- 80 项定向相关、587 项全量及补丁检查通过，工作区干净且未联网。
+- 下一步 L5-A2b12 只运行一次零网络 preflight；ready 后重新请求 L5-A2b13 live 授权。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

@@ -49,6 +49,8 @@ L5-A2b8 已按该设计完成：检查点 `2cd208b9b8f7306decf3182318fb55278c09d
 
 L5-A2b10 已在真实平台证明 direct-stage request/response/Header 可达，但闭环因 transport failure limit 与 unqualified raw finished 失败。官方 local-AI 是长轮询，timeout 可能只是当前无新 request；现有聚合却无法区分 timeout 与其他 transport failure。L5-A2b11 将 timeout 作为受 wall/cycle 约束的 idle 结果，并为其他失败保留固定 category；同时细分 aborted、非四人、四人未 qualified 与 qualified finished，但绝不以 raw finished 替代 play-ack qualification。
 
+L5-A2b11 已按该设计完成并封存为 `220c648a4629453621f534beaeb95e52d85656ce`。timeout 现为独立 idle 计数，真实 transport failure 保持安全分类和失败上限；v5 audit 提供互斥 finished provenance，仍只有已 ack play 的四人 finished 能 qualified。下一步先做一次零网络组合准入，之后才重新取得 live 授权。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

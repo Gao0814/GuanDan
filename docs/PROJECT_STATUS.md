@@ -36,6 +36,8 @@ L5-A2b8 已完成并封存为 `2cd208b9b8f7306decf3182318fb55278c09d641`，判�
 
 L5-A2b10 唯一 live 已结束，仍判定 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`：runmatch 成功，direct-stage requests/responses/headers=`1/1/1` 且无协议诊断，但 connector 因 6 次聚合 transport failure 达到 failure limit；raw/qualified finished=`1/0`。state 已最小化、无残留进程，未重试。下一步 L5-A2b11 不联网，直接区分预期长轮询 timeout 与真实 transport failure，并增加不含逐局信息的 finished provenance 聚合；qualified 门槛不放宽。
 
+L5-A2b11 已完成并封存为 `220c648a4629453621f534beaeb95e52d85656ce`，判定 `botzone_long_poll_transport_contract_verified`。长轮询 timeout 不再占 failure budget；其他固定 transport category 继续退避并受失败上限约束。v5 audit 新增 timeout/failure category 与 aborted、非四人、四人未合格、合格 finished 聚合，旧字段兼容且仅 qualified 可停止。80/587 测试及补丁检查通过，未联网。下一步 L5-A2b12 为唯一零网络 preflight。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-10
