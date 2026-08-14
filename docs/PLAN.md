@@ -85,6 +85,14 @@
 - 该 live 结论为 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`，授权已消耗，不重试。
 - 下一步 L5-A2b8 直接实现双 wire mode：信封模式保持包装与 replay，direct-stage 模式使用 durable session 并发送 canonical 原始 GuanDan response。停止新增诊断载体。
 
+### L5-A2b8 已完成
+
+- 检查点 `2cd208b9b8f7306decf3182318fb55278c09d641` 精确包含 3 个 integration 文件和 4 个对应测试文件。
+- `PollRequest` 已显式区分 `bot_envelope` / `direct_stage`；前者保留 replay 与 response wrapper，后者使用 durable session 和 canonical 原始 GuanDan response。
+- direct 冷启动 play、unsupported stage、非法响应、注入、pending 重发/ack 和 action provenance 均 fail-closed；原 envelope 契约保持兼容。
+- 68 项定向、583 项全量和补丁检查通过，工作区干净；未联网。
+- 下一步 L5-A2b9 只做一次零网络本地准入；ready 后请求新的 L5-A2b10 live 授权，不在同一步联网。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

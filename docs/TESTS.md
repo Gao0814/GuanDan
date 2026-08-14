@@ -41,6 +41,8 @@ L5-A2b7 已收到完整输入与 live 授权，本轮文档更新未新增测试
 
 L5-A2b7 实际运行未达到上述门槛：runmatch 成功但 requests/responses/headers=`1/0/0`，画像为 direct inner-stage candidate，未进入 session/Agent/DeepSeek。L5-A2b8 的离线回归必须同时覆盖 envelope 与 direct-stage 两种 wire mode，尤其锁定 mode 绑定的 Header 编码、direct deal/play session 连续性、pending/ack/restart、冷启动 play 拒绝、unsupported stage 和 envelope 兼容；实现步骤不得联网。
 
+L5-A2b8 已通过双模式定向 68 项、全量 583 项和 `git diff --check`，检查点为 `2cd208b9b8f7306decf3182318fb55278c09d641`。测试确认 direct deal/play 原始 response、envelope wrapper、malformed stage、冷启动 play、unsupported stage、注入、pending 重发/ack 和 provenance 边界。本实现阶段网络计数为 0；L5-A2b9 不重复全量测试，只执行一次零网络 preflight。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

@@ -45,6 +45,8 @@ L5-A2b7 的项目所有者输入与授权已齐备：本家座位为 0，三个�
 
 L5-A2b7 证明 runmatch 可创建，但 local-AI poll 的实际请求是直接 GuanDan `stage` object，不是当前 connector 强制要求的 Bot `requests/responses` 信封。唯一运行在处理请求前 fail-closed，未触达 Agent 或 DeepSeek。L5-A2b8 将在 poll/response 边界显式区分 `bot_envelope` 与 `direct_stage`：前者保留 replay 和 response wrapper，后者依赖 durable session 并发送 canonical 原始 GuanDan response；两者均不得绕过 protocol、legal action provenance 或 pending/ack 事务。
 
+L5-A2b8 已按该设计完成：检查点 `2cd208b9b8f7306decf3182318fb55278c09d641` 保持 envelope replay 兼容，并让 direct deal/play 使用 durable session 与未包装的 canonical response。下一步先做一次零网络本地准入；只有准入 ready 且项目所有者重新明确授权后，才能以全新 state/audit 执行新的单次 runmatch smoke。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09
