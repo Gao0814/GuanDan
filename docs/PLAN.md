@@ -78,6 +78,12 @@
 - 项目所有者已接受省略 `X-Initdata`，并授权一次 runmatch GET、最多 100 次 local-AI GET、DeepSeek 60 秒/零重试、单 connector、单对局、最长 3600 秒。
 - Bot ID 与其他敏感值不写入文档或审计；下一步直接按 `NEXT_PROMPT.md` 执行唯一 live smoke。
 
+### L5-A2b7 任务上下文阻塞
+
+- 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
+- 这是跨任务敏感输入不可继承，不是 connector、Botzone 或 DeepSeek 故障。
+- 下一步 L5-A2b7a 必须在实际执行 live 的同一任务中重新收齐三个 Bot ID、`me=0`、旧桌/无贡确认和完整预算授权；核对后在该任务内直接执行，不再另开任务传递敏感值。
+
 ## 1. 当前结论
 
 截至 2026-08-10，项目已经完成：

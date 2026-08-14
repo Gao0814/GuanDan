@@ -39,6 +39,8 @@ dotenv 禁用能力已通过项目 `.venv` 内安装源码只读复核：`load_d
 
 L5-A2b7 已收到完整输入与 live 授权，本轮文档更新未新增测试运行。实际 smoke 必须验证：runmatch 仅请求一次、恰好一个 `me`、重复 Bot 组合若被拒绝则不重试、首请求无贡、非零 request/response/Header、qualified finished=1、零 transport/protocol failure、state 清理和无残留进程；任何不满足项均不得判为 verified。
 
+首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
+
 ## 1. 测试入口
 
 全部测试：

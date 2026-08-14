@@ -30,6 +30,8 @@ L5-A2b6d 本地阶段随后通过，判定 `botzone_deepseek_connector_local_pre
 
 L5-A2b7 输入与授权现已齐备：`me=0`，三个非本家位置复用同一个现有 GuanDan Bot，旧桌已关闭，并接受省略 `X-Initdata` 后对非零 tribute/贡还 fail-closed。授权限于一次 runmatch GET、最多 100 次 local-AI GET、DeepSeek 60/0、单 connector、单对局和 3600 秒。Bot ID 不落盘；若平台拒绝重复 Bot 组合，不更换输入或重试。
 
+随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线
