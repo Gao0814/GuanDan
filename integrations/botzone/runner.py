@@ -128,6 +128,7 @@ def build_foreground_runner(
     *,
     agent_mode: str = "rule",
     agent_factory_builder: Callable[[str], Callable[[int], object]] = build_agent_factory,
+    prepared_agent_factory: Callable[[int], object] | None = None,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> ForegroundRunner:
@@ -135,7 +136,7 @@ def build_foreground_runner(
         handler = NoTributeRuleBasedHandler()
     elif agent_mode == "deepseek":
         handler = NoTributeRuleBasedHandler(
-            agent_factory_builder(agent_mode),
+            prepared_agent_factory or agent_factory_builder(agent_mode),
             fallback_to_rule=True,
             cache_agents=True,
         )

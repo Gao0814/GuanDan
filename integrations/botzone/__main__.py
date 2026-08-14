@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Mapping
 
+from .agent_runtime import prepare_agent_factory
 from .http_transport import LocalAIHttpTransport
 from .runner import build_foreground_runner, exit_code_for, write_audit
 from .runtime_config import RuntimeConfigError, load_runtime_config, preflight_state_directory
@@ -33,6 +34,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             environ=environ,
         )
         preflight_state_directory(config)
+        prepared_agent_factory = prepare_agent_factory(arguments.agent)
         if arguments.preflight_only:
             print("preflight_ready")
             return 0
@@ -44,6 +46,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
                 max_response_bytes=config.max_response_bytes,
             ),
             agent_mode=arguments.agent,
+            prepared_agent_factory=prepared_agent_factory,
         )
         summary = runner.run(
             max_cycles=arguments.max_cycles,

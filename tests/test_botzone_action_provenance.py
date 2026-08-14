@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from pathlib import Path
 import re
+from types import MappingProxyType
+from unittest.mock import patch
 
 from integrations.botzone.cards import card_id_for
 from integrations.botzone.models import GlobalState, PlayRequest
-from integrations.botzone.play_adapter import AdapterError, NoTributeRuleBasedHandler
+from integrations.botzone.play_adapter import AdapterError, NoTributeRuleBasedHandler, project_decision
 from integrations.botzone.session import HandlerContext
 
 
@@ -53,15 +56,22 @@ class BotzoneActionProvenanceTests(unittest.TestCase):
     def test_non_integer_stale_and_exceptional_agent_answers_fail_closed(self) -> None:
         for answer in (True, "1", 1.0, 999):
             with self.subTest(answer=answer):
-                with self.assertRaises(AdapterError):
+                with self.assertRaisesRegex(AdapterError, "^invalid_agent_action_id$"):
                     NoTributeRuleBasedHandler(lambda _: _SpyAgent(answer))(_context())
 
         class Exploding:
             def select_action(self, observation: dict[str, object], legal_actions: list[dict[str, object]]) -> int:
                 raise RuntimeError("boom")
 
-        with self.assertRaises(AdapterError):
+        with self.assertRaisesRegex(AdapterError, "^agent_failure$"):
             NoTributeRuleBasedHandler(lambda _: Exploding())(_context())
+
+    def test_missing_provenance_remains_distinct_from_agent_validation(self) -> None:
+        context = _context()
+        projection = replace(project_decision(context), provenance=MappingProxyType({}))
+        with patch("integrations.botzone.play_adapter.project_decision", return_value=projection):
+            with self.assertRaisesRegex(AdapterError, "^missing_provenance$"):
+                NoTributeRuleBasedHandler(lambda _: _SpyAgent(1))(context)
 
     def test_inconsistent_context_is_rejected_before_agent_creation(self) -> None:
         context = _context()

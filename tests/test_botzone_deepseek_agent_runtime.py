@@ -12,11 +12,11 @@ from contextlib import redirect_stdout
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekSuggestion
 from agents.rule_based_ai import RuleBasedAIAgent
-from integrations.botzone.agent_runtime import AgentRuntimeError, _StrictDeepSeekClient, build_agent_factory
+from integrations.botzone.agent_runtime import AgentRuntimeError, _StrictDeepSeekClient, build_agent_factory, prepare_agent_factory
 from integrations.botzone.cards import card_id_for
 from integrations.botzone.connector import MockConnector
 from integrations.botzone.models import GlobalState, PlayRequest
-from integrations.botzone.play_adapter import NoTributeRuleBasedHandler
+from integrations.botzone.play_adapter import AdapterError, NoTributeRuleBasedHandler
 from integrations.botzone.runner import build_foreground_runner
 from integrations.botzone.runtime_config import RuntimeConfig
 from integrations.botzone.session import HandlerContext, SessionStore
@@ -151,6 +151,114 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
                 rag_factory=lambda: None,
             )
         self.assertEqual(client_calls, [])
+
+    def test_deepseek_fallback_has_distinct_failure_categories_and_single_attempts(self) -> None:
+        class _Fallback:
+            calls = 0
+            answer: object = 1
+
+            def __init__(self, *, player_id: int) -> None:
+                del player_id
+
+            def select_action(self, observation: dict[str, object], legal_actions: list[dict[str, object]]) -> object:
+                del observation, legal_actions
+                _Fallback.calls += 1
+                if isinstance(_Fallback.answer, BaseException):
+                    raise _Fallback.answer
+                return _Fallback.answer
+
+        cases = (
+            (RuntimeError("synthetic"), 1, None),
+            (RuntimeError("synthetic"), RuntimeError("synthetic"), "rule_fallback_failure"),
+            (True, True, "invalid_rule_fallback_action_id"),
+            (True, 999, "invalid_rule_fallback_action_id"),
+        )
+        for primary, fallback, expected_error in cases:
+            with self.subTest(primary=type(primary).__name__, fallback=type(fallback).__name__):
+                raw = _RawClient(primary)
+                _Fallback.calls = 0
+                _Fallback.answer = fallback
+                with patch("integrations.botzone.play_adapter.RuleBasedAIAgent", _Fallback):
+                    if expected_error is None:
+                        result = _deepseek_handler(raw)(_context())
+                        self.assertEqual(result.effect.action, tuple(json.loads(result.response)[0]))
+                    else:
+                        with self.assertRaisesRegex(AdapterError, "^" + expected_error + "$"):
+                            _deepseek_handler(raw)(_context())
+                self.assertEqual(len(raw.calls), 1)
+                self.assertEqual(_Fallback.calls, 1)
+
+        class _ExplodingAgent:
+            def select_action(self, observation: dict[str, object], legal_actions: list[dict[str, object]]) -> int:
+                del observation, legal_actions
+                raise RuntimeError("synthetic")
+
+        _Fallback.calls = 0
+        _Fallback.answer = 1
+        with patch("integrations.botzone.play_adapter.RuleBasedAIAgent", _Fallback):
+            result = NoTributeRuleBasedHandler(
+                lambda _: _ExplodingAgent(), fallback_to_rule=True
+            )(_context())
+        self.assertEqual(result.effect.action, tuple(json.loads(result.response)[0]))
+        self.assertEqual(_Fallback.calls, 1)
+
+    def test_deepseek_fallback_preserves_missing_provenance(self) -> None:
+        from dataclasses import replace
+        from types import MappingProxyType
+        from integrations.botzone.play_adapter import project_decision
+
+        context = _context()
+        projection = replace(project_decision(context), provenance=MappingProxyType({}))
+        raw = _RawClient(True)
+        with patch("integrations.botzone.play_adapter.project_decision", return_value=projection):
+            with self.assertRaisesRegex(AdapterError, "^missing_provenance$"):
+                _deepseek_handler(raw)(context)
+        self.assertEqual(len(raw.calls), 1)
+
+    def test_deepseek_preflight_composition_and_failure_precede_transport(self) -> None:
+        from integrations.botzone import __main__ as botzone_main
+
+        constructed: list[int] = []
+
+        def builder(mode: str) -> object:
+            self.assertEqual(mode, "deepseek")
+
+            def factory(player_id: int) -> object:
+                constructed.append(player_id)
+                return object()
+
+            return factory
+
+        self.assertIsNotNone(prepare_agent_factory("deepseek", agent_factory_builder=builder))
+        self.assertEqual(constructed, [1])
+        with TemporaryDirectory() as root:
+            config = RuntimeConfig("https://example.invalid", state_directory=Path(root))
+            output = io.StringIO()
+            with (
+                patch.object(botzone_main, "load_runtime_config", return_value=config),
+                patch.object(botzone_main, "preflight_state_directory"),
+                patch.object(botzone_main, "prepare_agent_factory", return_value=builder("deepseek")) as prepare,
+                patch.object(botzone_main, "LocalAIHttpTransport", side_effect=AssertionError("transport_constructed")),
+                redirect_stdout(output),
+            ):
+                self.assertEqual(botzone_main.main(["--agent", "deepseek", "--preflight-only"]), 0)
+            self.assertEqual(output.getvalue(), "preflight_ready\n")
+            self.assertEqual(prepare.call_count, 1)
+        with TemporaryDirectory() as root:
+            config = RuntimeConfig("https://example.invalid", state_directory=Path(root))
+            output = io.StringIO()
+            with (
+                patch.object(botzone_main, "load_runtime_config", return_value=config),
+                patch.object(botzone_main, "preflight_state_directory"),
+                patch.object(botzone_main, "prepare_agent_factory", side_effect=AgentRuntimeError("synthetic")),
+                patch.object(botzone_main, "LocalAIHttpTransport") as transport,
+                patch.object(botzone_main, "build_foreground_runner") as runner,
+                redirect_stdout(output),
+            ):
+                self.assertEqual(botzone_main.main(["--agent", "deepseek", "--preflight-only"]), 2)
+            self.assertEqual(output.getvalue(), "configuration_error\n")
+            self.assertEqual(transport.call_count, 0)
+            self.assertEqual(runner.call_count, 0)
 
     def test_cli_passes_only_explicit_agent_mode_to_composition_root(self) -> None:
         from integrations.botzone import __main__ as botzone_main

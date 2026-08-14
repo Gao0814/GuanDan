@@ -151,32 +151,69 @@ class NoTributeRuleBasedHandler:
         engine_player = botzone_player_to_engine_player(context.local_player_id)
         cache_key = (context.match_key, engine_player)
         agent = self._agents.get(cache_key) if self._cache_agents else None
-        if agent is None:
-            agent = self._agent_factory(engine_player)
-            if self._cache_agents:
-                self._agents[cache_key] = agent
         try:
+            if agent is None:
+                agent = self._agent_factory(engine_player)
+                if self._cache_agents:
+                    self._agents[cache_key] = agent
             selected = agent.select_action(agent_observation, agent_actions)
-            if type(selected) is not int:
-                raise TypeError("invalid_agent_action_id")
-            selected_id = require_legal_action_id(selected, [dict(action) for action in projection.legal_actions])
         except Exception as exc:
             if not self._fallback_to_rule:
                 raise AdapterError("agent_failure") from exc
-            fallback = RuleBasedAIAgent(player_id=engine_player)
-            try:
-                selected = fallback.select_action(agent_observation, agent_actions)
-                if type(selected) is not int:
-                    raise AdapterError("invalid_rule_fallback_action_id")
-                selected_id = require_legal_action_id(selected, [dict(action) for action in projection.legal_actions])
-            except Exception as fallback_exc:
-                raise AdapterError("rule_fallback_failure") from fallback_exc
+            selected_id = _fallback_action_id(
+                engine_player,
+                agent_observation,
+                agent_actions,
+                projection.legal_actions,
+            )
+        else:
+            if type(selected) is not int:
+                if not self._fallback_to_rule:
+                    raise AdapterError("invalid_agent_action_id")
+                selected_id = _fallback_action_id(
+                    engine_player,
+                    agent_observation,
+                    agent_actions,
+                    projection.legal_actions,
+                )
+            else:
+                try:
+                    selected_id = require_legal_action_id(selected, [dict(action) for action in projection.legal_actions])
+                except (TypeError, ValueError) as exc:
+                    if not self._fallback_to_rule:
+                        raise AdapterError("invalid_agent_action_id") from exc
+                    selected_id = _fallback_action_id(
+                        engine_player,
+                        agent_observation,
+                        agent_actions,
+                        projection.legal_actions,
+                    )
         action = projection.provenance.get(selected_id)
         if action is None:
             raise AdapterError("missing_provenance")
         action_claim = encode_action_claim(action, context.own_hand, context.global_state.level)
         response = json.dumps(action_claim.to_json(), separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         return HandlerResult(response, PlayEffect(action_claim.action))
+
+
+def _fallback_action_id(
+    engine_player: int,
+    observation: dict[str, object],
+    agent_actions: list[dict[str, object]],
+    canonical_actions: Sequence[Mapping[str, object]],
+) -> int:
+    """Select exactly once with the local rule agent after a model-path failure."""
+
+    try:
+        selected = RuleBasedAIAgent(player_id=engine_player).select_action(observation, agent_actions)
+    except Exception as exc:
+        raise AdapterError("rule_fallback_failure") from exc
+    if type(selected) is not int:
+        raise AdapterError("invalid_rule_fallback_action_id")
+    try:
+        return require_legal_action_id(selected, [dict(action) for action in canonical_actions])
+    except (TypeError, ValueError) as exc:
+        raise AdapterError("invalid_rule_fallback_action_id") from exc
 
 
 def encode_action_claim(action: Action, own_hand: Sequence[int], level: str) -> ActionClaim:

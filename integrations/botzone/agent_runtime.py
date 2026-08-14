@@ -99,3 +99,24 @@ def build_agent_factory(
         )
 
     return create
+
+
+def prepare_agent_factory(
+    mode: str,
+    *,
+    agent_factory_builder: Callable[[str], Callable[[int], object]] = build_agent_factory,
+) -> Callable[[int], object] | None:
+    """Validate the selected local agent composition before transport exists."""
+
+    if mode == "rule":
+        return None
+    if mode != "deepseek":
+        raise AgentRuntimeError("invalid_agent_mode")
+    try:
+        factory = agent_factory_builder(mode)
+        # DeepSeekAIAgent completes its local configuration in __post_init__.
+        # A disposable instance proves that path without selecting an action.
+        factory(1)
+    except Exception as exc:
+        raise AgentRuntimeError("deepseek_configuration_unavailable") from exc
+    return factory
