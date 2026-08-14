@@ -787,4 +787,6 @@ L5-A2b3 在启动前发现 timeout/retries 不匹配锁定预算，判定 `preco
 
 L5-A2b3a 在用户变量设置和重启后仍因桌面执行宿主未继承 60/0 而 precondition failed；其余门槛通过，零网络且授权未消耗。
 
-执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3b。在唯一子环境显式锁定 60/0，依次完成预算探测和零网络 preflight；不得直接 live。
+L5-A2b3b 已完成：当前新进程六项门槛、24 项定向、唯一 preflight 和显式 AppConfig 探测通过；约 171 ms、exit 0、空 state/残留、零网络。探测作为 preflight 后补充证据，未重跑 preflight。判定 `botzone_deepseek_connector_v3_preflight_ready`。
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3c。只获得历史测试桌已清理的人工确认，并准备新的 L5-A2b4 授权问题；不得使用工具或直接 live。

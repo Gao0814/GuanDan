@@ -1562,3 +1562,12 @@ L5-A2a 前置实际结果：检查点、工作区、23/569 回归和四项脱敏
 - 探测通过后，同一子环境运行唯一 preflight；
 - preflight 的 exit/stdout/stderr/state/残留/零网络门槛保持不变；
 - 不修改持久环境或 `.env`，不启动 live。
+
+实际结果：当前进程六项门槛、检查点、24 项定向、diff check 与残留检查通过。唯一 preflight 约 171 ms、exit 0、stdout=`preflight_ready`、stderr/state 空、临时目录删除且无残留；随后补充的显式 60/0 AppConfig 探测返回 `deepseek_budget_ready`，未重跑 preflight。网络与模型请求为 0，判定 `botzone_deepseek_connector_v3_preflight_ready`。
+
+### 9.11 L5-A2b3c 人工桌面门槛
+
+- 项目所有者确认所有历史本地 AI 测试桌已结束或关闭；
+- 下一次只在 connector 已连接后创建一个新无贡桌；
+- 不同时保留或创建第二个活动桌；
+- 本阶段不运行测试、preflight 或 live，只在确认后提出 L5-A2b4 授权问题。

@@ -1514,6 +1514,16 @@ endpoint/model 门槛通过，但当前 DeepSeek runtime 配置不满足已授�
 
 下一步不再依赖父进程继承：在唯一 PowerShell 子环境显式注入 60/0，先做固定输出的 AppConfig 零网络探测，再执行唯一零网络 preflight。本阶段不 live。
 
+### L5-A2b3b 实际结果
+
+当前新进程中六项配置门槛、检查点、工作区、24 项定向、diff check 与残留进程检查通过。唯一零网络 preflight 约 171 ms 后 exit 0，stdout 固定、stderr/state 为空，临时目录删除且无残留；显式 60/0 的 AppConfig 固定探测返回 `deepseek_budget_ready`。实际顺序为严格环境数值门槛、唯一 preflight、补充 AppConfig 探测；未重跑 preflight，网络与模型请求为 0。
+
+唯一判定：`botzone_deepseek_connector_v3_preflight_ready`。
+
+### 当前阶段：L5-A2b3c
+
+下一步只要求项目所有者确认所有历史本地 AI 测试桌已关闭，并承诺下一次只有一个新无贡桌。确认后再单独请求 L5-A2b4 授权；本阶段不得执行工具或联网。
+
 ### 后续边界
 
-L5-A2b1 已执行且 invalid；L5-A2b3/L5-A2b3a 的授权未消耗，但在子进程预算探测和 preflight 通过前不得使用。当前仍不形成 Botzone 协议闭环、DeepSeek 可达、动作质量或胜率结论。
+L5-A2b1 已执行且 invalid；L5-A2b3b 只恢复零网络准入，不能复用历史 live 授权。当前仍不形成 Botzone 协议闭环、DeepSeek 可达、动作质量或胜率结论。

@@ -1263,6 +1263,14 @@ Botzone JSON input
 - 再在同一子环境执行唯一零网络 preflight；
 - 不修改用户/系统环境或 `.env`，不在同一步 live。
 
+实际结果：当前新进程六项门槛与 24 项定向通过；唯一 preflight 约 171 ms、exit 0、固定 stdout、空 stderr/state、临时目录删除且无残留；显式 60/0 的 AppConfig 固定探测返回 `deepseek_budget_ready`。实际为严格数值门槛 → preflight → 补充 AppConfig 探测，未重跑 preflight，全部网络/模型请求为 0。判定 `botzone_deepseek_connector_v3_preflight_ready`。
+
+#### L5-A2b3c：历史测试桌清理确认
+
+- 只等待项目所有者确认所有历史本地 AI 测试桌已结束或关闭；
+- 承诺下一次仅在 connector 已连接后创建一个新无贡桌，且没有第二个活动桌；
+- 确认后只提出 L5-A2b4 授权问题，不在同一步 live。
+
 ### 9.7 当前下一步
 
-L5-A2b3a 重启后仍因宿主未继承 60/0 而 precondition failed，零网络且授权未消耗。当前执行 L5-A2b3b：对子进程显式锁定预算并恢复唯一零网络 preflight，不直接 live。
+L5-A2b3b 零网络准入已通过。当前执行 L5-A2b3c：只获得旧桌清理确认并准备 L5-A2b4 授权问题，不进行任何工具调用或 live。
