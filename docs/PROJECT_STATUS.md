@@ -44,6 +44,8 @@ L5-A2b12a 在受限写入权限下仍得到同一 `temporary_state_directory_una
 
 L5-A2b12b 又在全新仓库外资源创建前返回 `repository_external_state_directory_unavailable`，connector 与网络路径均未启动。只读确认既有 `D:\VsCodeProject\BotzoneState` 仍存在且为空。下一步 L5-A2b12c 不再创建资源，项目所有者直接以该目录运行一次最终零网络 preflight；失败后停止目录重试并转为宿主机权限阻塞。
 
+L5-A2b12c 在首次 GET 前以 `separate_repository_external_audit_path_unavailable` 停止：既有 state 为空，但独立 v5 audit 路径不可用，所有网络请求为 0。只读确认 `D:\VsCodeProject\BotzoneAudit` 尚不存在。下一步 L5-A2b12d 仅由项目所有者手动创建该目录并完成无敏感内容的原子写探针；不运行 connector 或 preflight。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-10

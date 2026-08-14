@@ -57,6 +57,8 @@ L5-A2b12a 在受限提升后仍无法创建目录，说明 Codex 沙箱路径不
 
 L5-A2b12b 仍无法创建全新仓库外资源，故不再尝试动态目录。既有用户管理目录 `D:\VsCodeProject\BotzoneState` 已只读确认存在且为空；L5-A2b12c 仅复用它运行一次 `--preflight-only`，不创建 audit、不删除目录。若其文件操作仍失败，则问题留在宿主机权限层，不修改 connector 安全边界。
 
+L5-A2b12c 进一步确认 state 可用性与 audit 可用性必须分开：state 目录存在且为空，但没有独立 audit 目录，因此 live 在首个 GET 前停止。L5-A2b12d 由项目所有者准备固定 `D:\VsCodeProject\BotzoneAudit`，使用 `{}` 探针验证原子写并恢复为空；该目录不能与 SessionStore 根目录合并。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

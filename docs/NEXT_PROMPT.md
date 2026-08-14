@@ -1,69 +1,59 @@
 # 下一步实施提示词
 
-## Step L5-A2b12c：复用既有空 state 目录执行最终零网络 preflight
+## Step L5-A2b12d：项目所有者准备独立 audit 目录
 
-L5-A2b12b 仍在资源创建阶段停止：
+上一轮结果：
 
 ```text
-precondition_failed: repository_external_state_directory_unavailable
+precondition_failed: separate_repository_external_audit_path_unavailable
 ```
 
-未启动 connector，未发送 runmatch/local-AI/DeepSeek 请求，工作区未修改。至此不再尝试创建任何新的仓库外 state/audit 目录。
+既有 `D:\VsCodeProject\BotzoneState` 存在且为空，但无法创建或保证独立仓库外 audit 位置，因此在 connector 首次 GET 前停止。runmatch/local-AI/DeepSeek 请求均为 0。
 
-项目所有者此前已准备 `D:\VsCodeProject\BotzoneState`。本轮只读复核确认该目录存在且当前为空，未读取文件内容。下一步由项目所有者在本机 **PowerShell** 中直接复用该空目录运行一次最终零网络 preflight；不创建 audit、不删除目录。
+state 与 audit 不得共用目录：SessionStore 会管理 state 根目录中的 JSON，v5 audit 必须写入独立位置。只读检查确认 `D:\VsCodeProject\BotzoneAudit` 当前不存在。
+
+下一步由项目所有者在本机 **PowerShell** 中创建该固定目录，并执行一次无敏感内容的本地原子写探针。该步骤不运行项目代码、不读取配置、不联网。
 
 ### 手动命令
 
 ```powershell
-cd D:\VsCodeProject\GuanDan
+$auditDir = "D:\VsCodeProject\BotzoneAudit"
 
-$state = "D:\VsCodeProject\BotzoneState"
-
-if (-not (Test-Path -LiteralPath $state -PathType Container)) {
-    throw "existing_state_directory_missing"
+if (Test-Path -LiteralPath $auditDir) {
+    throw "audit_directory_already_exists"
 }
 
-if (@(Get-ChildItem -LiteralPath $state -Force -ErrorAction Stop).Count -ne 0) {
-    throw "existing_state_directory_not_empty"
-}
+New-Item -ItemType Directory -Path $auditDir -ErrorAction Stop | Out-Null
 
-$env:PYTHON_DOTENV_DISABLED = "1"
+$token = [guid]::NewGuid().ToString("N")
+$temporary = Join-Path $auditDir ("probe-" + $token + ".tmp")
+$final = Join-Path $auditDir ("probe-" + $token + ".json")
 
-& ".\.venv\Scripts\python.exe" -m integrations.botzone `
-  --agent deepseek `
-  --preflight-only `
-  --state-dir $state
+[System.IO.File]::WriteAllText($temporary, "{}", [System.Text.Encoding]::UTF8)
+Move-Item -LiteralPath $temporary -Destination $final -ErrorAction Stop
+Remove-Item -LiteralPath $final -ErrorAction Stop
 
-$preflightExit = $LASTEXITCODE
-$stateCount = @(Get-ChildItem -LiteralPath $state -Force -ErrorAction Stop).Count
+$auditCount = @(Get-ChildItem -LiteralPath $auditDir -Force -ErrorAction Stop).Count
 
-"preflight_exit=$preflightExit"
-"state_empty=$($stateCount -eq 0)"
+"audit_exists=$(Test-Path -LiteralPath $auditDir -PathType Container)"
+"audit_empty=$($auditCount -eq 0)"
+"audit_probe=passed"
 ```
 
 ### 固定边界
 
-- 必须在 PowerShell 中运行，不要使用 `cmd.exe`。
-- 不创建或删除目录，不使用 audit 文件，不读取仓库 `.env`。
-- `--preflight-only` 不构造 transport，不启动 connector，不发送网络请求。
-- 不输出 URL、API key、环境变量值或其他敏感配置。
-- 只执行一次；不得在失败后改参数、改目录、提高 timeout 或直接 live。
+- 必须在宿主机 PowerShell 执行，不由 Codex 沙箱创建。
+- 只创建固定 audit 目录和随机探针；不递归删除、不触碰已有目录。
+- 探针内容固定为 `{}`，不含 URL、key、match、牌、Header 或配置。
+- 不运行 preflight、connector、runmatch 或 DeepSeek。
+- 若任一步失败，只报告固定失败阶段，不改路径、不重试、不放宽到仓库内。
 
 ### 只需回复
 
 ```text
-preflight stdout：<固定单行输出>
-preflight_exit：<整数>
-state_empty：<True|False>
-stderr：<空|非空，不粘贴敏感正文>
+audit_exists：<True|False>
+audit_empty：<True|False>
+audit_probe：<passed|failed>
 ```
 
-### 判定
-
-只有 stdout 为单行 `preflight_ready`、exit=0、state_empty=True、stderr 空，才能判定：
-
-```text
-botzone_long_poll_deepseek_local_preflight_ready
-```
-
-通过后再准备 L5-A2b13 的完整 live 授权问题，不在本步骤联网。若该既有目录仍无法完成 preflight，则本地准入标记 blocked，停止目录尝试并由项目所有者处理宿主机文件权限后再恢复。
+三项分别为 True / True / passed 后，下一步才复核既有 state + audit 两个目录，并运行一次零网络准入；live 仍需新的明确授权。

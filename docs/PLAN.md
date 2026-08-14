@@ -126,6 +126,12 @@
 - 不再尝试新目录。只读复核确认既有 `D:\VsCodeProject\BotzoneState` 存在且为空。
 - L5-A2b12c 由项目所有者直接复用该既有空目录执行一次最终 `--preflight-only`，不创建 audit、不删除目录；若仍失败则暂停本地准入，先处理宿主机权限。
 
+### L5-A2b12c 暴露独立 audit 前置
+
+- 既有 state 目录存在且为空，但环境无法创建或保证独立仓库外 audit 路径，因此在 connector 首次 GET 前停止，网络计数为 0。
+- state 与 audit 不得共用目录。只读确认固定 `D:\VsCodeProject\BotzoneAudit` 尚不存在。
+- L5-A2b12d 由项目所有者在宿主机 PowerShell 创建该目录，并用固定空 JSON 探针验证创建、同目录重命名和删除；步骤不运行项目代码或网络。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
