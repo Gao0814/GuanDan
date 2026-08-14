@@ -1,34 +1,23 @@
 # 下一步实施提示词
 
-## Step L5-A2b5a：required-fields profile 实现检查点封存
+## Step L5-A2b6：v4 profile 零网络恢复准入
 
-本任务只复核并提交工作区中已经完成的 L5-A2b5 七个源码/测试改动。不得修改这些文件内容，不得修改 docs，不得运行 preflight，不得读取真实配置，不得联网、启动 connector 或调用 DeepSeek。
+本任务只复核已封存实现并执行恰好一次零网络 DeepSeek connector preflight。不得启动 live connector、连接 Botzone、调用 DeepSeek、创建测试桌或复用任何历史 live 授权。
 
-### 当前状态
+### 已确认基线
 
-- 当前 HEAD：`43d4b6fd4dbb55556de8e68163d63fc791a0982e`。
-- L5-A2b5 已判定 `botzone_required_fields_shape_profile_verified`。
-- 已知工作区只应包含以下七个未提交文件：
+- L5-A2b5a 实现检查点：`8e8d639011bd095bcf0af74816609c63e8c6199f`。
+- 提交信息：`Add safe Botzone required fields profiles`。
+- 提交范围精确为四个 runtime 文件和三个测试文件，工作区已确认干净。
+- 定向 36 项、全量 574 项和 `git diff --check` 已通过。
+- audit schema 为 `botzone_local_smoke_audit` v4；v3 的 `diagnostics`、`diagnostic_details` 语义保持不变，仅新增 allowlist 聚合 `diagnostic_profiles`。
+- L5-A2b4 永久保持 `botzone_deepseek_connector_no_tribute_smoke_invalid`；旧授权已消耗，不得重跑或补采。
 
-```text
-integrations/botzone/bot_io.py
-integrations/botzone/poll.py
-integrations/botzone/connector.py
-integrations/botzone/runner.py
-tests/test_botzone_request_diagnostics.py
-tests/test_botzone_live_preflight.py
-tests/test_botzone_finished_provenance.py
-```
+### 前置复核
 
-- 六种固定 profile 与 audit v4 契约已经过离线复核。
-- 上一次 L5-A2b6 因检查点不存在而得到 `precondition_failed: required_fields_profile_checkpoint_missing`；未运行回归、preflight 或网络操作。
-
-### 执行边界
-
-1. 先检查 `git status --short`，文件集合必须与上述七项精确相同。
-2. 检查完整 diff，确认没有未报告的行为、敏感数据、真实请求、URL、密钥、match、牌或日志内容。
-3. 不得编辑、格式化或重写任何源码、测试或 docs。
-4. 运行：
+1. 确认 HEAD 包含 `8e8d639011bd095bcf0af74816609c63e8c6199f`，且该提交范围仍精确为七个文件。
+2. `git status --short` 必须为空。
+3. 运行：
 
 ```text
 python -m unittest tests.test_botzone_request_diagnostics tests.test_botzone_poll tests.test_botzone_connector tests.test_botzone_runner tests.test_botzone_live_preflight tests.test_botzone_finished_provenance -q
@@ -36,40 +25,61 @@ python -m unittest discover -q
 git diff --check
 ```
 
-5. 任一回归、补丁检查或提交范围检查失败时停止，不得提交，报告明确失败原因。
-6. 全部通过后，只 stage 上述七个文件并创建单独提交；建议提交信息：
+4. 只检查以下配置元数据，不输出值，不读取 `.env`：
+   - `BOTZONE_LOCAL_AI_URL`：present；
+   - DeepSeek API key：present；
+   - endpoint 精确匹配 `https://api.deepseek.com`；
+   - model 精确匹配 `deepseek-v4-flash`；
+   - timeout 为非 bool 数值 60；
+   - retries 为非 bool 整数 0。
+5. 确认没有残留 Botzone connector Python 进程。
+
+任一前置失败时返回明确 `precondition_failed`，不得创建 preflight 子进程、不得联网或请求 live 授权。
+
+### 唯一 preflight
+
+前置全部通过后：
+
+1. 在系统临时目录创建一个全新、随机、仓库外、初始为空的 state 目录。
+2. 在显式锁定 timeout=60、retries=0 的同一子进程环境中，恰好运行一次：
 
 ```text
-Add safe Botzone required fields profiles
+python -m integrations.botzone --agent deepseek --preflight-only --state-dir <fresh-state-dir>
 ```
 
-7. 提交后复核：
+3. 硬上限 30 秒，零重试。
+4. 成功门槛：
+   - exit code 0；
+   - stdout 规范化后精确为单行 `preflight_ready`；
+   - stderr 为空；
+   - state 目录结束后仍为空并删除；
+   - 无残留 Python connector 进程；
+   - Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle、`suggest_action_id()` 均为 0。
+5. 审计只保留布尔门槛、退出码、规范化 stdout 类别、耗时和零网络计数；不得保留路径、URL、key、Header、Cookie、牌、请求、prompt、RAG、reasoning 或模型响应。
+
+preflight 一旦启动，任何门槛失败都判定：
 
 ```text
-git show --stat --oneline --summary HEAD
-git status --short
+botzone_deepseek_connector_v4_preflight_invalid
 ```
 
-提交范围必须精确为七个文件，工作区必须为空。
+不得重试、换目录或继续 live。
 
-### 禁止事项
-
-- 不修改或提交任何 `docs/` 文件；
-- 不读取 `.env`、Botzone URL、DeepSeek key 或其他配置值；
-- 不创建 state/audit 目录；
-- 不运行 `--preflight-only`；
-- 不发送 Botzone GET、DeepSeek 请求或任何网络探测；
-- 不启动 connector，不创建或加入测试桌；
-- 不请求 live 授权。
-
-### 验收
+### 通过后的动作
 
 通过时唯一判定：
 
 ```text
-botzone_required_fields_profile_checkpoint_verified
+botzone_deepseek_connector_v4_preflight_ready
 ```
 
-完成报告必须包含：完整提交 hash、精确提交文件、定向/全量测试计数、`git diff --check`、提交后工作区状态和零网络声明。
+随后只更新 docs，并向项目所有者提出 L5-A2b7 的新授权问题。授权问题必须重新明确：
 
-本任务结束后停止。下一阶段才是 L5-A2b6 零网络 v4 preflight；不得在本任务中顺带执行。
+- 允许把本家尚未公开的手牌牌面与张数发送给 DeepSeek；
+- 允许发送公开历史/状态、engine 合法候选、手牌评估、记牌摘要、场景标签及本地 RAG 片段；
+- 目标固定为 `https://api.deepseek.com` / `deepseek-v4-flash`；
+- 当前 Botzone URL 最多 100 次 GET；DeepSeek timeout 60 秒、retries 0；
+- 恰好一个 connector、一个全新“需要进贡=否”测试桌、最长 3600 秒、完成一局即停；
+- 所有历史测试桌必须先关闭，只能在 Botzone 显示已连接后创建唯一新桌。
+
+未获得新的完整授权和旧桌清理确认前，不得执行 L5-A2b7。本步骤不形成协议闭环、DeepSeek 可达性、动作质量或胜率结论。
