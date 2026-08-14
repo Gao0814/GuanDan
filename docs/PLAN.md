@@ -1253,6 +1253,16 @@ Botzone JSON input
 - 新进程只做一次布尔/匹配检查、24 项定向和唯一零网络 preflight；
 - preflight 通过后只确认旧桌已清理并准备 L5-A2b4 授权，不直接 live。
 
+实际结果：项目所有者设置用户变量并重启后，当前 Codex 执行宿主仍未继承 60/0；其余门槛和 24 项定向通过。未创建 state/preflight/connector，零网络，授权未消耗。判定 `precondition_failed: deepseek_budget_mismatch_after_restart`。
+
+#### L5-A2b3b：子进程预算锁定
+
+- 父进程 timeout/retries 不再作为门槛；
+- 在同一 PowerShell 子环境显式注入 60/0；
+- 先用现有 AppConfig 做一次固定输出、零网络预算探测；
+- 再在同一子环境执行唯一零网络 preflight；
+- 不修改用户/系统环境或 `.env`，不在同一步 live。
+
 ### 9.7 当前下一步
 
-L5-A2b3 因 DeepSeek 预算配置不匹配在进程创建前停止，授权未消耗。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3a：先从 60/0 用户环境变量的新 Codex 进程恢复最小零网络准入，不直接 live。
+L5-A2b3a 重启后仍因宿主未继承 60/0 而 precondition failed，零网络且授权未消耗。当前执行 L5-A2b3b：对子进程显式锁定预算并恢复唯一零网络 preflight，不直接 live。

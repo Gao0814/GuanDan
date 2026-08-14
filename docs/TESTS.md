@@ -1551,3 +1551,14 @@ L5-A2a 前置实际结果：检查点、工作区、23/569 回归和四项脱敏
 - 重新运行 24 项定向和 diff check；
 - 使用全新系统临时 state 运行唯一一次零网络 deepseek preflight；
 - preflight 通过后只请求旧桌清理确认和后续授权，不启动 live。
+
+实际结果：重启后 timeout/retries 仍未被当前执行宿主继承；其余门槛和 24 项定向通过。state/preflight/connector 未创建，网络计数为 0，授权未消耗，判定 `precondition_failed: deepseek_budget_mismatch_after_restart`。
+
+### 9.10 L5-A2b3b 子进程预算锁定
+
+- 同一 PowerShell 子环境显式设置 timeout=60、retries=0；
+- AppConfig 探测只输出 `deepseek_budget_ready` 或 `deepseek_budget_invalid`；
+- 探测不构造 client/Agent/transport，网络计数为 0；
+- 探测通过后，同一子环境运行唯一 preflight；
+- preflight 的 exit/stdout/stderr/state/残留/零网络门槛保持不变；
+- 不修改持久环境或 `.env`，不启动 live。

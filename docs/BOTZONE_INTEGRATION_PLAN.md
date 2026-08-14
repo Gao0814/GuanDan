@@ -722,6 +722,7 @@ DeepSeek exception / timeout / malformed / illegal action_id
 | L5-A2b2 | 外层 Bot JSON 信封安全子分类 | 纯离线、零真实请求 | 保持父诊断兼容并输出低基数聚合 detail |
 | L5-A2b3 | v3 audit 恢复准入与旧桌清理确认 | 恰好一次零网络 preflight | ready 后仅请求新的 L5-A2b4 授权 |
 | L5-A2b3a | DeepSeek 60/0 预算配置恢复 | 新 Codex 进程、零网络 | 最小复核与唯一 preflight |
+| L5-A2b3b | 子进程显式锁定 60/0 | 固定输出配置探测 + 零网络 preflight | 不依赖桌面宿主继承 |
 | L5-A3 | 小规模稳定性与降级统计 | 独立预算与授权 | 零非法动作；模型成功/降级/超时聚合可审计 |
 | L5-A4 | 规则基线 vs DeepSeek A/B | 固定设置、轮换座位 | 只报告样本统计，不提前宣称胜率提升 |
 
@@ -784,4 +785,6 @@ L5-A2b2 已完成并封存为 `37bdd0d`：八种 detail、父诊断兼容、audi
 
 L5-A2b3 在启动前发现 timeout/retries 不匹配锁定预算，判定 `precondition_failed: deepseek_budget_mismatch`；零网络、授权未消耗。
 
-执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3a。项目所有者先设置 60/0 用户环境变量并重启 Codex；新进程只恢复最小零网络准入，不直接 live。
+L5-A2b3a 在用户变量设置和重启后仍因桌面执行宿主未继承 60/0 而 precondition failed；其余门槛通过，零网络且授权未消耗。
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3b。在唯一子环境显式锁定 60/0，依次完成预算探测和零网络 preflight；不得直接 live。

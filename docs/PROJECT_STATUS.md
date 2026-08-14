@@ -1504,6 +1504,16 @@ endpoint/model 门槛通过，但当前 DeepSeek runtime 配置不满足已授�
 
 项目所有者需要设置用户环境变量 `DEEPSEEK_TIMEOUT=60`、`DEEPSEEK_MAX_RETRIES=0`，完全退出并重启 Codex。新进程确认后只重新执行最小布尔门槛、24 项定向和唯一零网络 preflight；不得直接 live。
 
+### L5-A2b3a 实际结果
+
+项目所有者已设置用户变量并重新启动，但当前 Codex 执行宿主仍报告 timeout/retries mismatch；检查点、工作区、24 项定向、endpoint/model/key/URL 和残留进程门槛均通过。未创建 state、未运行 preflight、未联网，授权未消耗。
+
+判定：`precondition_failed: deepseek_budget_mismatch_after_restart`。
+
+### 当前阶段：L5-A2b3b
+
+下一步不再依赖父进程继承：在唯一 PowerShell 子环境显式注入 60/0，先做固定输出的 AppConfig 零网络探测，再执行唯一零网络 preflight。本阶段不 live。
+
 ### 后续边界
 
-L5-A2b1 已执行且 invalid，历史授权不可复用；L5-A2b3 的授权未消耗，但在预算恢复和新进程复核前也不得使用。当前仍不形成 Botzone 协议闭环、DeepSeek 可达、动作质量或胜率结论。
+L5-A2b1 已执行且 invalid；L5-A2b3/L5-A2b3a 的授权未消耗，但在子进程预算探测和 preflight 通过前不得使用。当前仍不形成 Botzone 协议闭环、DeepSeek 可达、动作质量或胜率结论。
