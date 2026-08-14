@@ -144,6 +144,13 @@
 - 判定 `botzone_long_poll_deepseek_local_preflight_ready`；该步骤没有 transport、connector、runmatch 或 DeepSeek 网络请求。
 - 下一步 L5-A2b13 重新取得完整单次 live 授权；旧授权不延续，授权前不得联网。
 
+### L5-A2b13 实际结果
+
+- 项目所有者完成新授权后，唯一 connector 已启动，唯一 runmatch GET 已发送，但 Botzone 页面未显示对局。
+- 为遵守不重试规则，connector 被终止；没有可用完成 audit，state 目录非空且未读取或清理，工作区干净。
+- 判定 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`。现有证据不能确认 runmatch 创建、local-AI request、DeepSeek 调用或任何对局闭环。
+- 下一步 L5-A2b14 仅做零网络、只读、脱敏的残留 state 与缺失 audit 审计；不得清理 state 或直接恢复 live。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

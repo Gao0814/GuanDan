@@ -59,6 +59,8 @@ L5-A2b12d 宿主机探针结果为 exists=True、empty=True、passed，未运行
 
 L5-A2b12e 实际得到 `preflight_ready`、exit 0、state/audit 均为空，stderr 未显示；判定本地零网络准入通过。没有新增测试运行或网络计数。L5-A2b13 live 必须验收 v5 timeout/failure/finished 聚合、direct-stage response、qualified finished 和敏感边界，且需新授权。
 
+L5-A2b13 未产生可用 v5 完成 audit：唯一 connector/runmatch 尝试后页面无对局，connector 被终止，state 非空且未读取/清理。该结果属于 live 验收失败，不是测试失败。L5-A2b14 不运行项目回归或网络，只验证只读 session 聚合、未知数据 fail-closed、敏感字段不落盘，以及 state 目录在审计前后的文件数、总字节数和目录摘要完全一致。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

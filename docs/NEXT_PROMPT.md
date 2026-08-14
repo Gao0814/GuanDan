@@ -1,61 +1,49 @@
 # 下一步实施提示词
 
-## Step L5-A2b13：long-poll v5 单局 DeepSeek live 授权
+## Step L5-A2b14：失败 live 的只读本地证据审计
 
-宿主机零网络准入已通过：
-
-```text
-preflight_ready
-preflight_exit=0
-state_empty=True
-audit_empty=True
-stderr=空（终端未显示）
-```
-
-当前判定：
+L5-A2b13 已永久判定：
 
 ```text
-botzone_long_poll_deepseek_local_preflight_ready
+botzone_deepseek_runmatch_no_tribute_smoke_invalid
 ```
 
-该结果只证明本地配置、DeepSeek Agent 组合和 state 文件操作可构造；preflight 未启动 transport、connector 或网络。旧 live 授权均已消耗，不能自动延续。
+已知事实仅限：唯一 connector 启动、唯一 runmatch GET 已发送、Botzone 页面未显示对局、connector 随后被终止、没有可用完成 audit、state 目录非空且尚未读取或清理、工作区干净。不得从这些事实推断 runmatch 是否创建成功、local-AI 是否收到请求、DeepSeek 是否被调用，或 state 属于哪个阶段。
 
-### 项目所有者需一次性确认
+本步只做零网络、只读、脱敏的本地证据审计。不得修改代码，不得重跑 preflight/live，不得启动 connector，不得发送 runmatch/local-AI/DeepSeek 请求，不得读取 `.env` 或连接配置值。
 
-```text
-复用上一轮三个非本家 GuanDan Bot ID：是
-me 座位仍为 0：是
-所有旧本地 AI 测试桌均已关闭：是
-接受省略 X-Initdata，并在非零 tribute 或 tribute/return 时立即停止且不重试：是
-```
+### 前置
 
-Bot ID 只从先前项目所有者消息读取并在内存中使用，不写入仓库、docs、audit 或普通日志。
+1. 确认当前 HEAD 包含文档检查点 `51a63d0a1b16d54d099861fb7953215d69a4a264`，实现检查点 `220c648a4629453621f534beaeb95e52d85656ce` 为祖先，工作区干净。
+2. 确认没有命令行匹配 `integrations.botzone` 的残留进程；不得因无关 Python 进程阻塞，只报告布尔结果，不输出完整命令行、环境或路径。
+3. 将 L5-A2b13 的 invalid 结论和已消耗授权视为不可改写；本步没有任何联网授权。
 
-### 必须同时给出的明确授权
+### 只读审计
 
-项目所有者必须在同一回复中提供：
+1. 仅检查本次固定 state 与 audit 目录，不扫描其他用户目录。
+2. 先记录 state/audit 的文件数量、总字节数和目录级 SHA-256；不得输出或保存文件名、match ID、request digest、Header、手牌、history、response、Bot ID、URL、key 或原始 JSON。
+3. audit 若为空或缺少 v5 完成文件，只记录固定类别 `completion_audit_missing`；不得补写、伪造或根据终端描述重建 audit。
+4. state 若非空，只允许用现有 session schema 做本机内存解析，并输出以下聚合字段：
+   - `state_file_count`
+   - `session_parse_valid_count` / `session_parse_invalid_count`
+   - `stage_counts`（仅 `deal` / `play` / `unknown`）
+   - `delivery_state_counts`（仅 `idle` / `pending` / `inflight` / `finished` / `unknown`）
+   - `handler_completed_count`
+   - `pending_response_present_count`
+   - `pending_effect_present_count`
+   - `cached_response_present_count`
+   - `finished_present_count`
+   - `own_hand_count_min/max`
+   - `history_count_min/max`
+5. 解析器必须 fail-closed：未知 schema、字段或非法值只增加 `session_parse_invalid`，不得输出异常正文或部分敏感内容。
+6. 审计前后重新计算目录文件数、总字节数和目录级 SHA-256，必须完全一致；不得删除、重命名、修复或 tombstone 化 state。
+7. 脱敏结果只能写入仓库外 audit 目录中的一个全新 JSON；如果无法安全创建该文件，则只返回 `precondition_failed`，不得改用仓库或 state 目录。
+8. 对新 JSON 做敏感形态扫描；报告仅给固定聚合计数、前后不变性和文件自身 bytes/SHA-256，不回显任何受保护值或路径。
 
-```text
-我明确授权执行 L5-A2b13：向由当前 BOTZONE_LOCAL_AI_URL 在内存中派生的 runmatch endpoint 发送最多 1 次 GET，并向当前 local-AI endpoint 发送最多 100 次 GET；允许将本家未公开手牌、公开局面、engine 合法候选、手牌评估、记牌摘要、场景标签和本地 RAG 片段发送到 https://api.deepseek.com 的 deepseek-v4-flash。DeepSeek timeout 为 60 秒、retries 为 0；只启动一个 connector，只创建一个 runmatch 对局，最长 3600 秒，qualified finished=1 即停。省略 X-Initdata；若首个请求显示非零 tribute，或出现 tribute/return，立即停止且不重试。v5 audit 只保存聚合 timeout、固定 transport failure category 和 finished provenance，不保存任何敏感内容。
-```
+### 判定
 
-### 授权后的固定执行顺序
+- 完成 audit 缺失且 state 合法可解析、前后完全不变：`botzone_live_residual_state_audit_verified`。
+- state 不可安全解析、前后发生变化或审计证据不完整：`botzone_live_residual_state_audit_invalid`。
+- 目录、进程、工作区或新 audit 文件前置不满足：对应 `precondition_failed`。
 
-1. 快速确认工作区干净、无残留 connector，固定 state/audit 目录仍存在且为空；不重复 80/587 测试或 preflight。
-2. 使用项目 `.venv` 和 `PYTHON_DOTENV_DISABLED=1` 启动唯一 DeepSeek connector；state 使用既有空目录，audit 写入独立 audit 目录下的新文件。
-3. connector 建立 local-AI 长轮询后，仅发送一次 runmatch GET：`X-Game=GuanDan`、座位 0 为 `me`、其余三席使用先前 Bot ID；不发送 `X-Initdata`。
-4. direct-stage 与 envelope 均按已封存 wire mode 处理；response 必须来自 engine 原始合法 action ID/provenance。
-5. 长轮询 timeout 只计 idle，不触发退避或 failure limit；其他 transport category 保持失败预算。
-6. DeepSeek 异常、timeout、空值或非法 action ID 仅允许现有 RuleBased fallback，不得伪造动作。
-7. qualified finished=1、达到预算或出现固定失败后停止；不创建第二局、不启动第二进程、不补采。
-8. 确认 connector 退出、state 只剩允许的最小 tombstone 或完成清理、audit v5 合规且无敏感形态。
-
-### 验收结论
-
-只有 runmatch 成功、非零 request/response/Header、qualified finished=1、finished 分类守恒、非 timeout transport failure=0、协议 diagnostics/detail/profile 为空、无非法动作/决策超时、state/audit 合规且无残留进程，才能判定：
-
-```text
-botzone_deepseek_runmatch_no_tribute_smoke_verified
-```
-
-其他结果只能是对应 `invalid` / `precondition_failed`，且不得重试。该结论不证明 DeepSeek 每手参与、动作质量或胜率提升。
+无论结果如何，本步都不得形成 runmatch 成功、协议闭环、DeepSeek 调用、动作质量或胜率结论。完成后只更新 `docs/`；是否清理 state、修复 launcher/audit 生命周期或重新 live 必须另开步骤。

@@ -63,6 +63,8 @@ L5-A2b12d 的宿主机结果为 audit exists/empty/probe=`True/True/passed`。�
 
 L5-A2b12e 已以固定宿主机目录通过零网络 preflight：单行 `preflight_ready`、exit 0、state/audit 为空、stderr 未显示。L5-A2b13 仅准备一次新的 long-poll v5 live：沿用 direct-stage、timeout idle、固定 transport category 与 qualified finished 门槛；没有项目所有者新授权不得启动。
 
+L5-A2b13 唯一 live 未形成可审计闭环：connector 与 runmatch GET 各一次，页面未显示对局，随后 connector 被终止；completion audit 缺失，state 非空且未读取/清理。结论固定为 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`。L5-A2b14 只允许在本机内存中按现有 session schema 提取低基数聚合，并用前后目录摘要证明 state 未改变；不得记录文件名、match、牌、history、response、digest 或异常正文，也不得联网或清理。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

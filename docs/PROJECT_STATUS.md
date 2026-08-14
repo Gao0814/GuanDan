@@ -50,6 +50,8 @@ L5-A2b12d 已完成：项目所有者报告 audit 目录存在且为空，固定
 
 L5-A2b12e 宿主机零网络 preflight 已通过：stdout=`preflight_ready`、exit 0、state_empty=True、audit_empty=True，stderr 未显示。当前判定为 `botzone_long_poll_deepseek_local_preflight_ready`；未启动 transport/connector 或网络。下一步 L5-A2b13 等待项目所有者重新确认参与者、旧桌清理、无贡 fail-closed 和完整 live 授权。
 
+L5-A2b13 已执行且永久判定 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`：唯一 connector 启动、唯一 runmatch GET 发出，但 Botzone 页面未显示对局；随后按不重试约束终止 connector。没有可用完成 audit，state 非空且保持未读/未清理，工作区干净。该结果不能证明 runmatch 创建、请求到达、DeepSeek 调用或协议闭环。下一步 L5-A2b14 只读审计残留 state 的固定聚合状态与 completion-audit 缺失边界，禁止联网或清理。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-10
