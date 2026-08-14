@@ -719,6 +719,7 @@ DeepSeek exception / timeout / malformed / illegal action_id
 | L5-A2a1 | 改用系统临时目录恢复尚未启动的 preflight | 不改代码、不提权、零网络 | ready 或 precondition failed |
 | L5-A2b | 一次全新无贡 live smoke | 必须重新获得明确授权 | deal/play/response/header/ack/qualified finished 闭环 |
 | L5-A2b1 | 补充本家手牌/上下文发送到 DeepSeek 的明确授权 | 进程创建前门槛 | 完整授权后恢复同一预算 |
+| L5-A2b2 | 外层 Bot JSON 信封安全子分类 | 纯离线、零真实请求 | 保持父诊断兼容并输出低基数聚合 detail |
 | L5-A3 | 小规模稳定性与降级统计 | 独立预算与授权 | 零非法动作；模型成功/降级/超时聚合可审计 |
 | L5-A4 | 规则基线 vs DeepSeek A/B | 固定设置、轮换座位 | 只报告样本统计，不提前宣称胜率提升 |
 
@@ -775,4 +776,6 @@ DeepSeek exception / timeout / malformed / illegal action_id
 
 ### 17.10 当前下一动作
 
-执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b1。必须先明确本家手牌、公开上下文、合法候选、评估/记牌和 RAG 片段会发送到 DeepSeek；获得完整授权前不得再次启动。
+L5-A2b1 已获得完整授权并执行唯一 live：Botzone 显示已连接，但在新桌确认前收到一个请求，外层信封以 `envelope_shape_invalid` 拒绝。exit 5、request=1、response/header/finished=0、transport failure=0；未进入 Agent/DeepSeek，state 为空且无残留。唯一判定 `botzone_deepseek_connector_no_tribute_smoke_invalid`。
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b2。只增加固定、低基数、安全 envelope-shape detail 和聚合测试；不得保存原始请求或直接恢复 live。

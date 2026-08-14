@@ -1515,3 +1515,19 @@ L5-A2a 前置实际结果：检查点、工作区、23/569 回归和四项脱敏
 - 100 GET、60 秒、零重试、单进程、3600 秒、一局预算不变。
 
 只有完整授权后才能创建新 state/audit 并启动唯一进程。
+
+实际结果：完整授权后，23 项定向回归和全部快速门槛通过。唯一 connector 成功显示已连接，但在用户确认新桌开始前 exit 5。audit 聚合为 cycles=1、requests=1、responses=0、headers=0、finished=0、transport failure=0、`envelope_shape_invalid=1`；state 为空且无残留。请求未进入 Agent 或 DeepSeek。判定 `botzone_deepseek_connector_no_tribute_smoke_invalid`，不得重跑。
+
+### 9.7 L5-A2b2 外层信封安全子分类
+
+离线测试必须覆盖八类 envelope shape 门槛：顶层类型/key、缺失必需字段、未知字段、非法可选字段、requests 容器、responses 容器、空 requests、请求/响应基数。
+
+要求：
+
+- 公开父诊断继续为 `envelope_shape_invalid`；
+- detail 是固定低基数枚举且每个反例唯一；
+- 合法 envelope 不产生 detail；
+- inner/history/replay 诊断不被误分类；
+- connector/runner/audit 只聚合 detail，不保留输入、牌、match、长度或异常正文；
+- 既有 Botzone 和 DeepSeek runtime 回归保持通过；
+- 所有测试使用合成数据，网络计数为 0。

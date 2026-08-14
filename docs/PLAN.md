@@ -1226,6 +1226,15 @@ Botzone JSON input
 - endpoint/model/100 GET/60 秒零重试/单进程/3600 秒/一局预算保持不变；
 - 获得新授权后才允许创建新的 state/audit 并启动唯一进程。
 
+实际结果：完整授权与全部快速门槛通过后，唯一 connector 成功连接 Botzone；但在用户确认新桌开始前收到一个请求，并以 `envelope_shape_invalid` fail-closed。exit 5、request=1、response/header/finished=0、transport failure=0，state 为空且无残留。判定 `botzone_deepseek_connector_no_tribute_smoke_invalid`。请求未进入 Agent 或 DeepSeek 动作选择。
+
+#### L5-A2b2：外层信封安全子分类
+
+- 保持公开父诊断 `envelope_shape_invalid`；
+- 用固定低基数 detail 区分顶层类型、必需字段、未知字段、可选字段、requests/responses 容器、空 requests 和基数错误；
+- 只在 connector/audit 中聚合 detail，不记录原始 envelope、字段值、match 或逐请求信息；
+- 先完成离线测试与 schema 兼容性，再决定是否需要新的 live 授权。
+
 ### 9.7 当前下一步
 
-L5-A1/L5-A1a 已封存，L5-A2a1 preflight 已通过。L5-A2b 首次启动因敏感出站授权不足在进程创建前 precondition failed，零网络。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b1；未获得包含具体对局数据类别的新授权前不得联网。
+L5-A1/L5-A1a 已封存，L5-A2a1 preflight 已通过。L5-A2b1 唯一 live 运行在外层信封校验处 invalid，未进入 Agent/DeepSeek。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b2，只做零网络安全子分类；不得直接重跑 live。

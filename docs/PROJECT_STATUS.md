@@ -1470,6 +1470,20 @@ L5-A1a 已修复这两个问题并补充参数化测试，不改变正常 respon
 
 明确不发送 Botzone URL/连接 key、match/session、实体 ID、其他玩家隐藏牌或 `.env` 内容。获得完整授权前不得再次尝试启动。
 
+### L5-A2b1 实际结果
+
+项目所有者已逐项授权本家未公开手牌与决策上下文发送到 DeepSeek，并锁定 100 GET、60 秒零重试、单进程、3600 秒和完成一局即停。检查点、工作区、23 项定向回归、配置元数据、临时目录和残留进程门槛全部通过。
+
+唯一 connector 启动后，用户确认 Botzone 显示“已连接”。在用户确认新桌开始前，进程收到一个请求并自行 exit 5：`diagnostic_failure`、requests=1、responses=0、headers=0、finished=0、transport failures=0、diagnostic=`envelope_shape_invalid`。audit 为 299 bytes，SHA-256 `94fd082013712b4d2c8c700735725a4bc1e772d195b756b1e491b15bd36c04e4`；state 为空且无残留进程。
+
+该请求未通过外层 Bot JSON 信封，未进入 adapter、Agent、RuleBased fallback 或 DeepSeek 动作选择。授权已消耗，未重跑或补采。
+
+唯一判定：`botzone_deepseek_connector_no_tribute_smoke_invalid`。
+
+### 当前阶段：L5-A2b2
+
+下一步只实现零网络、低基数、无原文的 envelope-shape 子分类，同时保持公开父诊断兼容。完成离线契约前不得再次申请或执行 live。
+
 ### 后续边界
 
-L5-A2b1 只有在项目所有者针对具体出站数据、endpoint/model 和预算完整授权后才能执行。任何历史授权均不可复用。当前所有阶段仍不形成 DeepSeek 可达、动作质量或胜率结论。
+L5-A2b1 已执行且 invalid，历史授权不可复用。L5-A2b2 只允许离线诊断加固；当前仍不形成 DeepSeek 可达、动作质量或胜率结论。
