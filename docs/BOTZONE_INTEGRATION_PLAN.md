@@ -718,6 +718,7 @@ DeepSeek exception / timeout / malformed / illegal action_id
 | L5-A2a | 真实环境零网络 config/state/RAG/Agent preflight | 恰好一次、零网络 | `botzone_deepseek_connector_live_preflight_ready` |
 | L5-A2a1 | 改用系统临时目录恢复尚未启动的 preflight | 不改代码、不提权、零网络 | ready 或 precondition failed |
 | L5-A2b | 一次全新无贡 live smoke | 必须重新获得明确授权 | deal/play/response/header/ack/qualified finished 闭环 |
+| L5-A2b1 | 补充本家手牌/上下文发送到 DeepSeek 的明确授权 | 进程创建前门槛 | 完整授权后恢复同一预算 |
 | L5-A3 | 小规模稳定性与降级统计 | 独立预算与授权 | 零非法动作；模型成功/降级/超时聚合可审计 |
 | L5-A4 | 规则基线 vs DeepSeek A/B | 固定设置、轮换座位 | 只报告样本统计，不提前宣称胜率提升 |
 
@@ -765,6 +766,13 @@ DeepSeek exception / timeout / malformed / illegal action_id
 - 无残留进程；Botzone/DeepSeek/DNS/socket/HTTP/connector/model request 全部为 0。
 - 唯一判定：`botzone_deepseek_connector_live_preflight_ready`。
 
-### 17.9 当前下一动作
+### 17.9 L5-A2b 首次启动结果
 
-执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b 授权门槛。固定为单进程、单个全新无贡桌、100 cycles、poll timeout 120 秒、DeepSeek 60 秒零重试、最长 3600 秒；未获得新授权前不得联网。
+- endpoint/model/预算授权已获得，但未明确覆盖发送本家未公开手牌及对局上下文。
+- 外部安全审查在 connector 进程创建前拒绝启动。
+- state 为空并删除，audit 未创建，connector/network count 为 0。
+- 判定：`precondition_failed: sensitive_outbound_authorization_missing`。
+
+### 17.10 当前下一动作
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b1。必须先明确本家手牌、公开上下文、合法候选、评估/记牌和 RAG 片段会发送到 DeepSeek；获得完整授权前不得再次启动。

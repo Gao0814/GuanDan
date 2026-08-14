@@ -1499,3 +1499,19 @@ L5-A2a 前置实际结果：检查点、工作区、23/569 回归和四项脱敏
 成功必须有 exit 0、`finished_target`、qualified finished、非零 request/response/header、零 transport failure、空 diagnostics、Botzone 无非法动作/超时、state/audit 无敏感内容且无残留进程。
 
 当前 runtime 未独立统计模型调用、成功和 fallback。即使 smoke 通过，也只能判 `botzone_deepseek_connector_no_tribute_smoke_verified`，不能证明 DeepSeek 实际有效返回；该可观测性属于 L5-A3。
+
+首次授权实际结果：endpoint/model/预算已授权，但没有明确授权发送本家未公开手牌及决策上下文；执行在进程创建前被安全审查拒绝。connector/network count 为 0，临时 state 已删除，audit 未创建，判定 `precondition_failed: sensitive_outbound_authorization_missing`。
+
+### 9.6 L5-A2b1 敏感出站授权
+
+恢复前必须在授权中明确：
+
+- 发送本家当前手牌牌面与张数；
+- 发送公开历史、桌面状态、玩家公开剩余张数/完赛信息；
+- 发送 engine 合法候选动作、手牌评估、记牌摘要、场景标签和 RAG 片段；
+- 目标为 `https://api.deepseek.com` / `deepseek-v4-flash`；
+- 理解这些数据包含本家未公开手牌并离开本机；
+- 不发送 Botzone URL/key、match/session、实体牌 ID、其他玩家隐藏牌或 `.env` 内容；
+- 100 GET、60 秒、零重试、单进程、3600 秒、一局预算不变。
+
+只有完整授权后才能创建新 state/audit 并启动唯一进程。

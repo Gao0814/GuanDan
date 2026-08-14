@@ -1456,12 +1456,20 @@ L5-A1a 已修复这两个问题并补充参数化测试，不改变正常 respon
 
 唯一判定：`botzone_deepseek_connector_live_preflight_ready`。
 
-### 当前阶段：L5-A2b 授权
+### L5-A2b 首次授权结果
 
 固定 live 预算：一个前台 connector、一个全新无贡桌、最多 100 cycles、poll timeout 120 秒、DeepSeek timeout 60 秒且零重试、最长 3600 秒、完成一局即停。state/audit 使用全新系统临时路径。
 
-当前尚未获得该预算的新授权，不能启动 connector。即使 smoke 通过，由于当前 audit 没有模型调用/成功/fallback 独立计数，也只能证明协议闭环和安全降级，不能证明 DeepSeek 实际有效决策。
+项目所有者已授权 endpoint/model/预算，但安全审查确认授权未明确覆盖发送本家手牌与对局决策上下文。启动在进程创建前被拒绝：connector 未启动、网络请求为 0、临时 state 为空并删除、audit 不存在、无残留。
+
+判定：`precondition_failed: sensitive_outbound_authorization_missing`。
+
+### 当前阶段：L5-A2b1
+
+下一步必须明确告知并获得授权发送：本家未公开手牌、公开历史/状态、合法候选、评估/记牌摘要、场景标签和本地 RAG 片段。固定 endpoint/model 与运行预算不变。
+
+明确不发送 Botzone URL/连接 key、match/session、实体 ID、其他玩家隐藏牌或 `.env` 内容。获得完整授权前不得再次尝试启动。
 
 ### 后续边界
 
-L5-A2b 只有在项目所有者针对固定 endpoint/model/预算明确授权后才能执行。任何历史 live 授权均不可复用。L5-A1/L5-A1a/L5-A2a/L5-A2a1 不形成 DeepSeek 可达、动作质量或胜率结论。
+L5-A2b1 只有在项目所有者针对具体出站数据、endpoint/model 和预算完整授权后才能执行。任何历史授权均不可复用。当前所有阶段仍不形成 DeepSeek 可达、动作质量或胜率结论。

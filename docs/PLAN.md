@@ -1216,6 +1216,16 @@ Botzone JSON input
 
 不得把 L5-A2a 与真实联网合并，也不得在 smoke 前宣称动作质量或胜率提升。
 
+首次启动在进程创建前被安全审查拒绝：授权已覆盖 endpoint/model/预算，但未明确覆盖向 DeepSeek 发送本家未公开手牌和决策上下文。connector/network count 为 0，临时 state 已清理，判定 `precondition_failed: sensitive_outbound_authorization_missing`。
+
+#### L5-A2b1：敏感出站授权恢复
+
+- 在授权文本中逐项列明本家手牌、公开历史/状态、合法候选动作、评估/记牌、场景标签和 RAG 片段；
+- 明确这些数据会发送到 DeepSeek 并离开本机；
+- 明确不发送 Botzone URL/key、match/session、实体 ID、其他玩家隐藏牌和 `.env` 内容；
+- endpoint/model/100 GET/60 秒零重试/单进程/3600 秒/一局预算保持不变；
+- 获得新授权后才允许创建新的 state/audit 并启动唯一进程。
+
 ### 9.7 当前下一步
 
-L5-A1 已封存为 `71d9119`；L5-A1a 已封存为 `aac59d5`；L5-A2a1 零网络 preflight 已通过。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b 授权门槛：单进程、单个全新无贡桌、最多 100 cycles、最长 3600 秒、DeepSeek 60 秒且零重试。未获得新授权前不得联网。
+L5-A1/L5-A1a 已封存，L5-A2a1 preflight 已通过。L5-A2b 首次启动因敏感出站授权不足在进程创建前 precondition failed，零网络。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b1；未获得包含具体对局数据类别的新授权前不得联网。
