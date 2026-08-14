@@ -715,7 +715,8 @@ DeepSeek exception / timeout / malformed / illegal action_id
 |---|---|---|---|
 | L5-A1 | 默认 rule、显式 deepseek 的离线组合根；match/player Agent 隔离；最终规则降级 | fake client/transport，零真实请求 | `botzone_deepseek_connector_offline_wiring_verified` |
 | L5-A1a | 精确诊断兼容、fallback 分类和 deepseek 零网络 preflight | fake factories，零真实请求 | `botzone_deepseek_connector_hardening_verified` |
-| L5-A2 | 真实环境配置/preflight 与一次全新无贡 smoke | 必须重新获得明确授权 | deal/play/response/header/ack/qualified finished 闭环 |
+| L5-A2a | 真实环境零网络 config/state/RAG/Agent preflight | 恰好一次、零网络 | `botzone_deepseek_connector_live_preflight_ready` |
+| L5-A2b | 一次全新无贡 live smoke | 必须重新获得明确授权 | deal/play/response/header/ack/qualified finished 闭环 |
 | L5-A3 | 小规模稳定性与降级统计 | 独立预算与授权 | 零非法动作；模型成功/降级/超时聚合可审计 |
 | L5-A4 | 规则基线 vs DeepSeek A/B | 固定设置、轮换座位 | 只报告样本统计，不提前宣称胜率提升 |
 
@@ -740,6 +741,14 @@ DeepSeek exception / timeout / malformed / illegal action_id
 
 复核遗留：默认非 fallback 的精确非法 ID 诊断发生兼容性变化；deepseek 配置验证晚于 transport 对象构造。这两项不否定离线功能判定，但阻止直接进入 live。
 
-### 17.6 当前下一动作
+### 17.6 L5-A1a 实际结果
 
-执行 `docs/NEXT_PROMPT.md` 中的 L5-A1a。完成并独立提交前，不进入真实 connector smoke。
+- 实现检查点：`aac59d5`。
+- 默认 handler 精确诊断和 DeepSeek fallback 分类已锁定。
+- deepseek 本地组合验证先于 Botzone transport；preflight 不构造 transport、不调用模型或 poll。
+- 定向 23 项、全量 569 项和 diff check 通过。
+- 唯一判定：`botzone_deepseek_connector_hardening_verified`。
+
+### 17.7 当前下一动作
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A2a。只运行一次真实环境零网络 preflight；通过并形成新授权问题前，不进入真实 connector smoke。

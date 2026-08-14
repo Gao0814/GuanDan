@@ -1427,15 +1427,27 @@ U0-A3 已完成架构选择：项目所有者选择 **B）恢复 connector + Dee
 
 验证：定向 23 项、全量 565 项和 `git diff --check` 通过。唯一判定：`botzone_deepseek_connector_offline_wiring_verified`。
 
-### 当前阶段：L5-A1a
+### L5-A1a 结果
 
 规划复核发现两个不影响正常动作、但必须在 live 前修复的契约问题：
 
 1. 默认非 fallback handler 的非整数/非法 action ID 诊断由原 `invalid_agent_action_id` 变成了 `agent_failure`；fail-closed 仍成立，但精确兼容性未保持。
 2. CLI 当前先构造 Botzone transport，再验证显式 deepseek 配置。构造本身不联网，但缺 key 应在 transport 构造前失败，且 deepseek preflight 应能以零网络验证本地组合。
 
-L5-A1a 只修复这两个问题并补充参数化测试，不改变正常 response、cache、pending/ack、finished cleanup、协议或策略。预期判定：`botzone_deepseek_connector_hardening_verified`。
+L5-A1a 已修复这两个问题并补充参数化测试，不改变正常 response、cache、pending/ack、finished cleanup、协议或策略。实现检查点 `aac59d5`；定向 23 项、全量 569 项和 `git diff --check` 通过。唯一判定：`botzone_deepseek_connector_hardening_verified`。
+
+### 当前阶段：L5-A2a
+
+下一步只运行一次真实环境零网络 preflight：
+
+- 只检查 Botzone URL/key 是否存在，以及 endpoint/model 是否匹配锁定值，不输出配置值；
+- 使用全新 `%LOCALAPPDATA%` state 目录；
+- 执行 `--agent deepseek --preflight-only`，30 秒硬上限且不重试；
+- 必须得到 exit 0、固定 `preflight_ready`、空 stderr、空 state、无残留进程；
+- Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle 与模型选择调用均为 0。
+
+预期判定：`botzone_deepseek_connector_live_preflight_ready`。本阶段不需要 live 网络授权，也不得创建测试桌。
 
 ### 后续边界
 
-L5-A1a 通过后才规划 L5-A2：全新无贡测试桌、全新 state/audit、显式授权的一次真实 connector smoke。任何历史 live 授权均不可复用。L5-A1/L5-A1a 不形成 DeepSeek 可达、动作质量或胜率结论。
+L5-A2a 通过后才规划 L5-A2b：全新无贡测试桌、全新 state/audit、显式授权的一次真实 connector smoke。任何历史 live 授权均不可复用。L5-A1/L5-A1a/L5-A2a 不形成 DeepSeek 可达、动作质量或胜率结论。

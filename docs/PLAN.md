@@ -1184,17 +1184,27 @@ Botzone JSON input
 
 验收：`botzone_deepseek_connector_hardening_verified`。
 
-#### L5-A2：真实环境准入与单局 smoke
+#### L5-A2a：真实环境零网络 preflight
 
-仅在 L5-A1a 独立提交、工作区干净、离线回归通过后规划：
+- 使用全新仓库外 state 目录；
+- 显式 `--agent deepseek --preflight-only`；
+- 只验证真实进程环境中的配置形状、文件操作、RAG、client 与 Agent 本地构造；
+- 30 秒内恰好执行一次，不重试；
+- Botzone GET、DeepSeek request、DNS/socket/HTTP 与 connector cycle 均为 0。
+
+验收：`botzone_deepseek_connector_live_preflight_ready`。
+
+#### L5-A2b：真实单局 smoke
+
+仅在 L5-A2a 通过、工作区干净且用户重新明确授权后执行：
 
 - 零网络配置/preflight；
 - 明确确认 Botzone connector 已连接后再人工创建全新无贡桌；
 - 使用新的 state/audit、短请求预算和新的明确 live 授权；
 - 先证明 deal/play/response/header/ack/finished 闭环，再记录 DeepSeek model/fallback 聚合计数。
 
-不得把 L5-A1a 与真实联网合并，也不得在 smoke 前宣称动作质量或胜率提升。
+不得把 L5-A2a 与真实联网合并，也不得在 smoke 前宣称动作质量或胜率提升。
 
 ### 9.7 当前下一步
 
-L5-A1 已完成并封存为 `71d9119`：定向 23 项、全量 565 项通过，唯一判定 `botzone_deepseek_connector_offline_wiring_verified`。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A1a，只修复启动顺序和精确诊断兼容，不联网、不启动真实 connector。
+L5-A1 已封存为 `71d9119`；L5-A1a 已完成并封存为 `aac59d5`，定向 23 项、全量 569 项通过，唯一判定 `botzone_deepseek_connector_hardening_verified`。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2a，只运行一次真实环境零网络 preflight，不启动 connector 主循环。

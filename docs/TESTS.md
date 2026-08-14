@@ -1455,4 +1455,18 @@ L5-A1 实际结果：实现检查点 `71d9119`，定向 23 项、全量 565 项�
 - 默认 rule preflight 与既有 LF/CRLF stdout 契约保持不变；
 - cache、pending/ack、finished cleanup、response provenance 和 RuleBased E2E 回归保持通过。
 
-L5-A1a 通过后只能判定 `botzone_deepseek_connector_hardening_verified`，仍需单独的 L5-A2 真实环境准入和明确授权。
+L5-A1a 实际结果：实现检查点 `aac59d5`，定向 23 项、全量 569 项和 `git diff --check` 通过，判定 `botzone_deepseek_connector_hardening_verified`。
+
+### 9.3 L5-A2a 真实环境零网络 preflight
+
+必须验证：
+
+- HEAD/工作区/回归满足门槛；
+- Botzone URL 与 DeepSeek key 只检查 present，endpoint/model 只检查是否匹配锁定值；
+- 使用全新仓库外 `%LOCALAPPDATA%` state 目录，不复用历史 state；
+- `--agent deepseek --preflight-only` 恰好执行一次，30 秒硬上限且不重试；
+- exit 0、stdout 单行 `preflight_ready`、stderr 空、state 最终为空、无残留进程；
+- Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle 和 `suggest_action_id()` 均为 0；
+- summary 不含 URL、key、Header、路径敏感片段、牌、request/response、prompt、reasoning 或异常正文。
+
+通过只能判定 `botzone_deepseek_connector_live_preflight_ready`。真实 connector 与模型调用必须放在 L5-A2b，并重新获得明确授权。

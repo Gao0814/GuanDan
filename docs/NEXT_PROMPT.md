@@ -1,106 +1,44 @@
 # 下一步实施提示词
 
-## Step L5-A1a：Botzone DeepSeek connector 启动与降级契约加固
+## Step L5-A2a：Botzone DeepSeek connector 真实环境零网络 preflight
 
-本轮只修复 L5-A1 复核发现的两个离线契约缺口，不连接 Botzone，不调用真实 DeepSeek，不读取或输出真实 `.env`、API key、本地 AI URL、Header、Cookie、match ID、手牌、prompt 或模型响应正文。
+本轮只执行一次受监督的真实环境 `--preflight-only`。不得启动 connector 主循环，不得发送 Botzone GET，不得调用 DeepSeek，不得创建或加入测试桌，也不得读取、输出、复制、散列或持久化 API key、本地 AI URL、Header、Cookie、prompt、模型响应或 `.env` 内容。
 
 ### 已确认基线
 
-- L5-A1 实现检查点：`71d9119`（`Add Botzone DeepSeek connector runtime`）。
-- 已新增默认 `rule` / 显式 `deepseek` 组合根、match/player Agent 缓存、finished 清理和 DeepSeek 外层 RuleBased fallback。
-- DeepSeek 只接收 adapter 生成的公开 observation 与 canonical legal actions；Botzone action/claim 仍由 provenance 编码。
-- 模型异常、超时、`None`、bool、字符串、浮点数、越界或非法 action ID 已验证会回退规则动作。
-- 定向 23 项、全量 565 项、`git diff --check` 已由实现任务和规划复核分别通过。
-- 唯一功能判定保持：
+- L5-A1 实现检查点：`71d9119`。
+- L5-A1a 加固检查点：`aac59d5`（`Harden Botzone DeepSeek connector startup`）。
+- L5-A1a 已锁定：
+  - 默认 handler 的 `agent_failure`、`invalid_agent_action_id`、`missing_provenance`；
+  - DeepSeek 路径的一次 RuleBased fallback，以及 `rule_fallback_failure`、`invalid_rule_fallback_action_id`、`missing_provenance`；
+  - deepseek 本地组合先于 Botzone transport 构造；
+  - `--preflight-only --agent deepseek` 不构造 transport、不调用 `suggest_action_id()`、不 poll。
+- 规划复核已再次运行定向 23 项、全量 569 项和 `git diff --check`，全部通过。
+- 当前唯一判定：
 
 ```text
-botzone_deepseek_connector_offline_wiring_verified
+botzone_deepseek_connector_hardening_verified
 ```
 
-### 复核发现的剩余缺口
+### 本轮目标
 
-1. 默认非 fallback handler 原先将 Agent 异常分类为 `agent_failure`，将非整数或非法 action ID 分类为 `invalid_agent_action_id`。L5-A1 将选择和 ID 校验合并到同一个 `try`，使后两类也变成 `agent_failure`。正常动作不受影响，但默认 RuleBased adapter 的既有诊断契约发生了未锁定变化。
-2. `__main__.py` 当前先构造 `LocalAIHttpTransport`，随后 `build_foreground_runner()` 才验证显式 deepseek 模式的 key/client/RAG 组合。构造 transport 不会发网，但缺失 DeepSeek 配置时应在 transport 构造前稳定失败，便于下一步零网络 preflight 审计。
+在真实本机进程环境中证明以下本地链路可以完成，但网络调用计数仍为 0：
 
-### 目标
+```text
+Botzone runtime config shape
+  -> fresh repository-external state-directory file preflight
+  -> DeepSeek config presence/shape
+  -> DeepSeekClient construction (no request)
+  -> local RAG load
+  -> disposable DeepSeekAIAgent construction (no select_action)
+  -> preflight_ready
+```
 
-做最小加固并锁定精确行为：
+### 前置门槛
 
-- 默认 RuleBased handler 的正常 response 与历史错误分类恢复兼容；
-- DeepSeek 主 Agent 失败才进入 RuleBased fallback；
-- RuleBased fallback 自身异常、错误类型、非法 ID 与 provenance 缺失分别 fail-closed；
-- 显式 deepseek 模式在 Botzone transport 构造前完成纯本地组合验证；
-- `--preflight-only --agent deepseek` 可以验证 DeepSeek 配置与本地 RAG 组合，但不得构造 Botzone transport、调用 DeepSeek 或 poll Botzone。
-
-### 修改前必须阅读
-
-- `AGENTS.md`
-- `docs/BOTZONE_INTEGRATION_PLAN.md`
-- `integrations/botzone/agent_runtime.py`
-- `integrations/botzone/play_adapter.py`
-- `integrations/botzone/runner.py`
-- `integrations/botzone/__main__.py`
-- `integrations/botzone/http_transport.py`
-- `tests/test_botzone_action_provenance.py`
-- `tests/test_botzone_deepseek_agent_runtime.py`
-- `tests/test_botzone_runner.py`
-- `tests/test_botzone_preflight_output.py`
-- 与 DeepSeek config/fallback 相关的现有测试
-
-### 实施要求
-
-1. **恢复默认 handler 诊断兼容**
-   - `agent.select_action()` 抛异常：`agent_failure`。
-   - 返回值不是严格 `int`，包括 bool：`invalid_agent_action_id`。
-   - action ID 不在原始 legal actions：`invalid_agent_action_id`。
-   - provenance 缺失：`missing_provenance`。
-   - 默认 RuleBased 正常 response 必须逐字段不变。
-
-2. **锁定 DeepSeek fallback 分类**
-   - 主 Agent 异常、错误类型或非法 ID：调用一次 RuleBased fallback。
-   - fallback 正常：返回其合法 action，并沿用原 provenance 编码。
-   - fallback `select_action()` 抛异常：`rule_fallback_failure`。
-   - fallback 返回非严格整数或非法 ID：`invalid_rule_fallback_action_id`。
-   - fallback 合法 ID 仍缺 provenance：`missing_provenance`，不得伪造动作。
-   - 不允许 fallback 递归或第二次模型调用。
-
-3. **组合顺序与 preflight**
-   - 把 agent runtime 的纯本地构造/验证放在 Botzone `LocalAIHttpTransport` 构造之前。
-   - 默认 rule 模式仍不加载 AppConfig、DeepSeekClient 或 RAG。
-   - 显式 deepseek 缺 key、配置字段非法或 RAG 本地加载失败时，固定返回 `configuration_error` / exit 2；Botzone transport 构造次数为 0。
-   - `--preflight-only --agent rule` 保持既有 `preflight_ready` 契约。
-   - `--preflight-only --agent deepseek` 应完成纯本地 agent composition 验证后输出同一固定 `preflight_ready`；不得调用 `suggest_action_id()`、DNS、socket、HTTP、Botzone poll 或 DeepSeek。
-   - 不得输出失败原因正文、配置值、路径、URL 或 key。
-
-4. **范围控制**
-   - 不修改 `engine/`、`agents/`、Botzone protocol/session/cards/bot envelope、上传 Bot 或 ZIP。
-   - 不改变 match/player cache、pending/ack、finished cleanup 和 response provenance 的正常语义。
-   - 不新增依赖，不联网，不启动真实 connector。
-
-### 允许修改文件
-
-- `integrations/botzone/agent_runtime.py`
-- `integrations/botzone/play_adapter.py`
-- `integrations/botzone/runner.py`
-- `integrations/botzone/__main__.py`
-- `tests/test_botzone_deepseek_agent_runtime.py`
-- `tests/test_botzone_action_provenance.py`
-- 必要的 runner/preflight CLI 测试
-
-如确实需要修改其他文件，先停止并说明契约缺口，不要自行扩大范围。
-
-### 最低测试
-
-1. 参数化锁定默认 handler 的 `agent_failure`、`invalid_agent_action_id`、`missing_provenance`。
-2. 参数化锁定 DeepSeek fallback 的成功、`rule_fallback_failure`、`invalid_rule_fallback_action_id`、`missing_provenance`。
-3. 验证主 Agent 每次最多调用一次，fallback 每次最多调用一次。
-4. rule 模式 config/client/RAG/transport 构造边界保持不变。
-5. deepseek 缺 key时 `LocalAIHttpTransport` 构造为 0、runner 构造为 0、退出 2。
-6. deepseek preflight 使用合成配置/fake factories，成功输出精确 `preflight_ready`，全部网络调用为 0。
-7. preflight 配置失败时 stdout 只有固定 `configuration_error`，stderr 为空且不泄露异常正文。
-8. 既有缓存隔离、finished 清理、pending 重发、response/provenance 与 RuleBased E2E 回归保持通过。
-
-### 验证命令
+1. 当前 HEAD 必须精确包含 `aac59d5`，且 L5-A1/L5-A1a 文件相对检查点无差异。
+2. `git status --short` 必须为空；不允许 stash、还原、提交或清理用户改动来满足门槛。
+3. 重新运行：
 
 ```text
 python -m unittest tests.test_botzone_deepseek_agent_runtime tests.test_botzone_action_provenance tests.test_botzone_runner tests.test_botzone_preflight_output -q
@@ -108,23 +46,78 @@ python -m unittest discover -q
 git diff --check
 ```
 
-另做静态边界扫描，确认无真实 URL/key、`.env` 内容、Header、Cookie、prompt/response 正文、新网络客户端或上传 ZIP 改动。
+4. 只检查以下元数据，不输出值：
+   - `BOTZONE_LOCAL_AI_URL`：present/missing；
+   - `DEEPSEEK_API_KEY`：present/missing；
+   - `DEEPSEEK_BASE_URL`：只允许报告是否精确匹配 `https://api.deepseek.com`；
+   - `DEEPSEEK_MODEL`：只允许报告是否精确匹配 `deepseek-v4-flash`。
+5. 不直接打开 `.env`。应用既有配置入口可能按项目契约加载环境配置，但任务不得读取、打印或复制文件内容；若上述显式进程环境元数据缺失，判定 precondition failed，不依赖查看 `.env` 补齐。
+6. 确认不存在本项目残留 connector/Python 进程；不得终止无法确认归属的进程。
 
-### 验收判定
+任一前置失败，立即输出固定失败原因并停止，不创建 preflight 子进程。
 
-全部通过后唯一判定：
+### 受监督 preflight
+
+1. 在 `%LOCALAPPDATA%` 下创建一个全新、随机命名、仓库外的空 state 目录；不得复用任何历史 Botzone state 目录。
+2. 不使用 `BOTZONE_STATE_DIR` 的既有值；通过 `--state-dir` 显式传入本轮新目录。
+3. 只执行一次：
 
 ```text
-botzone_deepseek_connector_hardening_verified
+python -m integrations.botzone --agent deepseek --preflight-only --state-dir <fresh-absolute-directory>
 ```
 
-该判定只允许规划 L5-A2 的真实环境零网络 preflight；不授权启动 connector，不代表 DeepSeek 可达、Botzone 对局闭环、动作质量或胜率提升。
+4. 使用 30 秒硬上限。不得重试、提高上限或启动第二个进程。
+5. 必须完整捕获并规范化：exit code、stdout 单行类别、stderr 是否为空、运行时长、state 目录前后是否为空，以及进程是否退出。
+6. 成功门槛必须全部满足：
+   - 30 秒内自行退出；
+   - exit code 0；
+   - stdout 规范化后精确为单行 `preflight_ready`；
+   - stderr 为空；
+   - state 目录最终为空；
+   - 无残留进程；
+   - Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle、`suggest_action_id()` 均为 0。
+7. preflight 结束后只删除本轮新建且确认为空的 state 目录；不得操作其他目录。
+
+### 证据与隐私
+
+- 可以在仓库外新建脱敏 summary，内容仅限上述布尔值、计数、exit code、耗时和固定分类。
+- 不得记录 URL、key、环境变量值、路径中的敏感片段、Header、match ID、牌、request/response、prompt、reasoning 或异常正文。
+- stdout/stderr 若不满足固定类别，只记录 `unexpected_stdout` / `unexpected_stderr`，不要在报告中复述原文。
+- 不修改仓库文件，不创建 runner 源码，不联网，不提交仓库外证据。
+
+### 判定
+
+全部成功门槛通过时，唯一判定：
+
+```text
+botzone_deepseek_connector_live_preflight_ready
+```
+
+任一门槛失败时，使用以下唯一判定并报告失败阶段：
+
+```text
+botzone_deepseek_connector_live_preflight_invalid
+```
+
+不得重试或用推测补齐证据。
+
+### 结论边界
+
+`ready` 只证明真实本机配置、state 文件操作、RAG 与 DeepSeek Agent 的零网络构造可用。它不证明：
+
+- Botzone 本地 AI URL 当前在线；
+- connector 能完成 GET/Header 协议闭环；
+- DeepSeek endpoint 可达或模型能返回；
+- 单回合延迟可接受；
+- 动作质量或胜率提升。
+
+本轮结束时不得启动 live connector，也不得请求模型。若 preflight 通过，下一步只更新 docs，形成 L5-A2b 的固定请求预算与明确授权问题。
 
 完成后请报告：
 
-1. 修改文件；
-2. 精确诊断分类矩阵；
-3. agent/config/transport 构造顺序；
-4. preflight 的零网络证据；
-5. 定向与全量测试结果；
+1. HEAD、工作区和回归结果；
+2. 四项配置元数据门槛；
+3. preflight exit/stdout/stderr/耗时/state 结果；
+4. 零网络与零残留进程证据；
+5. 唯一判定；
 6. 未解决风险。
