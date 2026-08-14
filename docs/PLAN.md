@@ -108,6 +108,12 @@
 - 80 项定向相关、587 项全量及补丁检查通过，工作区干净且未联网。
 - 下一步 L5-A2b12 只运行一次零网络 preflight；ready 后重新请求 L5-A2b13 live 授权。
 
+### L5-A2b12 前置阻塞
+
+- 检查点、工作区、配置元数据与进程门槛均通过，但当前权限范围无法创建系统临时 state 目录。
+- preflight 子进程未启动，所有网络、模型、transport、connector 和 Agent 计数为 0；结果为 `precondition_failed: temporary_state_directory_unavailable`。
+- 该结果不归因 runtime 或 connector。下一步 L5-A2b12a 只请求一次仓库外临时目录写权限，并执行原零网络 preflight；不改代码、不重复测试、不联网。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

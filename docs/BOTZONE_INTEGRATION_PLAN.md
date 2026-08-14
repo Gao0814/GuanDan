@@ -51,6 +51,8 @@ L5-A2b10 已在真实平台证明 direct-stage request/response/Header 可达，
 
 L5-A2b11 已按该设计完成并封存为 `220c648a4629453621f534beaeb95e52d85656ce`。timeout 现为独立 idle 计数，真实 transport failure 保持安全分类和失败上限；v5 audit 提供互斥 finished provenance，仍只有已 ack play 的四人 finished 能 qualified。下一步先做一次零网络组合准入，之后才重新取得 live 授权。
 
+L5-A2b12 尚未运行 preflight：沙箱无法创建全新的系统临时 state 目录，故以 `temporary_state_directory_unavailable` 在进程启动前停止。L5-A2b12a 不改变实现或安全边界，只对创建/删除单个仓库外临时目录及运行一次零网络 preflight 请求文件权限；不得借此联网或使用仓库内 state。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

@@ -47,6 +47,8 @@ L5-A2b10 live 得到 requests/responses/headers=`1/1/1`、协议诊断为空，�
 
 L5-A2b11 已通过定向相关 80 项、全量 587 项和 `git diff --check`，检查点为 `220c648a4629453621f534beaeb95e52d85656ce`。测试覆盖 timeout/URLError timeout、其他 transport category、failure budget/重置、pending Header、四类 finished provenance、v5 audit 兼容与敏感边界。实现阶段网络计数为 0；L5-A2b12 不重复测试，只运行一次零网络 preflight。
 
+L5-A2b12 因系统临时 state 目录无法创建而在子进程启动前返回 `precondition_failed`；没有新增测试或网络活动。L5-A2b12a 仍不重复 80/587 测试，只在获批的仓库外临时目录运行原零网络 preflight，并验证 state 前后为空、固定 stdout、零网络计数和无残留进程。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口
