@@ -43,6 +43,8 @@ preflight 必须使用项目 `.venv\Scripts\python.exe`。该环境的 `python-d
 
 L5-A2b7 的项目所有者输入与授权已齐备：本家座位为 0，三个非本家位置复用同一个现有 Bot。官方公开说明只锁定“有且只有一个 `me`”，没有明确要求其他 Bot ID 互不相同；平台仍可能按普通建桌限制拒绝。该情况只允许记录创建失败并终止，不得替换 Bot、重试或创建第二局。具体 Bot ID 只在本次执行内存中使用，不写入文档或审计。
 
+L5-A2b7 证明 runmatch 可创建，但 local-AI poll 的实际请求是直接 GuanDan `stage` object，不是当前 connector 强制要求的 Bot `requests/responses` 信封。唯一运行在处理请求前 fail-closed，未触达 Agent 或 DeepSeek。L5-A2b8 将在 poll/response 边界显式区分 `bot_envelope` 与 `direct_stage`：前者保留 replay 和 response wrapper，后者依赖 durable session 并发送 canonical 原始 GuanDan response；两者均不得绕过 protocol、legal action provenance 或 pending/ack 事务。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

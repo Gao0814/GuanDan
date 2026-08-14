@@ -1,74 +1,66 @@
 # 下一步实施提示词
 
-## Step L5-A2b7a：恢复同任务输入后执行唯一一次 runmatch DeepSeek live smoke
+## Step L5-A2b8：local-AI 直接 stage wire mode 适配
 
-当前状态为 `precondition_failed: runmatch_participants_missing`。上一次实施任务看不到规划任务中的敏感 Bot ID 和授权原文，因此在任何配置读取、state/audit 创建或网络操作前停止；授权未消耗。
-
-### 必须先在本实施任务中收齐
-
-实施任务必须要求项目所有者在同一任务的下一条消息中粘贴以下完整内容。不得从 docs、其他任务摘要或历史报告推断 Bot ID/授权：
+上一轮唯一 live 结论永久记录为：
 
 ```text
-Bot ID 1：<可参与 GuanDan 的现有 Bot ID>
-Bot ID 2：<可参与 GuanDan 的现有 Bot ID>
-Bot ID 3：<可参与 GuanDan 的现有 Bot ID>
-me 座位：0
-旧本地 AI 测试桌已全部关闭：是
-接受省略 X-Initdata，并在非零 tribute 或 tribute/return 阶段立即停止且不重试：是
-
-我明确授权执行 L5-A2b7a：向由当前 BOTZONE_LOCAL_AI_URL 在内存中派生的 runmatch endpoint 发送一次 GET，并向当前 local-AI endpoint 最多发送 100 次 GET；允许将本家未公开手牌、公开局面、engine 合法候选、手牌评估、记牌摘要、场景标签和本地 RAG 片段发送到 https://api.deepseek.com 的 deepseek-v4-flash。DeepSeek timeout 为 60 秒、retries 为 0；只启动一个 connector，只创建一个 runmatch 对局，最长 3600 秒，完成一局即停。若首个请求显示非零 tribute，或出现 tribute/return，立即停止且不重试。
+botzone_deepseek_runmatch_no_tribute_smoke_invalid
 ```
 
-收到后先严格核对三项 ID 非空、`me=0`、两项确认均为“是”、授权中的 endpoint/model/预算与本文件完全一致。核对通过后在同一任务中直接继续固定执行顺序，不再要求把敏感输入写入 docs，也不另开执行任务。
+runmatch 已创建成功，但唯一 connector 在第二个 cycle 以 exit 5 / `diagnostic_failure` 结束。聚合结果为 requests/responses/headers=`1/0/0`、finished=`0`、transport failure=`1`；协议诊断为 `envelope_shape_invalid → envelope_required_fields_missing → required_both_missing_inner_stage_candidate`。请求未进入 session、adapter、RuleBased fallback 或 DeepSeek，state 与进程已清理，且没有重试。
 
-三个非本家座位复用同一个现有 Bot ID。公开 runmatch 说明只要求 `X-Player-*` 中有且只有一个 `me`，没有声明其他 Bot ID 必须互不相同；但“与建桌相同的限制”仍可能由平台拒绝该组合。若 runmatch 拒绝，记录固定创建失败并停止，不更换 Bot、不重试。
+该证据已足以确认 connector 收到了带 `stage` 的 GuanDan 内层请求，而 `poll._parse_request()` 当前无条件要求 Bot JSON 的 `requests/responses` 外层信封。停止继续扩展诊断画像；本步骤直接实现双 wire mode。
 
-### 敏感输入边界
+### 允许修改
 
-- Bot ID 只从当前实施任务内紧邻的项目所有者消息读取并在内存中使用。
-- 不得把 Bot ID、local-AI URL、runmatch URL、API key、match ID、Header、手牌、prompt 或模型响应写入仓库、docs、普通日志或最终报告。
-- 只报告固定状态、聚合计数和脱敏失败类别。
-- 不读取仓库 `.env`；使用项目 `.venv\Scripts\python.exe`，并在子进程环境设置 `PYTHON_DOTENV_DISABLED=1`。
+- `integrations/botzone/poll.py`
+- `integrations/botzone/connector.py`
+- `integrations/botzone/bot_io.py` 或现有协议编码模块中确有必要的最小响应规范化辅助
+- 与上述行为直接对应的 `tests/test_botzone_*.py`
 
-### 已锁定授权与预算
+禁止修改 `engine/`、`agents/`、DeepSeek client/prompt、RAG、CLI、transport、runner、runtime config、上传 Bot、真实配置和 docs。不得联网、读取 `.env` 或历史 live 请求正文。
 
-- runmatch endpoint：由当前 `BOTZONE_LOCAL_AI_URL` 仅在内存中派生；最多 1 次 GET。
-- local-AI endpoint：最多 100 次 GET。
-- DeepSeek：`https://api.deepseek.com` / `deepseek-v4-flash`。
-- 允许发送：本家未公开手牌、公开局面、engine 合法候选、手牌评估、记牌摘要、场景标签和本地 RAG 片段。
-- DeepSeek timeout 60 秒、retries 0。
-- 仅 1 个 connector、1 个 runmatch 对局，最长 3600 秒，qualified finished=1 即停。
-- 不发送 `X-Initdata`；首个请求非零 tribute，或出现 `tribute/return`，立即停止且不重试。
+### 实现契约
 
-### 固定执行顺序
+1. 为每个 `PollRequest` 增加固定 wire mode，例如 `bot_envelope` / `direct_stage`；必须是不可变、低基数状态，不保留原始字段画像。
+2. JSON object 同时具备 `requests` 与 `responses` 时，继续严格走现有 `parse_bot_envelope()`，replay 与 `{"response":...}` 编码行为逐字段不变。
+3. JSON object 不具备 Bot 信封字段、但具有 `stage` 时，严格调用现有 `parse_stage_request()`：
+   - 合法 `deal/play/unsupported stage` 进入现有流程，`replay=None`；
+   - malformed stage 固定归类 `inner_request_invalid`；
+   - 不得把任意缺字段 object 当作 direct stage 接受。
+4. direct `deal` 依靠现有 session 初始化本家实体手牌与座位；后续 direct `play` 依靠同 match 的 durable session。冷启动 direct `play` 必须继续 `play_without_state`，不得猜测手牌。
+5. response 编码必须绑定 wire mode：
+   - `bot_envelope`：保留 canonical `{"response":...}`；
+   - `direct_stage`：Header value 为经过同等严格校验和 canonical JSON 序列化的 GuanDan 原始 response（deal `[]`；play `[action,claim]`），不得添加 `response` 外层。
+6. 两种模式都必须拒绝换行注入、错误 deal response、malformed action/claim、非法实体 ID 和 provenance 缺失。
+7. pending response 在写入 session 前已经是最终 wire bytes；transport failure、重启、重发和 ack 不得重复调用 Agent、重复扣牌或改变 wire mode。
+8. 现有 envelope、Bot replay、required-fields 诊断、v4 audit、finished qualification 与 DeepSeek RuleBased fallback 契约保持兼容。
 
-1. 快速复核 HEAD/工作区干净、四项配置元数据匹配、无残留 connector；不重复完整回归。
-2. 创建全新仓库外 state/audit，确认初始为空。
-3. 使用项目 `.venv` 与 dotenv 禁用开关启动唯一 DeepSeek connector。
-4. 确认 local-AI poll 已连接后，仅发送一次 runmatch GET：
+### 必须新增或更新的测试
+
+- poll 同批解析 envelope 与 direct deal/play，顺序及 mode 稳定。
+- live 观测形态的合法 direct `deal` 不再产生 `required_both_missing_inner_stage_candidate`。
+- direct malformed stage 仍 fail-closed 为 `inner_request_invalid`，普通缺字段 object 仍是 envelope shape failure。
+- direct `deal → Header [] → ack → play → Header [action,claim] → ack` 完整 mock 链。
+- direct pass、自然牌和配子 response 的 canonical 原始 JSON；envelope 对照仍带 `response` 包装。
+- direct 冷启动 play、重复请求、transport failure、重启 pending resend、多 match 隔离、unsupported tribute/return。
+- Agent 只被调用一次，最终动作仍来自原始 legal action ID/provenance。
+- 既有 envelope、session、adapter、DeepSeek runtime 和 runner 回归保持通过。
+
+### 验证与交付
+
+先运行新增定向测试，再运行：
 
 ```text
-X-Game: GuanDan
-X-Player-0: me
-X-Player-1: <本实施任务中收到的 Bot ID 1>
-X-Player-2: <本实施任务中收到的 Bot ID 2>
-X-Player-3: <本实施任务中收到的 Bot ID 3>
+python -m unittest discover -q
+git diff --check
 ```
 
-5. 省略 `X-Initdata`。不持久化 runmatch 返回的 match ID。
-6. 首个内层请求必须满足现有无贡 profile；否则 fail-closed。
-7. DeepSeek 异常、超时、空值或非法 action ID 仅允许走现有 RuleBased fallback；最终 response 必须回查 engine 原始合法 action ID/provenance。
-8. finished=1、达到任一预算或出现固定失败后终止；不创建第二局、不启动第二进程、不补采。
-9. 清理 state 中已完成会话，确认无残留 connector；仅输出脱敏聚合审计。
-
-### 验收结论
-
-只有同时满足 runmatch 创建成功、非零 request/response/Header、qualified finished=1、transport failure=0、协议 diagnostics 为空、Botzone 无非法动作或决策超时、state 清理完成且无残留进程，才能判定：
+通过后建立独立实现检查点；提交只包含允许的 integration/test 文件。报告测试数量、提交 hash、双模式行为和剩余风险。唯一成功判定：
 
 ```text
-botzone_deepseek_runmatch_no_tribute_smoke_verified
+botzone_local_ai_direct_stage_wire_contract_verified
 ```
 
-runmatch 若拒绝重复 Bot、首个请求不是无贡、发生贡还、任何协议诊断、预算耗尽或闭环不完整，只能给出对应的 `invalid` / `precondition_failed`，并停止且不重试。
-
-该步骤只验证一次 Botzone/DeepSeek/RuleBased fallback 闭环，不证明 DeepSeek 每手均被调用、动作质量或胜率提升。
+本步骤不运行 preflight、runmatch、connector 或 DeepSeek，不请求 live 授权。成功后下一步才是一次最小本地准入和新的单次 live 授权。

@@ -78,6 +78,13 @@
 - 项目所有者已接受省略 `X-Initdata`，并授权一次 runmatch GET、最多 100 次 local-AI GET、DeepSeek 60 秒/零重试、单 connector、单对局、最长 3600 秒。
 - Bot ID 与其他敏感值不写入文档或审计；下一步直接按 `NEXT_PROMPT.md` 执行唯一 live smoke。
 
+### L5-A2b7 实际结果与直接修复
+
+- 唯一 runmatch 创建成功，但 connector 只收到一个请求，未产生 response/Header，随后以协议诊断和一次 transport failure 停止；qualified finished=0。
+- 固定画像为 `required_both_missing_inner_stage_candidate`，说明 local-AI poll 交付的是 GuanDan 直接 `stage` object，而当前 poll 入口无条件要求 Bot JSON 外层信封。
+- 该 live 结论为 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`，授权已消耗，不重试。
+- 下一步 L5-A2b8 直接实现双 wire mode：信封模式保持包装与 replay，direct-stage 模式使用 durable session 并发送 canonical 原始 GuanDan response。停止新增诊断载体。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
