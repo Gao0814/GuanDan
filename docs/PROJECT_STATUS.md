@@ -1484,6 +1484,16 @@ L5-A1a 已修复这两个问题并补充参数化测试，不改变正常 respon
 
 下一步只实现零网络、低基数、无原文的 envelope-shape 子分类，同时保持公开父诊断兼容。完成离线契约前不得再次申请或执行 live。
 
+### L5-A2b2 实际结果
+
+实现检查点：`37bdd0d`。新增八种固定 shape detail；`PollRequest` 安全携带 detail，connector/runner 仅聚合 allowlist；audit schema 升至 v3 并新增 `diagnostic_details`，原 `diagnostics` 语义不变。定向 24 项、全量 572 项和 `git diff --check` 通过，边界扫描无新增网络、真实配置或敏感读取。
+
+唯一判定：`botzone_envelope_shape_subdiagnostics_verified`。
+
+### 当前阶段：L5-A2b3
+
+下一步只执行 v3 零网络 preflight，并要求项目所有者确认所有旧本地 AI 测试桌已结束/关闭。只有两项都通过后，才能提出 L5-A2b4 的新 live 授权问题；本阶段不联网。
+
 ### 后续边界
 
-L5-A2b1 已执行且 invalid，历史授权不可复用。L5-A2b2 只允许离线诊断加固；当前仍不形成 DeepSeek 可达、动作质量或胜率结论。
+L5-A2b1 已执行且 invalid，历史授权不可复用。L5-A2b2 只证明脱敏子分类契约。当前仍不形成 Botzone 协议闭环、DeepSeek 可达、动作质量或胜率结论。

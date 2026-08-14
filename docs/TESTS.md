@@ -1531,3 +1531,13 @@ L5-A2a 前置实际结果：检查点、工作区、23/569 回归和四项脱敏
 - connector/runner/audit 只聚合 detail，不保留输入、牌、match、长度或异常正文；
 - 既有 Botzone 和 DeepSeek runtime 回归保持通过；
 - 所有测试使用合成数据，网络计数为 0。
+
+实际结果：实现检查点 `37bdd0d`。八种固定 detail、父诊断兼容、非 shape 诊断隔离、connector/runner allowlist 聚合和 audit v3 均已覆盖。定向 24 项、全量 572 项、`git diff --check` 与边界扫描通过；唯一判定 `botzone_envelope_shape_subdiagnostics_verified`。
+
+### 9.8 L5-A2b3 v3 恢复准入
+
+- 复核运行 24 项定向测试和 diff check；
+- 唯一真实进程是 `--agent deepseek --preflight-only`，30 秒、全新系统临时 state、零网络；
+- 必须 exit 0、单行 `preflight_ready`、空 stderr/state、无残留；
+- 项目所有者必须确认全部旧本地 AI 测试桌已关闭；
+- 本阶段只准备并请求 L5-A2b4 授权，不执行 live。

@@ -1235,6 +1235,15 @@ Botzone JSON input
 - 只在 connector/audit 中聚合 detail，不记录原始 envelope、字段值、match 或逐请求信息；
 - 先完成离线测试与 schema 兼容性，再决定是否需要新的 live 授权。
 
+实际结果：实现检查点 `37bdd0d`。八种 detail 已固定；公开父诊断保持 `envelope_shape_invalid`；connector/runner 只聚合 allowlist detail；audit 升至 v3，旧 diagnostics 语义不变。定向 24 项、全量 572 项和 diff check 通过，唯一判定 `botzone_envelope_shape_subdiagnostics_verified`。
+
+#### L5-A2b3：v3 恢复准入
+
+- 只复核检查点、24 项定向、配置元数据和残留进程；
+- 使用全新系统临时 state 执行恰好一次零网络 deepseek preflight；
+- 项目所有者必须确认所有历史本地 AI 测试桌已结束或关闭；
+- 全部门槛通过后只提出 L5-A2b4 的新授权问题，不在同一步启动 live。
+
 ### 9.7 当前下一步
 
-L5-A1/L5-A1a 已封存，L5-A2a1 preflight 已通过。L5-A2b1 唯一 live 运行在外层信封校验处 invalid，未进入 Agent/DeepSeek。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b2，只做零网络安全子分类；不得直接重跑 live。
+L5-A2b2 已封存为 `37bdd0d`。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3：只做 v3 零网络准入、旧桌清理确认和新授权准备，不直接 live。
