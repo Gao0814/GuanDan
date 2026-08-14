@@ -18,9 +18,22 @@ class BotEnvelopeError(ValueError):
     """The complete Bot JSON interaction cannot be safely replayed."""
 
     _CODES = frozenset({"envelope_shape", "inner_request", "historical_response", "replay_history", "unknown"})
+    _SHAPE_DETAILS = frozenset(
+        {
+            "envelope_top_level_invalid",
+            "envelope_required_fields_missing",
+            "envelope_unknown_field",
+            "envelope_optional_value_invalid",
+            "envelope_requests_not_list",
+            "envelope_responses_not_list",
+            "envelope_requests_empty",
+            "envelope_length_mismatch",
+        }
+    )
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, detail: str | None = None) -> None:
         self.code = code if code in self._CODES else "unknown"
+        self.detail = detail if self.code == "envelope_shape" and detail in self._SHAPE_DETAILS else None
         super().__init__(self.code)
 
 
@@ -61,9 +74,9 @@ def _json_compatible(value: object) -> bool:
     return False
 
 
-def _require_list(value: object, label: str) -> list[object]:
+def _require_list(value: object, detail: str) -> list[object]:
     if not isinstance(value, list):
-        raise BotEnvelopeError("envelope_shape")
+        raise BotEnvelopeError("envelope_shape", detail)
     return value
 
 
@@ -110,16 +123,20 @@ def parse_bot_envelope(value: object) -> BotEnvelope:
     """Validate/replay the standard Bot JSON input without a session dependency."""
 
     if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
-        raise BotEnvelopeError("envelope_shape")
+        raise BotEnvelopeError("envelope_shape", "envelope_top_level_invalid")
     allowed = {"requests", "responses", "data", "globaldata", "time_limit", "memory_limit"}
-    if set(value) - allowed or not {"requests", "responses"}.issubset(value):
-        raise BotEnvelopeError("envelope_shape")
+    if not {"requests", "responses"}.issubset(value):
+        raise BotEnvelopeError("envelope_shape", "envelope_required_fields_missing")
+    if set(value) - allowed:
+        raise BotEnvelopeError("envelope_shape", "envelope_unknown_field")
     if any(not _json_compatible(value[field]) for field in set(value) - {"requests", "responses"}):
-        raise BotEnvelopeError("envelope_shape")
-    raw_requests = _require_list(value["requests"], "requests")
-    raw_responses = _require_list(value["responses"], "responses")
-    if not raw_requests or len(raw_requests) != len(raw_responses) + 1:
-        raise BotEnvelopeError("envelope_shape")
+        raise BotEnvelopeError("envelope_shape", "envelope_optional_value_invalid")
+    raw_requests = _require_list(value["requests"], "envelope_requests_not_list")
+    raw_responses = _require_list(value["responses"], "envelope_responses_not_list")
+    if not raw_requests:
+        raise BotEnvelopeError("envelope_shape", "envelope_requests_empty")
+    if len(raw_requests) != len(raw_responses) + 1:
+        raise BotEnvelopeError("envelope_shape", "envelope_length_mismatch")
     try:
         stages = tuple(parse_stage_request(item) for item in raw_requests)
     except ProtocolValidationError as exc:

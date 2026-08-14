@@ -10,7 +10,7 @@ from typing import Protocol
 
 from .bot_io import BotEnvelopeError, encode_bot_response
 from .models import DealRequest, PlayRequest, UnsupportedStage
-from .poll import PollFormatError, PollRequest, parse_poll
+from .poll import ENVELOPE_SHAPE_DETAILS, PollFormatError, PollRequest, parse_poll
 from .session import HandlerContext, HandlerResult, PendingDelivery, SessionStorageError, SessionStore
 
 
@@ -30,6 +30,7 @@ class ConnectorCycle:
     finished_seen: int
     finished_qualified: int
     diagnostics: tuple[tuple[str, int], ...]
+    diagnostic_details: tuple[tuple[str, int], ...] = ()
 
 
 class MockConnector:
@@ -45,6 +46,7 @@ class MockConnector:
 
     def cycle(self) -> ConnectorCycle:
         diagnostics: Counter[str] = Counter()
+        diagnostic_details: Counter[str] = Counter()
         try:
             deliveries = self._store.pending_deliveries()
             headers = MappingProxyType({item.header_name: item.response for item in deliveries})
@@ -72,6 +74,7 @@ class MockConnector:
         for request in batch.requests:
             outcome = self._process_request(request)
             diagnostics.update(outcome[1])
+            diagnostic_details.update(outcome[2])
             prepared += outcome[0]
         qualified = 0
         for row in batch.finished:
@@ -95,33 +98,48 @@ class MockConnector:
                         release_match(row.match_id)
                 except Exception:
                     diagnostics["handler_lifecycle_failure"] += 1
-        return _cycle(True, len(headers), len(batch.requests), prepared, len(batch.finished), qualified, diagnostics)
+        return _cycle(
+            True,
+            len(headers),
+            len(batch.requests),
+            prepared,
+            len(batch.finished),
+            qualified,
+            diagnostics,
+            diagnostic_details,
+        )
 
-    def _process_request(self, request: PollRequest) -> tuple[int, Counter[str]]:
+    def _process_request(self, request: PollRequest) -> tuple[int, Counter[str], Counter[str]]:
         diagnostics: Counter[str] = Counter()
+        details: Counter[str] = Counter()
         if request.diagnostic is not None:
             diagnostics[request.diagnostic] += 1
-            return 0, diagnostics
+            if (
+                request.diagnostic == "envelope_shape_invalid"
+                and request.diagnostic_detail in ENVELOPE_SHAPE_DETAILS
+            ):
+                details[request.diagnostic_detail] += 1
+            return 0, diagnostics, details
         if isinstance(request.stage, UnsupportedStage):
             diagnostics["unsupported_stage"] += 1
-            return 0, diagnostics
+            return 0, diagnostics, details
         if not isinstance(request.stage, (DealRequest, PlayRequest)):
             diagnostics["malformed_request"] += 1
-            return 0, diagnostics
+            return 0, diagnostics, details
         try:
             record, call_handler = self._store.prepare(request.match_id, request.request_bytes, request.stage, request.replay)
         except SessionStorageError as exc:
             diagnostics[_normalized_session_error(exc)] += 1
-            return 0, diagnostics
+            return 0, diagnostics, details
         if not call_handler:
-            return int(record.pending_response is not None), diagnostics
+            return int(record.pending_response is not None), diagnostics, details
         try:
             record = self._store.reserve_handler(record)
             result = self._handler(self._store.handler_context(record, request.stage))
         except Exception:
             self._store.complete_handler(record, HandlerResult(None))
             diagnostics["handler_failure"] += 1
-            return 0, diagnostics
+            return 0, diagnostics, details
         try:
             if not isinstance(result, HandlerResult):
                 raise SessionStorageError("malformed_handler_result")
@@ -132,10 +150,10 @@ class MockConnector:
             completed = self._store.complete_handler(record, result)
         except (BotEnvelopeError, SessionStorageError) as exc:
             diagnostics[_normalized_session_error(exc)] += 1
-            return 0, diagnostics
+            return 0, diagnostics, details
         if isinstance(request.stage, PlayRequest) and completed.pending_response:
             self._play_pending.add(request.match_id)
-        return int(completed.pending_response is not None), diagnostics
+        return int(completed.pending_response is not None), diagnostics, details
 
 
 def _normalized_session_error(error: SessionStorageError) -> str:
@@ -159,6 +177,7 @@ def _cycle(
     finished_seen: int,
     finished_qualified: int,
     diagnostics: Mapping[str, int],
+    diagnostic_details: Mapping[str, int] | None = None,
 ) -> ConnectorCycle:
     return ConnectorCycle(
         transport_called=transport_called,
@@ -168,4 +187,7 @@ def _cycle(
         finished_seen=finished_seen,
         finished_qualified=finished_qualified,
         diagnostics=tuple(sorted((name, count) for name, count in diagnostics.items() if count)),
+        diagnostic_details=tuple(
+            sorted((name, count) for name, count in (diagnostic_details or {}).items() if count)
+        ),
     )

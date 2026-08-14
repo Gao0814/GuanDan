@@ -20,6 +20,18 @@ _ENVELOPE_DIAGNOSTICS = {
     "historical_response": "historical_response_invalid",
     "replay_history": "replay_history_invalid",
 }
+ENVELOPE_SHAPE_DETAILS = frozenset(
+    {
+        "envelope_top_level_invalid",
+        "envelope_required_fields_missing",
+        "envelope_unknown_field",
+        "envelope_optional_value_invalid",
+        "envelope_requests_not_list",
+        "envelope_responses_not_list",
+        "envelope_requests_empty",
+        "envelope_length_mismatch",
+    }
+)
 
 
 class PollFormatError(ValueError):
@@ -35,6 +47,7 @@ class PollRequest:
     stage: DealRequest | PlayRequest | UnsupportedStage | None
     replay: BotReplay | None = None
     diagnostic: str | None = None
+    diagnostic_detail: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,11 +105,14 @@ def _parse_request(match_id: str, request_line: str) -> PollRequest:
     try:
         envelope: BotEnvelope = parse_bot_envelope(payload)
     except BotEnvelopeError as exc:
+        diagnostic = _ENVELOPE_DIAGNOSTICS.get(exc.code, "malformed_request")
+        detail = exc.detail if diagnostic == "envelope_shape_invalid" and exc.detail in ENVELOPE_SHAPE_DETAILS else None
         return PollRequest(
             match_id=match_id,
             request_bytes=raw,
             stage=None,
-            diagnostic=_ENVELOPE_DIAGNOSTICS.get(exc.code, "malformed_request"),
+            diagnostic=diagnostic,
+            diagnostic_detail=detail,
         )
     except Exception:
         return PollRequest(match_id=match_id, request_bytes=raw, stage=None, diagnostic="malformed_request")

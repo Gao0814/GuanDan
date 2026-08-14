@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from integrations.botzone.bot_io import BotEnvelopeError, parse_bot_envelope
 from integrations.botzone.connector import MockConnector
-from integrations.botzone.poll import parse_poll
-from integrations.botzone.runner import ForegroundRunner
+from integrations.botzone.poll import PollRequest, parse_poll
+from integrations.botzone.runner import ForegroundRunner, write_audit
 from integrations.botzone.session import HandlerResult, SessionStore
 
 
@@ -36,6 +38,10 @@ def _diagnostic(value: object) -> str | None:
     return parse_poll(_poll_line(value)).requests[0].diagnostic
 
 
+def _detail(value: object) -> str | None:
+    return parse_poll(_poll_line(value)).requests[0].diagnostic_detail
+
+
 class _Transport:
     def __init__(self, payload: bytes) -> None:
         self._payload = payload
@@ -58,6 +64,32 @@ class BotzoneRequestDiagnosticTests(unittest.TestCase):
         ):
             with self.subTest(envelope_type=type(envelope).__name__):
                 self.assertEqual(_diagnostic(envelope), "envelope_shape_invalid")
+
+    def test_envelope_shape_details_are_fixed_and_do_not_replace_public_category(self) -> None:
+        json_cases = (
+            ({"responses": []}, "envelope_required_fields_missing"),
+            ({"requests": [_deal()], "responses": [], "extra": None}, "envelope_unknown_field"),
+            ({"requests": {}, "responses": []}, "envelope_requests_not_list"),
+            ({"requests": [_deal()], "responses": {}}, "envelope_responses_not_list"),
+            ({"requests": [], "responses": []}, "envelope_requests_empty"),
+            ({"requests": [_deal()], "responses": [[]]}, "envelope_length_mismatch"),
+        )
+        for envelope, detail in json_cases:
+            with self.subTest(detail=detail):
+                self.assertEqual(_diagnostic(envelope), "envelope_shape_invalid")
+                self.assertEqual(_detail(envelope), detail)
+        direct_cases = (
+            ([], "envelope_top_level_invalid"),
+            ({1: "synthetic"}, "envelope_top_level_invalid"),
+            ({"requests": [_deal()], "responses": [], "data": object()}, "envelope_optional_value_invalid"),
+        )
+        for envelope, detail in direct_cases:
+            with self.subTest(detail=detail):
+                with self.assertRaises(BotEnvelopeError) as raised:
+                    parse_bot_envelope(envelope)
+                self.assertEqual((raised.exception.code, raised.exception.detail), ("envelope_shape", detail))
+        valid = parse_poll(_poll_line({"requests": [_deal()], "responses": []})).requests[0]
+        self.assertEqual((valid.diagnostic, valid.diagnostic_detail), (None, None))
 
     def test_inner_and_historical_categories_are_fixed(self) -> None:
         malformed_deal = _deal()
@@ -91,6 +123,8 @@ class BotzoneRequestDiagnosticTests(unittest.TestCase):
                     _diagnostic({"requests": [_deal(), _play(), _play()], "responses": [[], response]}),
                     "historical_response_invalid",
                 )
+        self.assertIsNone(_detail({"requests": [malformed_deal], "responses": []}))
+        self.assertIsNone(_detail({"requests": [_play()], "responses": []}))
 
     def test_replay_categories_are_fixed(self) -> None:
         self.assertEqual(_diagnostic({"requests": [_play()], "responses": []}), "replay_history_invalid")
@@ -132,6 +166,44 @@ class BotzoneRequestDiagnosticTests(unittest.TestCase):
                 sleep=lambda _: None,
             )
             self.assertEqual(runner.run(max_cycles=2).stopped, "diagnostic_failure")
+
+    def test_connector_and_audit_aggregate_only_fixed_shape_detail_counts(self) -> None:
+        payload = _poll_line({"requests": [], "responses": []})
+        with TemporaryDirectory() as root:
+            connector = MockConnector(SessionStore(root), _Transport(payload), lambda _: HandlerResult(b"[]"))
+            cycle = connector.cycle()
+            self.assertEqual(cycle.diagnostics, (("envelope_shape_invalid", 1),))
+            self.assertEqual(cycle.diagnostic_details, (("envelope_requests_empty", 1),))
+        with TemporaryDirectory() as root:
+            runner = ForegroundRunner(
+                MockConnector(SessionStore(root), _Transport(payload), lambda _: HandlerResult(b"[]")),
+                max_consecutive_failures=1,
+                backoff_seconds=1,
+                sleep=lambda _: None,
+            )
+            summary = runner.run(max_cycles=1)
+            audit = Path(root) / "audit.json"
+            write_audit(audit, summary, 5)
+            serialized = json.loads(audit.read_text(encoding="utf-8"))
+        self.assertEqual(serialized["version"], 3)
+        self.assertEqual(serialized["diagnostics"], [["envelope_shape_invalid", 1]])
+        self.assertEqual(serialized["diagnostic_details"], [["envelope_requests_empty", 1]])
+        self.assertNotIn("case", serialized)
+
+    def test_connector_rejects_unrecognized_detail_before_aggregation(self) -> None:
+        with TemporaryDirectory() as root:
+            connector = MockConnector(SessionStore(root), _Transport(b"0 0\n"), lambda _: HandlerResult(b"[]"))
+            _, diagnostics, details = connector._process_request(
+                PollRequest(
+                    match_id="synthetic",
+                    request_bytes=b"",
+                    stage=None,
+                    diagnostic="envelope_shape_invalid",
+                    diagnostic_detail="unrecognized_detail",
+                )
+            )
+        self.assertEqual(diagnostics, {"envelope_shape_invalid": 1})
+        self.assertEqual(details, {})
 
 
 if __name__ == "__main__":
