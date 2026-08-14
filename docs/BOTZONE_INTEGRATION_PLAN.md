@@ -47,6 +47,8 @@ L5-A2b7 证明 runmatch 可创建，但 local-AI poll 的实际请求是直接 G
 
 L5-A2b8 已按该设计完成：检查点 `2cd208b9b8f7306decf3182318fb55278c09d641` 保持 envelope replay 兼容，并让 direct deal/play 使用 durable session 与未包装的 canonical response。下一步先做一次零网络本地准入；只有准入 ready 且项目所有者重新明确授权后，才能以全新 state/audit 执行新的单次 runmatch smoke。
 
+L5-A2b10 已在真实平台证明 direct-stage request/response/Header 可达，但闭环因 transport failure limit 与 unqualified raw finished 失败。官方 local-AI 是长轮询，timeout 可能只是当前无新 request；现有聚合却无法区分 timeout 与其他 transport failure。L5-A2b11 将 timeout 作为受 wall/cycle 约束的 idle 结果，并为其他失败保留固定 category；同时细分 aborted、非四人、四人未 qualified 与 qualified finished，但绝不以 raw finished 替代 play-ack qualification。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

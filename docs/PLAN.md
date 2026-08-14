@@ -93,6 +93,13 @@
 - 68 项定向、583 项全量和补丁检查通过，工作区干净；未联网。
 - 下一步 L5-A2b9 只做一次零网络本地准入；ready 后请求新的 L5-A2b10 live 授权，不在同一步联网。
 
+### L5-A2b10 实际结果
+
+- runmatch 创建成功，真实 direct-stage 路径完成一个 request、一个 response 和一个 Header，协议 detail/profile 为空。
+- 唯一 connector 在 8 cycles 后以 `failure_limit` 退出：6 次 transport failure，raw finished=1、qualified=0；没有重试。
+- 判定仍为 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`。该结果不证明 play ack、DeepSeek 决策或完整对局。
+- 现有 runner 把长轮询 timeout 与真实网络故障合并计入 failure limit，audit 也不能细分 raw finished。下一步 L5-A2b11 直接加固固定 transport category、idle timeout 和 finished provenance，不再增加外部诊断载体。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

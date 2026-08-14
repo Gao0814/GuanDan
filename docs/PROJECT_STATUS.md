@@ -34,6 +34,8 @@ L5-A2b7 唯一 live 已结束，判定 `botzone_deepseek_runmatch_no_tribute_smo
 
 L5-A2b8 已完成并封存为 `2cd208b9b8f7306decf3182318fb55278c09d641`，判定 `botzone_local_ai_direct_stage_wire_contract_verified`。poll/connector 现按固定 wire mode 区分 Bot envelope 与 direct stage，响应分别使用 wrapper 与 canonical 原始 GuanDan JSON；session、pending/ack、provenance 和 envelope replay 保持兼容。68/583 测试及补丁检查通过，工作区干净且未联网。下一步 L5-A2b9 只运行一次零网络 DeepSeek connector preflight。
 
+L5-A2b10 唯一 live 已结束，仍判定 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`：runmatch 成功，direct-stage requests/responses/headers=`1/1/1` 且无协议诊断，但 connector 因 6 次聚合 transport failure 达到 failure limit；raw/qualified finished=`1/0`。state 已最小化、无残留进程，未重试。下一步 L5-A2b11 不联网，直接区分预期长轮询 timeout 与真实 transport failure，并增加不含逐局信息的 finished provenance 聚合；qualified 门槛不放宽。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-10

@@ -43,6 +43,8 @@ L5-A2b7 实际运行未达到上述门槛：runmatch 成功但 requests/response
 
 L5-A2b8 已通过双模式定向 68 项、全量 583 项和 `git diff --check`，检查点为 `2cd208b9b8f7306decf3182318fb55278c09d641`。测试确认 direct deal/play 原始 response、envelope wrapper、malformed stage、冷启动 play、unsupported stage、注入、pending 重发/ack 和 provenance 边界。本实现阶段网络计数为 0；L5-A2b9 不重复全量测试，只执行一次零网络 preflight。
 
+L5-A2b10 live 得到 requests/responses/headers=`1/1/1`、协议诊断为空，但 6 次未分类 transport failure 触发 failure limit，raw/qualified finished=`1/0`。L5-A2b11 离线测试必须锁定 timeout 不占 failure budget、其他 category 仍 fail-closed、pending Header 在 timeout 后只 ack 一次，以及四类 finished provenance 的互斥守恒；不得降低 qualified finished 条件或联网。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

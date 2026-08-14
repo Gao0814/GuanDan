@@ -1,52 +1,75 @@
 # 下一步实施提示词
 
-## Step L5-A2b9：direct-stage DeepSeek connector 零网络准入
+## Step L5-A2b11：长轮询 timeout 与 finished provenance 加固
 
-前置实现已封存：
-
-```text
-2cd208b9b8f7306decf3182318fb55278c09d641
-Support Botzone direct stage wire mode
-```
-
-唯一实现判定为 `botzone_local_ai_direct_stage_wire_contract_verified`。双模式定向 68 项、全量 583 项和 `git diff --check` 已通过，提交后工作区干净。本步骤不重复全量回归，不修改代码，只执行一次零网络本地准入。
-
-### 固定边界
-
-- 只读复核上述检查点存在且提交范围精确为 3 个 integration 文件和 4 个测试文件。
-- 确认工作区干净、无残留 Botzone connector 进程。
-- 只检查配置元数据：Botzone URL/key 为 present，DeepSeek endpoint/model/timeout/retries 精确匹配；不得输出值、URL、key 或路径。
-- 使用项目 `.venv\Scripts\python.exe`，并在子进程环境中设置 `PYTHON_DOTENV_DISABLED=1`；不得读取仓库 `.env`。
-- 使用系统临时目录下全新、空、仓库外 state 目录；结束后确认仍为空并删除。
-- 只启动一次：
+上一轮唯一 live 判定永久记录为：
 
 ```text
-python -m integrations.botzone --agent deepseek --preflight-only --state-dir <fresh-temp-state>
+botzone_deepseek_runmatch_no_tribute_smoke_invalid
 ```
 
-- 30 秒硬上限；不重试、不修代码、不启动 connector、不调用 runmatch。
-- Botzone GET、DeepSeek request、DNS/socket/HTTP、transport、connector cycle、Agent action、`suggest_action_id()` 必须全部为 0。
+runmatch 创建成功，direct-stage connector 完成 `requests/responses/headers=1/1/1`，协议 detail/profile 均为空；但唯一进程最终 exit 4 / `failure_limit`，cycles/successful=`8/2`，transport failures=6，finished raw/qualified=`1/0`。state 只剩最小 finished tombstone，无残留进程，且未重试。
 
-### 结果分类
+该结果证明 direct-stage 解析与 Header 回传已进入真实平台闭环，但不证明 play 已确认、DeepSeek 已参与或对局完成。现有实现把 `TransportError` 全部折叠为 `transport_failure`，同时只记录 raw/qualified finished，无法安全区分长轮询空闲 timeout 和真正网络故障，也无法解释 raw finished 未 qualified 的类别。
 
-只有 exit 0、stdout 规范化为单行 `preflight_ready`、stderr 空、state 前后为空、无残留进程且全部网络/模型计数为 0，才能判定：
+官方本地 AI 说明明确指出 GET 可能持续等待到新 request 或 timeout，样例也把超时作为可继续轮询的情况。下一步直接修正运行时契约，不再增加仓库外诊断载体。
+
+### 允许修改
+
+- `integrations/botzone/http_transport.py`
+- `integrations/botzone/connector.py`
+- `integrations/botzone/runner.py`
+- 与上述契约直接相关的 `tests/test_botzone_*.py`
+
+禁止修改 protocol、poll、session、adapter、engine、agents、DeepSeek prompt/client、RAG、CLI、runtime config、上传 Bot、真实配置和 docs。不得联网、读取 `.env`、运行 preflight 或创建对局。
+
+### Transport 契约
+
+1. 公开固定 transport category allowlist；不得输出 URL、异常正文、状态正文、Header 或底层 exception chain。
+2. `URLError.reason` 若为 `socket.timeout` / `TimeoutError`，必须规范化为 `timeout`；其他 URL/network 错误保持固定非敏感类别。
+3. connector 只对精确 `TransportError` 读取 allowlist category；未知异常保持 `transport_failure` + 固定 `unclassified`，不得泄露类型或文本。
+4. 长轮询 `timeout` 作为独立 `transport_timeout` / idle 计数：
+   - 不增加 `transport_failures`；
+   - 不增加 consecutive failure；
+   - 不触发 `failure_limit`；
+   - 仍受 `max_cycles` 与 `max_wall_seconds` 限制；
+   - 不伪装为收到成功 poll payload。
+5. 非 timeout 类别继续累计 `transport_failure`、固定 category、退避和 failure limit；成功 poll 必须重置 consecutive failure。
+6. v4 既有 `diagnostics` 语义保持兼容；audit 可升版并新增 `transport_timeouts` 与固定 `transport_failure_categories`，不得删除或重命名既有字段。
+
+### Finished provenance 契约
+
+1. 不放宽现有 qualified 条件：仍必须是四人 finished、同 connector 实例、该 match 已有成功 ack 的 play Header、cleanup 成功且未重复计数。
+2. 对 raw finished 增加互斥聚合：
+   - aborted；
+   - non-four-player；
+   - four-player-unqualified；
+   - qualified。
+3. 分类总和必须等于 `finished_seen`；不得持久化 match ID、座位、分数或任何逐局内容。
+4. raw finished 或 tombstone 不能单独触发成功；runner 仍只以 qualified finished 达成 `finished_target`。
+
+### 必须覆盖的测试
+
+- `socket.timeout`、直接 `TimeoutError`、`URLError(timeout)` 均归类 idle timeout。
+- DNS/network、TLS、HTTP、redirect、invalid/oversized response 与未知 opener 错误仍是固定 failure category。
+- 连续 timeout 不触发 failure limit，只由 wall/cycle limit 停止；timeout 后真实 failure 与成功 poll 的计数/重置正确。
+- pending Header 遇 timeout 会恢复为 pending，后续成功 poll 只发送/ack 一次，不重复 Agent 或 effect。
+- aborted、非四人、四人但无 ack play、四人且 ack play 四类 finished 互斥守恒。
+- audit schema/JSON/不可变聚合、旧字段兼容和敏感词扫描。
+- direct-stage、envelope、runner、finished provenance 与 DeepSeek runtime 相关回归保持通过。
+
+### 验证与交付
+
+运行新增定向测试、相关 Botzone 回归、全量测试及：
 
 ```text
-botzone_direct_stage_deepseek_local_preflight_ready
+git diff --check
 ```
 
-否则按现有固定 preflight 分类报告 `precondition_failed` 或 `invalid`，不得添加新诊断载体或重跑。
+通过后建立独立实现检查点，只提交允许的 integration/test 文件。唯一成功判定：
 
-### ready 后的动作
+```text
+botzone_long_poll_transport_contract_verified
+```
 
-若且仅若准入通过，报告检查点、耗时、固定输出、state/进程和零网络计数，然后提出新的 L5-A2b10 完整授权问题。该授权问题必须再次锁定：
-
-- 复用项目所有者上一轮提供的三个非本家 GuanDan Bot ID，`me=0`；Bot ID 仍不得落盘。
-- 旧桌全部关闭；只允许一个 runmatch 对局。
-- runmatch GET 最多 1 次、local-AI GET 最多 100 次。
-- DeepSeek `deepseek-v4-flash`，timeout 60 秒、retries 0。
-- 单 connector、最长 3600 秒、finished=1 即停。
-- 省略 `X-Initdata`；非零 tribute 或 `tribute/return` 立即停止且不重试。
-- 明确允许本家未公开手牌及现有 prompt/RAG 内容发送到 DeepSeek。
-
-本步骤不得替项目所有者推定授权，也不得在同一步执行 live。
+本步骤不运行真实 preflight、connector、runmatch 或 DeepSeek，不请求 live 授权。完成后下一步才做一次零网络准入并重新请求单次 live 授权。
