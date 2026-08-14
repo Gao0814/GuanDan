@@ -11,7 +11,13 @@ import json
 import os
 import tempfile
 
-from .connector import ConnectorCycle, MockConnector, Transport
+from .connector import (
+    FINISHED_CATEGORIES,
+    TRANSPORT_FAILURE_CATEGORIES,
+    ConnectorCycle,
+    MockConnector,
+    Transport,
+)
 from .agent_runtime import build_agent_factory
 from .play_adapter import NoTributeRuleBasedHandler
 from .poll import ENVELOPE_SHAPE_DETAILS, REQUIRED_FIELDS_PROFILES
@@ -33,6 +39,9 @@ class RunnerSummary:
     diagnostics: tuple[tuple[str, int], ...]
     diagnostic_details: tuple[tuple[str, int], ...] = ()
     diagnostic_profiles: tuple[tuple[str, int], ...] = ()
+    transport_timeouts: int = 0
+    transport_failure_categories: tuple[tuple[str, int], ...] = ()
+    finished_categories: tuple[tuple[str, int], ...] = ()
 
 
 class ForegroundRunner:
@@ -62,11 +71,13 @@ class ForegroundRunner:
     ) -> RunnerSummary:
         if any(type(value) is not int or value <= 0 for value in (max_cycles, max_wall_seconds, stop_after_finished)):
             raise ValueError("invalid_runner_limit")
-        cycles = successes = failures = headers = requests = responses = finished = qualified = 0
+        cycles = successes = failures = headers = requests = responses = finished = qualified = timeouts = 0
         consecutive_failures = 0
         diagnostics: Counter[str] = Counter()
         diagnostic_details: Counter[str] = Counter()
         diagnostic_profiles: Counter[str] = Counter()
+        transport_failure_categories: Counter[str] = Counter()
+        finished_categories: Counter[str] = Counter()
         stopped = "cycle_limit_unfinished"
         started = self._clock()
         try:
@@ -96,11 +107,26 @@ class ForegroundRunner:
                 responses += cycle.responses_prepared
                 finished += cycle.finished_seen
                 qualified += cycle.finished_qualified
+                timeouts += cycle.transport_timeouts
+                transport_failure_categories.update(
+                    {
+                        name: count
+                        for name, count in cycle.transport_failure_categories
+                        if name in TRANSPORT_FAILURE_CATEGORIES and type(count) is int and count > 0
+                    }
+                )
+                finished_categories.update(
+                    {
+                        name: count
+                        for name, count in cycle.finished_categories
+                        if name in FINISHED_CATEGORIES and type(count) is int and count > 0
+                    }
+                )
                 diagnostic_names = {name for name, count in cycle.diagnostics if count}
                 if "unsupported_stage" in diagnostic_names:
                     stopped = "unsupported_stage"
                     break
-                if diagnostic_names - {"transport_failure"}:
+                if diagnostic_names - {"transport_failure", "transport_timeout"}:
                     stopped = "diagnostic_failure"
                     break
                 if qualified >= stop_after_finished:
@@ -115,6 +141,10 @@ class ForegroundRunner:
                     requested_delay = self._backoff_seconds * (2 ** (consecutive_failures - 1))
                     deadline = self._clock() + requested_delay
                     self._sleep(max(0.0, deadline - self._clock()))
+                elif _has_transport_timeout(cycle):
+                    # A long-poll timeout is an idle observation, not a
+                    # successful payload and not a retryable failure.
+                    pass
                 else:
                     successes += 1
                     consecutive_failures = 0
@@ -136,11 +166,18 @@ class ForegroundRunner:
             tuple(sorted(diagnostics.items())),
             tuple(sorted(diagnostic_details.items())),
             tuple(sorted(diagnostic_profiles.items())),
+            timeouts,
+            tuple(sorted(transport_failure_categories.items())),
+            tuple(sorted(finished_categories.items())),
         )
 
 
 def _has_transport_failure(cycle: ConnectorCycle) -> bool:
     return any(name == "transport_failure" and count for name, count in cycle.diagnostics)
+
+
+def _has_transport_timeout(cycle: ConnectorCycle) -> bool:
+    return any(name == "transport_timeout" and count for name, count in cycle.diagnostics)
 
 
 def build_foreground_runner(
@@ -196,17 +233,20 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
         raise ValueError("invalid_audit_path")
     payload = {
         "schema": "botzone_local_smoke_audit",
-        "version": 4,
+        "version": 5,
         "exit_code": exit_code,
         "stop_reason": summary.stopped,
         "cycles": summary.cycles,
         "successful_cycles": summary.successful_cycles,
         "transport_failures": summary.transport_failures,
+        "transport_timeouts": summary.transport_timeouts,
+        "transport_failure_categories": [[name, count] for name, count in summary.transport_failure_categories],
         "headers_sent": summary.headers_sent,
         "requests_seen": summary.requests_seen,
         "responses_prepared": summary.responses_prepared,
         "finished_seen": summary.finished_seen,
         "finished_qualified": summary.finished_qualified,
+        "finished_categories": [[name, count] for name, count in summary.finished_categories],
         "diagnostics": [[name, count] for name, count in summary.diagnostics],
         "diagnostic_details": [[name, count] for name, count in summary.diagnostic_details],
         "diagnostic_profiles": [[name, count] for name, count in summary.diagnostic_profiles],

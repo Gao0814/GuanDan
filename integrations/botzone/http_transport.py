@@ -18,13 +18,32 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_MAX_RESPONSE_BYTES = 1_048_576
 
+# Stable, non-sensitive categories that may be aggregated by the connector.
+TRANSPORT_CATEGORIES = frozenset(
+    {
+        "invalid_url",
+        "invalid_header",
+        "invalid_timeout",
+        "invalid_response_limit",
+        "timeout",
+        "tls_error",
+        "http_error",
+        "redirect_rejected",
+        "network_error",
+        "invalid_response",
+        "response_too_large",
+        "opener_error",
+    }
+)
+
 
 class TransportError(RuntimeError):
     """Normalized, non-sensitive transport failure."""
 
     def __init__(self, category: str) -> None:
-        super().__init__(category)
-        self.category = category
+        safe_category = category if category in TRANSPORT_CATEGORIES else "opener_error"
+        super().__init__(safe_category)
+        self.category = safe_category
 
 
 class HttpOpener(Protocol):
@@ -128,7 +147,9 @@ class LocalAIHttpTransport:
             raise TransportError("tls_error") from None
         except HTTPError:
             raise TransportError("http_error") from None
-        except URLError:
+        except URLError as exc:
+            if isinstance(exc.reason, (socket.timeout, TimeoutError)):
+                raise TransportError("timeout") from None
             raise TransportError("network_error") from None
         except OSError:
             raise TransportError("network_error") from None

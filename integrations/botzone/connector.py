@@ -9,6 +9,7 @@ from types import MappingProxyType
 from typing import Protocol
 
 from .bot_io import BotEnvelopeError, REQUIRED_FIELDS_PROFILES, encode_bot_response, encode_direct_response
+from .http_transport import TRANSPORT_CATEGORIES, TransportError
 from .models import DealRequest, PlayRequest, UnsupportedStage
 from .poll import ENVELOPE_SHAPE_DETAILS, PollFormatError, PollRequest, WIRE_MODES, parse_poll
 from .session import HandlerContext, HandlerResult, PendingDelivery, SessionStorageError, SessionStore
@@ -32,6 +33,15 @@ class ConnectorCycle:
     diagnostics: tuple[tuple[str, int], ...]
     diagnostic_details: tuple[tuple[str, int], ...] = ()
     diagnostic_profiles: tuple[tuple[str, int], ...] = ()
+    transport_timeouts: int = 0
+    transport_failure_categories: tuple[tuple[str, int], ...] = ()
+    finished_categories: tuple[tuple[str, int], ...] = ()
+
+
+TRANSPORT_FAILURE_CATEGORIES = frozenset(TRANSPORT_CATEGORIES - {"timeout"}) | {"unclassified"}
+FINISHED_CATEGORIES = frozenset(
+    {"aborted", "non_four_player", "four_player_unqualified", "qualified"}
+)
 
 
 class MockConnector:
@@ -58,9 +68,35 @@ class MockConnector:
 
         try:
             raw_poll = self._transport.poll(headers)
+        except TransportError as exc:
+            self._store.restore_pending(deliveries)
+            if exc.category == "timeout":
+                return _cycle(
+                    True, len(headers), 0, 0, 0, 0, {"transport_timeout": 1}, transport_timeouts=1
+                )
+            category = exc.category if exc.category in TRANSPORT_FAILURE_CATEGORIES else "unclassified"
+            return _cycle(
+                True,
+                len(headers),
+                0,
+                0,
+                0,
+                0,
+                {"transport_failure": 1},
+                transport_failure_categories={category: 1},
+            )
         except Exception:
             self._store.restore_pending(deliveries)
-            return _cycle(True, len(headers), 0, 0, 0, 0, {"transport_failure": 1})
+            return _cycle(
+                True,
+                len(headers),
+                0,
+                0,
+                0,
+                0,
+                {"transport_failure": 1},
+                transport_failure_categories={"unclassified": 1},
+            )
         try:
             acknowledged = self._store.acknowledge(deliveries)
         except SessionStorageError:
@@ -80,12 +116,14 @@ class MockConnector:
             diagnostic_profiles.update(outcome[3])
             prepared += outcome[0]
         qualified = 0
+        finished_categories: Counter[str] = Counter()
         for row in batch.finished:
+            category = _finished_category(row.player_count)
             try:
                 cleaned = self._store.finish(row)
             except SessionStorageError:
                 diagnostics["session_error"] += 1
-                continue
+                cleaned = False
             if (
                 cleaned
                 and row.player_count == 4
@@ -94,6 +132,8 @@ class MockConnector:
             ):
                 self._finished_qualified.add(row.match_id)
                 qualified += 1
+                category = "qualified"
+            finished_categories[category] += 1
             if cleaned:
                 try:
                     release_match = getattr(self._handler, "release_match", None)
@@ -111,6 +151,7 @@ class MockConnector:
             diagnostics,
             diagnostic_details,
             diagnostic_profiles,
+            finished_categories=finished_categories,
         )
 
     def _process_request(self, request: PollRequest) -> tuple[int, Counter[str], Counter[str], Counter[str]]:
@@ -187,6 +228,14 @@ def _normalized_session_error(error: SessionStorageError) -> str:
     return str(error) if str(error) in known else "session_error"
 
 
+def _finished_category(player_count: int) -> str:
+    if player_count == 0:
+        return "aborted"
+    if player_count != 4:
+        return "non_four_player"
+    return "four_player_unqualified"
+
+
 def _cycle(
     transport_called: bool,
     headers_sent: int,
@@ -197,6 +246,10 @@ def _cycle(
     diagnostics: Mapping[str, int],
     diagnostic_details: Mapping[str, int] | None = None,
     diagnostic_profiles: Mapping[str, int] | None = None,
+    *,
+    transport_timeouts: int = 0,
+    transport_failure_categories: Mapping[str, int] | None = None,
+    finished_categories: Mapping[str, int] | None = None,
 ) -> ConnectorCycle:
     return ConnectorCycle(
         transport_called=transport_called,
@@ -211,5 +264,20 @@ def _cycle(
         ),
         diagnostic_profiles=tuple(
             sorted((name, count) for name, count in (diagnostic_profiles or {}).items() if count)
+        ),
+        transport_timeouts=transport_timeouts if type(transport_timeouts) is int and transport_timeouts >= 0 else 0,
+        transport_failure_categories=tuple(
+            sorted(
+                (name, count)
+                for name, count in (transport_failure_categories or {}).items()
+                if name in TRANSPORT_FAILURE_CATEGORIES and type(count) is int and count > 0
+            )
+        ),
+        finished_categories=tuple(
+            sorted(
+                (name, count)
+                for name, count in (finished_categories or {}).items()
+                if name in FINISHED_CATEGORIES and type(count) is int and count > 0
+            )
         ),
     )

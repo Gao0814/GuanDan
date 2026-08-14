@@ -71,14 +71,15 @@ class _FailingFinishStore(SessionStore):
 class BotzoneFinishedProvenanceTests(unittest.TestCase):
     def test_unknown_aborted_and_non_four_finished_are_raw_only(self) -> None:
         with TemporaryDirectory() as root:
-            for payload in (
-                b"0 1\nunknown 0 4 0 1 2 3",
-                _finished(player_count=0),
-                _finished(player_count=3),
+            for payload, expected_category in (
+                (b"0 1\nunknown 0 4 0 1 2 3", "four_player_unqualified"),
+                (_finished(player_count=0), "aborted"),
+                (_finished(player_count=3), "non_four_player"),
             ):
                 with self.subTest(payload_kind=payload.split(b"\n", 1)[1].split(b" ")[2]):
                     cycle = MockConnector(SessionStore(root), _Transport([payload]), _handler).cycle()
                     self.assertEqual((cycle.finished_seen, cycle.finished_qualified), (1, 0))
+                    self.assertEqual(dict(cycle.finished_categories), {expected_category: 1})
 
     def test_deal_only_and_unsent_or_failed_play_are_not_qualified(self) -> None:
         with TemporaryDirectory() as root:
@@ -109,7 +110,10 @@ class BotzoneFinishedProvenanceTests(unittest.TestCase):
             qualified = connector.cycle()
             duplicate = connector.cycle()
             self.assertEqual((qualified.finished_seen, qualified.finished_qualified), (2, 1))
+            self.assertEqual(dict(qualified.finished_categories), {"four_player_unqualified": 1, "qualified": 1})
+            self.assertEqual(sum(dict(qualified.finished_categories).values()), qualified.finished_seen)
             self.assertEqual((duplicate.finished_seen, duplicate.finished_qualified), (1, 0))
+            self.assertEqual(dict(duplicate.finished_categories), {"four_player_unqualified": 1})
             self.assertIsNone(SessionStore(root).load("unit"))
 
     def test_different_match_and_historical_tombstone_cannot_qualify(self) -> None:
@@ -152,7 +156,10 @@ class BotzoneFinishedProvenanceTests(unittest.TestCase):
             audit = __import__("pathlib").Path(root).parent / "finished-provenance-audit.json"
             write_audit(audit, summary, exit_code_for(summary))
             payload = json.loads(audit.read_text(encoding="utf-8"))
-            self.assertEqual((payload["version"], payload["finished_seen"], payload["finished_qualified"]), (4, 1, 0))
+            self.assertEqual((payload["version"], payload["finished_seen"], payload["finished_qualified"]), (5, 1, 0))
+            self.assertEqual(payload["finished_categories"], [["four_player_unqualified", 1]])
+            self.assertEqual(payload["transport_timeouts"], 0)
+            self.assertEqual(payload["transport_failure_categories"], [])
             self.assertEqual(payload["diagnostic_details"], [])
             self.assertEqual(payload["diagnostic_profiles"], [])
             self.assertNotIn("match", json.dumps(payload).lower())

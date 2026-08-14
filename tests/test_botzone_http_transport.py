@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import socket
+import ssl
 import unittest
 from urllib.error import HTTPError, URLError
 
-from integrations.botzone.http_transport import LocalAIHttpTransport, TransportError
+from integrations.botzone.http_transport import TRANSPORT_CATEGORIES, LocalAIHttpTransport, TransportError
 
 
 class _Response:
@@ -59,8 +60,13 @@ class BotzoneHttpTransportTests(unittest.TestCase):
             (_Response(b"ok", status=503), "http_error"),
             (_Response(b"x" * 4), "response_too_large"),
             (_Response(b"ok", location="https://other.invalid/poll"), "redirect_rejected"),
+            (_Response("not-bytes"), "invalid_response"),
             (socket.timeout(), "timeout"),
+            (TimeoutError(), "timeout"),
+            (URLError(socket.timeout()), "timeout"),
+            (URLError(TimeoutError()), "timeout"),
             (URLError("offline"), "network_error"),
+            (ssl.SSLError("tls"), "tls_error"),
             (HTTPError("https://private.invalid/poll", 500, "bad", {}, None), "http_error"),
             (RuntimeError("https://private.invalid/secret"), "opener_error"),
         ):
@@ -72,6 +78,10 @@ class BotzoneHttpTransportTests(unittest.TestCase):
                     candidate.poll({})
                 if isinstance(result, _Response):
                     self.assertTrue(result.closed)
+
+    def test_transport_error_category_is_always_allowlisted(self) -> None:
+        self.assertEqual(TransportError("untrusted-detail").category, "opener_error")
+        self.assertIn(TransportError("network_error").category, TRANSPORT_CATEGORIES)
 
     def test_url_validation_and_repr_do_not_disclose_private_endpoint(self) -> None:
         for value in ("http://private.invalid", "https://user@private.invalid", "https://private.invalid/#x"):

@@ -215,7 +215,7 @@ class BotzoneRequestDiagnosticTests(unittest.TestCase):
             audit = Path(root) / "audit.json"
             write_audit(audit, summary, 5)
             serialized = json.loads(audit.read_text(encoding="utf-8"))
-        self.assertEqual(serialized["version"], 4)
+        self.assertEqual(serialized["version"], 5)
         self.assertEqual(serialized["diagnostics"], [["envelope_shape_invalid", 1]])
         self.assertEqual(serialized["diagnostic_details"], [["envelope_requests_empty", 1]])
         self.assertEqual(serialized["diagnostic_profiles"], [])

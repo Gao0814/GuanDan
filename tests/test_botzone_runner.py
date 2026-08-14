@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from integrations.botzone.connector import MockConnector
+from integrations.botzone.http_transport import TransportError
 from integrations.botzone.models import DealRequest
 from integrations.botzone.runner import ForegroundRunner, build_foreground_runner
 from integrations.botzone.runtime_config import RuntimeConfig, load_runtime_config
@@ -61,6 +62,19 @@ class BotzoneRunnerTests(unittest.TestCase):
             summary = ForegroundRunner(connector, max_consecutive_failures=2, backoff_seconds=1, sleep=lambda _: None).run(max_cycles=1)
             self.assertEqual(summary.stopped, "interrupted")
 
+    def test_failure_categories_are_aggregated_and_success_resets_failure_streak(self) -> None:
+        with TemporaryDirectory() as root:
+            transport = _Transport([TransportError("network_error"), b"0 0\n", TransportError("network_error")])
+            summary = ForegroundRunner(
+                MockConnector(SessionStore(root), transport, lambda _: HandlerResult(b"[]")),
+                max_consecutive_failures=2,
+                backoff_seconds=1,
+                sleep=lambda _: None,
+            ).run(max_cycles=3, max_wall_seconds=60)
+        self.assertEqual(summary.stopped, "cycle_limit_unfinished")
+        self.assertEqual((summary.transport_failures, summary.successful_cycles), (2, 1))
+        self.assertEqual(summary.transport_failure_categories, (("network_error", 2),))
+
     def test_fake_gateway_restart_resends_pending_and_acknowledges_once(self) -> None:
         with TemporaryDirectory() as root:
             config = load_runtime_config(local_ai_url="https://private.invalid/secret", state_directory=root)
@@ -81,6 +95,33 @@ class BotzoneRunnerTests(unittest.TestCase):
             config = RuntimeConfig("https://private.invalid/secret", state_directory=__import__("pathlib").Path(root))
             runner = build_foreground_runner(config, _Transport([b"0 0\n"]), sleep=lambda _: None)
             self.assertEqual(runner.run(max_cycles=1).cycles, 1)
+
+    def test_long_poll_timeouts_are_idle_and_do_not_trigger_failure_limit(self) -> None:
+        with TemporaryDirectory() as root:
+            transport = _Transport([TransportError("timeout"), TransportError("timeout"), TransportError("timeout")])
+            summary = ForegroundRunner(
+                MockConnector(SessionStore(root), transport, lambda _: HandlerResult(b"[]")),
+                max_consecutive_failures=1,
+                backoff_seconds=1,
+                sleep=lambda _: self.fail("timeout must not back off"),
+            ).run(max_cycles=3, max_wall_seconds=60)
+        self.assertEqual(summary.stopped, "cycle_limit_unfinished")
+        self.assertEqual((summary.successful_cycles, summary.transport_failures, summary.transport_timeouts), (0, 0, 3))
+
+    def test_timeout_restores_pending_until_one_later_acknowledgement(self) -> None:
+        with TemporaryDirectory() as root:
+            config = load_runtime_config(local_ai_url="https://private.invalid/secret", state_directory=root)
+            transport = _Transport([_deal(), TransportError("timeout"), b"0 0\n"])
+            first = build_foreground_runner(config, transport, sleep=lambda _: None)
+            first.run(max_cycles=2)
+            pending = SessionStore(root).load("unit")
+            assert pending is not None
+            self.assertEqual(pending.pending_response, b'{"response":[]}')
+            summary = build_foreground_runner(config, transport, sleep=lambda _: None).run(max_cycles=1)
+            acknowledged = SessionStore(root).load("unit")
+            assert acknowledged is not None
+            self.assertIsNone(acknowledged.pending_response)
+        self.assertEqual((summary.transport_timeouts, len(transport.headers[2])), (0, 1))
 
 
 if __name__ == "__main__":
