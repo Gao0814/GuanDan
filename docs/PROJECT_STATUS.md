@@ -1524,6 +1524,16 @@ endpoint/model 门槛通过，但当前 DeepSeek runtime 配置不满足已授�
 
 下一步只要求项目所有者确认所有历史本地 AI 测试桌已关闭，并承诺下一次只有一个新无贡桌。确认后再单独请求 L5-A2b4 授权；本阶段不得执行工具或联网。
 
+### L5-A2b4 实际结果
+
+项目所有者完成旧桌清理确认并明确授权。唯一 connector 启动后 Botzone 显示已连接，但在新桌开始确认前自行 exit 5。audit v3 为 361 bytes，SHA-256 `8dbfd4e700b41c0d9c5a0ecca3b08a40a460f13a022f904e5ea0cf995906fbc1`；cycles/request 为 1/1，response/header/finished/transport failure 均为 0，父诊断 `envelope_shape_invalid`，detail `envelope_required_fields_missing`。state 为空，无残留；未进入 session、adapter、Agent 或 DeepSeek。
+
+唯一判定：`botzone_deepseek_connector_no_tribute_smoke_invalid`。授权已消耗，未重跑或补采。
+
+### 当前阶段：L5-A2b5
+
+下一步只为 required-fields detail 增加固定低基数 shape profile，区分单字段缺失、空 object、inner-stage candidate、optional-only 和其他 object；保持父诊断/detail 兼容且不记录原始请求。本阶段不联网。
+
 ### 后续边界
 
-L5-A2b1 已执行且 invalid；L5-A2b3b 只恢复零网络准入，不能复用历史 live 授权。当前仍不形成 Botzone 协议闭环、DeepSeek 可达、动作质量或胜率结论。
+L5-A2b1/L5-A2b4 均已执行且 invalid，历史授权不可复用。L5-A2b5 只允许离线诊断加固；当前仍不形成 Botzone 协议闭环、DeepSeek 可达、动作质量或胜率结论。

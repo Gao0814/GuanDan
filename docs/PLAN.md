@@ -1271,6 +1271,15 @@ Botzone JSON input
 - 承诺下一次仅在 connector 已连接后创建一个新无贡桌，且没有第二个活动桌；
 - 确认后只提出 L5-A2b4 授权问题，不在同一步 live。
 
+实际结果：项目所有者确认全部旧桌已关闭，并明确授权 L5-A2b4。唯一 connector 显示已连接，但在新桌开始确认前收到一个缺少 Bot envelope 必需字段的 object；exit 5、request=1、response/header/finished=0、transport failure=0，detail=`envelope_required_fields_missing`。state 为空，无残留，未进入 Agent/DeepSeek。判定 `botzone_deepseek_connector_no_tribute_smoke_invalid`，授权已消耗。
+
+#### L5-A2b5：必需字段缺失画像
+
+- 保持父诊断和现有 detail 不变；
+- 用固定 profile 区分缺 requests、缺 responses、空 object、inner-stage candidate、optional-only 和其他 object；
+- 只聚合 allowlist profile，不记录 key/value、长度、hash 或原始请求；
+- 先完成离线测试与 audit 兼容，不直接 live。
+
 ### 9.7 当前下一步
 
-L5-A2b3b 零网络准入已通过。当前执行 L5-A2b3c：只获得旧桌清理确认并准备 L5-A2b4 授权问题，不进行任何工具调用或 live。
+L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `envelope_required_fields_missing`。当前执行 L5-A2b5，只做零网络安全形状画像；不得重跑 live。

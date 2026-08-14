@@ -789,4 +789,6 @@ L5-A2b3a 在用户变量设置和重启后仍因桌面执行宿主未继承 60/0
 
 L5-A2b3b 已完成：当前新进程六项门槛、24 项定向、唯一 preflight 和显式 AppConfig 探测通过；约 171 ms、exit 0、空 state/残留、零网络。探测作为 preflight 后补充证据，未重跑 preflight。判定 `botzone_deepseek_connector_v3_preflight_ready`。
 
-执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3c。只获得历史测试桌已清理的人工确认，并准备新的 L5-A2b4 授权问题；不得使用工具或直接 live。
+L5-A2b4 已执行唯一 live：连接成功，但在新桌开始前收到缺 Bot envelope 必需字段的 object；detail=`envelope_required_fields_missing`，无 response/header/finished，未进入 Agent/DeepSeek。判定 `botzone_deepseek_connector_no_tribute_smoke_invalid`，授权已消耗。
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b5。只增加 required-fields 的固定安全 profile 与聚合测试；不得保存原始请求或直接恢复 live。

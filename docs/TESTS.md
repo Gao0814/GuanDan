@@ -1571,3 +1571,14 @@ L5-A2a 前置实际结果：检查点、工作区、23/569 回归和四项脱敏
 - 下一次只在 connector 已连接后创建一个新无贡桌；
 - 不同时保留或创建第二个活动桌；
 - 本阶段不运行测试、preflight 或 live，只在确认后提出 L5-A2b4 授权问题。
+
+实际结果：项目所有者完成旧桌清理确认并授权 L5-A2b4。唯一 connector 连接成功后，在新桌开始确认前 exit 5；audit v3 聚合为 requests=1、responses/headers/finished=0、transport failure=0、`envelope_shape_invalid=1`、`envelope_required_fields_missing=1`。state 为空、无残留、未进入 Agent/DeepSeek。判定 `botzone_deepseek_connector_no_tribute_smoke_invalid`，不得重跑。
+
+### 9.12 L5-A2b5 必需字段缺失画像
+
+- 六种固定 profile 覆盖缺 requests、缺 responses、空 object、inner-stage candidate、optional-only、其他 object；
+- 父诊断/detail 保持兼容；
+- 其他 detail、inner/history/replay 和合法 envelope 不产生 profile；
+- connector/runner 双层 allowlist，未知 profile 不进入 audit；
+- audit 只聚合 profile，不包含 key/value、长度、hash、match、牌或异常正文；
+- 全部使用合成输入，网络与模型请求为 0。
