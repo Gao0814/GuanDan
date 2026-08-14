@@ -10,6 +10,8 @@
 - 下一步：L5-A2b6 先封存精确实现检查点，再执行一次零网络 preflight。没有新授权前不得启动 live connector。
 - L5-A2b4 仍为 `botzone_deepseek_connector_no_tribute_smoke_invalid`，不得追认或复用授权。
 
+最新门槛结果：`precondition_failed: required_fields_profile_checkpoint_missing`。当前 HEAD 为 `43d4b6fd4dbb55556de8e68163d63fc791a0982e`，七个 L5-A2b5 文件仍未提交；未运行回归、preflight、配置检查或网络操作。下一步先执行独立的 L5-A2b5a 检查点封存，不直接进入 preflight。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线

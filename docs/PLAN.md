@@ -10,6 +10,13 @@
 - 下一步为 L5-A2b6：先验证独立实现检查点，再运行一次零网络 DeepSeek connector preflight；通过后仅准备新的 L5-A2b7 授权问题，不直接 live。
 - L5-A2b4 的无贡 DeepSeek smoke 仍永久无效，原授权已消耗。
 
+### 顺序修正
+
+- 首次 L5-A2b6 因七个实现文件尚未提交而按门槛返回 `precondition_failed: required_fields_profile_checkpoint_missing`。
+- 原计划把“检查点已存在”设为前置，却没有先安排具备源码提交权限的任务，形成循环前置。
+- 下一步改为 L5-A2b5a：只复核并提交七个已验证文件；不得编辑代码、运行 preflight 或联网。
+- L5-A2b5a 成功并确认工作区干净后，才重新安排 L5-A2b6 零网络 preflight。
+
 ## 1. 当前结论
 
 截至 2026-08-10，项目已经完成：

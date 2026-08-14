@@ -1,28 +1,14 @@
 # 下一步实施提示词
 
-## Step L5-A2b6：v4 画像恢复准入与新授权准备
+## Step L5-A2b5a：required-fields profile 实现检查点封存
 
-本任务只封存上一阶段实现并执行一次零网络 preflight；不得启动 live connector、不得连接 Botzone、不得调用 DeepSeek，也不得读取或输出 URL、密钥、Header、match、牌、历史请求、prompt 或模型响应。
+本任务只复核并提交工作区中已经完成的 L5-A2b5 七个源码/测试改动。不得修改这些文件内容，不得修改 docs，不得运行 preflight，不得读取真实配置，不得联网、启动 connector 或调用 DeepSeek。
 
-### 已确认基线
+### 当前状态
 
-- 当前基线 HEAD：`e1b9abce0214baef982eb5cc4f495a7336ce48bd`。
-- L5-A2b4 永久判定为 `botzone_deepseek_connector_no_tribute_smoke_invalid`；该授权已消耗，不得重跑或补采。
-- 失败请求未进入 session、adapter、Agent、RuleBased fallback 或 DeepSeek。
-- L5-A2b5 已实现六种固定 profile：
-  - `required_requests_missing`
-  - `required_responses_missing`
-  - `required_both_missing_empty_object`
-  - `required_both_missing_inner_stage_candidate`
-  - `required_both_missing_optional_only`
-  - `required_both_missing_other_object`
-- audit schema 已升级为 `botzone_local_smoke_audit` v4；v3 的 `diagnostics` 与 `diagnostic_details` 字段和语义保持不变，仅新增聚合 `diagnostic_profiles`。
-- 已复核 36 项扩展定向测试和 574 项全量测试通过，`git diff --check` 通过；静态扫描仅命中普通列表操作，没有新增网络或敏感配置路径。
-- L5-A2b5 的七个源码/测试文件目前尚未形成独立 Git 检查点。规划任务无权替实现任务提交非 docs 文件。
-
-### 第一门槛：独立实现检查点
-
-先确认以下七个文件已由实现任务单独提交，且提交不包含 docs 或其他文件：
+- 当前 HEAD：`43d4b6fd4dbb55556de8e68163d63fc791a0982e`。
+- L5-A2b5 已判定 `botzone_required_fields_shape_profile_verified`。
+- 已知工作区只应包含以下七个未提交文件：
 
 ```text
 integrations/botzone/bot_io.py
@@ -34,17 +20,15 @@ tests/test_botzone_live_preflight.py
 tests/test_botzone_finished_provenance.py
 ```
 
-若工作区不干净、提交不存在或提交范围不精确，唯一结果为：
+- 六种固定 profile 与 audit v4 契约已经过离线复核。
+- 上一次 L5-A2b6 因检查点不存在而得到 `precondition_failed: required_fields_profile_checkpoint_missing`；未运行回归、preflight 或网络操作。
 
-```text
-precondition_failed: required_fields_profile_checkpoint_missing
-```
+### 执行边界
 
-此时不得运行 preflight、不得联网、不得请求 live 授权。
-
-### 离线复核
-
-实现检查点成立后，运行：
+1. 先检查 `git status --short`，文件集合必须与上述七项精确相同。
+2. 检查完整 diff，确认没有未报告的行为、敏感数据、真实请求、URL、密钥、match、牌或日志内容。
+3. 不得编辑、格式化或重写任何源码、测试或 docs。
+4. 运行：
 
 ```text
 python -m unittest tests.test_botzone_request_diagnostics tests.test_botzone_poll tests.test_botzone_connector tests.test_botzone_runner tests.test_botzone_live_preflight tests.test_botzone_finished_provenance -q
@@ -52,41 +36,40 @@ python -m unittest discover -q
 git diff --check
 ```
 
-同时只做静态边界复核：profile 不能进入 Header、session、Agent observation、prompt、RAG 或模型调用；audit 不得包含输入 key/value、长度、hash、match、牌或异常正文。
-
-### 唯一零网络 preflight
-
-仅在检查点、工作区和回归全部通过后：
-
-1. 只检查 `BOTZONE_LOCAL_AI_URL` 与 DeepSeek key 为 present，不读取值；endpoint/model/timeout/retries 只输出是否匹配锁定值。
-2. 锁定 DeepSeek 为 `https://api.deepseek.com`、`deepseek-v4-flash`、timeout 60 秒、retries 0。
-3. 使用全新、仓库外、初始为空的系统临时 state 目录。
-4. 在同一显式子进程环境中恰好运行一次：
+5. 任一回归、补丁检查或提交范围检查失败时停止，不得提交，报告明确失败原因。
+6. 全部通过后，只 stage 上述七个文件并创建单独提交；建议提交信息：
 
 ```text
-python -m integrations.botzone --agent deepseek --preflight-only --state-dir <fresh-state-dir>
+Add safe Botzone required fields profiles
 ```
 
-5. 30 秒硬上限；不得重试。
-6. 成功门槛：exit 0、stdout 规范化后精确为单行 `preflight_ready`、stderr 空、state 前后为空并删除、无残留 Python connector。
-7. Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle、`suggest_action_id()` 均必须为 0。
-
-任一门槛失败时按阶段报告 `precondition_failed` 或 `botzone_deepseek_connector_v4_preflight_invalid`，不得继续。
-
-### 通过后的动作
-
-preflight 通过时唯一判定：
+7. 提交后复核：
 
 ```text
-botzone_deepseek_connector_v4_preflight_ready
+git show --stat --oneline --summary HEAD
+git status --short
 ```
 
-随后只更新 docs，并向项目所有者提出新的 L5-A2b7 live 授权问题。授权问题必须再次完整列出：
+提交范围必须精确为七个文件，工作区必须为空。
 
-- 将本家未公开手牌、公开局面、合法候选、评估/记牌摘要、场景标签和 RAG 片段发送到 DeepSeek；
-- 当前 Botzone URL 最多 100 次 GET；
-- DeepSeek 60 秒、零重试；
-- 一个 connector、一个全新无贡桌、最长 3600 秒、完成一局即停；
-- 所有旧测试桌已关闭，且只能在页面显示已连接后创建唯一新桌。
+### 禁止事项
 
-未获得新的明确授权前，不得启动 live connector。本步骤不形成 Botzone 协议闭环、DeepSeek 可达性、动作质量或胜率结论。
+- 不修改或提交任何 `docs/` 文件；
+- 不读取 `.env`、Botzone URL、DeepSeek key 或其他配置值；
+- 不创建 state/audit 目录；
+- 不运行 `--preflight-only`；
+- 不发送 Botzone GET、DeepSeek 请求或任何网络探测；
+- 不启动 connector，不创建或加入测试桌；
+- 不请求 live 授权。
+
+### 验收
+
+通过时唯一判定：
+
+```text
+botzone_required_fields_profile_checkpoint_verified
+```
+
+完成报告必须包含：完整提交 hash、精确提交文件、定向/全量测试计数、`git diff --check`、提交后工作区状态和零网络声明。
+
+本任务结束后停止。下一阶段才是 L5-A2b6 零网络 v4 preflight；不得在本任务中顺带执行。
