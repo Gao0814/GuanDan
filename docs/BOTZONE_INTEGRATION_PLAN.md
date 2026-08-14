@@ -59,6 +59,8 @@ L5-A2b12b 仍无法创建全新仓库外资源，故不再尝试动态目录。�
 
 L5-A2b12c 进一步确认 state 可用性与 audit 可用性必须分开：state 目录存在且为空，但没有独立 audit 目录，因此 live 在首个 GET 前停止。L5-A2b12d 由项目所有者准备固定 `D:\VsCodeProject\BotzoneAudit`，使用 `{}` 探针验证原子写并恢复为空；该目录不能与 SessionStore 根目录合并。
 
+L5-A2b12d 的宿主机结果为 audit exists/empty/probe=`True/True/passed`。至此固定 state 与 audit 目录均独立、存在且为空。L5-A2b12e 只复用 state 运行零网络 preflight，并复核 audit 仍为空；ready 后才重新取得 live 授权。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

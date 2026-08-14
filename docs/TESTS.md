@@ -55,6 +55,8 @@ L5-A2b12b 在创建新仓库外资源前再次 `precondition_failed`，没有新
 
 L5-A2b12c 因独立 audit 路径不可用在首次 GET 前停止，网络计数为 0。L5-A2b12d 不运行仓库测试或项目代码，只由项目所有者在固定仓库外 audit 目录执行 `{}` 探针的创建、同目录重命名、删除，并验收目录最终为空。
 
+L5-A2b12d 宿主机探针结果为 exists=True、empty=True、passed，未运行项目或网络。L5-A2b12e 不重复测试，只运行一次 `--preflight-only`，并要求固定 stdout、exit 0、state/audit 均为空、stderr 空和零网络行为。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

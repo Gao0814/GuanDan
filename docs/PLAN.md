@@ -132,6 +132,12 @@
 - state 与 audit 不得共用目录。只读确认固定 `D:\VsCodeProject\BotzoneAudit` 尚不存在。
 - L5-A2b12d 由项目所有者在宿主机 PowerShell 创建该目录，并用固定空 JSON 探针验证创建、同目录重命名和删除；步骤不运行项目代码或网络。
 
+### L5-A2b12d audit 目录已准备
+
+- 项目所有者确认 `audit_exists=True`、`audit_empty=True`、`audit_probe=passed`。
+- 既有 state 与新 audit 目录均为仓库外、独立且为空，不再动态创建或删除目录。
+- 下一步 L5-A2b12e 由项目所有者在宿主机 PowerShell 运行一次 `--preflight-only`；通过后再请求 L5-A2b13 live 授权。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
