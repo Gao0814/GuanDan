@@ -27,9 +27,34 @@ def _deal(player: int = 0) -> str:
     )
 
 
+def _direct_deal(player: int = 0) -> str:
+    return json.dumps(_deal_inner(player), separators=(",", ":"))
+
+
 def _play(player: int = 0) -> str:
     return json.dumps(
         {"requests": [_deal_inner(player), {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1, "global": {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False, "tribute_cards": {}, "return_cards": {}}}], "responses": [[]]},
+        separators=(",", ":"),
+    )
+
+
+def _direct_play(player: int = 0) -> str:
+    return json.dumps(
+        {
+            "stage": "play",
+            "history": [[], [], [], []],
+            "done": [],
+            "pass_on": -1,
+            "global": {
+                "level": "2",
+                "tribute": 0,
+                "first": None,
+                "last": None,
+                "resist": False,
+                "tribute_cards": {},
+                "return_cards": {},
+            },
+        },
         separators=(",", ":"),
     )
 
@@ -52,6 +77,54 @@ class _FakeTransport:
 
 
 class BotzoneConnectorTests(unittest.TestCase):
+    def test_direct_stage_deal_play_headers_remain_unwrapped_and_ack_once(self) -> None:
+        with TemporaryDirectory() as root:
+            deal_poll = ("1 0\nunit-a\n" + _direct_deal()).encode()
+            play_poll = ("1 0\nunit-a\n" + _direct_play()).encode()
+            transport = _FakeTransport([deal_poll, play_poll, b"0 0\n"])
+            calls: list[HandlerContext] = []
+
+            def handler(context: HandlerContext) -> HandlerResult:
+                calls.append(context)
+                if isinstance(context.request, DealRequest):
+                    return HandlerResult(b"[]")
+                card = context.own_hand[0]
+                return HandlerResult(json.dumps([[card], [card]], separators=(",", ":")).encode(), PlayEffect((card,)))
+
+            store = SessionStore(root)
+            connector = MockConnector(store, transport, handler)
+            first = connector.cycle()
+            second = connector.cycle()
+            third = connector.cycle()
+            self.assertEqual((first.responses_prepared, second.responses_prepared, third.headers_sent), (1, 1, 1))
+            self.assertEqual(tuple(transport.headers[1].values()), (b"[]",))
+            self.assertEqual(tuple(transport.headers[2].values()), (b"[[0],[0]]",))
+            self.assertEqual(store.load("unit-a").own_hand, tuple(range(1, 27)))
+            self.assertEqual(len(calls), 2)
+
+    def test_direct_play_without_deal_and_unsupported_stage_fail_closed(self) -> None:
+        with TemporaryDirectory() as root:
+            cold = ("1 0\nunit-a\n" + _direct_play()).encode()
+            cycle = MockConnector(SessionStore(root), _FakeTransport([cold]), lambda _: HandlerResult(b"[]")).cycle()
+            self.assertEqual(cycle.diagnostics, (("play_without_state", 1),))
+        with TemporaryDirectory() as root:
+            unsupported = b'1 0\nunit-a\n{"stage":"tribute"}'
+            cycle = MockConnector(SessionStore(root), _FakeTransport([unsupported]), lambda _: HandlerResult(b"[]")).cycle()
+            self.assertEqual(cycle.diagnostics, (("unsupported_stage", 1),))
+
+    def test_direct_pending_response_survives_failure_and_restart_without_recalling_handler(self) -> None:
+        with TemporaryDirectory() as root:
+            poll = ("1 0\nunit-a\n" + _direct_deal()).encode()
+            transport = _FakeTransport([poll, RuntimeError("offline"), b"0 0\n"])
+            calls: list[HandlerContext] = []
+            first = MockConnector(SessionStore(root), transport, lambda context: calls.append(context) or HandlerResult(b"[]"))
+            first.cycle()
+            failed = first.cycle()
+            recovered = MockConnector(SessionStore(root), transport, lambda context: calls.append(context) or HandlerResult(b"[]")).cycle()
+            self.assertEqual(failed.diagnostics, (("transport_failure", 1),))
+            self.assertEqual(recovered.headers_sent, 1)
+            self.assertEqual(tuple(transport.headers[2].values()), (b"[]",))
+            self.assertEqual(len(calls), 1)
     def test_cold_envelope_replay_wraps_header_and_commits_effect_after_ack(self) -> None:
         with TemporaryDirectory() as root:
             deal = _deal_inner(0)

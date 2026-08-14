@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from .bot_io import BotEnvelope, BotEnvelopeError, BotReplay, REQUIRED_FIELDS_PROFILES, parse_bot_envelope
 from .models import DealRequest, PlayRequest, UnsupportedStage
+from .protocol import ProtocolValidationError, parse_stage_request
 
 
 MAX_POLL_BYTES = 1_048_576
@@ -32,6 +33,7 @@ ENVELOPE_SHAPE_DETAILS = frozenset(
         "envelope_length_mismatch",
     }
 )
+WIRE_MODES = frozenset({"bot_envelope", "direct_stage"})
 
 
 class PollFormatError(ValueError):
@@ -49,6 +51,7 @@ class PollRequest:
     diagnostic: str | None = None
     diagnostic_detail: str | None = None
     diagnostic_profile: str | None = None
+    wire_mode: str = "bot_envelope"
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +106,31 @@ def _parse_request(match_id: str, request_line: str) -> PollRequest:
         return PollRequest(match_id=match_id, request_bytes=raw, stage=None, diagnostic="request_json_invalid")
     except Exception:
         return PollRequest(match_id=match_id, request_bytes=raw, stage=None, diagnostic="malformed_request")
+    if (
+        isinstance(payload, dict)
+        and "requests" not in payload
+        and "responses" not in payload
+        and "stage" in payload
+    ):
+        try:
+            stage = parse_stage_request(payload)
+        except ProtocolValidationError:
+            return PollRequest(
+                match_id=match_id,
+                request_bytes=raw,
+                stage=None,
+                diagnostic="inner_request_invalid",
+                wire_mode="direct_stage",
+            )
+        except Exception:
+            return PollRequest(
+                match_id=match_id,
+                request_bytes=raw,
+                stage=None,
+                diagnostic="malformed_request",
+                wire_mode="direct_stage",
+            )
+        return PollRequest(match_id=match_id, request_bytes=raw, stage=stage, wire_mode="direct_stage")
     try:
         envelope: BotEnvelope = parse_bot_envelope(payload)
     except BotEnvelopeError as exc:
@@ -123,7 +151,13 @@ def _parse_request(match_id: str, request_line: str) -> PollRequest:
         )
     except Exception:
         return PollRequest(match_id=match_id, request_bytes=raw, stage=None, diagnostic="malformed_request")
-    return PollRequest(match_id=match_id, request_bytes=raw, stage=envelope.current_request, replay=envelope.replay)
+    return PollRequest(
+        match_id=match_id,
+        request_bytes=raw,
+        stage=envelope.current_request,
+        replay=envelope.replay,
+        wire_mode="bot_envelope",
+    )
 
 
 def _parse_finished(line: str) -> FinishedRow:

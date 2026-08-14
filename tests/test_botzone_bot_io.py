@@ -4,7 +4,7 @@ from copy import deepcopy
 import json
 import unittest
 
-from integrations.botzone.bot_io import BotEnvelopeError, encode_bot_response, parse_bot_envelope
+from integrations.botzone.bot_io import BotEnvelopeError, encode_bot_response, encode_direct_response, parse_bot_envelope
 from integrations.botzone.models import DealRequest, PlayRequest
 from integrations.botzone.protocol import parse_stage_request
 
@@ -95,8 +95,11 @@ class BotJsonEnvelopeTests(unittest.TestCase):
         for stage, response, expected in cases:
             with self.subTest(response=response):
                 self.assertEqual(encode_bot_response(stage, response), expected)
+                self.assertEqual(encode_direct_response(stage, response), response)
         with self.assertRaises(BotEnvelopeError):
             encode_bot_response(deal, b"[[],[]]")
+        with self.assertRaises(BotEnvelopeError):
+            encode_direct_response(deal, b"[[],[]]")
 
 
 if __name__ == "__main__":

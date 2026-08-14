@@ -20,6 +20,10 @@ def _envelope(*requests: dict[str, object], responses: list[object] | None = Non
     return json.dumps({"requests": list(requests), "responses": [] if responses is None else responses}, separators=(",", ":"))
 
 
+def _direct(stage: dict[str, object]) -> str:
+    return json.dumps(stage, separators=(",", ":"))
+
+
 class BotzonePollTests(unittest.TestCase):
     def test_single_and_multi_match_preserve_input_order(self) -> None:
         body = ("2 2\nunit-a\n" + _envelope(_deal(0)) + "\nunit-b\n" + _envelope(_deal(1)) + "\nunit-c 1 0\nunit-d 2 4 1 2 3 4\n").encode()
@@ -39,6 +43,22 @@ class BotzonePollTests(unittest.TestCase):
         batch = parse_poll(body)
         self.assertEqual(batch.requests[0].diagnostic, "request_json_invalid")
         self.assertIsNotNone(batch.requests[1].stage)
+
+    def test_envelope_and_direct_stage_modes_preserve_order(self) -> None:
+        direct = _direct(_deal(1))
+        envelope = _envelope(_deal(0))
+        batch = parse_poll(("2 0\nunit-a\n" + envelope + "\nunit-b\n" + direct).encode())
+        self.assertEqual([item.wire_mode for item in batch.requests], ["bot_envelope", "direct_stage"])
+        self.assertTrue(all(isinstance(item.stage, DealRequest) for item in batch.requests))
+        self.assertIsNone(batch.requests[1].replay)
+
+    def test_direct_malformed_stage_and_non_stage_object_fail_closed(self) -> None:
+        malformed = parse_poll(b'1 0\nunit-a\n{"stage":"play"}')
+        self.assertEqual(malformed.requests[0].wire_mode, "direct_stage")
+        self.assertEqual(malformed.requests[0].diagnostic, "inner_request_invalid")
+        missing = parse_poll(b'1 0\nunit-a\n{"other":true}')
+        self.assertEqual(missing.requests[0].wire_mode, "bot_envelope")
+        self.assertEqual(missing.requests[0].diagnostic, "envelope_shape_invalid")
 
     def test_structural_errors_fail_closed(self) -> None:
         invalid_bodies = (

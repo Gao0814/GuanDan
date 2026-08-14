@@ -100,7 +100,6 @@ class BotzoneRequestDiagnosticTests(unittest.TestCase):
             ({"responses": []}, "required_requests_missing"),
             ({"requests": []}, "required_responses_missing"),
             ({}, "required_both_missing_empty_object"),
-            ({"stage": "synthetic"}, "required_both_missing_inner_stage_candidate"),
             ({"data": None}, "required_both_missing_optional_only"),
             ({"other": None}, "required_both_missing_other_object"),
         )
@@ -109,6 +108,8 @@ class BotzoneRequestDiagnosticTests(unittest.TestCase):
                 self.assertEqual(_diagnostic(envelope), "envelope_shape_invalid")
                 self.assertEqual(_detail(envelope), "envelope_required_fields_missing")
                 self.assertEqual(_profile(envelope), profile)
+        direct_stage = parse_poll(_poll_line({"stage": "synthetic"})).requests[0]
+        self.assertEqual((direct_stage.diagnostic, direct_stage.diagnostic_profile, direct_stage.wire_mode), (None, None, "direct_stage"))
         for envelope in (
             {"requests": [], "responses": []},
             {"requests": [_deal()], "responses": [], "extra": None},

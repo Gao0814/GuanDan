@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Protocol
 
-from .bot_io import BotEnvelopeError, REQUIRED_FIELDS_PROFILES, encode_bot_response
+from .bot_io import BotEnvelopeError, REQUIRED_FIELDS_PROFILES, encode_bot_response, encode_direct_response
 from .models import DealRequest, PlayRequest, UnsupportedStage
-from .poll import ENVELOPE_SHAPE_DETAILS, PollFormatError, PollRequest, parse_poll
+from .poll import ENVELOPE_SHAPE_DETAILS, PollFormatError, PollRequest, WIRE_MODES, parse_poll
 from .session import HandlerContext, HandlerResult, PendingDelivery, SessionStorageError, SessionStore
 
 
@@ -157,7 +157,14 @@ class MockConnector:
             if result.response is not None:
                 if b"\r" in result.response or b"\n" in result.response:
                     raise SessionStorageError("header_injection")
-                result = HandlerResult(encode_bot_response(request.stage, result.response), result.effect)
+                if request.wire_mode not in WIRE_MODES:
+                    raise SessionStorageError("malformed_handler_result")
+                encoded = (
+                    encode_bot_response(request.stage, result.response)
+                    if request.wire_mode == "bot_envelope"
+                    else encode_direct_response(request.stage, result.response)
+                )
+                result = HandlerResult(encoded, result.effect)
             completed = self._store.complete_handler(record, result)
         except (BotEnvelopeError, SessionStorageError) as exc:
             diagnostics[_normalized_session_error(exc)] += 1

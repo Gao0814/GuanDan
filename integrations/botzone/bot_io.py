@@ -221,8 +221,8 @@ def parse_bot_envelope(value: object) -> BotEnvelope:
     )
 
 
-def encode_bot_response(stage: DealRequest | PlayRequest, response: bytes) -> bytes:
-    """Canonicalize an inner GuanDan reply into the outer Bot response object."""
+def _canonical_inner_response(stage: DealRequest | PlayRequest, response: bytes) -> object:
+    """Validate an inner GuanDan reply without retaining its source bytes."""
 
     if not isinstance(response, bytes):
         raise BotEnvelopeError("unknown")
@@ -233,10 +233,22 @@ def encode_bot_response(stage: DealRequest | PlayRequest, response: bytes) -> by
     if isinstance(stage, DealRequest):
         if decoded != [] or type(decoded) is not list:
             raise BotEnvelopeError("unknown")
-        payload: object = []
-    else:
-        try:
-            payload = parse_action_claim(decoded, level=stage.global_state.level).to_json()
-        except ProtocolValidationError as exc:
-            raise BotEnvelopeError("unknown") from exc
+        return []
+    try:
+        return parse_action_claim(decoded, level=stage.global_state.level).to_json()
+    except ProtocolValidationError as exc:
+        raise BotEnvelopeError("unknown") from exc
+
+
+def encode_direct_response(stage: DealRequest | PlayRequest, response: bytes) -> bytes:
+    """Canonicalize a direct GuanDan response without the Bot envelope wrapper."""
+
+    payload = _canonical_inner_response(stage, response)
+    return json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+
+
+def encode_bot_response(stage: DealRequest | PlayRequest, response: bytes) -> bytes:
+    """Canonicalize an inner GuanDan reply into the outer Bot response object."""
+
+    payload = _canonical_inner_response(stage, response)
     return json.dumps({"response": payload}, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
