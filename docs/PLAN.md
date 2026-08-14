@@ -1194,6 +1194,15 @@ Botzone JSON input
 
 验收：`botzone_deepseek_connector_live_preflight_ready`。
 
+实际前置结果：实现、工作区、23/569 回归和四项脱敏配置元数据均通过，但当前权限不能在 `%LOCALAPPDATA%` 创建任务要求的仓库外 state 目录；子进程未启动、网络计数为 0，判定 `precondition_failed`。
+
+#### L5-A2a1：系统临时目录恢复
+
+- 不改代码、不重复回归；
+- 使用标准系统临时目录下的全新随机仓库外 state 目录；
+- 保持同一命令、30 秒上限、恰好一次和零网络门槛；
+- 临时目录不可用则继续 precondition failed，不尝试其他路径或提权。
+
 #### L5-A2b：真实单局 smoke
 
 仅在 L5-A2a 通过、工作区干净且用户重新明确授权后执行：
@@ -1207,4 +1216,4 @@ Botzone JSON input
 
 ### 9.7 当前下一步
 
-L5-A1 已封存为 `71d9119`；L5-A1a 已完成并封存为 `aac59d5`，定向 23 项、全量 569 项通过，唯一判定 `botzone_deepseek_connector_hardening_verified`。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2a，只运行一次真实环境零网络 preflight，不启动 connector 主循环。
+L5-A1 已封存为 `71d9119`；L5-A1a 已封存为 `aac59d5`。L5-A2a 因 `%LOCALAPPDATA%` 写权限在子进程启动前 `precondition_failed`。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2a1，只把 state 根目录改为系统临时目录，不启动 connector 主循环。

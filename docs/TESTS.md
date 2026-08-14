@@ -1470,3 +1470,15 @@ L5-A1a 实际结果：实现检查点 `aac59d5`，定向 23 项、全量 569 项
 - summary 不含 URL、key、Header、路径敏感片段、牌、request/response、prompt、reasoning 或异常正文。
 
 通过只能判定 `botzone_deepseek_connector_live_preflight_ready`。真实 connector 与模型调用必须放在 L5-A2b，并重新获得明确授权。
+
+L5-A2a 前置实际结果：检查点、工作区、23/569 回归和四项脱敏环境元数据通过，但 `%LOCALAPPDATA%` 仓库外目录不可写；preflight 子进程未启动，全部网络计数为 0，判定 `precondition_failed`。
+
+### 9.4 L5-A2a1 临时目录恢复
+
+- 不修改代码，不重复 23/569 回归；
+- state 根必须来自系统标准临时目录，候选必须全新、随机、仓库外且初始为空；
+- 不复用 `BOTZONE_STATE_DIR`、历史 state 或固定路径，不申请提权；
+- 目录资格通过后，原 preflight 命令恰好执行一次，30 秒硬上限且不重试；
+- 成功门槛仍为 exit 0、单行 `preflight_ready`、空 stderr、空 state、无残留进程与全部网络/模型请求计数为 0；
+- 目录创建失败时保持 `precondition_failed`，不得改试其他目录；
+- 子进程启动后的任何门槛失败判 `botzone_deepseek_connector_live_preflight_invalid`。

@@ -1436,7 +1436,7 @@ U0-A3 已完成架构选择：项目所有者选择 **B）恢复 connector + Dee
 
 L5-A1a 已修复这两个问题并补充参数化测试，不改变正常 response、cache、pending/ack、finished cleanup、协议或策略。实现检查点 `aac59d5`；定向 23 项、全量 569 项和 `git diff --check` 通过。唯一判定：`botzone_deepseek_connector_hardening_verified`。
 
-### 当前阶段：L5-A2a
+### L5-A2a 前置结果
 
 下一步只运行一次真实环境零网络 preflight：
 
@@ -1446,8 +1446,14 @@ L5-A1a 已修复这两个问题并补充参数化测试，不改变正常 respon
 - 必须得到 exit 0、固定 `preflight_ready`、空 stderr、空 state、无残留进程；
 - Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle 与模型选择调用均为 0。
 
-预期判定：`botzone_deepseek_connector_live_preflight_ready`。本阶段不需要 live 网络授权，也不得创建测试桌。
+实现检查点、工作区、定向 23 项、全量 569 项、diff check 与四项脱敏环境元数据全部通过。但当前权限无法在 `%LOCALAPPDATA%` 创建仓库外临时 state 目录，因此 preflight 子进程未启动。网络、connector 和模型请求计数均为 0。
+
+规范化判定：`precondition_failed: repository_external_localappdata_not_writable`。该结果不否定 L5-A1a，也不消耗 preflight 的唯一执行次数。
+
+### 当前阶段：L5-A2a1
+
+下一步不改代码、不重复回归，只使用当前环境明确可写的系统临时目录创建全新仓库外 state，并执行同一条 `--agent deepseek --preflight-only`。30 秒硬上限、恰好一次、零网络和不重试门槛保持不变。
 
 ### 后续边界
 
-L5-A2a 通过后才规划 L5-A2b：全新无贡测试桌、全新 state/audit、显式授权的一次真实 connector smoke。任何历史 live 授权均不可复用。L5-A1/L5-A1a/L5-A2a 不形成 DeepSeek 可达、动作质量或胜率结论。
+L5-A2a1 通过后才规划 L5-A2b：全新无贡测试桌、全新 state/audit、显式授权的一次真实 connector smoke。任何历史 live 授权均不可复用。L5-A1/L5-A1a/L5-A2a/L5-A2a1 不形成 DeepSeek 可达、动作质量或胜率结论。

@@ -716,6 +716,7 @@ DeepSeek exception / timeout / malformed / illegal action_id
 | L5-A1 | 默认 rule、显式 deepseek 的离线组合根；match/player Agent 隔离；最终规则降级 | fake client/transport，零真实请求 | `botzone_deepseek_connector_offline_wiring_verified` |
 | L5-A1a | 精确诊断兼容、fallback 分类和 deepseek 零网络 preflight | fake factories，零真实请求 | `botzone_deepseek_connector_hardening_verified` |
 | L5-A2a | 真实环境零网络 config/state/RAG/Agent preflight | 恰好一次、零网络 | `botzone_deepseek_connector_live_preflight_ready` |
+| L5-A2a1 | 改用系统临时目录恢复尚未启动的 preflight | 不改代码、不提权、零网络 | ready 或 precondition failed |
 | L5-A2b | 一次全新无贡 live smoke | 必须重新获得明确授权 | deal/play/response/header/ack/qualified finished 闭环 |
 | L5-A3 | 小规模稳定性与降级统计 | 独立预算与授权 | 零非法动作；模型成功/降级/超时聚合可审计 |
 | L5-A4 | 规则基线 vs DeepSeek A/B | 固定设置、轮换座位 | 只报告样本统计，不提前宣称胜率提升 |
@@ -749,6 +750,14 @@ DeepSeek exception / timeout / malformed / illegal action_id
 - 定向 23 项、全量 569 项和 diff check 通过。
 - 唯一判定：`botzone_deepseek_connector_hardening_verified`。
 
-### 17.7 当前下一动作
+### 17.7 L5-A2a 前置结果
 
-执行 `docs/NEXT_PROMPT.md` 中的 L5-A2a。只运行一次真实环境零网络 preflight；通过并形成新授权问题前，不进入真实 connector smoke。
+- 实现/工作区/23 项定向/569 项全量/diff check 通过。
+- 四项真实环境元数据门槛以脱敏形式通过。
+- `%LOCALAPPDATA%` 仓库外 state 目录创建被当前权限阻止。
+- preflight 子进程未启动，全部网络与模型请求计数为 0。
+- 判定：`precondition_failed: repository_external_localappdata_not_writable`。
+
+### 17.8 当前下一动作
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A2a1。仅改用系统临时目录恢复同一零网络 preflight；通过并形成新授权问题前，不进入真实 connector smoke。
