@@ -1,5 +1,16 @@
 # Botzone 接入计划：本地 connector 与直接上传 Bot
 
+## L5-A2b5：required-fields 安全画像
+
+状态：实现与离线回归已验证，独立实现检查点待建立。
+
+- 固定 profile：`required_requests_missing`、`required_responses_missing`、`required_both_missing_empty_object`、`required_both_missing_inner_stage_candidate`、`required_both_missing_optional_only`、`required_both_missing_other_object`。
+- profile 仅在父诊断 `envelope_shape_invalid`、detail `envelope_required_fields_missing` 下产生。
+- 其他 shape detail、inner/history/replay 失败与合法信封均不得产生 profile。
+- connector/runner 只聚合 allowlist profile；未知值丢弃。
+- audit v4 保留 v3 字段语义，只新增 `diagnostic_profiles`；不得保存请求 key/value、长度、hash、match、牌或异常正文。
+- 下一阶段 L5-A2b6 只做检查点复核和零网络 preflight，不直接恢复 live。
+
 更新时间：2026-08-09
 
 ## 0. Phase 0：手动建桌无贡 profile 官方协议封板（2026-08-09）

@@ -1,5 +1,15 @@
 # 项目状态看板
 
+## 2026-08-14：Botzone required-fields profile 已验证，待实现检查点
+
+- 判定：`botzone_required_fields_shape_profile_verified`。
+- 六种固定低基数 profile 已覆盖缺 requests、缺 responses、空 object、inner-stage candidate、optional-only 和其他 object。
+- `botzone_local_smoke_audit` 升级到 v4，只新增 `diagnostic_profiles` 聚合；既有 `diagnostics`、`diagnostic_details` 保持兼容。
+- 本轮复核：扩展定向 36 项、全量 574 项通过，`git diff --check` 通过；边界扫描无新增网络或敏感配置读取。
+- 七个实现/测试文件尚未独立提交。由于当前规划职责只允许编辑 docs，不能替实现任务提交这些文件。
+- 下一步：L5-A2b6 先封存精确实现检查点，再执行一次零网络 preflight。没有新授权前不得启动 live connector。
+- L5-A2b4 仍为 `botzone_deepseek_connector_no_tribute_smoke_invalid`，不得追认或复用授权。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线

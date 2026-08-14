@@ -2,6 +2,14 @@
 
 当前进度与风险见 `docs/PROJECT_STATUS.md`。下一步实施任务见 `docs/NEXT_PROMPT.md`。
 
+## 2026-08-14 Botzone v4 诊断画像进度
+
+- L5-A2b5 六种缺失必需字段 profile 已实现并通过扩展定向 36 项、全量 574 项和补丁格式检查。
+- audit 升级为 v4，仅新增聚合 `diagnostic_profiles`；v3 的父诊断和 detail 语义保持不变。
+- 该实现仍是工作区中的七个源码/测试改动，尚未由实现任务建立独立检查点；规划任务不代为提交非 docs 文件。
+- 下一步为 L5-A2b6：先验证独立实现检查点，再运行一次零网络 DeepSeek connector preflight；通过后仅准备新的 L5-A2b7 授权问题，不直接 live。
+- L5-A2b4 的无贡 DeepSeek smoke 仍永久无效，原授权已消耗。
+
 ## 1. 当前结论
 
 截至 2026-08-10，项目已经完成：

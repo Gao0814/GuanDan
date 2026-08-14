@@ -1,5 +1,24 @@
 # GuanDan 测试与验收
 
+## 2026-08-14 Botzone required-fields profile 回归
+
+已执行：
+
+```text
+python -m unittest tests.test_botzone_request_diagnostics tests.test_botzone_poll tests.test_botzone_connector tests.test_botzone_runner tests.test_botzone_live_preflight tests.test_botzone_finished_provenance -q
+Ran 36 tests - OK
+
+python -m unittest discover -q
+Ran 574 tests - OK
+
+git diff --check
+OK（仅 Git 的 LF/CRLF 提示）
+```
+
+静态边界扫描只命中普通列表的 `requests.append`，未发现新增网络客户端、`.env`/真实配置读取、Cookie、DeepSeek 调用、引擎私有状态或上传产物改动。
+
+注意：用户报告的 30 项定向集合已通过；本次规划复核扩大到 36 项，额外覆盖 poll、connector、runner 与 finished provenance。七个实现/测试文件仍待实现任务独立提交。
+
 ## 1. 测试入口
 
 全部测试：
