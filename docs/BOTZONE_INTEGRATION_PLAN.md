@@ -17,6 +17,10 @@
 
 实际结果：检查点 `8e8d639011bd095bcf0af74816609c63e8c6199f` 已建立，精确包含七个文件，36/574 回归及补丁检查通过，工作区干净。L5-A2b6 已解除阻塞，但仍只允许零网络 preflight。
 
+### L5-A2b6：v4 零网络 preflight
+
+唯一运行 exit 2；所有网络/模型计数为 0，state 与进程清理完成。由于入口把 runtime config、state preflight 与 DeepSeek 组合异常统一映射为配置错误，当前结果只能定位到本地组合路径。L5-A2b6 永久无效，不重跑；L5-A2b6a 将用仓库外、process-only、固定阶段 audit 继续诊断。
+
 更新时间：2026-08-09
 
 ## 0. Phase 0：手动建桌无贡 profile 官方协议封板（2026-08-09）

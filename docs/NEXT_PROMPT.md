@@ -1,85 +1,69 @@
 # 下一步实施提示词
 
-## Step L5-A2b6：v4 profile 零网络恢复准入
+## Step L5-A2b6a：DeepSeek 本地组合阶段安全诊断
 
-本任务只复核已封存实现并执行恰好一次零网络 DeepSeek connector preflight。不得启动 live connector、连接 Botzone、调用 DeepSeek、创建测试桌或复用任何历史 live 授权。
+本任务只在仓库外执行一次零网络、分阶段的本地组合诊断，用固定低基数结果定位 L5-A2b6 的 exit 2。不得重跑正式 `--preflight-only`，不得修改仓库代码，不得启动 connector、连接 Botzone 或调用 DeepSeek。
 
 ### 已确认基线
 
-- L5-A2b5a 实现检查点：`8e8d639011bd095bcf0af74816609c63e8c6199f`。
-- 提交信息：`Add safe Botzone required fields profiles`。
-- 提交范围精确为四个 runtime 文件和三个测试文件，工作区已确认干净。
-- 定向 36 项、全量 574 项和 `git diff --check` 已通过。
-- audit schema 为 `botzone_local_smoke_audit` v4；v3 的 `diagnostics`、`diagnostic_details` 语义保持不变，仅新增 allowlist 聚合 `diagnostic_profiles`。
-- L5-A2b4 永久保持 `botzone_deepseek_connector_no_tribute_smoke_invalid`；旧授权已消耗，不得重跑或补采。
+- L5-A2b5a 检查点：`8e8d639011bd095bcf0af74816609c63e8c6199f`。
+- L5-A2b6 前置全部通过：36 项定向、574 项全量、补丁检查、配置元数据、工作区和残留进程门槛均通过。
+- 唯一正式零网络 preflight 已执行一次：30 秒内 exit 2，stderr 空，state 前后为空并删除，全部网络/模型计数为 0。
+- stdout 仅归类为 `unexpected_stdout`，未保留或复述正文。
+- 判定永久为 `botzone_deepseek_connector_v4_preflight_invalid`；不得重跑或追认。
+- 只读代码顺序表明 exit 2 可能来自：`load_runtime_config()`、`preflight_state_directory()` 或 `prepare_agent_factory("deepseek")`；现有入口将这些路径统一折叠为 `configuration_error`，当前证据不能继续归因。
 
-### 前置复核
+### 目标
 
-1. 确认 HEAD 包含 `8e8d639011bd095bcf0af74816609c63e8c6199f`，且该提交范围仍精确为七个文件。
-2. `git status --short` 必须为空。
-3. 运行：
+使用一个仓库外临时诊断载体，把本地组合拆成固定阶段：
 
 ```text
-python -m unittest tests.test_botzone_request_diagnostics tests.test_botzone_poll tests.test_botzone_connector tests.test_botzone_runner tests.test_botzone_live_preflight tests.test_botzone_finished_provenance -q
-python -m unittest discover -q
-git diff --check
+runtime_config_load
+state_directory_preflight
+process_app_config_load
+agent_factory_build
+agent_instance_create
+diagnosis_completed
 ```
 
-4. 只检查以下配置元数据，不输出值，不读取 `.env`：
-   - `BOTZONE_LOCAL_AI_URL`：present；
-   - DeepSeek API key：present；
-   - endpoint 精确匹配 `https://api.deepseek.com`；
-   - model 精确匹配 `deepseek-v4-flash`；
-   - timeout 为非 bool 数值 60；
-   - retries 为非 bool 整数 0。
-5. 确认没有残留 Botzone connector Python 进程。
+只记录阶段是否开始/完成、固定失败类别和零网络计数。不得记录异常正文、配置值、路径、对象 repr 或动态字段。
 
-任一前置失败时返回明确 `precondition_failed`，不得创建 preflight 子进程、不得联网或请求 live 授权。
+### 诊断要求
 
-### 唯一 preflight
-
-前置全部通过后：
-
-1. 在系统临时目录创建一个全新、随机、仓库外、初始为空的 state 目录。
-2. 在显式锁定 timeout=60、retries=0 的同一子进程环境中，恰好运行一次：
+1. 先确认 HEAD 包含检查点、工作区干净、无残留 connector；不重复 36/574 回归。
+2. 在系统临时目录创建全新的诊断目录、state 子目录和 audit 文件，均位于仓库外。
+3. 诊断脚本顶层只使用标准库，先原子写入 `bootstrapping` audit，再延迟导入项目模块。
+4. 禁止加载仓库 `.env`：调用 `AppConfig.from_env()` 时必须将 `config.load_dotenv` 临时替换为无操作函数，确保只消费当前进程环境。
+5. 只检查并使用当前进程中的配置；API key 可以传入现有 client 构造，但不得输出、散列、复制或持久化。
+6. 分阶段执行：
+   - `load_runtime_config()`，使用全新 state；
+   - `preflight_state_directory()`；
+   - process-only `AppConfig.from_env()` 并复核 endpoint/model/60/0；
+   - `build_agent_factory("deepseek", config_loader=lambda: config)`；
+   - 调用 factory 创建一次 player 1 Agent，但不得调用 `select_action()` 或 `suggest_action_id()`。
+7. 设置网络 tripwire；DNS、socket、HTTP、Botzone transport、connector cycle、DeepSeek request 和 `suggest_action_id()` 计数必须全部为 0。
+8. 只允许固定结果：
 
 ```text
-python -m integrations.botzone --agent deepseek --preflight-only --state-dir <fresh-state-dir>
+runtime_config_invalid
+state_directory_invalid
+process_app_config_invalid
+agent_factory_build_invalid
+agent_instance_invalid
+unexpected_failure
+process_only_composition_ready
 ```
 
-3. 硬上限 30 秒，零重试。
-4. 成功门槛：
-   - exit code 0；
-   - stdout 规范化后精确为单行 `preflight_ready`；
-   - stderr 为空；
-   - state 目录结束后仍为空并删除；
-   - 无残留 Python connector 进程；
-   - Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle、`suggest_action_id()` 均为 0。
-5. 审计只保留布尔门槛、退出码、规范化 stdout 类别、耗时和零网络计数；不得保留路径、URL、key、Header、Cookie、牌、请求、prompt、RAG、reasoning 或模型响应。
+9. 捕获异常时只记录固定结果和失败阶段，不记录异常类型、消息、链、traceback 或 repr。
+10. 脚本只运行一次，不修正后重跑；state 最终必须为空并删除，不能残留 Python 进程。
 
-preflight 一旦启动，任何门槛失败都判定：
+### 判定
+
+- 任一阶段失败：报告对应固定结果；原 L5-A2b6 invalid 保持不变，并为该阶段另行规划修复。
+- 所有阶段通过：唯一判定为：
 
 ```text
-botzone_deepseek_connector_v4_preflight_invalid
+botzone_deepseek_process_only_composition_verified
 ```
 
-不得重试、换目录或继续 live。
-
-### 通过后的动作
-
-通过时唯一判定：
-
-```text
-botzone_deepseek_connector_v4_preflight_ready
-```
-
-随后只更新 docs，并向项目所有者提出 L5-A2b7 的新授权问题。授权问题必须重新明确：
-
-- 允许把本家尚未公开的手牌牌面与张数发送给 DeepSeek；
-- 允许发送公开历史/状态、engine 合法候选、手牌评估、记牌摘要、场景标签及本地 RAG 片段；
-- 目标固定为 `https://api.deepseek.com` / `deepseek-v4-flash`；
-- 当前 Botzone URL 最多 100 次 GET；DeepSeek timeout 60 秒、retries 0；
-- 恰好一个 connector、一个全新“需要进贡=否”测试桌、最长 3600 秒、完成一局即停；
-- 所有历史测试桌必须先关闭，只能在 Botzone 显示已连接后创建唯一新桌。
-
-未获得新的完整授权和旧桌清理确认前，不得执行 L5-A2b7。本步骤不形成协议闭环、DeepSeek 可达性、动作质量或胜率结论。
+该结果只说明显式进程环境下的本地组合成立，不追认原 preflight，也不能直接 live。完成后只更新 docs，并根据阶段结果生成下一提示词；不得请求 live 授权。

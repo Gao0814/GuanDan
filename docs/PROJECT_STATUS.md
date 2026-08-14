@@ -14,6 +14,8 @@
 
 后续恢复：L5-A2b5a 已以 `8e8d639011bd095bcf0af74816609c63e8c6199f` 独立封存，提交范围精确、36/574 回归通过、工作区干净，判定 `botzone_required_fields_profile_checkpoint_verified`。此前的 checkpoint-missing 结果作为历史门槛记录保留；当前下一步为 L5-A2b6 唯一零网络 v4 preflight。
 
+L5-A2b6 已执行且判定 `botzone_deepseek_connector_v4_preflight_invalid`：唯一 preflight exit 2，stderr 空、临时 state 清理完成、无残留，Botzone/DeepSeek/DNS/socket/HTTP/connector/suggestion 计数均为 0。失败位于本地配置或组合路径，尚不能区分 runtime config、state preflight、factory build 或 Agent 创建。下一步为 L5-A2b6a 仓库外分阶段诊断，不重跑正式 preflight、不联网。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线

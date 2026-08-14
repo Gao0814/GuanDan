@@ -23,6 +23,13 @@
 - 36 项定向、574 项全量和补丁检查通过，提交后工作区干净。
 - 当前进入 L5-A2b6：只做一次零网络 v4 preflight；成功后请求新的 L5-A2b7 授权，不直接 live。
 
+### L5-A2b6 实际结果
+
+- 前置、36/574 回归、配置元数据和零网络边界均通过。
+- 唯一 preflight 在 30 秒内 exit 2；stderr/state/残留为空，全部网络与模型计数为 0。
+- 判定为 `botzone_deepseek_connector_v4_preflight_invalid`，不请求 live 授权。
+- 现有入口将 runtime config、state preflight 和 DeepSeek factory/Agent 组合失败统一折叠为 exit 2；下一步 L5-A2b6a 使用仓库外固定阶段诊断定位边界，不重跑正式 preflight。
+
 ## 1. 当前结论
 
 截至 2026-08-10，项目已经完成：

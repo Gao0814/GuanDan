@@ -23,6 +23,8 @@ OK（仅 Git 的 LF/CRLF 提示）
 
 L5-A2b5a 复核已完成：定向 36 项、全量 574 项和 `git diff --check` 通过；七个文件已提交为 `8e8d639011bd095bcf0af74816609c63e8c6199f`，提交后工作区干净。该步骤未运行 preflight，网络与模型请求为 0。
 
+L5-A2b6 再次复核同一 36/574 基线并通过。唯一零网络 preflight exit 2，stderr 为空，state 前后为空并删除，无残留进程；Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle 和 `suggest_action_id()` 均为 0。该失败不是测试失败，而是本地 preflight 配置/组合阶段未通过。
+
 ## 1. 测试入口
 
 全部测试：
