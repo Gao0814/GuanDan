@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Protocol
 
-from .bot_io import BotEnvelopeError, encode_bot_response
+from .bot_io import BotEnvelopeError, REQUIRED_FIELDS_PROFILES, encode_bot_response
 from .models import DealRequest, PlayRequest, UnsupportedStage
 from .poll import ENVELOPE_SHAPE_DETAILS, PollFormatError, PollRequest, parse_poll
 from .session import HandlerContext, HandlerResult, PendingDelivery, SessionStorageError, SessionStore
@@ -31,6 +31,7 @@ class ConnectorCycle:
     finished_qualified: int
     diagnostics: tuple[tuple[str, int], ...]
     diagnostic_details: tuple[tuple[str, int], ...] = ()
+    diagnostic_profiles: tuple[tuple[str, int], ...] = ()
 
 
 class MockConnector:
@@ -47,6 +48,7 @@ class MockConnector:
     def cycle(self) -> ConnectorCycle:
         diagnostics: Counter[str] = Counter()
         diagnostic_details: Counter[str] = Counter()
+        diagnostic_profiles: Counter[str] = Counter()
         try:
             deliveries = self._store.pending_deliveries()
             headers = MappingProxyType({item.header_name: item.response for item in deliveries})
@@ -75,6 +77,7 @@ class MockConnector:
             outcome = self._process_request(request)
             diagnostics.update(outcome[1])
             diagnostic_details.update(outcome[2])
+            diagnostic_profiles.update(outcome[3])
             prepared += outcome[0]
         qualified = 0
         for row in batch.finished:
@@ -107,11 +110,13 @@ class MockConnector:
             qualified,
             diagnostics,
             diagnostic_details,
+            diagnostic_profiles,
         )
 
-    def _process_request(self, request: PollRequest) -> tuple[int, Counter[str], Counter[str]]:
+    def _process_request(self, request: PollRequest) -> tuple[int, Counter[str], Counter[str], Counter[str]]:
         diagnostics: Counter[str] = Counter()
         details: Counter[str] = Counter()
+        profiles: Counter[str] = Counter()
         if request.diagnostic is not None:
             diagnostics[request.diagnostic] += 1
             if (
@@ -119,27 +124,33 @@ class MockConnector:
                 and request.diagnostic_detail in ENVELOPE_SHAPE_DETAILS
             ):
                 details[request.diagnostic_detail] += 1
-            return 0, diagnostics, details
+            if (
+                request.diagnostic == "envelope_shape_invalid"
+                and request.diagnostic_detail == "envelope_required_fields_missing"
+                and request.diagnostic_profile in REQUIRED_FIELDS_PROFILES
+            ):
+                profiles[request.diagnostic_profile] += 1
+            return 0, diagnostics, details, profiles
         if isinstance(request.stage, UnsupportedStage):
             diagnostics["unsupported_stage"] += 1
-            return 0, diagnostics, details
+            return 0, diagnostics, details, profiles
         if not isinstance(request.stage, (DealRequest, PlayRequest)):
             diagnostics["malformed_request"] += 1
-            return 0, diagnostics, details
+            return 0, diagnostics, details, profiles
         try:
             record, call_handler = self._store.prepare(request.match_id, request.request_bytes, request.stage, request.replay)
         except SessionStorageError as exc:
             diagnostics[_normalized_session_error(exc)] += 1
-            return 0, diagnostics, details
+            return 0, diagnostics, details, profiles
         if not call_handler:
-            return int(record.pending_response is not None), diagnostics, details
+            return int(record.pending_response is not None), diagnostics, details, profiles
         try:
             record = self._store.reserve_handler(record)
             result = self._handler(self._store.handler_context(record, request.stage))
         except Exception:
             self._store.complete_handler(record, HandlerResult(None))
             diagnostics["handler_failure"] += 1
-            return 0, diagnostics, details
+            return 0, diagnostics, details, profiles
         try:
             if not isinstance(result, HandlerResult):
                 raise SessionStorageError("malformed_handler_result")
@@ -150,10 +161,10 @@ class MockConnector:
             completed = self._store.complete_handler(record, result)
         except (BotEnvelopeError, SessionStorageError) as exc:
             diagnostics[_normalized_session_error(exc)] += 1
-            return 0, diagnostics, details
+            return 0, diagnostics, details, profiles
         if isinstance(request.stage, PlayRequest) and completed.pending_response:
             self._play_pending.add(request.match_id)
-        return int(completed.pending_response is not None), diagnostics, details
+        return int(completed.pending_response is not None), diagnostics, details, profiles
 
 
 def _normalized_session_error(error: SessionStorageError) -> str:
@@ -178,6 +189,7 @@ def _cycle(
     finished_qualified: int,
     diagnostics: Mapping[str, int],
     diagnostic_details: Mapping[str, int] | None = None,
+    diagnostic_profiles: Mapping[str, int] | None = None,
 ) -> ConnectorCycle:
     return ConnectorCycle(
         transport_called=transport_called,
@@ -189,5 +201,8 @@ def _cycle(
         diagnostics=tuple(sorted((name, count) for name, count in diagnostics.items() if count)),
         diagnostic_details=tuple(
             sorted((name, count) for name, count in (diagnostic_details or {}).items() if count)
+        ),
+        diagnostic_profiles=tuple(
+            sorted((name, count) for name, count in (diagnostic_profiles or {}).items() if count)
         ),
     )

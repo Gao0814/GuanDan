@@ -152,8 +152,9 @@ class BotzoneFinishedProvenanceTests(unittest.TestCase):
             audit = __import__("pathlib").Path(root).parent / "finished-provenance-audit.json"
             write_audit(audit, summary, exit_code_for(summary))
             payload = json.loads(audit.read_text(encoding="utf-8"))
-            self.assertEqual((payload["version"], payload["finished_seen"], payload["finished_qualified"]), (3, 1, 0))
+            self.assertEqual((payload["version"], payload["finished_seen"], payload["finished_qualified"]), (4, 1, 0))
             self.assertEqual(payload["diagnostic_details"], [])
+            self.assertEqual(payload["diagnostic_profiles"], [])
             self.assertNotIn("match", json.dumps(payload).lower())
             self.assertNotIn("history", json.dumps(payload).lower())
         impossible = RunnerSummary(1, 1, 0, 0, 0, 0, 1, 0, "finished_target", ())

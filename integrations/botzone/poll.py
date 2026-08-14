@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from .bot_io import BotEnvelope, BotEnvelopeError, BotReplay, parse_bot_envelope
+from .bot_io import BotEnvelope, BotEnvelopeError, BotReplay, REQUIRED_FIELDS_PROFILES, parse_bot_envelope
 from .models import DealRequest, PlayRequest, UnsupportedStage
 
 
@@ -48,6 +48,7 @@ class PollRequest:
     replay: BotReplay | None = None
     diagnostic: str | None = None
     diagnostic_detail: str | None = None
+    diagnostic_profile: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,12 +108,18 @@ def _parse_request(match_id: str, request_line: str) -> PollRequest:
     except BotEnvelopeError as exc:
         diagnostic = _ENVELOPE_DIAGNOSTICS.get(exc.code, "malformed_request")
         detail = exc.detail if diagnostic == "envelope_shape_invalid" and exc.detail in ENVELOPE_SHAPE_DETAILS else None
+        profile = (
+            exc.profile
+            if detail == "envelope_required_fields_missing" and exc.profile in REQUIRED_FIELDS_PROFILES
+            else None
+        )
         return PollRequest(
             match_id=match_id,
             request_bytes=raw,
             stage=None,
             diagnostic=diagnostic,
             diagnostic_detail=detail,
+            diagnostic_profile=profile,
         )
     except Exception:
         return PollRequest(match_id=match_id, request_bytes=raw, stage=None, diagnostic="malformed_request")

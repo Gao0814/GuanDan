@@ -14,6 +14,18 @@ from .models import ActionClaim, DealRequest, HistoryEntry, PlayRequest, Unsuppo
 from .protocol import ProtocolValidationError, parse_action_claim, parse_stage_request
 
 
+REQUIRED_FIELDS_PROFILES = frozenset(
+    {
+        "required_requests_missing",
+        "required_responses_missing",
+        "required_both_missing_empty_object",
+        "required_both_missing_inner_stage_candidate",
+        "required_both_missing_optional_only",
+        "required_both_missing_other_object",
+    }
+)
+
+
 class BotEnvelopeError(ValueError):
     """The complete Bot JSON interaction cannot be safely replayed."""
 
@@ -31,9 +43,14 @@ class BotEnvelopeError(ValueError):
         }
     )
 
-    def __init__(self, code: str, detail: str | None = None) -> None:
+    def __init__(self, code: str, detail: str | None = None, profile: str | None = None) -> None:
         self.code = code if code in self._CODES else "unknown"
         self.detail = detail if self.code == "envelope_shape" and detail in self._SHAPE_DETAILS else None
+        self.profile = (
+            profile
+            if self.detail == "envelope_required_fields_missing" and profile in REQUIRED_FIELDS_PROFILES
+            else None
+        )
         super().__init__(self.code)
 
 
@@ -78,6 +95,25 @@ def _require_list(value: object, detail: str) -> list[object]:
     if not isinstance(value, list):
         raise BotEnvelopeError("envelope_shape", detail)
     return value
+
+
+def _required_fields_profile(value: Mapping[str, object]) -> str:
+    """Classify only the fixed, non-sensitive shape of missing required fields."""
+
+    has_requests = "requests" in value
+    has_responses = "responses" in value
+    if not has_requests and has_responses:
+        return "required_requests_missing"
+    if has_requests and not has_responses:
+        return "required_responses_missing"
+    if not value:
+        return "required_both_missing_empty_object"
+    if isinstance(value.get("stage"), str):
+        return "required_both_missing_inner_stage_candidate"
+    optional = {"data", "globaldata", "time_limit", "memory_limit"}
+    if set(value).issubset(optional):
+        return "required_both_missing_optional_only"
+    return "required_both_missing_other_object"
 
 
 def _merge_history(
@@ -126,7 +162,11 @@ def parse_bot_envelope(value: object) -> BotEnvelope:
         raise BotEnvelopeError("envelope_shape", "envelope_top_level_invalid")
     allowed = {"requests", "responses", "data", "globaldata", "time_limit", "memory_limit"}
     if not {"requests", "responses"}.issubset(value):
-        raise BotEnvelopeError("envelope_shape", "envelope_required_fields_missing")
+        raise BotEnvelopeError(
+            "envelope_shape",
+            "envelope_required_fields_missing",
+            _required_fields_profile(value),
+        )
     if set(value) - allowed:
         raise BotEnvelopeError("envelope_shape", "envelope_unknown_field")
     if any(not _json_compatible(value[field]) for field in set(value) - {"requests", "responses"}):

@@ -14,7 +14,7 @@ import tempfile
 from .connector import ConnectorCycle, MockConnector, Transport
 from .agent_runtime import build_agent_factory
 from .play_adapter import NoTributeRuleBasedHandler
-from .poll import ENVELOPE_SHAPE_DETAILS
+from .poll import ENVELOPE_SHAPE_DETAILS, REQUIRED_FIELDS_PROFILES
 from .runtime_config import RuntimeConfig
 from .session import SessionStore
 
@@ -32,6 +32,7 @@ class RunnerSummary:
     stopped: str
     diagnostics: tuple[tuple[str, int], ...]
     diagnostic_details: tuple[tuple[str, int], ...] = ()
+    diagnostic_profiles: tuple[tuple[str, int], ...] = ()
 
 
 class ForegroundRunner:
@@ -65,6 +66,7 @@ class ForegroundRunner:
         consecutive_failures = 0
         diagnostics: Counter[str] = Counter()
         diagnostic_details: Counter[str] = Counter()
+        diagnostic_profiles: Counter[str] = Counter()
         stopped = "cycle_limit_unfinished"
         started = self._clock()
         try:
@@ -80,6 +82,13 @@ class ForegroundRunner:
                         name: count
                         for name, count in cycle.diagnostic_details
                         if name in ENVELOPE_SHAPE_DETAILS and type(count) is int and count > 0
+                    }
+                )
+                diagnostic_profiles.update(
+                    {
+                        name: count
+                        for name, count in cycle.diagnostic_profiles
+                        if name in REQUIRED_FIELDS_PROFILES and type(count) is int and count > 0
                     }
                 )
                 headers += cycle.headers_sent
@@ -126,6 +135,7 @@ class ForegroundRunner:
             stopped,
             tuple(sorted(diagnostics.items())),
             tuple(sorted(diagnostic_details.items())),
+            tuple(sorted(diagnostic_profiles.items())),
         )
 
 
@@ -186,7 +196,7 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
         raise ValueError("invalid_audit_path")
     payload = {
         "schema": "botzone_local_smoke_audit",
-        "version": 3,
+        "version": 4,
         "exit_code": exit_code,
         "stop_reason": summary.stopped,
         "cycles": summary.cycles,
@@ -199,6 +209,7 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
         "finished_qualified": summary.finished_qualified,
         "diagnostics": [[name, count] for name, count in summary.diagnostics],
         "diagnostic_details": [[name, count] for name, count in summary.diagnostic_details],
+        "diagnostic_profiles": [[name, count] for name, count in summary.diagnostic_profiles],
     }
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
