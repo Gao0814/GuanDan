@@ -25,6 +25,8 @@ L5-A2b5a 复核已完成：定向 36 项、全量 574 项和 `git diff --check` 
 
 L5-A2b6 再次复核同一 36/574 基线并通过。唯一零网络 preflight exit 2，stderr 为空，state 前后为空并删除，无残留进程；Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle 和 `suggest_action_id()` 均为 0。该失败不是测试失败，而是本地 preflight 配置/组合阶段未通过。
 
+L5-A2b6a 未重跑 preflight 或测试。唯一仓库外 process-only 诊断以 `runtime_config_invalid` 结束，审计仅含固定阶段 `runtime_config_load_started` 和零网络计数；未进入后续 state、AppConfig 或 Agent 阶段，且无残留 state 或子进程。
+
 ## 1. 测试入口
 
 全部测试：

@@ -30,6 +30,12 @@
 - 判定为 `botzone_deepseek_connector_v4_preflight_invalid`，不请求 live 授权。
 - 现有入口将 runtime config、state preflight 和 DeepSeek factory/Agent 组合失败统一折叠为 exit 2；下一步 L5-A2b6a 使用仓库外固定阶段诊断定位边界，不重跑正式 preflight。
 
+### L5-A2b6a 实际结果
+
+- 唯一 process-only 诊断在 `runtime_config_load` 阶段 fail-closed，固定结果 `runtime_config_invalid`；仅记录 `runtime_config_load_started`，未进入后续 state、AppConfig 或 Agent 阶段。
+- audit、state 与子进程均已清理；网络、Botzone、DeepSeek、connector cycle 和 `suggest_action_id()` 计数均为 0。
+- 不能从该低基数结果推断 URL、state、权限或平台根因。下一步只允许离线细分 runtime-config 边界，不能重跑正式 preflight 或请求 live 授权。
+
 ## 1. 当前结论
 
 截至 2026-08-10，项目已经完成：

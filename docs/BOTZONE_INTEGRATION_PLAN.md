@@ -21,6 +21,10 @@
 
 唯一运行 exit 2；所有网络/模型计数为 0，state 与进程清理完成。由于入口把 runtime config、state preflight 与 DeepSeek 组合异常统一映射为配置错误，当前结果只能定位到本地组合路径。L5-A2b6 永久无效，不重跑；L5-A2b6a 将用仓库外、process-only、固定阶段 audit 继续诊断。
 
+### L5-A2b6a：process-only 分阶段诊断
+
+仓库外唯一诊断已完成，固定结果为 `runtime_config_invalid`：只完成 `runtime_config_load_started`，未进入 state preflight、AppConfig、agent factory 或 Agent 创建。诊断 audit 未保存异常、配置、路径或输入；state 清理完成，所有网络、模型、connector 与 suggestion 计数均为 0。该结果只限定本地 `load_runtime_config()` 边界，不能归因 URL、目录权限或其他具体原因。下一步必须单独规划 runtime-config 的更细离线诊断，不得重跑正式 preflight 或 live。
+
 更新时间：2026-08-09
 
 ## 0. Phase 0：手动建桌无贡 profile 官方协议封板（2026-08-09）

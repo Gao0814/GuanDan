@@ -16,6 +16,8 @@
 
 L5-A2b6 已执行且判定 `botzone_deepseek_connector_v4_preflight_invalid`：唯一 preflight exit 2，stderr 空、临时 state 清理完成、无残留，Botzone/DeepSeek/DNS/socket/HTTP/connector/suggestion 计数均为 0。失败位于本地配置或组合路径，尚不能区分 runtime config、state preflight、factory build 或 Agent 创建。下一步为 L5-A2b6a 仓库外分阶段诊断，不重跑正式 preflight、不联网。
 
+L5-A2b6a 已完成：仓库外 process-only 分阶段诊断的唯一结果为 `runtime_config_invalid`，最后阶段为 `runtime_config_load_started`。未进入 state preflight、AppConfig、factory 或 Agent 创建；state 清理、子进程退出，网络/模型/connector/suggestion 计数为 0。该证据仅限制到 `load_runtime_config()` 边界，不追认 L5-A2b6，也不归因具体配置或文件系统根因。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线
