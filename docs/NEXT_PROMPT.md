@@ -1,78 +1,93 @@
 # 下一步实施提示词
 
-## Step L5-A2b6b：runtime config 无敏感子阶段诊断
+## Step L5-A2b6c：仓库内 preflight 安全诊断契约
 
-本任务只在仓库外对 L5-A2b6a 已定位的 `load_runtime_config()` 边界执行一次更细的零网络诊断。不得重跑正式 `--preflight-only`，不得修改仓库代码，不得启动 connector、连接 Botzone、调用 DeepSeek、读取 `.env` 或输出 URL、key、目录值、异常正文。
+本任务只实现并测试一个仓库内、固定低基数的 preflight 失败分类契约。不得运行真实 preflight，不得读取真实配置或 `.env`，不得联网、启动 connector、创建对局或调用 DeepSeek。
 
-### 已确认事实
+### 已确认基线
 
 - L5-A2b5a 检查点：`8e8d639011bd095bcf0af74816609c63e8c6199f`。
-- L5-A2b6 正式 preflight 永久为 `botzone_deepseek_connector_v4_preflight_invalid`，不得重跑或追认。
-- L5-A2b6a 唯一 process-only 诊断结果为 `runtime_config_invalid`。
-- 最后已落盘阶段为 `runtime_config_load_started`；state preflight、AppConfig、agent factory 和 Agent 创建均未执行。
-- L5-A2b6a audit、state 和进程已清理；网络、模型、connector 与 suggestion 计数均为 0。
-- 当前证据不能归因于 URL、state 参数、数值边界、权限、Python 或平台环境。
+- L5-A2b6 正式 preflight 永久判定 `botzone_deepseek_connector_v4_preflight_invalid`，不得重跑或追认。
+- L5-A2b6a 只定位到 `runtime_config_invalid`。
+- L5-A2b6b 的仓库外载体在合成资格阶段返回 `diagnostic_harness_invalid`；真实配置子阶段未执行，不能归因任何 runtime 配置字段。
+- 两次诊断均保持全部网络/模型/connector 计数为 0，state 与进程已清理。
+- 现有 `integrations.botzone.__main__` 将 runtime config、state preflight、Agent composition 和其他 `ValueError` 统一输出为 `configuration_error`，无法安全定位。
 
 ### 目标
 
-在不保存配置值的前提下，区分以下固定边界：
+仅在 `--preflight-only` 模式下，把配置失败映射为以下固定单行输出：
 
 ```text
-harness_qualification
-environment_presence
-state_argument_shape
-https_url_validation
-numeric_limits_validation
-runtime_config_object_create
-diagnosis_completed
+preflight_runtime_config_missing
+preflight_runtime_config_url_invalid
+preflight_runtime_config_timeout_invalid
+preflight_runtime_config_response_limit_invalid
+preflight_runtime_config_failure_limit_invalid
+preflight_runtime_config_backoff_invalid
+preflight_state_directory_invalid
+preflight_state_operation_failed
+preflight_agent_composition_failed
+preflight_configuration_error
 ```
 
-### 载体资格
-
-1. 先确认工作区干净、检查点存在、无残留 connector；不重复 36/574 回归。
-2. 在系统临时目录创建一个全新仓库外诊断目录；脚本顶层只使用标准库并先原子写入 `bootstrapping` audit。
-3. 设置网络 tripwire，禁止 DNS、socket、HTTP、Botzone transport、connector、Agent 和模型调用。
-4. 在同一个诊断进程中，先使用固定合成 URL `https://example.invalid/local-ai`、全新合成 state 路径和公开默认数值调用 `load_runtime_config()`。
-5. 合成资格失败时唯一结果为：
+成功输出继续精确为：
 
 ```text
-diagnostic_harness_invalid
+preflight_ready
 ```
 
-此时不得检查真实进程配置，也不得修正脚本后重跑。
+非 preflight 的 live 启动失败必须继续只输出原有 `configuration_error`，避免扩大运行时信息面。
 
-### 真实配置子阶段
+### 实现要求
 
-资格通过后，仍在同一个唯一进程内执行：
-
-1. `environment_presence`：只判断 `BOTZONE_LOCAL_AI_URL` 是否为非空字符串；不得记录值、长度或 hash。
-2. `state_argument_shape`：只判断本任务新建 state 参数是否为非空绝对仓库外路径；不得记录路径文本。
-3. `https_url_validation`：调用现有纯本地 `validate_https_url()`；只记录 pass/fail，不记录解析结果。
-4. `numeric_limits_validation`：使用正式入口相同的公开参数/default，分别确认 timeout、response limit、failure limit 和 backoff 可被严格规范化；不记录原始值。
-5. `runtime_config_object_create`：调用一次 `load_runtime_config()`；不得调用 `preflight_state_directory()`。
-6. 成功后只验证结果类型、state 指向本任务目录、数值字段为正；URL 字段只能比较是否与上一步规范化对象相等，不得序列化或输出。
-
-### 固定结果
-
-只允许以下结果：
+1. 只允许修改：
 
 ```text
-diagnostic_harness_invalid
-configured_url_missing
-state_argument_invalid
-configured_url_invalid
-numeric_limits_invalid
-runtime_config_object_invalid
-runtime_config_boundary_not_reproduced
-unexpected_failure
+integrations/botzone/runtime_config.py
+integrations/botzone/__main__.py
+tests/test_botzone_runtime_config.py
+tests/test_botzone_deepseek_agent_runtime.py
+tests/test_botzone_preflight_output.py
 ```
 
-audit 只记录 schema/version、started/completed 阶段、固定结果和以下全零计数：DNS、socket、HTTP、Botzone GET、transport、connector cycle、DeepSeek request、Agent create、`suggest_action_id()`。不得记录异常类型、消息、traceback、配置值、路径、Header、match、牌、请求或 prompt。
+如确有必要新增一个专属测试文件，先说明理由；不得修改 transport、runner、connector、session、adapter、engine、agents 或 docs。
+2. `RuntimeConfigError` 增加不可变/只读的固定 `category` 契约，并保持 `ValueError` 兼容；现有无参测试构造必须继续安全工作或做最小兼容更新。
+3. category 只允许由代码内固定枚举产生，不得包含配置值、路径、异常正文或动态字符串。
+4. `__main__` 显式记录当前本地阶段：runtime config、state preflight、agent composition。
+5. 只在 `arguments.preflight_only is True` 时输出细分类；其他路径保持 `configuration_error`。
+6. 未知 category、普通 `ValueError`、错误类型或意外状态统一映射 `preflight_configuration_error`。
+7. Agent composition 不区分 key、RAG、client 或 Agent 子原因，统一为 `preflight_agent_composition_failed`。
+8. 不输出异常对象、`str/repr`、traceback、URL、key、state 路径或配置字段值。
+9. 不改变参数、退出码、成功 stdout、state preflight、Agent 构造顺序或 transport 构造边界；失败 exit code 仍为 2。
 
-脚本只运行一次；不得换目录、修正后重跑或补采。state 目录与本任务登记的探针文件必须清理，脱敏诊断 audit 和 manifest 保留，无残留进程。
+### 测试要求
 
-### 判定与后续
+至少覆盖：
 
-- 命中单一固定失败结果：只报告该边界，原 L5-A2b6 invalid 保持不变，并为该边界另行规划最小修复。
-- 全部阶段通过：报告 `runtime_config_boundary_not_reproduced`；不得因此追认原 preflight 或直接恢复 live。
-- 本任务不请求 live 授权，不修改 runtime，也不形成 DeepSeek 可达性、动作质量或胜率结论。
+- 六种 runtime-config 固定 category 到 stdout 的一一映射；
+- state boundary 与 state operation 两类映射；
+- agent composition 统一映射；
+- 未知 category 和普通 `ValueError` 回退通用 preflight 错误；
+- 同一异常在非 preflight 模式仍输出 `configuration_error`；
+- 成功 `preflight_ready` 的直接调用与独立 module LF/CRLF 契约不变；
+- 所有失败均 exit 2、stderr 空、transport/opener/connector/Agent action/网络计数为 0；
+- 输出不包含合成 secret、URL、路径或异常正文；
+- 现有 Botzone envelope、profile、pending/ack 和 DeepSeek runtime 回归通过。
+
+最低验证：
+
+```text
+python -m unittest tests.test_botzone_runtime_config tests.test_botzone_deepseek_agent_runtime tests.test_botzone_preflight_output tests.test_botzone_live_preflight -q
+python -m unittest discover -q
+git diff --check
+```
+
+### 验收
+
+通过时唯一判定：
+
+```text
+botzone_preflight_safe_diagnostic_contract_verified
+```
+
+完成后创建只含允许文件的独立检查点并停止。不得顺带运行真实 preflight；下一阶段 L5-A2b6d 才能使用该契约做一次新的零网络恢复准入。

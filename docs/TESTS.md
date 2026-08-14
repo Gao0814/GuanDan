@@ -27,6 +27,8 @@ L5-A2b6 再次复核同一 36/574 基线并通过。唯一零网络 preflight ex
 
 L5-A2b6a 未重跑 preflight 或测试。唯一仓库外 process-only 诊断以 `runtime_config_invalid` 结束，审计仅含固定阶段 `runtime_config_load_started` 和零网络计数；未进入后续 state、AppConfig 或 Agent 阶段，且无残留 state 或子进程。
 
+L5-A2b6b 同样未运行仓库测试或正式 preflight。合成载体资格返回 `diagnostic_harness_invalid`，真实配置子阶段未执行；stdout/stderr、state、残留进程和所有网络/模型计数均为空或 0。该结果属于诊断载体失败，不是 runtime-config 测试结论。
+
 ## 1. 测试入口
 
 全部测试：

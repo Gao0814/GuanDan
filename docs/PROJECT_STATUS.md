@@ -18,6 +18,8 @@ L5-A2b6 已执行且判定 `botzone_deepseek_connector_v4_preflight_invalid`：�
 
 L5-A2b6a 已完成：仓库外 process-only 分阶段诊断的唯一结果为 `runtime_config_invalid`，最后阶段为 `runtime_config_load_started`。未进入 state preflight、AppConfig、factory 或 Agent 创建；state 清理、子进程退出，网络/模型/connector/suggestion 计数为 0。该证据仅限制到 `load_runtime_config()` 边界，不追认 L5-A2b6，也不归因具体配置或文件系统根因。
 
+L5-A2b6b 结果为 `diagnostic_harness_invalid`：合成资格只记录 `harness_qualification_started`，真实配置子阶段未执行，全部网络计数为 0。该结果不能用于归因 runtime config。项目停止仓库外载体递归诊断，下一步改为 L5-A2b6c 仓库内固定 preflight 诊断契约；实现与真实恢复运行严格分离。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线

@@ -25,6 +25,10 @@
 
 仓库外唯一诊断已完成，固定结果为 `runtime_config_invalid`：只完成 `runtime_config_load_started`，未进入 state preflight、AppConfig、agent factory 或 Agent 创建。诊断 audit 未保存异常、配置、路径或输入；state 清理完成，所有网络、模型、connector 与 suggestion 计数均为 0。该结果只限定本地 `load_runtime_config()` 边界，不能归因 URL、目录权限或其他具体原因。下一步必须单独规划 runtime-config 的更细离线诊断，不得重跑正式 preflight 或 live。
 
+### L5-A2b6b：仓库外子阶段诊断
+
+合成资格返回 `diagnostic_harness_invalid`，真实配置未读取，不能继续归因。后续不再增加仓库外一次性诊断脚本；L5-A2b6c 将在正式入口内部增加仅 preflight 可见的固定 allowlist 失败分类，并由离线单测封板。该实现不授权 preflight 或 live。
+
 更新时间：2026-08-09
 
 ## 0. Phase 0：手动建桌无贡 profile 官方协议封板（2026-08-09）

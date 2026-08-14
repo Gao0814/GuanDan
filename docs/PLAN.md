@@ -36,6 +36,13 @@
 - audit、state 与子进程均已清理；网络、Botzone、DeepSeek、connector cycle 和 `suggest_action_id()` 计数均为 0。
 - 不能从该低基数结果推断 URL、state、权限或平台根因。下一步只允许离线细分 runtime-config 边界，不能重跑正式 preflight 或请求 live 授权。
 
+### L5-A2b6b 实际结果与路线调整
+
+- 仓库外诊断载体在合成资格阶段返回 `diagnostic_harness_invalid`，真实配置子阶段未执行；不能形成任何 runtime-config 归因。
+- 继续叠加一次性脚本无法提高证据质量，停止该方向。
+- 下一步 L5-A2b6c 在仓库内为 `--preflight-only` 建立固定、可单测的安全失败分类；实现阶段不运行真实 preflight。
+- 契约封存后，L5-A2b6d 才使用新分类执行一次独立零网络准入；live 仍保持阻塞。
+
 ## 1. 当前结论
 
 截至 2026-08-10，项目已经完成：
