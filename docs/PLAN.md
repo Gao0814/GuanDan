@@ -138,6 +138,12 @@
 - 既有 state 与新 audit 目录均为仓库外、独立且为空，不再动态创建或删除目录。
 - 下一步 L5-A2b12e 由项目所有者在宿主机 PowerShell 运行一次 `--preflight-only`；通过后再请求 L5-A2b13 live 授权。
 
+### L5-A2b12e 零网络准入通过
+
+- 宿主机输出为 `preflight_ready`、exit 0、state/audit 均为空，stderr 未显示。
+- 判定 `botzone_long_poll_deepseek_local_preflight_ready`；该步骤没有 transport、connector、runmatch 或 DeepSeek 网络请求。
+- 下一步 L5-A2b13 重新取得完整单次 live 授权；旧授权不延续，授权前不得联网。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
