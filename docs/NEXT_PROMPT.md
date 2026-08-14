@@ -16,13 +16,14 @@
 ### 第一阶段：直接修复本地配置
 
 1. 不修改代码，不创建新的诊断脚本。
-2. 只使用当前安全分类运行：
+2. 必须使用项目虚拟环境解释器，不得使用 PATH 中不确定的系统 `python`：
 
 ```text
-python -m integrations.botzone --agent deepseek --preflight-only --state-dir <fresh-state-dir>
+D:\VsCodeProject\GuanDan\.venv\Scripts\python.exe -m integrations.botzone --agent deepseek --preflight-only --state-dir <fresh-state-dir>
 ```
 
-3. 子进程显式设置：
+3. 在同一个 `.venv` 解释器中只读确认 `dotenv.main.load_dotenv` 支持 `PYTHON_DOTENV_DISABLED`，且禁用判断发生在 `DotEnv` 创建和文件解析之前。不得读取 `.env`。
+4. 子进程显式设置：
 
 ```text
 PYTHON_DOTENV_DISABLED=1
@@ -30,17 +31,17 @@ DEEPSEEK_TIMEOUT=60
 DEEPSEEK_MAX_RETRIES=0
 ```
 
-不得读取仓库 `.env`，不得输出 URL、key 或路径值。
-4. 根据固定输出直接处理：
+项目 `.venv` 中的 `python-dotenv` 已确认会在读取文件前处理该开关并直接返回；`config.py` 无需自行识别它。不得读取仓库 `.env`，不得输出 URL、key 或路径值。
+5. 根据固定输出直接处理：
    - `preflight_runtime_config_missing`：补齐当前进程缺失的 Botzone URL 或 DeepSeek 必需变量；
    - `preflight_runtime_config_url_invalid`：从 Botzone 本地 AI 配置页重新复制完整 HTTPS URL，仅写入进程环境；
    - timeout/response/failure/backoff invalid：恢复代码已锁定的正数参数，DeepSeek 保持 60/0；
    - state directory/operation invalid：换用全新系统临时目录；
    - `preflight_agent_composition_failed`：只检查显式 DeepSeek endpoint/model/key/60/0 与本地 RAG 文件可读性；
    - `preflight_configuration_error`：报告固定类别和本地阶段，不再搭建新载体。
-5. 每次只修正当前固定类别对应的一项配置，然后可重新运行纯本地 preflight；本地运行不设“仅一次”限制。
-6. 每轮必须保持 Botzone GET、DeepSeek request、DNS/socket/HTTP、transport、connector cycle、Agent action 和 `suggest_action_id()` 全部为 0。
-7. 达到 exit 0、单行 `preflight_ready`、stderr 空、state 清理完成后停止本地调试。
+6. 每次只修正当前固定类别对应的一项配置，然后可重新运行纯本地 preflight；本地运行不设“仅一次”限制。
+7. 每轮必须保持 Botzone GET、DeepSeek request、DNS/socket/HTTP、transport、connector cycle、Agent action 和 `suggest_action_id()` 全部为 0。
+8. 达到 exit 0、单行 `preflight_ready`、stderr 空、state 清理完成后停止本地调试。
 
 本阶段通过判定：
 

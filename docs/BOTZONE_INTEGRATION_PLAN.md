@@ -37,6 +37,8 @@
 
 根据 [官方本地 AI 文档](https://wiki.botzone.org.cn/index.php?title=%E6%9C%AC%E5%9C%B0AI) 与 [快速建桌参考文章](https://blog.csdn.net/sinat_37574187/article/details/145495160)，runmatch 通过 GET 和 `X-Game`、`X-Player-*`、可选 `X-Initdata` 创建对局，且必须恰好一个 `me`。后续不再依赖人工建桌时序：本地 preflight 可重复修复，ready 后取得三个 Bot ID、座位和授权，先启动 connector，再发送一次 runmatch。无贡 initdata 未封板，因此省略该 Header，并对非零 tribute/贡还阶段 fail-closed。
 
+preflight 必须使用项目 `.venv\Scripts\python.exe`。该环境的 `python-dotenv` 在 `load_dotenv()` 入口先检查 `PYTHON_DOTENV_DISABLED`，命中后不会创建解析器或读取 `.env`；系统 PATH 中其他 Python 版本不作为受支持运行环境。
+
 更新时间：2026-08-09
 
 ## 0. Phase 0：手动建桌无贡 profile 官方协议封板（2026-08-09）

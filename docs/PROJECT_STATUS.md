@@ -24,6 +24,8 @@ L5-A2b6c 已完成并封存为 `3f2cadb7f242625ca0978c5b47a5bc6f5ed299e7`，判�
 
 项目所有者未执行原 L5-A2b6d，并要求简化流程。当前策略改为：零网络 preflight 可按固定安全类别反复修正；不再新增诊断载体。preflight 通过后使用 Botzone 官方 `runmatch` 快速建桌，真实请求仍需新的完整授权。GuanDan 无贡 `X-Initdata` 仍未知，故省略可选 Header 并以首个请求的 `global.tribute == 0` 为继续条件。
 
+随后出现 `precondition_failed: dotenv_disable_not_honored`，但本地源码复核确认这是解释器版本混淆：系统 `python` 的 dotenv 版本不支持该开关，而项目 `.venv` 版本在文件访问前明确支持并短路。无需修改 `config.py`；L5-A2b6d 仍未执行，下一次必须显式使用项目 `.venv\Scripts\python.exe`。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线

@@ -33,6 +33,8 @@ L5-A2b6c 定向 26 项、全量 578 项和 `git diff --check` 通过。测试锁
 
 流程调整后不再把零网络 preflight 的单次失败永久封存。每次本地运行仍必须保持全部网络/模型计数为 0，并仅根据固定 stdout 类别修正一个配置项。真实 runmatch/local-AI/DeepSeek 请求仍必须单独授权且不重试。
 
+dotenv 禁用能力已通过项目 `.venv` 内安装源码只读复核：`load_dotenv()` 在任何 `DotEnv` 创建或文件解析前检查 `PYTHON_DOTENV_DISABLED` 并返回。系统 `python` 与 `.venv` 的 dotenv 版本不同，后续命令必须显式使用 `.venv\Scripts\python.exe`；该复核未读取 `.env` 或配置值，网络计数为 0。
+
 ## 1. 测试入口
 
 全部测试：

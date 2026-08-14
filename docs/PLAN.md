@@ -58,6 +58,12 @@
 - 建桌优先采用官方 `runmatch` API，减少“connector 已连接后再人工抢时间建桌”的不稳定窗口。
 - `X-Initdata` 的 GuanDan 无贡编码仍未知，首次 runmatch 省略该可选 Header，并在首个请求上严格验证 `global.tribute == 0`；否则 fail-closed。
 
+### dotenv 禁用门槛修正
+
+- `precondition_failed: dotenv_disable_not_honored` 源于检查了错误的解释器/责任层：`config.py` 调用 `load_dotenv()`，禁用开关由 `python-dotenv` 库本身处理。
+- 系统 PATH 中的 `python` 所加载版本不具备该能力；项目 `.venv` 的 `dotenv.main.load_dotenv()` 明确先检查 `PYTHON_DOTENV_DISABLED`，命中后在创建 `DotEnv` 或解析文件前直接返回。
+- 不需要代码修复。后续所有 preflight 强制使用 `.venv\Scripts\python.exe`，并在同一子环境设置禁用开关。
+
 ## 1. 当前结论
 
 截至 2026-08-10，项目已经完成：
