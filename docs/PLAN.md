@@ -71,6 +71,13 @@
 - 本地配置调试结束，不再新增诊断任务。
 - 下一步 L5-A2b7 一次性收集三个 Bot ID、`me` 座位、旧桌清理、无贡 fail-closed 接受和完整 live 授权，然后执行唯一 runmatch smoke。
 
+### L5-A2b7 已获授权
+
+- 项目所有者已提供三个 GuanDan Bot 位置输入，`me=0`，并确认旧本地 AI 测试桌已全部关闭。
+- 三个非本家位置复用同一个现有 Bot。公开 runmatch 契约未要求 Bot ID 互不相同；若平台按建桌限制拒绝，单次运行立即停止，不替换 Bot 或重试。
+- 项目所有者已接受省略 `X-Initdata`，并授权一次 runmatch GET、最多 100 次 local-AI GET、DeepSeek 60 秒/零重试、单 connector、单对局、最长 3600 秒。
+- Bot ID 与其他敏感值不写入文档或审计；下一步直接按 `NEXT_PROMPT.md` 执行唯一 live smoke。
+
 ## 1. 当前结论
 
 截至 2026-08-10，项目已经完成：

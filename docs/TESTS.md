@@ -37,6 +37,8 @@ dotenv 禁用能力已通过项目 `.venv` 内安装源码只读复核：`load_d
 
 最终受监督本地 preflight 使用项目 `.venv`：exit 0、stdout=`preflight_ready`、stderr 空、206 ms；临时 state 前后为空并删除，无残留进程，Botzone/DeepSeek/DNS/socket/HTTP/transport/connector/action/suggestion 计数均为 0。该结果不是 live 或外部可达性测试。
 
+L5-A2b7 已收到完整输入与 live 授权，本轮文档更新未新增测试运行。实际 smoke 必须验证：runmatch 仅请求一次、恰好一个 `me`、重复 Bot 组合若被拒绝则不重试、首请求无贡、非零 request/response/Header、qualified finished=1、零 transport/protocol failure、state 清理和无残留进程；任何不满足项均不得判为 verified。
+
 ## 1. 测试入口
 
 全部测试：

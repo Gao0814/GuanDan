@@ -28,6 +28,8 @@ L5-A2b6c 已完成并封存为 `3f2cadb7f242625ca0978c5b47a5bc6f5ed299e7`，判�
 
 L5-A2b6d 本地阶段随后通过，判定 `botzone_deepseek_connector_local_preflight_ready`：exit 0、单行 `preflight_ready`、stderr 空、206 ms，state 与进程清理完成，全部网络/模型/动作计数为 0。当前不再阻塞于配置；下一步等待 L5-A2b7 的三个 Bot ID、`me` 座位、旧桌清理确认、无贡 fail-closed 接受和完整 live 授权。
 
+L5-A2b7 输入与授权现已齐备：`me=0`，三个非本家位置复用同一个现有 GuanDan Bot，旧桌已关闭，并接受省略 `X-Initdata` 后对非零 tribute/贡还 fail-closed。授权限于一次 runmatch GET、最多 100 次 local-AI GET、DeepSeek 60/0、单 connector、单对局和 3600 秒。Bot ID 不落盘；若平台拒绝重复 Bot 组合，不更换输入或重试。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线
