@@ -1494,6 +1494,16 @@ L5-A1a 已修复这两个问题并补充参数化测试，不改变正常 respon
 
 下一步只执行 v3 零网络 preflight，并要求项目所有者确认所有旧本地 AI 测试桌已结束/关闭。只有两项都通过后，才能提出 L5-A2b4 的新 live 授权问题；本阶段不联网。
 
+### L5-A2b3 前置结果
+
+endpoint/model 门槛通过，但当前 DeepSeek runtime 配置不满足已授权的 timeout=60、retries=0。connector 未启动，Botzone/DeepSeek/network request 为 0，授权未消耗；工作区干净且无残留。
+
+判定：`precondition_failed: deepseek_budget_mismatch`。
+
+### 当前阶段：L5-A2b3a
+
+项目所有者需要设置用户环境变量 `DEEPSEEK_TIMEOUT=60`、`DEEPSEEK_MAX_RETRIES=0`，完全退出并重启 Codex。新进程确认后只重新执行最小布尔门槛、24 项定向和唯一零网络 preflight；不得直接 live。
+
 ### 后续边界
 
-L5-A2b1 已执行且 invalid，历史授权不可复用。L5-A2b2 只证明脱敏子分类契约。当前仍不形成 Botzone 协议闭环、DeepSeek 可达、动作质量或胜率结论。
+L5-A2b1 已执行且 invalid，历史授权不可复用；L5-A2b3 的授权未消耗，但在预算恢复和新进程复核前也不得使用。当前仍不形成 Botzone 协议闭环、DeepSeek 可达、动作质量或胜率结论。

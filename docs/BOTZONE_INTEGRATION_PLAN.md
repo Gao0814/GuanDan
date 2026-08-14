@@ -721,6 +721,7 @@ DeepSeek exception / timeout / malformed / illegal action_id
 | L5-A2b1 | 补充本家手牌/上下文发送到 DeepSeek 的明确授权 | 进程创建前门槛 | 完整授权后恢复同一预算 |
 | L5-A2b2 | 外层 Bot JSON 信封安全子分类 | 纯离线、零真实请求 | 保持父诊断兼容并输出低基数聚合 detail |
 | L5-A2b3 | v3 audit 恢复准入与旧桌清理确认 | 恰好一次零网络 preflight | ready 后仅请求新的 L5-A2b4 授权 |
+| L5-A2b3a | DeepSeek 60/0 预算配置恢复 | 新 Codex 进程、零网络 | 最小复核与唯一 preflight |
 | L5-A3 | 小规模稳定性与降级统计 | 独立预算与授权 | 零非法动作；模型成功/降级/超时聚合可审计 |
 | L5-A4 | 规则基线 vs DeepSeek A/B | 固定设置、轮换座位 | 只报告样本统计，不提前宣称胜率提升 |
 
@@ -781,4 +782,6 @@ L5-A2b1 已获得完整授权并执行唯一 live：Botzone 显示已连接，�
 
 L5-A2b2 已完成并封存为 `37bdd0d`：八种 detail、父诊断兼容、audit v3、定向 24/全量 572 项均通过，判定 `botzone_envelope_shape_subdiagnostics_verified`。
 
-执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3。只做 v3 零网络 preflight、旧桌清理确认和新授权准备；不得在同一步启动 live。
+L5-A2b3 在启动前发现 timeout/retries 不匹配锁定预算，判定 `precondition_failed: deepseek_budget_mismatch`；零网络、授权未消耗。
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3a。项目所有者先设置 60/0 用户环境变量并重启 Codex；新进程只恢复最小零网络准入，不直接 live。

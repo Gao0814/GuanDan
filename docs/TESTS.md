@@ -1541,3 +1541,13 @@ L5-A2a 前置实际结果：检查点、工作区、23/569 回归和四项脱敏
 - 必须 exit 0、单行 `preflight_ready`、空 stderr/state、无残留；
 - 项目所有者必须确认全部旧本地 AI 测试桌已关闭；
 - 本阶段只准备并请求 L5-A2b4 授权，不执行 live。
+
+实际前置结果：endpoint/model 匹配，但 DeepSeek timeout/retries 与锁定的 60/0 不一致。未创建 connector/state 子进程，Botzone/DeepSeek/network request 为 0，授权未消耗，判定 `precondition_failed: deepseek_budget_mismatch`。
+
+### 9.9 L5-A2b3a 预算配置恢复
+
+- 新 Codex 进程中 timeout 必须是非 bool 数值 60，retries 必须是非 bool 整数 0；
+- 只输出 present/match 布尔值，不输出配置正文；
+- 重新运行 24 项定向和 diff check；
+- 使用全新系统临时 state 运行唯一一次零网络 deepseek preflight；
+- preflight 通过后只请求旧桌清理确认和后续授权，不启动 live。

@@ -1244,6 +1244,15 @@ Botzone JSON input
 - 项目所有者必须确认所有历史本地 AI 测试桌已结束或关闭；
 - 全部门槛通过后只提出 L5-A2b4 的新授权问题，不在同一步启动 live。
 
+实际结果：endpoint/model 匹配，但当前 DeepSeek timeout/retries 不满足锁定的 60/0，启动前即 `precondition_failed: deepseek_budget_mismatch`。connector/network count 为 0，授权未消耗，工作区干净且无残留。
+
+#### L5-A2b3a：预算配置恢复
+
+- 项目所有者把用户环境变量设置为 `DEEPSEEK_TIMEOUT=60`、`DEEPSEEK_MAX_RETRIES=0`；
+- 完全退出并重新启动 Codex，使新进程继承变量；
+- 新进程只做一次布尔/匹配检查、24 项定向和唯一零网络 preflight；
+- preflight 通过后只确认旧桌已清理并准备 L5-A2b4 授权，不直接 live。
+
 ### 9.7 当前下一步
 
-L5-A2b2 已封存为 `37bdd0d`。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3：只做 v3 零网络准入、旧桌清理确认和新授权准备，不直接 live。
+L5-A2b3 因 DeepSeek 预算配置不匹配在进程创建前停止，授权未消耗。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b3a：先从 60/0 用户环境变量的新 Codex 进程恢复最小零网络准入，不直接 live。
