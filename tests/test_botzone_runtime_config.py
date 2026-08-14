@@ -11,6 +11,10 @@ from integrations.botzone.__main__ import main
 
 
 class BotzoneRuntimeConfigTests(unittest.TestCase):
+    def test_runtime_config_error_has_only_fixed_category(self) -> None:
+        self.assertEqual(RuntimeConfigError("invalid_timeout").category, "invalid_timeout")
+        self.assertEqual(RuntimeConfigError("synthetic-secret").category, "invalid_configuration")
+
     def test_explicit_values_win_and_repr_redacts_url(self) -> None:
         config = load_runtime_config(
             local_ai_url="https://private.invalid/secret",

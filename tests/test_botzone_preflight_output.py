@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from integrations.botzone.__main__ import main
+from integrations.botzone.runtime_config import RuntimeConfig, RuntimeConfigError
 
 
 _ALLOWED_STDOUT = {b"preflight_ready\n", b"preflight_ready\r\n"}
@@ -36,6 +37,79 @@ def _assert_binary_result(case: unittest.TestCase, completed: subprocess.Complet
 
 
 class BotzonePreflightOutputTests(unittest.TestCase):
+    def _assert_preflight_failure(
+        self,
+        *,
+        load_error: BaseException | None = None,
+        state_error: BaseException | None = None,
+        agent_error: BaseException | None = None,
+        expected: str,
+    ) -> None:
+        from integrations.botzone import __main__ as botzone_main
+
+        with TemporaryDirectory() as root:
+            output = StringIO()
+            config = RuntimeConfig("https://example.invalid", Path(root))
+            with (
+                patch.object(botzone_main, "load_runtime_config", side_effect=load_error) if load_error is not None else patch.object(botzone_main, "load_runtime_config", return_value=config),
+                patch.object(botzone_main, "preflight_state_directory", side_effect=state_error) if state_error is not None else patch.object(botzone_main, "preflight_state_directory"),
+                patch.object(botzone_main, "prepare_agent_factory", side_effect=agent_error) if agent_error is not None else patch.object(botzone_main, "prepare_agent_factory"),
+                patch.object(botzone_main, "LocalAIHttpTransport", side_effect=AssertionError("transport_constructed")) as transport,
+                redirect_stdout(output),
+            ):
+                self.assertEqual(main(["--preflight-only"], environ={}), 2)
+            self.assertEqual(output.getvalue(), expected + "\n")
+            self.assertEqual(transport.call_count, 0)
+
+    def test_preflight_runtime_categories_have_fixed_stdout(self) -> None:
+        cases = {
+            "missing_configuration": "preflight_runtime_config_missing",
+            "invalid_configuration": "preflight_runtime_config_url_invalid",
+            "invalid_timeout": "preflight_runtime_config_timeout_invalid",
+            "invalid_response_limit": "preflight_runtime_config_response_limit_invalid",
+            "invalid_failure_limit": "preflight_runtime_config_failure_limit_invalid",
+            "invalid_backoff": "preflight_runtime_config_backoff_invalid",
+        }
+        for category, expected in cases.items():
+            with self.subTest(category=category):
+                self._assert_preflight_failure(load_error=RuntimeConfigError(category), expected=expected)
+
+    def test_preflight_state_agent_and_unknown_categories_are_safe(self) -> None:
+        class _UnknownCategory(RuntimeConfigError):
+            @property
+            def category(self) -> str:
+                return "unknown"
+
+        self._assert_preflight_failure(
+            state_error=RuntimeConfigError("invalid_state_directory"),
+            expected="preflight_state_directory_invalid",
+        )
+        self._assert_preflight_failure(
+            state_error=RuntimeConfigError("state_preflight_failed"),
+            expected="preflight_state_operation_failed",
+        )
+        self._assert_preflight_failure(
+            agent_error=ValueError("synthetic-secret"),
+            expected="preflight_agent_composition_failed",
+        )
+        self._assert_preflight_failure(
+            load_error=ValueError("synthetic-secret"),
+            expected="preflight_configuration_error",
+        )
+        self._assert_preflight_failure(
+            load_error=_UnknownCategory(),
+            expected="preflight_configuration_error",
+        )
+
+    def test_non_preflight_keeps_generic_configuration_output(self) -> None:
+        from integrations.botzone import __main__ as botzone_main
+
+        output = StringIO()
+        with patch.object(botzone_main, "load_runtime_config", side_effect=RuntimeConfigError("invalid_timeout")):
+            with redirect_stdout(output):
+                self.assertEqual(main([], environ={}), 2)
+        self.assertEqual(output.getvalue(), "configuration_error\n")
+
     def test_direct_main_writes_exact_text_without_constructing_transport(self) -> None:
         with TemporaryDirectory() as root:
             output = StringIO()

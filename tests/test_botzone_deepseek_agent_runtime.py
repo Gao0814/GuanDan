@@ -256,7 +256,7 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
                 redirect_stdout(output),
             ):
                 self.assertEqual(botzone_main.main(["--agent", "deepseek", "--preflight-only"]), 2)
-            self.assertEqual(output.getvalue(), "configuration_error\n")
+            self.assertEqual(output.getvalue(), "preflight_agent_composition_failed\n")
             self.assertEqual(transport.call_count, 0)
             self.assertEqual(runner.call_count, 0)
 

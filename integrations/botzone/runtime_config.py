@@ -11,8 +11,33 @@ from pathlib import Path
 from .http_transport import DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_TIMEOUT_SECONDS, TransportError, validate_https_url
 
 
+_RUNTIME_CONFIG_CATEGORIES = frozenset(
+    {
+        "missing_configuration",
+        "invalid_configuration",
+        "invalid_timeout",
+        "invalid_response_limit",
+        "invalid_failure_limit",
+        "invalid_backoff",
+        "invalid_state_directory",
+        "state_preflight_failed",
+    }
+)
+
+
 class RuntimeConfigError(ValueError):
-    """Configuration failure whose text contains no private value."""
+    """Configuration failure with a fixed, non-sensitive category."""
+
+    __slots__ = ("_category",)
+
+    def __init__(self, category: str = "invalid_configuration") -> None:
+        safe_category = category if category in _RUNTIME_CONFIG_CATEGORIES else "invalid_configuration"
+        super().__init__(safe_category)
+        self._category = safe_category
+
+    @property
+    def category(self) -> str:
+        return self._category
 
 
 @dataclass(frozen=True, slots=True)
