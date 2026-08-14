@@ -50,6 +50,14 @@
 - 定向 26 项、全量 578 项和补丁检查通过；实现阶段未运行真实 preflight。
 - 下一步 L5-A2b6d 在 `PYTHON_DOTENV_DISABLED=1` 的显式子环境中执行唯一一次零网络恢复准入。
 
+### 流程简化决定
+
+- 项目所有者尚未执行原 L5-A2b6d，并明确要求停止继续搭建诊断载体。
+- 纯本地、零网络 preflight 改为可重复调试：每次按现有固定分类只修正一项配置，直到 `preflight_ready`。
+- 真实 Botzone/DeepSeek 请求仍保持明确授权、固定预算和单 connector。
+- 建桌优先采用官方 `runmatch` API，减少“connector 已连接后再人工抢时间建桌”的不稳定窗口。
+- `X-Initdata` 的 GuanDan 无贡编码仍未知，首次 runmatch 省略该可选 Header，并在首个请求上严格验证 `global.tribute == 0`；否则 fail-closed。
+
 ## 1. 当前结论
 
 截至 2026-08-10，项目已经完成：

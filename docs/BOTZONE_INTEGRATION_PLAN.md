@@ -33,6 +33,10 @@
 
 检查点 `3f2cadb7f242625ca0978c5b47a5bc6f5ed299e7` 已锁定十种 preflight-only 固定失败类别，成功与非 preflight 输出兼容。下一步 L5-A2b6d 只运行一次零网络 preflight，并显式设置 `PYTHON_DOTENV_DISABLED=1`，避免读取仓库 `.env`；该步骤仍不授权 live。
 
+### 简化后的 runmatch 路线
+
+根据 [官方本地 AI 文档](https://wiki.botzone.org.cn/index.php?title=%E6%9C%AC%E5%9C%B0AI) 与 [快速建桌参考文章](https://blog.csdn.net/sinat_37574187/article/details/145495160)，runmatch 通过 GET 和 `X-Game`、`X-Player-*`、可选 `X-Initdata` 创建对局，且必须恰好一个 `me`。后续不再依赖人工建桌时序：本地 preflight 可重复修复，ready 后取得三个 Bot ID、座位和授权，先启动 connector，再发送一次 runmatch。无贡 initdata 未封板，因此省略该 Header，并对非零 tribute/贡还阶段 fail-closed。
+
 更新时间：2026-08-09
 
 ## 0. Phase 0：手动建桌无贡 profile 官方协议封板（2026-08-09）

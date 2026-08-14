@@ -31,6 +31,8 @@ L5-A2b6b 同样未运行仓库测试或正式 preflight。合成载体资格返�
 
 L5-A2b6c 定向 26 项、全量 578 项和 `git diff --check` 通过。测试锁定 runtime config 六类、state 两类、Agent composition、通用回退、成功 stdout、exit code 和非 preflight 兼容；全部使用合成配置，真实 preflight 与网络计数为 0。
 
+流程调整后不再把零网络 preflight 的单次失败永久封存。每次本地运行仍必须保持全部网络/模型计数为 0，并仅根据固定 stdout 类别修正一个配置项。真实 runmatch/local-AI/DeepSeek 请求仍必须单独授权且不重试。
+
 ## 1. 测试入口
 
 全部测试：

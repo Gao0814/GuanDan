@@ -22,6 +22,8 @@ L5-A2b6b 结果为 `diagnostic_harness_invalid`：合成资格只记录 `harness
 
 L5-A2b6c 已完成并封存为 `3f2cadb7f242625ca0978c5b47a5bc6f5ed299e7`，判定 `botzone_preflight_safe_diagnostic_contract_verified`。26/578 测试与补丁检查通过，工作区干净；未运行真实 preflight。下一步 L5-A2b6d 使用固定分类和禁用 dotenv 的显式子环境执行一次零网络恢复准入，live 继续阻塞。
 
+项目所有者未执行原 L5-A2b6d，并要求简化流程。当前策略改为：零网络 preflight 可按固定安全类别反复修正；不再新增诊断载体。preflight 通过后使用 Botzone 官方 `runmatch` 快速建桌，真实请求仍需新的完整授权。GuanDan 无贡 `X-Initdata` 仍未知，故省略可选 Header 并以首个请求的 `global.tribute == 0` 为继续条件。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线
