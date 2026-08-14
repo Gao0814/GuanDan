@@ -29,6 +29,10 @@
 
 合成资格返回 `diagnostic_harness_invalid`，真实配置未读取，不能继续归因。后续不再增加仓库外一次性诊断脚本；L5-A2b6c 将在正式入口内部增加仅 preflight 可见的固定 allowlist 失败分类，并由离线单测封板。该实现不授权 preflight 或 live。
 
+### L5-A2b6c：仓库内安全诊断契约
+
+检查点 `3f2cadb7f242625ca0978c5b47a5bc6f5ed299e7` 已锁定十种 preflight-only 固定失败类别，成功与非 preflight 输出兼容。下一步 L5-A2b6d 只运行一次零网络 preflight，并显式设置 `PYTHON_DOTENV_DISABLED=1`，避免读取仓库 `.env`；该步骤仍不授权 live。
+
 更新时间：2026-08-09
 
 ## 0. Phase 0：手动建桌无贡 profile 官方协议封板（2026-08-09）

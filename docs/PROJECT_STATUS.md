@@ -20,6 +20,8 @@ L5-A2b6a 已完成：仓库外 process-only 分阶段诊断的唯一结果为 `r
 
 L5-A2b6b 结果为 `diagnostic_harness_invalid`：合成资格只记录 `harness_qualification_started`，真实配置子阶段未执行，全部网络计数为 0。该结果不能用于归因 runtime config。项目停止仓库外载体递归诊断，下一步改为 L5-A2b6c 仓库内固定 preflight 诊断契约；实现与真实恢复运行严格分离。
 
+L5-A2b6c 已完成并封存为 `3f2cadb7f242625ca0978c5b47a5bc6f5ed299e7`，判定 `botzone_preflight_safe_diagnostic_contract_verified`。26/578 测试与补丁检查通过，工作区干净；未运行真实 preflight。下一步 L5-A2b6d 使用固定分类和禁用 dotenv 的显式子环境执行一次零网络恢复准入，live 继续阻塞。
+
 更新时间：2026-08-10
 
 ## 1. 当前基线
