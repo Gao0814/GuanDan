@@ -51,6 +51,8 @@ L5-A2b12 因系统临时 state 目录无法创建而在子进程启动前返回 
 
 L5-A2b12a 在受限写入下仍未创建 state 或启动 preflight，网络计数继续为 0。L5-A2b12b 不新增测试，由项目所有者在宿主机 PowerShell 运行一次现有 `--preflight-only`；验收仅看单行 `preflight_ready`、exit 0、state_empty=True、stderr 空，不接受 live 结果替代。
 
+L5-A2b12b 在创建新仓库外资源前再次 `precondition_failed`，没有新增测试或网络活动。L5-A2b12c 使用只读确认存在且为空的既有 `D:\VsCodeProject\BotzoneState`，只运行一次零网络 preflight；不得创建 audit、删除目录或以 live 结果替代准入。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

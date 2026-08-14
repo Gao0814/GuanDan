@@ -42,6 +42,8 @@ L5-A2b12 在启动 preflight 前停止，结果为 `precondition_failed: tempora
 
 L5-A2b12a 在受限写入权限下仍得到同一 `temporary_state_directory_unavailable`，preflight 子进程依旧未启动，网络/模型计数保持 0。该路径不再重试。下一步 L5-A2b12b 由项目所有者在宿主机 PowerShell 中，以随机命名的仓库外空目录手动运行一次原零网络 preflight；只回报脱敏固定结果。
 
+L5-A2b12b 又在全新仓库外资源创建前返回 `repository_external_state_directory_unavailable`，connector 与网络路径均未启动。只读确认既有 `D:\VsCodeProject\BotzoneState` 仍存在且为空。下一步 L5-A2b12c 不再创建资源，项目所有者直接以该目录运行一次最终零网络 preflight；失败后停止目录重试并转为宿主机权限阻塞。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-10

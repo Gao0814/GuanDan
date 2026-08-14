@@ -55,6 +55,8 @@ L5-A2b12 尚未运行 preflight：沙箱无法创建全新的系统临时 state 
 
 L5-A2b12a 在受限提升后仍无法创建目录，说明 Codex 沙箱路径不可用，但没有形成 runtime 失败。L5-A2b12b 转为项目所有者在宿主机 PowerShell 手动创建全新仓库外目录并运行一次 `--preflight-only`；命令不启动 transport/connector，目录为空才做非递归删除，结果只回报固定状态。
 
+L5-A2b12b 仍无法创建全新仓库外资源，故不再尝试动态目录。既有用户管理目录 `D:\VsCodeProject\BotzoneState` 已只读确认存在且为空；L5-A2b12c 仅复用它运行一次 `--preflight-only`，不创建 audit、不删除目录。若其文件操作仍失败，则问题留在宿主机权限层，不修改 connector 安全边界。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

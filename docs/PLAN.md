@@ -120,6 +120,12 @@
 - 不再重复 Codex 沙箱路径。L5-A2b12b 改由项目所有者在宿主机 PowerShell 使用全新仓库外目录手动运行同一个 `--preflight-only` 命令。
 - 手动结果只回报固定 stdout、exit、state_empty 与 stderr 是否为空；ready 后才请求新的 L5-A2b13 live 授权。
 
+### L5-A2b12b 仍无法创建外部资源
+
+- 项目所有者宿主机步骤也无法创建全新仓库外 state/audit，故 connector/preflight 均未启动，网络计数为 0。
+- 不再尝试新目录。只读复核确认既有 `D:\VsCodeProject\BotzoneState` 存在且为空。
+- L5-A2b12c 由项目所有者直接复用该既有空目录执行一次最终 `--preflight-only`，不创建 audit、不删除目录；若仍失败则暂停本地准入，先处理宿主机权限。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
