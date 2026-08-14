@@ -1450,10 +1450,18 @@ L5-A1a 已修复这两个问题并补充参数化测试，不改变正常 respon
 
 规范化判定：`precondition_failed: repository_external_localappdata_not_writable`。该结果不否定 L5-A1a，也不消耗 preflight 的唯一执行次数。
 
-### 当前阶段：L5-A2a1
+### L5-A2a1 结果
 
-下一步不改代码、不重复回归，只使用当前环境明确可写的系统临时目录创建全新仓库外 state，并执行同一条 `--agent deepseek --preflight-only`。30 秒硬上限、恰好一次、零网络和不重试门槛保持不变。
+系统临时目录资格通过。唯一 preflight 子进程自行退出：exit 0、stdout=`preflight_ready`、stderr 空、耗时约 190 ms、state 前后为空并删除、无残留进程；Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle 和 `suggest_action_id()` 均为 0。
+
+唯一判定：`botzone_deepseek_connector_live_preflight_ready`。
+
+### 当前阶段：L5-A2b 授权
+
+固定 live 预算：一个前台 connector、一个全新无贡桌、最多 100 cycles、poll timeout 120 秒、DeepSeek timeout 60 秒且零重试、最长 3600 秒、完成一局即停。state/audit 使用全新系统临时路径。
+
+当前尚未获得该预算的新授权，不能启动 connector。即使 smoke 通过，由于当前 audit 没有模型调用/成功/fallback 独立计数，也只能证明协议闭环和安全降级，不能证明 DeepSeek 实际有效决策。
 
 ### 后续边界
 
-L5-A2a1 通过后才规划 L5-A2b：全新无贡测试桌、全新 state/audit、显式授权的一次真实 connector smoke。任何历史 live 授权均不可复用。L5-A1/L5-A1a/L5-A2a/L5-A2a1 不形成 DeepSeek 可达、动作质量或胜率结论。
+L5-A2b 只有在项目所有者针对固定 endpoint/model/预算明确授权后才能执行。任何历史 live 授权均不可复用。L5-A1/L5-A1a/L5-A2a/L5-A2a1 不形成 DeepSeek 可达、动作质量或胜率结论。

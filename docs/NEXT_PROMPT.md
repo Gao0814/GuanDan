@@ -1,125 +1,149 @@
 # 下一步实施提示词
 
-## Step L5-A2a1：使用系统临时目录恢复零网络 preflight
+## Step L5-A2b：Botzone DeepSeek connector 单局无贡 live smoke
 
-本轮只恢复一次尚未启动的 `--preflight-only`。不得启动 connector 主循环，不得发送 Botzone GET，不得调用 DeepSeek，不得创建测试桌，也不得读取、输出、复制、散列或持久化 API key、本地 AI URL、Header、Cookie、prompt、模型响应或 `.env` 内容。
+本任务包含真实外部网络请求。未获得项目所有者针对下述 endpoint、模型、预算和运行边界的明确授权前，只能做只读前置审计，不得启动 connector、发送探测请求、创建 runner 或连接 Botzone。
 
-### 已确认结果
+### 已确认基线
 
-- L5-A1 检查点：`71d9119`。
-- L5-A1a 检查点：`aac59d5`。
-- L5-A2a 前置审计中，以下项目已通过：
-  - 实现检查点与关键文件一致；
-  - 工作区干净；
-  - 定向 23 项通过；
-  - 全量 569 项通过；
-  - `git diff --check` 通过；
-  - Botzone URL、DeepSeek key、endpoint 和 model 四项脱敏元数据门槛通过。
-- 失败仅发生在创建 `%LOCALAPPDATA%` 下的仓库外 state 目录时；当前执行权限不允许该写入。
-- preflight 子进程没有创建，Botzone/DeepSeek/DNS/socket/HTTP/connector/model request 均为 0。
-
-规范化结果：
-
-```text
-precondition_failed: repository_external_localappdata_not_writable
-```
-
-这不是 connector、DeepSeek 配置、RAG 或 preflight 实现失败，也不消耗正式 preflight 的唯一执行次数。
-
-### 本轮唯一调整
-
-使用当前执行环境明确允许写入的系统临时目录，而不是 `%LOCALAPPDATA%`：
-
-- 根目录必须来自 `[System.IO.Path]::GetTempPath()` 或等价的标准库临时目录 API；
-- 在其下生成一个全新随机目录名；
-- 解析后的绝对路径必须位于系统临时目录内、位于仓库外，且开始时不存在；
-- 不得复用历史 state、`BOTZONE_STATE_DIR`、`D:\VsCodeProject\BotzoneState` 或任何固定目录；
-- 不得请求扩大文件系统权限。
-
-### 快速前置
-
-1. 当前 HEAD 必须包含 `aac59d5`，L5-A1/L5-A1a 实现文件相对检查点无差异。
-2. `git status --short` 必须为空。
-3. 只重新确认四项环境元数据门槛，仍只报告 present/match，不输出值。
-4. 不重复运行 23/569 回归；前一任务已完成且本轮没有代码变化。
-5. 确认不存在可归属于本项目的残留 connector 进程；不得终止来源不明的进程。
-
-任一门槛失败，输出固定 `precondition_failed` 并停止。
-
-### state 目录资格
-
-1. 使用标准库/PowerShell 在系统临时目录下创建唯一候选目录。
-2. 确认：绝对路径、仓库外、目录为空、当前任务可列举。
-3. 若创建失败：只报告 `temporary_state_directory_unavailable`，不尝试第二个根目录、不申请提权、不启动 preflight。
-4. 不做额外独占文件探针；真正的 `preflight_state_directory()` 将负责原子文件操作验证。
-
-### 唯一 preflight
-
-目录资格通过后，只执行一次：
-
-```text
-python -m integrations.botzone --agent deepseek --preflight-only --state-dir <fresh-temp-absolute-directory>
-```
-
-约束：
-
-- 30 秒硬上限；
-- 不重试、不延长、不启动第二进程；
-- 完整捕获 exit code、stdout 类别、stderr 是否为空、耗时、state 目录最终状态与残留进程；
-- stdout 只允许规范化后的单行 `preflight_ready`；其他内容只记 `unexpected_stdout`，不得复述原文；
-- stderr 非空只记 `unexpected_stderr`，不得复述原文。
-
-成功必须同时满足：
-
-1. 30 秒内自行退出；
-2. exit code 0；
-3. stdout 精确为单行 `preflight_ready`；
-4. stderr 为空；
-5. state 目录最终为空；
-6. 无残留进程；
-7. Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle、`suggest_action_id()` 均为 0。
-
-结束后只删除本轮创建且已确认为空的临时 state 目录。
-
-### 证据与隐私
-
-- 可以在系统临时目录另建脱敏 summary，只记录布尔值、固定分类、exit code、耗时和计数。
-- 不记录或散列 URL、key、环境变量值、Header、match ID、牌、request/response、prompt、reasoning 或异常正文。
-- 不直接打开 `.env`，不修改仓库，不创建 runner 源码，不提交仓库外证据。
-
-### 判定
-
-全部成功门槛通过：
+- L5-A1：`71d9119`，判定 `botzone_deepseek_connector_offline_wiring_verified`。
+- L5-A1a：`aac59d5`，判定 `botzone_deepseek_connector_hardening_verified`。
+- L5-A2a 首次前置因 `%LOCALAPPDATA%` 写权限在子进程启动前 `precondition_failed`；网络计数为 0。
+- L5-A2a1 已使用系统临时目录完成唯一零网络 preflight：
+  - exit 0；
+  - stdout=`preflight_ready`；
+  - stderr 为空；
+  - 约 190 ms；
+  - state 前后为空并删除；
+  - 无残留进程；
+  - Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle 与 `suggest_action_id()` 均为 0。
+- 当前唯一判定：
 
 ```text
 botzone_deepseek_connector_live_preflight_ready
 ```
 
-子进程已启动但任一门槛失败：
+### 固定授权参数
+
+- Botzone endpoint：当前进程已配置的 `BOTZONE_LOCAL_AI_URL`，不得输出其值。
+- DeepSeek endpoint：`https://api.deepseek.com`。
+- Model：`deepseek-v4-flash`。
+- Agent mode：`deepseek`。
+- Botzone poll timeout：120 秒。
+- DeepSeek request timeout：60 秒。
+- DeepSeek retries：0。
+- Connector process：恰好 1 个前台进程。
+- Test table：恰好 1 个全新手动测试桌，明确设置“需要进贡=否”。
+- `max_cycles=100`。
+- `max_wall_seconds=3600`。
+- `stop_after_finished=1`。
+- 进程级重启/重试：0。
+- state/audit：系统临时目录下两个全新、随机、仓库外路径。
+
+预算解释：在只有一个活动测试桌、每次 poll 至多包含该桌一个待决策请求的前提下，最多 100 次 Botzone GET，且每次需要模型决策时最多 1 次 DeepSeek physical request。当前 runtime 没有独立的模型请求总计数器，因此本任务不能宣称精确 DeepSeek 调用次数；若发现多个活动 match、批量请求异常或无法维持单桌前提，立即判 invalid，不继续运行。
+
+### 明确授权文本
+
+只有用户在当前任务中明确回复等价于以下内容，才允许执行：
 
 ```text
-botzone_deepseek_connector_live_preflight_invalid
+我明确授权执行 L5-A2b：向当前已配置的 BOTZONE_LOCAL_AI_URL 发起最多 100 次 GET，并在单个全新无贡测试桌的模型决策中向 https://api.deepseek.com 的 deepseek-v4-flash 发起单次 60 秒超时、零重试的请求；只启动一个 connector 进程，最长运行 3600 秒，完成一局即停。
 ```
 
-临时目录或其他前置失败、子进程未启动：
+历史 Botzone 或 DeepSeek 授权不得复用。
+
+### 授权前只读门槛
+
+1. HEAD 必须包含 `aac59d5`，且 L5-A1/L5-A1a 实现文件相对检查点无差异。
+2. `git status --short` 必须为空。
+3. 不重复全量回归；只运行 23 项定向回归与 `git diff --check`。
+4. 只以 present/match 复核：Botzone URL、DeepSeek key、endpoint、model、timeout=60、retries=0；不得输出值或读取 `.env` 内容。
+5. 无本项目残留 connector/Python 进程；不得终止归属不明的进程。
+6. 用户确认 Botzone 本地 AI 配置页可用，并承诺 connector 启动后只创建一个全新无贡桌。
+
+任一门槛失败，输出 `precondition_failed`，不得请求授权或联网。
+
+### 启动准备
+
+获得授权后：
+
+1. 在系统临时目录创建全新随机 state 目录与 audit 文件路径；不得复用历史目录。
+2. 确认 state 初始为空，audit 文件尚不存在，路径均位于仓库外。
+3. 只为本次子进程显式锁定 `DEEPSEEK_TIMEOUT=60`、`DEEPSEEK_MAX_RETRIES=0`；不修改系统环境或 `.env`。
+4. 不输出完整启动命令，因为环境中包含敏感 URL。
+
+### 唯一 live 运行
+
+等价参数：
 
 ```text
-precondition_failed
+python -m integrations.botzone \
+  --agent deepseek \
+  --state-dir <fresh-temp-state> \
+  --timeout-seconds 120 \
+  --max-cycles 100 \
+  --max-wall-seconds 3600 \
+  --stop-after-finished 1 \
+  --audit-file <fresh-temp-audit>
 ```
 
-不得重试或用推测补齐证据。
+执行要求：
+
+1. 只启动一个前台进程，不使用 `Start-Process`，不创建第二个 connector。
+2. 进程运行后通知用户检查 Botzone 页面连接状态；只有用户确认“已连接”后才创建全新无贡测试桌。
+3. 用户创建桌后继续等待同一进程；每 30 秒提供简短状态，不输出敏感信息。
+4. 不因暂时无请求、模型超时或 fallback 重启进程。
+5. 进程自行退出、达到 3600 秒、用户中断或出现固定失败门槛后结束；不得重跑或补采。
+
+### 成功门槛
+
+必须全部满足：
+
+- 用户确认连接后创建了恰好一个全新无贡桌；
+- connector 自行以 exit 0、`finished_target` 停止；
+- `finished_qualified >= 1`；
+- `requests_seen > 0`、`responses_prepared > 0`、`headers_sent > 0`；
+- `transport_failures=0`；
+- diagnostics 为空；
+- Botzone 裁判没有非法动作或决策超时；
+- state 最终为安全 tombstone/按既有 finished 契约清理，不含敏感对局内容；
+- audit schema 可解析且不含 URL、key、Header、match ID、牌、request/response、prompt、reasoning 或模型正文；
+- 进程已退出且无残留。
+
+唯一成功判定：
+
+```text
+botzone_deepseek_connector_no_tribute_smoke_verified
+```
+
+### 失败门槛
+
+以下任一情况均判：
+
+```text
+botzone_deepseek_connector_no_tribute_smoke_invalid
+```
+
+- 未连接、配置错误、transport failure、协议诊断、unsupported stage；
+- 多个活动 match 或无法证明只有一个新桌；
+- cycle/wall limit、用户中断、进程异常退出；
+- request/response/header/qualified finished 任一闭环计数缺失；
+- Botzone 非法动作或决策超时；
+- audit 缺失/非法、state 敏感残留或进程残留。
+
+失败后不得重试、延长预算、补采或在同一授权下启动第二个进程。
 
 ### 结论边界
 
-即使 ready，也只证明真实本机配置、临时 state 文件操作、RAG 与 DeepSeek Agent 的零网络构造可用。它不证明 Botzone/DeepSeek 网络可达、单回合延迟、动作质量或胜率。
+本 smoke 的通过只证明：显式 deepseek 模式下，Botzone 协议闭环和 RuleBased 安全降级足以完成一局无贡对局。
 
-通过后不得立即启动 connector；下一步只能更新 docs，形成 L5-A2b 的固定 live 预算和明确授权问题。
+由于当前 audit 没有独立模型调用/成功/fallback 计数，即使通过也不能证明 DeepSeek 实际返回过有效 action，更不能形成动作质量或胜率结论。下一步 L5-A3 必须先增加脱敏模型调用与 fallback 聚合，再做稳定性实验。
 
 完成后请报告：
 
-1. HEAD、工作区和四项元数据门槛；
-2. 临时 state 目录资格结果；
-3. 是否实际启动 preflight；
-4. exit/stdout/stderr/耗时/state/进程结果；
-5. 零网络计数；
-6. 唯一判定。
+1. HEAD、工作区、定向回归与配置元数据门槛；
+2. 用户连接/建桌确认；
+3. connector exit、stop reason 和聚合 audit；
+4. Botzone 裁判结果；
+5. state/audit/残留进程安全检查；
+6. 唯一判定与结论边界。

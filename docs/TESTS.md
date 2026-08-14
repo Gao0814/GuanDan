@@ -1482,3 +1482,20 @@ L5-A2a 前置实际结果：检查点、工作区、23/569 回归和四项脱敏
 - 成功门槛仍为 exit 0、单行 `preflight_ready`、空 stderr、空 state、无残留进程与全部网络/模型请求计数为 0；
 - 目录创建失败时保持 `precondition_failed`，不得改试其他目录；
 - 子进程启动后的任何门槛失败判 `botzone_deepseek_connector_live_preflight_invalid`。
+
+实际结果：临时目录资格通过；唯一 preflight exit 0、单行 `preflight_ready`、stderr/state/残留进程为空、约 190 ms，全部网络与模型请求计数为 0。判定 `botzone_deepseek_connector_live_preflight_ready`。
+
+### 9.5 L5-A2b 单局 live smoke
+
+授权与执行门槛：
+
+- 当前 Botzone URL、`https://api.deepseek.com`、`deepseek-v4-flash`；
+- 单个前台 connector、单个新无贡桌；
+- 最多 100 cycles、poll timeout 120 秒、DeepSeek timeout 60 秒、retries 0、wall 3600 秒；
+- 全新系统临时 state/audit；完成 1 个 qualified match 即停；
+- 用户必须在 connector 显示已连接后再创建测试桌；
+- 任何历史授权不可复用，失败后不重跑。
+
+成功必须有 exit 0、`finished_target`、qualified finished、非零 request/response/header、零 transport failure、空 diagnostics、Botzone 无非法动作/超时、state/audit 无敏感内容且无残留进程。
+
+当前 runtime 未独立统计模型调用、成功和 fallback。即使 smoke 通过，也只能判 `botzone_deepseek_connector_no_tribute_smoke_verified`，不能证明 DeepSeek 实际有效返回；该可观测性属于 L5-A3。

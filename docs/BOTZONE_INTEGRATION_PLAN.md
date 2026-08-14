@@ -758,6 +758,13 @@ DeepSeek exception / timeout / malformed / illegal action_id
 - preflight 子进程未启动，全部网络与模型请求计数为 0。
 - 判定：`precondition_failed: repository_external_localappdata_not_writable`。
 
-### 17.8 当前下一动作
+### 17.8 L5-A2a1 实际结果
 
-执行 `docs/NEXT_PROMPT.md` 中的 L5-A2a1。仅改用系统临时目录恢复同一零网络 preflight；通过并形成新授权问题前，不进入真实 connector smoke。
+- 系统临时目录资格通过，state 初始/最终为空并删除。
+- 唯一 preflight exit 0，stdout 为 `preflight_ready`，stderr 空，约 190 ms。
+- 无残留进程；Botzone/DeepSeek/DNS/socket/HTTP/connector/model request 全部为 0。
+- 唯一判定：`botzone_deepseek_connector_live_preflight_ready`。
+
+### 17.9 当前下一动作
+
+执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b 授权门槛。固定为单进程、单个全新无贡桌、100 cycles、poll timeout 120 秒、DeepSeek 60 秒零重试、最长 3600 秒；未获得新授权前不得联网。

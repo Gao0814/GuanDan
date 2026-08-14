@@ -1203,6 +1203,8 @@ Botzone JSON input
 - 保持同一命令、30 秒上限、恰好一次和零网络门槛；
 - 临时目录不可用则继续 precondition failed，不尝试其他路径或提权。
 
+实际结果：系统临时目录资格通过；唯一 preflight 在约 190 ms 后 exit 0，输出固定 `preflight_ready`，stderr/state/残留进程为空，全部网络与模型请求计数为 0。判定 `botzone_deepseek_connector_live_preflight_ready`。
+
 #### L5-A2b：真实单局 smoke
 
 仅在 L5-A2a 通过、工作区干净且用户重新明确授权后执行：
@@ -1216,4 +1218,4 @@ Botzone JSON input
 
 ### 9.7 当前下一步
 
-L5-A1 已封存为 `71d9119`；L5-A1a 已封存为 `aac59d5`。L5-A2a 因 `%LOCALAPPDATA%` 写权限在子进程启动前 `precondition_failed`。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2a1，只把 state 根目录改为系统临时目录，不启动 connector 主循环。
+L5-A1 已封存为 `71d9119`；L5-A1a 已封存为 `aac59d5`；L5-A2a1 零网络 preflight 已通过。当前执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b 授权门槛：单进程、单个全新无贡桌、最多 100 cycles、最长 3600 秒、DeepSeek 60 秒且零重试。未获得新授权前不得联网。
