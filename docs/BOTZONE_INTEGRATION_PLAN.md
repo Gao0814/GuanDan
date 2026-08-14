@@ -53,6 +53,8 @@ L5-A2b11 已按该设计完成并封存为 `220c648a4629453621f534beaeb95e52d856
 
 L5-A2b12 尚未运行 preflight：沙箱无法创建全新的系统临时 state 目录，故以 `temporary_state_directory_unavailable` 在进程启动前停止。L5-A2b12a 不改变实现或安全边界，只对创建/删除单个仓库外临时目录及运行一次零网络 preflight 请求文件权限；不得借此联网或使用仓库内 state。
 
+L5-A2b12a 在受限提升后仍无法创建目录，说明 Codex 沙箱路径不可用，但没有形成 runtime 失败。L5-A2b12b 转为项目所有者在宿主机 PowerShell 手动创建全新仓库外目录并运行一次 `--preflight-only`；命令不启动 transport/connector，目录为空才做非递归删除，结果只回报固定状态。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

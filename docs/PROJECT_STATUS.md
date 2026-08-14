@@ -40,6 +40,8 @@ L5-A2b11 已完成并封存为 `220c648a4629453621f534beaeb95e52d85656ce`，判�
 
 L5-A2b12 在启动 preflight 前停止，结果为 `precondition_failed: temporary_state_directory_unavailable`。实现检查点、工作区、配置元数据和无残留门槛均通过，但当前权限不能创建新的系统临时 state 目录；子进程与全部网络/模型路径均未启动。下一步 L5-A2b12a 只在获得仓库外写入批准后执行同一个零网络 preflight，不修改代码或重复测试。
 
+L5-A2b12a 在受限写入权限下仍得到同一 `temporary_state_directory_unavailable`，preflight 子进程依旧未启动，网络/模型计数保持 0。该路径不再重试。下一步 L5-A2b12b 由项目所有者在宿主机 PowerShell 中，以随机命名的仓库外空目录手动运行一次原零网络 preflight；只回报脱敏固定结果。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-10

@@ -114,6 +114,12 @@
 - preflight 子进程未启动，所有网络、模型、transport、connector 和 Agent 计数为 0；结果为 `precondition_failed: temporary_state_directory_unavailable`。
 - 该结果不归因 runtime 或 connector。下一步 L5-A2b12a 只请求一次仓库外临时目录写权限，并执行原零网络 preflight；不改代码、不重复测试、不联网。
 
+### L5-A2b12a 仍受沙箱阻塞
+
+- 获得受限写入请求后仍无法创建系统临时 state 目录；preflight 子进程继续为 0 次，全部网络/模型计数为 0。
+- 不再重复 Codex 沙箱路径。L5-A2b12b 改由项目所有者在宿主机 PowerShell 使用全新仓库外目录手动运行同一个 `--preflight-only` 命令。
+- 手动结果只回报固定 stdout、exit、state_empty 与 stderr 是否为空；ready 后才请求新的 L5-A2b13 live 授权。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
