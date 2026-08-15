@@ -18,6 +18,7 @@ from .connector import (
     MockConnector,
     Transport,
 )
+from .agent_observability import AgentObservabilityRecorder, AgentObservabilitySnapshot
 from .agent_runtime import build_agent_factory
 from .play_adapter import NoTributeRuleBasedHandler
 from .poll import ENVELOPE_SHAPE_DETAILS, REQUIRED_FIELDS_PROFILES
@@ -42,6 +43,13 @@ class RunnerSummary:
     transport_timeouts: int = 0
     transport_failure_categories: tuple[tuple[str, int], ...] = ()
     finished_categories: tuple[tuple[str, int], ...] = ()
+    agent_mode: str = "rule"
+    agent_decision_count: int = 0
+    decision_source_counts: tuple[tuple[str, int], ...] = ()
+    model_attempt_count: int = 0
+    model_outcome_counts: tuple[tuple[str, int], ...] = ()
+    rule_fallback_count: int = 0
+    observability_valid: bool = True
 
 
 class ForegroundRunner:
@@ -55,12 +63,16 @@ class ForegroundRunner:
         backoff_seconds: int,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
+        observability_snapshot: Callable[[], AgentObservabilitySnapshot] | None = None,
+        agent_mode: str = "rule",
     ) -> None:
         self._connector = connector
         self._max_failures = max_consecutive_failures
         self._backoff_seconds = backoff_seconds
         self._sleep = sleep
         self._clock = clock
+        self._observability_snapshot = observability_snapshot
+        self._agent_mode = agent_mode
 
     def run(
         self,
@@ -153,6 +165,16 @@ class ForegroundRunner:
                     break
         except KeyboardInterrupt:
             stopped = "interrupted"
+        observability_valid = True
+        try:
+            snapshot = (
+                self._observability_snapshot()
+                if self._observability_snapshot is not None
+                else AgentObservabilitySnapshot(self._agent_mode, 0, (), 0, (), 0)
+            )
+        except Exception:
+            observability_valid = False
+            snapshot = AgentObservabilitySnapshot("rule", 0, (), 0, (), 0)
         return RunnerSummary(
             cycles,
             successes,
@@ -169,6 +191,13 @@ class ForegroundRunner:
             timeouts,
             tuple(sorted(transport_failure_categories.items())),
             tuple(sorted(finished_categories.items())),
+            snapshot.agent_mode,
+            snapshot.agent_decision_count,
+            snapshot.decision_source_counts,
+            snapshot.model_attempt_count,
+            snapshot.model_outcome_counts,
+            snapshot.rule_fallback_count,
+            observability_valid,
         )
 
 
@@ -190,13 +219,16 @@ def build_foreground_runner(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> ForegroundRunner:
+    observability = AgentObservabilityRecorder()
     if agent_mode == "rule":
-        handler = NoTributeRuleBasedHandler()
+        handler = NoTributeRuleBasedHandler(agent_mode="rule", observability=observability)
     elif agent_mode == "deepseek":
         handler = NoTributeRuleBasedHandler(
             prepared_agent_factory or agent_factory_builder(agent_mode),
             fallback_to_rule=True,
             cache_agents=True,
+            agent_mode="deepseek",
+            observability=observability,
         )
     else:
         raise ValueError("invalid_agent_mode")
@@ -207,6 +239,8 @@ def build_foreground_runner(
         backoff_seconds=config.backoff_seconds,
         sleep=sleep,
         clock=clock,
+        observability_snapshot=handler.observability_snapshot,
+        agent_mode=agent_mode,
     )
 
 
@@ -231,9 +265,20 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
     root = Path(__file__).resolve().parents[2]
     if not target.is_absolute() or target.is_relative_to(root):
         raise ValueError("invalid_audit_path")
+    if type(exit_code) is not int or type(summary.observability_valid) is not bool or not summary.observability_valid:
+        raise ValueError("invalid_audit_summary")
+    _validate_v5_aggregates(summary)
+    snapshot = AgentObservabilitySnapshot(
+        summary.agent_mode,
+        summary.agent_decision_count,
+        summary.decision_source_counts,
+        summary.model_attempt_count,
+        summary.model_outcome_counts,
+        summary.rule_fallback_count,
+    )
     payload = {
         "schema": "botzone_local_smoke_audit",
-        "version": 5,
+        "version": 6,
         "exit_code": exit_code,
         "stop_reason": summary.stopped,
         "cycles": summary.cycles,
@@ -250,6 +295,7 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
         "diagnostics": [[name, count] for name, count in summary.diagnostics],
         "diagnostic_details": [[name, count] for name, count in summary.diagnostic_details],
         "diagnostic_profiles": [[name, count] for name, count in summary.diagnostic_profiles],
+        **snapshot.to_json(),
     }
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -266,3 +312,77 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
         except OSError:
             pass
         raise ValueError("audit_write_failed") from None
+
+
+def _validate_v5_aggregates(summary: RunnerSummary) -> None:
+    """Reject malformed caller-provided aggregates before they reach an audit."""
+
+    scalar_values = (
+        summary.cycles,
+        summary.successful_cycles,
+        summary.transport_failures,
+        summary.transport_timeouts,
+        summary.headers_sent,
+        summary.requests_seen,
+        summary.responses_prepared,
+        summary.finished_seen,
+        summary.finished_qualified,
+    )
+    if (
+        not isinstance(summary.stopped, str)
+        or any(type(value) is not int or value < 0 for value in scalar_values)
+        or summary.finished_qualified > summary.finished_seen
+    ):
+        raise ValueError("invalid_audit_summary")
+    _validate_pairs(summary.transport_failure_categories, TRANSPORT_FAILURE_CATEGORIES)
+    _validate_pairs(summary.finished_categories, FINISHED_CATEGORIES)
+    _validate_pairs(summary.diagnostic_details, ENVELOPE_SHAPE_DETAILS)
+    _validate_pairs(summary.diagnostic_profiles, REQUIRED_FIELDS_PROFILES)
+    _validate_pairs(summary.diagnostics, _AUDIT_DIAGNOSTICS)
+    if sum(count for _, count in summary.finished_categories) != summary.finished_seen:
+        raise ValueError("invalid_audit_summary")
+
+
+_AUDIT_DIAGNOSTICS = frozenset(
+    {
+        "atomic_write_failed",
+        "corrupt_session",
+        "envelope_shape_invalid",
+        "header_injection",
+        "handler_failure",
+        "handler_lifecycle_failure",
+        "history_alignment_failed",
+        "historical_response_invalid",
+        "inner_request_invalid",
+        "invalid_play_effect",
+        "malformed_request",
+        "malformed_handler_result",
+        "missing_provenance",
+        "poll_malformed",
+        "play_without_state",
+        "replay_history_invalid",
+        "request_json_invalid",
+        "session_error",
+        "transport_failure",
+        "transport_timeout",
+        "unsupported_stage",
+    }
+)
+
+
+def _validate_pairs(values: object, allowed: frozenset[str]) -> None:
+    if not isinstance(values, tuple):
+        raise ValueError("invalid_audit_summary")
+    previous = ""
+    for item in values:
+        if (
+            not isinstance(item, tuple)
+            or len(item) != 2
+            or not isinstance(item[0], str)
+            or item[0] not in allowed
+            or type(item[1]) is not int
+            or item[1] <= 0
+            or item[0] <= previous
+        ):
+            raise ValueError("invalid_audit_summary")
+        previous = item[0]

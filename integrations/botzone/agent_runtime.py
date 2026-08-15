@@ -14,17 +14,24 @@ class _StrictDeepSeekClient:
 
     def __init__(self, delegate: object) -> None:
         self._delegate = delegate
+        self.last_outcome: str | None = None
 
     def suggest_action_id(self, **kwargs: object) -> object:
         from agents.deepseek_client import DeepSeekSuggestion
 
+        self.last_outcome = None
         try:
             suggestion = self._delegate.suggest_action_id(**kwargs)  # type: ignore[attr-defined]
+        except TimeoutError:
+            self.last_outcome = "timeout"
+            return DeepSeekSuggestion(action_id=None, reasoning=None)
         except Exception:
+            self.last_outcome = "exception"
             return DeepSeekSuggestion(action_id=None, reasoning=None)
         action_id = getattr(suggestion, "action_id", None)
         legal_actions = kwargs.get("legal_actions")
         if type(action_id) is not int or not isinstance(legal_actions, list):
+            self.last_outcome = "invalid_suggestion"
             return DeepSeekSuggestion(action_id=None, reasoning=None)
         legal_ids = {
             action.get("action_id")
@@ -32,9 +39,11 @@ class _StrictDeepSeekClient:
             if isinstance(action, dict) and type(action.get("action_id")) is int
         }
         if action_id not in legal_ids:
+            self.last_outcome = "invalid_suggestion"
             return DeepSeekSuggestion(action_id=None, reasoning=None)
         # The connector only needs the canonical public action ID.  Dropping
         # free-form model text keeps it out of the match-scoped agent cache.
+        self.last_outcome = "success"
         return DeepSeekSuggestion(action_id=action_id, reasoning=None)
 
 

@@ -156,7 +156,7 @@ class BotzoneFinishedProvenanceTests(unittest.TestCase):
             audit = __import__("pathlib").Path(root).parent / "finished-provenance-audit.json"
             write_audit(audit, summary, exit_code_for(summary))
             payload = json.loads(audit.read_text(encoding="utf-8"))
-            self.assertEqual((payload["version"], payload["finished_seen"], payload["finished_qualified"]), (5, 1, 0))
+            self.assertEqual((payload["version"], payload["finished_seen"], payload["finished_qualified"]), (6, 1, 0))
             self.assertEqual(payload["finished_categories"], [["four_player_unqualified", 1]])
             self.assertEqual(payload["transport_timeouts"], 0)
             self.assertEqual(payload["transport_failure_categories"], [])

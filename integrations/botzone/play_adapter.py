@@ -18,6 +18,7 @@ from engine.rules import BaseRuleEngine
 from engine.state import GameState, PlayerState, TableConstraint
 
 from .cards import BotzoneCard, card_from_id, card_id_for
+from .agent_observability import AgentObservabilityError, AgentObservabilityRecorder, AgentObservabilitySnapshot, MODEL_OUTCOMES
 from .models import ActionClaim, DealRequest, HistoryEntry, PlayRequest
 from .profile import require_no_tribute_context
 from .protocol import (
@@ -126,11 +127,16 @@ class NoTributeRuleBasedHandler:
         *,
         fallback_to_rule: bool = False,
         cache_agents: bool = False,
+        agent_mode: str = "rule",
+        observability: AgentObservabilityRecorder | None = None,
     ) -> None:
         self._agent_factory = agent_factory or (lambda player_id: RuleBasedAIAgent(player_id=player_id))
         self._fallback_to_rule = fallback_to_rule
         self._cache_agents = cache_agents
         self._agents: dict[tuple[str, int], object] = {}
+        self._agent_mode = agent_mode
+        self._observability = observability
+        self._observability_failed = False
 
     def release_match(self, match_key: str) -> None:
         """Forget mutable agent state after a match has been durably finished."""
@@ -138,6 +144,11 @@ class NoTributeRuleBasedHandler:
         for key in tuple(self._agents):
             if key[0] == match_key:
                 del self._agents[key]
+
+    def observability_snapshot(self) -> AgentObservabilitySnapshot:
+        if self._observability is None or self._observability_failed:
+            raise AgentObservabilityError("observability_unavailable")
+        return self._observability.snapshot(self._agent_mode)
 
     def __call__(self, context: HandlerContext) -> HandlerResult:
         request = require_no_tribute_context(context)
@@ -151,6 +162,7 @@ class NoTributeRuleBasedHandler:
         engine_player = botzone_player_to_engine_player(context.local_player_id)
         cache_key = (context.match_key, engine_player)
         agent = self._agents.get(cache_key) if self._cache_agents else None
+        adapter_fallback = False
         try:
             if agent is None:
                 agent = self._agent_factory(engine_player)
@@ -160,6 +172,8 @@ class NoTributeRuleBasedHandler:
         except Exception as exc:
             if not self._fallback_to_rule:
                 raise AdapterError("agent_failure") from exc
+            self._record_model_outcome(agent)
+            adapter_fallback = True
             selected_id = _fallback_action_id(
                 engine_player,
                 agent_observation,
@@ -170,6 +184,8 @@ class NoTributeRuleBasedHandler:
             if type(selected) is not int:
                 if not self._fallback_to_rule:
                     raise AdapterError("invalid_agent_action_id")
+                self._record_model_outcome(agent)
+                adapter_fallback = True
                 selected_id = _fallback_action_id(
                     engine_player,
                     agent_observation,
@@ -182,6 +198,8 @@ class NoTributeRuleBasedHandler:
                 except (TypeError, ValueError) as exc:
                     if not self._fallback_to_rule:
                         raise AdapterError("invalid_agent_action_id") from exc
+                    self._record_model_outcome(agent)
+                    adapter_fallback = True
                     selected_id = _fallback_action_id(
                         engine_player,
                         agent_observation,
@@ -193,7 +211,44 @@ class NoTributeRuleBasedHandler:
             raise AdapterError("missing_provenance")
         action_claim = encode_action_claim(action, context.own_hand, context.global_state.level)
         response = json.dumps(action_claim.to_json(), separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        self._record_decision_source(self._decision_source(agent, adapter_fallback))
         return HandlerResult(response, PlayEffect(action_claim.action))
+
+    def _record_model_outcome(self, agent: object | None) -> str | None:
+        client = getattr(agent, "client", getattr(agent, "_client", None))
+        outcome = getattr(client, "last_outcome", None)
+        if outcome not in MODEL_OUTCOMES:
+            return None
+        if self._observability is not None:
+            try:
+                self._observability.record_model_outcome(outcome)
+            except Exception:
+                self._observability_failed = True
+        return outcome
+
+    def _decision_source(self, agent: object | None, adapter_fallback: bool) -> str:
+        if self._agent_mode == "rule":
+            return "rule_primary"
+        if adapter_fallback:
+            return "adapter_rule_fallback"
+        source = getattr(agent, "last_decision_source", None)
+        if source in {"local", "local_opening_formula"}:
+            return "local_shortcut"
+        outcome = self._record_model_outcome(agent)
+        if outcome == "success":
+            return "model"
+        if outcome in MODEL_OUTCOMES:
+            return "deepseek_rule_fallback"
+        self._observability_failed = True
+        return "adapter_rule_fallback"
+
+    def _record_decision_source(self, source: str) -> None:
+        if self._observability is None:
+            return
+        try:
+            self._observability.record_decision_source(source)
+        except Exception:
+            self._observability_failed = True
 
 
 def _fallback_action_id(

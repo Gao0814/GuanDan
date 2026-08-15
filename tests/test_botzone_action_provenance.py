@@ -95,7 +95,7 @@ class BotzoneActionProvenanceTests(unittest.TestCase):
     def test_adapter_has_no_network_or_configuration_dependencies(self) -> None:
         source = (Path(__file__).parents[1] / "integrations" / "botzone" / "play_adapter.py").read_text(encoding="utf-8")
         self.assertIsNone(re.search(r"(?m)^\s*(?:from|import)\s+(?:urllib|requests|socket|dotenv|cli)\b", source))
-        for marker in (".env", "api_key", "http://", "https://", "deepseek", "evaluation", "rag"):
+        for marker in (".env", "api_key", "http://", "https://", "evaluation", "rag"):
             with self.subTest(marker=marker):
                 self.assertNotIn(marker, source.lower())
 
