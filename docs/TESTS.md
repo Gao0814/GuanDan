@@ -85,6 +85,10 @@ L5-A3c 是单次 live 观测，不是代码测试：connector exit 0，cycles=13
 
 L5-A3d 未运行测试、preflight 或网络。唯一最小 finished tombstone 严格验证后删除，state 文件数 1→0；既有 audits 不变，新 cleanup audit 为 345 bytes、SHA-256 `a71e233af98d55000a074413b8f4cc97e564db484bf52b5c204e5758681a0225`。L5-A4a 测试必须使用 synthetic finished rows，覆盖正常 0/1/2/3 团队分数、`-2/0/1/1` 错误结果、畸形 score、qualified provenance 与 v7 audit 守恒，真实网络为 0。
 
+L5-A4a 验证通过：定向 24 项、扩展相关 33 项、全量 604 项、`git diff --check`。测试覆盖四座位下的正常 0/1/2/3 团队结果、平台 `-2/0/1/1`、非法 score shape、仅 qualified finished 记录、重复 finished 去重、recorder 故障隔离、v7 audit 加法兼容与结果守恒；全部使用 synthetic finished rows/fake transport，真实配置/state/audit 与网络计数为 0。检查点为 `31e2fa5a474a377baa3fb80a4a427766623b96c7`。
+
+L5-A4b 测试必须覆盖确定性 seed×seat×mode 赛程、AB/BA 平衡、严格 v7 audit 复核、缺失/重复/异常整对排除、四个 score bucket、胜负与 paired delta、seat-to-overall 和模型观测守恒、精确 Fraction、输入排列不变、canonical JSON 与隐私边界。测试只能使用合成 v7 audit，不导入或调用 transport、connector、DeepSeek client、配置或真实网络。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

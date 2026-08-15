@@ -228,6 +228,22 @@
 - L5-A3c v6 与此前 v5/cleanup audits 均不变；新 cleanup audit 为 345 bytes，SHA-256 `a71e233af98d55000a074413b8f4cc97e564db484bf52b5c204e5758681a0225`。
 - network/connector/test/code-change 均为 0。下一步 L5-A4a 先离线把官方 finished scores 转换为低基数、守恒的本家团队结果聚合。
 
+### L5-A4a 实际结果
+
+- 判定 `botzone_finished_score_observability_verified`，独立检查点为 `31e2fa5a474a377baa3fb80a4a427766623b96c7`。
+- v7 audit 在完整保留 v6 字段语义的基础上，新增 `local_team_win`、`local_team_loss`、`platform_error`、`invalid_score_shape` 与 `score_0..score_3` 的严格聚合。
+- 结果只在既有 `finished_qualified` 路径记录；正常结果、分数桶和 qualified finished 守恒，recorder 失效时拒绝写入 v7 audit，但不改变完成清理。
+- 定向 24 项、扩展相关 33 项、全量 604 项与 `git diff --check` 通过；实现阶段零网络、零真实配置/state/audit 读取。
+- 该结果只解决单局结果可观测性。下一步 L5-A4b 先离线建立固定 seed、四座位轮换、同对手/同设置的 RuleBased/DeepSeek 成对赛程和 v7 audit 微聚合载体，不直接继续 live。
+
+### L5-A4b 计划
+
+- 只新增 evaluation-only 的赛程、严格 v7 audit 复核和成对聚合，不修改 Botzone runtime、engine、agents 或配置。
+- 每个调用方显式 seed 覆盖座位 `0..3`，每个条件精确包含 `rule` 与 `deepseek` 两局，并稳定平衡 AB/BA 顺序。
+- 整对只有在两侧协议完成、正常分数、策略观测和条件均有效时才进入胜负、score 与 paired delta；任何缺失、重复或异常都整对排除。
+- 报告只保留总体/座位整数计数与精确有理数，不保留 seed、Bot ID、match、逐局、牌、动作或模型正文。
+- L5-A4b 通过后，L5-A4c 才以 2 个新 seed × 4 座位的 8 对 / 16 局做容量验证；该容量试验不形成策略优劣结论。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

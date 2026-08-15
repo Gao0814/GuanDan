@@ -76,6 +76,10 @@ L5-A3c 已完成并判定 `botzone_deepseek_observed_live_smoke_verified`：唯�
 
 L5-A3d 已完成并判定 `botzone_observed_live_tombstone_cleanup_verified`：唯一 finished tombstone 严格验证并删除，state 文件数 1→0，目录保留且为空；既有 audits 均不变。新 cleanup audit 为 345 bytes、SHA-256 `a71e233af98d55000a074413b8f4cc97e564db484bf52b5c204e5758681a0225`，零网络/connector/test/code-change。下一步 L5-A4a 离线实现官方 finished score 的安全结果观测，不直接继续 live。
 
+L5-A4a 已完成并判定 `botzone_finished_score_observability_verified`：检查点 `31e2fa5a474a377baa3fb80a4a427766623b96c7` 精确包含 8 个 Botzone integration/test 文件。v7 audit 加法保留 v6 字段，新增正常团队胜负、平台违规、非法分数形状和 `score_0..score_3` 聚合；只在 qualified finished 记录并执行严格守恒。定向 24 项、扩展相关 33 项、全量 604 项和 diff check 通过，零网络。该结果仍不是 RuleBased/DeepSeek 比较证据。
+
+当前阶段为 L5-A4b：离线实现固定 seed、四座位轮换、同对手/同桌面 profile 的成对赛程与 v7 audit 聚合载体。任何缺侧、重复、协议失败、非正常结果或观测守恒错误都必须整对排除；最终报告不得保留 seed、Bot ID、match 或逐局内容。本阶段不运行 connector、DeepSeek 或真实对局。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15

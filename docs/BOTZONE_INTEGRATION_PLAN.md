@@ -89,6 +89,10 @@ L5-A3c 已判定 `botzone_deepseek_observed_live_smoke_verified`：唯一人工�
 
 L5-A3d 已清理唯一 observed-live tombstone，state 为空；新 cleanup audit 为 345 bytes、SHA-256 `a71e233af98d55000a074413b8f4cc97e564db484bf52b5c204e5758681a0225`。官方裁判正常结算让胜方同队获得相同的 1/2/3、负方为 0，错误结算为 `-2/0/1/1`；当前 connector 虽解析 scores 却未聚合。L5-A4a 先离线补齐该结果真值边界，再设计成对策略评估。
 
+L5-A4a 已封存为 `31e2fa5a474a377baa3fb80a4a427766623b96c7`，判定 `botzone_finished_score_observability_verified`。v7 audit 只在 qualified finished 路径聚合本家正常胜负、`score_0..score_3`、平台违规与非法分数形状，并要求结果计数、正常结果和分数桶严格守恒。定向 24 项、相关 33 项、全量 604 项通过；未运行 live。
+
+L5-A4b 转入 evaluation-only 的成对协议：调用方显式 seed × 座位 `0..3`，每个条件固定 `rule/deepseek` 两局并平衡 AB/BA；两侧 v7 audit 均有效且为正常结果时才计入 paired score/win 指标。报告只保留总体和座位聚合，不保存 seed、Bot ID、match 或逐局内容。通过后先做 8 对 / 16 局容量试验，再决定正式样本量，不能由当前单局或载体测试宣称 DeepSeek 增益。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15
