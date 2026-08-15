@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 import json
 from tempfile import TemporaryDirectory
@@ -9,7 +10,7 @@ from unittest.mock import patch
 from integrations.botzone.models import DealRequest, PlayRequest
 from integrations.botzone.protocol import parse_stage_request
 from integrations.botzone.poll import FinishedRow
-from integrations.botzone.session import HandlerResult, PlayEffect, SessionStorageError, SessionStore
+from integrations.botzone.session import HandlerResult, PlayEffect, SessionStorageError, SessionStore, merge_history
 
 
 def _global() -> dict[str, object]:
@@ -161,6 +162,58 @@ class BotzoneSessionTests(unittest.TestCase):
             self.assertEqual([one, two], original_history)
             with self.assertRaisesRegex(SessionStorageError, "history_alignment_failed"):
                 store.prepare("unit-a", b"p5", play([one]))
+
+    def test_four_event_history_window_can_rotate_without_overlap(self) -> None:
+        def play(history: list[dict[str, object]]) -> PlayRequest:
+            global_state = _global()
+            global_state.update({"resist": False, "tribute_cards": {}, "return_cards": {}})
+            parsed = parse_stage_request(
+                {"stage": "play", "history": ([[]] * (4 - len(history))) + history, "done": [], "pass_on": -1, "global": global_state}
+            )
+            assert isinstance(parsed, PlayRequest)
+            return parsed
+
+        first = [
+            {"player": 0, "response": [[0], [0]]},
+            {"player": 1, "response": [[], []]},
+            {"player": 2, "response": [[1], [1]]},
+            {"player": 3, "response": [[], []]},
+        ]
+        rotated = [
+            {"player": 0, "response": [[2], [2]]},
+            {"player": 1, "response": [[], []]},
+            {"player": 2, "response": [[3], [3]]},
+            {"player": 3, "response": [[], []]},
+        ]
+        original_first = deepcopy(first)
+        original_rotated = deepcopy(rotated)
+        with TemporaryDirectory() as root:
+            store = SessionStore(root)
+            store.prepare("unit-a", b"deal", _deal(0))
+            initial, _ = store.prepare("unit-a", b"first", play(first))
+            replacement, _ = store.prepare("unit-a", b"replacement", play(rotated))
+            self.assertEqual(replacement.history, initial.history + replacement.latest_window)
+            self.assertEqual(len(replacement.history), 8)
+            before_invalid = store.load("unit-a")
+            assert before_invalid is not None
+            with self.assertRaisesRegex(SessionStorageError, "history_alignment_failed"):
+                store.prepare("unit-a", b"short", play(first[:3]))
+            self.assertEqual(store.load("unit-a"), before_invalid)
+        self.assertEqual(first, original_first)
+        self.assertEqual(rotated, original_rotated)
+
+        first_stage = play(first[:2]).history
+        rotated_stage = play(rotated).history
+        latest, accumulated = merge_history(first_stage, first_stage, rotated_stage)
+        self.assertEqual(latest, rotated_stage)
+        self.assertEqual(accumulated, first_stage + rotated_stage)
+        full_first = play(first).history
+        full_rotated = play(rotated).history
+        for overlap in range(1, 5):
+            incoming = full_first[-overlap:] + full_rotated[: 4 - overlap]
+            latest, accumulated = merge_history(full_first, full_first, incoming)
+            self.assertEqual(latest, incoming)
+            self.assertEqual(accumulated, full_first + incoming[overlap:])
 
     def test_unauthorized_effect_and_finished_pending_effect_fail_closed(self) -> None:
         with TemporaryDirectory() as root:

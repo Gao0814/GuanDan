@@ -203,8 +203,8 @@ def _parse_global(value: object, stage: str) -> GlobalState:
     return GlobalState(level, 0, None, None, resist)
 
 
-def _parse_history(value: object, level: str) -> tuple[HistoryEntry, ...]:
-    if not isinstance(value, list) or len(value) > 4:
+def _parse_history(value: object, level: str, *, maximum_entries: int | None = 4) -> tuple[HistoryEntry, ...]:
+    if not isinstance(value, list) or (maximum_entries is not None and len(value) > maximum_entries):
         raise SessionStorageError("invalid_history")
     history: list[HistoryEntry] = []
     try:
@@ -294,7 +294,7 @@ def _record_from_json(value: object) -> SessionRecord:
     if cached is None and cached_digest is not None:
         raise SessionStorageError("invalid_session")
     parsed_global = _parse_global(value["global"], stage)
-    parsed_history = _parse_history(value["history"], parsed_global.level)
+    parsed_history = _parse_history(value["history"], parsed_global.level, maximum_entries=None)
     parsed_window = _parse_history(value["latest_window"], parsed_global.level)
     if (
         bool(parsed_history) != bool(parsed_window)
@@ -587,4 +587,6 @@ def merge_history(
     for overlap in range(maximum_overlap, 0, -1):
         if latest_window[-overlap:] == incoming_window[:overlap]:
             return incoming_window, accumulated + incoming_window[overlap:]
+    if len(incoming_window) == 4:
+        return incoming_window, accumulated + incoming_window
     raise SessionStorageError("history_alignment_failed")

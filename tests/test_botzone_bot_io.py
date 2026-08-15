@@ -4,7 +4,7 @@ from copy import deepcopy
 import json
 import unittest
 
-from integrations.botzone.bot_io import BotEnvelopeError, encode_bot_response, encode_direct_response, parse_bot_envelope
+from integrations.botzone.bot_io import BotEnvelopeError, _merge_history, encode_bot_response, encode_direct_response, parse_bot_envelope
 from integrations.botzone.models import DealRequest, PlayRequest
 from integrations.botzone.protocol import parse_stage_request
 
@@ -69,6 +69,54 @@ class BotJsonEnvelopeTests(unittest.TestCase):
         self.assertEqual(parsed.replay.own_hand, tuple(card for card in range(27) if card not in {0, 4}))
         self.assertEqual(len(parsed.replay.history), 3)
         self.assertEqual(parsed.replay.latest_window, parsed.replay.history)
+
+    def test_replay_accepts_a_full_non_overlapping_history_window_rotation(self) -> None:
+        first = [
+            {"player": 0, "response": [[0], [0]]},
+            {"player": 1, "response": [[], []]},
+            {"player": 2, "response": [[1], [1]]},
+            {"player": 3, "response": [[], []]},
+        ]
+        rotated = [
+            {"player": 0, "response": [[2], [2]]},
+            {"player": 1, "response": [[], []]},
+            {"player": 2, "response": [[3], [3]]},
+            {"player": 3, "response": [[], []]},
+        ]
+        payload = _envelope([_deal(), _play(first), _play(rotated)], [[], [[], []]])
+        original = deepcopy(payload)
+        parsed = parse_bot_envelope(payload)
+        self.assertEqual(len(parsed.replay.history), 8)
+        self.assertEqual(parsed.replay.latest_window, parse_stage_request(_play(rotated)).history)
+        self.assertEqual(payload, original)
+
+    def test_replay_history_rotation_preserves_overlap_and_rejects_short_gaps(self) -> None:
+        first = parse_stage_request(
+            _play([
+                {"player": 0, "response": [[0], [0]]},
+                {"player": 1, "response": [[], []]},
+                {"player": 2, "response": [[1], [1]]},
+                {"player": 3, "response": [[], []]},
+            ])
+        )
+        rotated = parse_stage_request(
+            _play([
+                {"player": 0, "response": [[2], [2]]},
+                {"player": 1, "response": [[], []]},
+                {"player": 2, "response": [[3], [3]]},
+                {"player": 3, "response": [[], []]},
+            ])
+        )
+        assert isinstance(first, PlayRequest) and isinstance(rotated, PlayRequest)
+        for overlap in range(1, 5):
+            incoming = first.history[-overlap:] + rotated.history[: 4 - overlap]
+            latest, accumulated = _merge_history(first.history, first.history, incoming)
+            self.assertEqual(latest, incoming)
+            self.assertEqual(accumulated, first.history + incoming[overlap:])
+        for length in range(4):
+            with self.subTest(length=length):
+                with self.assertRaises(BotEnvelopeError):
+                    _merge_history(first.history, first.history, rotated.history[:length])
 
     def test_replay_rejects_response_and_profile_drift(self) -> None:
         bad_responses = (

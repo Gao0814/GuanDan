@@ -133,6 +133,8 @@ def _merge_history(
     for overlap in range(maximum_overlap, 0, -1):
         if latest_window[-overlap:] == incoming_window[:overlap]:
             return incoming_window, accumulated + incoming_window[overlap:]
+    if len(incoming_window) == 4:
+        return incoming_window, accumulated + incoming_window
     raise BotEnvelopeError("replay_history")
 
 
