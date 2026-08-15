@@ -93,6 +93,10 @@ L5-A4a 已封存为 `31e2fa5a474a377baa3fb80a4a427766623b96c7`，判定 `botzone
 
 L5-A4b 转入 evaluation-only 的成对协议：调用方显式 seed × 座位 `0..3`，每个条件固定 `rule/deepseek` 两局并平衡 AB/BA；两侧 v7 audit 均有效且为正常结果时才计入 paired score/win 指标。报告只保留总体和座位聚合，不保存 seed、Bot ID、match 或逐局内容。通过后先做 8 对 / 16 局容量试验，再决定正式样本量，不能由当前单局或载体测试宣称 DeepSeek 增益。
 
+L5-A4b 已封存为 `e1b4e14f2806b962c16a08434f8fef589bf9630b`，判定 `botzone_paired_policy_benchmark_harness_verified`。载体严格消费内存 v7 audit，确定性生成 seed/seat/策略顺序，并以整对 fail-closed 方式聚合胜负、score、模型暴露与座位子桶；定向 8 项、全量 612 项通过，未联网。
+
+L5-A4c 只做小容量准入：seed `24001/24002` × seat `0..3` × 两策略，共 8 对/16 局；固定无贡 profile 和相同对手版本，AB/BA 各 4。先在仓库外生成不可改写的操作清单并完成 rule/deepseek 双模式零网络 preflight，再单独申请批量授权。容量运行必须串行、每局独立 state/audit、任一失败全批停止且不补采；结果只用于验证流程和 audit 可配对性。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

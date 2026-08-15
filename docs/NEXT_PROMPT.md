@@ -1,161 +1,71 @@
 # 下一步实施提示词
 
-## Step L5-A4b：Botzone RuleBased / DeepSeek 成对评估协议与离线聚合载体
+## Step L5-A4c：Botzone 小容量成对赛程离线准入与授权准备
 
-L5-A4a 已完成并独立封存，唯一判定：
+L5-A4b 已完成并独立封存，唯一判定：
 
 ```text
-botzone_finished_score_observability_verified
+botzone_paired_policy_benchmark_harness_verified
 ```
 
 实现检查点：
 
 ```text
-31e2fa5a474a377baa3fb80a4a427766623b96c7
+e1b4e14f2806b962c16a08434f8fef589bf9630b
 ```
 
-v7 audit 已能在 `finished_qualified` 路径安全聚合本家团队的正常胜负、`score_0..score_3`、平台违规与非法分数形状，并保持 v6 的协议和 DeepSeek 路径观测字段。该能力仍只提供单局聚合结果，尚未定义 RuleBased / DeepSeek 的成对赛程、有效 audit 门槛、配对守恒或比较报告。
+`evaluation/botzone_policy_benchmark.py` 已提供确定性的 seed × 四座位 × `rule/deepseek` 成对赛程和严格 v7 audit 微聚合；定向 8 项、全量 612 项与 `git diff --check` 已通过。该载体尚未经过真实人工桌的操作容量验证。
 
-本步骤只实现 evaluation-only 的离线协议与聚合载体。不得运行 preflight、connector、runmatch、人工测试桌、DeepSeek 或任何网络请求。
+本步骤只做离线准入、仓库外操作清单和后续授权准备。不得启动 live connector、创建 Botzone 测试桌、调用 DeepSeek 或发送任何网络请求。
 
-### 目标
+### 固定容量设计
 
-建立一个最小、确定、可审计的 Botzone 策略成对评估载体：
-
-- 同一评估条件下分别运行 `rule` 与 `deepseek`；
-- 固定 seed、座位、对手版本和全部桌面设置；
-- 只消费调用方传入的脱敏 v7 audit 与非敏感赛程条件；
-- 缺少任一侧、audit 无效、结果非正常或条件不匹配时，整对 fail-closed；
-- 输出配对后的原始整数统计与精确有理数，不输出逐局、seed、Bot ID、match、牌或模型正文；
-- 不做显著性、因果或胜率提升宣称。
-
-### 建议范围
-
-优先新增：
-
-- `evaluation/botzone_policy_benchmark.py`
-- `tests/test_botzone_policy_benchmark.py`
-
-只有现有 evaluation 导出风格明确要求时，才最小更新：
-
-- `evaluation/__init__.py`
-
-禁止修改：
-
-- `integrations/botzone/` 的 runtime、协议、transport、connector、session、adapter 与 audit 写入；
-- `engine/`、`agents/`、CLI、RAG、配置和 `.env`；
-- 上传 Bot ZIP；
-- `docs/`；
-- 任何真实 state/audit、密钥、URL 或账号数据。
-
-### 固定策略与赛程模型
-
-策略名只允许：
+使用两个从未用于本项目 Botzone 正式评估的新 seed：
 
 ```text
-rule
-deepseek
+24001
+24002
 ```
 
-新增 frozen/slots、JSON 友好的赛程条件与报告对象。实现可以在内存中保留用于配对的 seed，但最终聚合报告和 `to_dict()` 不得包含 seed 列表或逐对标识。
+固定条件：
 
-赛程生成必须满足：
+- profile：`botzone_no_tribute_level_2/v1`
+- `no_tribute=True`
+- 当前级牌：2
+- 上轮头游：0
+- 上轮末游：3
+- `0/2` 位置等级：2
+- `1/3` 位置等级：2
+- 同一组三个对手 Bot 及同一版本贯穿全部 16 局
+- 本家座位轮换 `0..3`
+- 每个 `(seed, seat)` 各运行一局 `rule` 与一局 `deepseek`
 
-1. seed 由调用方显式传入，必须是唯一、严格非 bool 整数；不得使用时间、全局随机数或 `hash()`。
-2. 每个 seed 固定覆盖本家座位 `0..3`。
-3. 每个 `(seed, seat)` 精确生成一对：一局 `rule`、一局 `deepseek`。
-4. AB/BA 顺序稳定交替；每个 seat 的两种顺序数量差不超过 1。
-5. 每个条件必须显式携带固定桌面 profile 版本。首版只允许：无贡、当前级牌 2、相同的上轮名次设置、相同对手 Bot/版本集合。
-6. 对手 Bot ID/版本由 live 调用方在仓库外管理；不得写入源码、测试、文档或最终报告。离线载体只接受固定、非敏感的 opponent-profile digest 或调用方确认标记，不得反向保存原始 ID。
-7. 赛程顺序和输入 audit 顺序不得影响聚合结果。
-
-人工网页“随机种子”到官方裁判 initdata 的映射尚未通过成对实局证明。载体必须把 `seed_contract_confirmed` 作为严格布尔前置；为 false 时不得形成可执行赛程。该字段只表示调用方已按官方源码/UI 契约确认固定 seed，不得由载体猜测。
-
-### v7 audit 输入门槛
-
-聚合器只消费调用方已加载到内存的 mapping，不读取文件、state、环境变量或网络。每个 audit 必须严格满足：
-
-- schema 精确为 `botzone_local_smoke_audit`，version 精确为 `7`；
-- 与预期策略条件的 `agent_mode` 一致；
-- `exit_code=0`、`stop_reason=finished_target`；
-- `requests_seen`、`responses_prepared`、`headers_sent` 均为正数且彼此一致；
-- `finished_qualified=1`，其余 finished 分类与总数满足 v7 守恒；
-- transport failure、timeout、协议 diagnostics/detail/profile 均为 0 或空；
-- `normal_result_count=1`；结果类别精确为一个 `local_team_win` 或 `local_team_loss`；
-- `platform_error=0`、`invalid_score_shape=0`；
-- `score_0..score_3` 精确一个桶为 1，其余为 0，并与胜负一致；
-- v6 Agent/模型观测字段类型、allowlist 和守恒全部有效。
-
-策略特定门槛：
-
-- `rule`：所有模型尝试、模型结果、DeepSeek/adapter fallback 均为 0；最终来源只能来自规则路径允许集合。
-- `deepseek`：保持 v6 的模型尝试、结果、最终来源和 fallback 守恒；允许某局因本地快捷路径而模型尝试为 0，但必须单独聚合 `model_exposed_game_count`，不得把未暴露模型的局解释为模型效果。
-
-任一字段缺失、类型错误、bool 冒充整数、未知键值、守恒失败或策略不匹配时，该局 invalid。配对的一侧 invalid、缺失或重复时，整对不得进入质量指标。
-
-### 配对与聚合
-
-报告至少包含：
-
-- requested / valid / invalid / incomplete / duplicate pair count；
-- rule / deepseek valid game count；
-- `deepseek_score_better` / `rule_score_better` / `equal_score`；
-- 两种策略的团队 win/loss 原始计数；
-- 两种策略的 `score_0..score_3` 原始计数；
-- 两种策略的 score sum、精确 mean；
-- paired score delta sum 与精确 mean，固定为 `deepseek - rule`；
-- 两种策略的精确 win rate；
-- DeepSeek 的 model-exposed game、model attempt/result、最终来源与 fallback 聚合；
-- seat `0..3` 的同构子聚合；
-- AB / BA 顺序计数；
-- 固定低基数 diagnostics 计数。
-
-所有比例和均值使用 `Fraction` 精确累计，并以最简整数分子/分母序列化。零分母稳定输出 `0/1`；不得产生 float、NaN 或 Infinity。
-
-必须满足：
+总量固定为：
 
 ```text
-requested_pairs = valid_pairs + invalid_pairs + incomplete_pairs
-valid_pairs = deepseek_score_better + rule_score_better + equal_score
-valid_pairs = rule_valid_games = deepseek_valid_games
-valid_pairs = sum(rule_score_counts)
-valid_pairs = sum(deepseek_score_counts)
-overall = seat_0 + seat_1 + seat_2 + seat_3
-valid_pairs = AB_pairs + BA_pairs
+2 seeds × 4 seats = 8 pairs
+8 pairs × 2 strategies = 16 games
+rule games = 8
+deepseek games = 8
+AB pairs = 4
+BA pairs = 4
 ```
 
-同一条件重复 audit 只计为 duplicate，并使该 pair 无效；不得按到达顺序任选一份。invalid/incomplete pair 不得贡献胜负、score、模型或 seat 质量指标。
+该规模只验证人工流程、固定条件、audit 采集和配对聚合是否可执行，不用于策略优劣、显著性或胜率结论。
 
-### 报告边界
+### 前置复核
 
-报告必须 frozen/slots、mapping 不可变、稳定 `to_dict()` 且 canonical JSON 可序列化。不得包含：
+只读确认：
 
-- seed 或 seed 列表；
-- Bot ID、Bot 版本原文、match/session/player 标识；
-- audit 文件路径、state 路径或 URL；
-- observation、手牌、history、action、prompt、RAG 片段；
-- API key、Header、模型响应、reasoning 或异常正文；
-- 逐局、逐对或逐样本记录。
+1. HEAD 包含 L5-A4a `31e2fa5a...` 与 L5-A4b `e1b4e14f...` 检查点。
+2. L5-A4b 提交范围精确为 benchmark 模块和对应测试。
+3. 工作区除项目所有者既有改动外没有本任务改动；不得读取、修改、暂存或提交既有 `README.md` 改动。
+4. 无残留 Botzone connector/Python 进程。
+5. 项目所有者确认全部历史本地 AI 测试桌已结束。
+6. 项目所有者提供一个已存在、为空、仓库外的容量试验根目录；其下可预建 16 个互相隔离的 state 子目录和一个 audit 子目录。
+7. 三个对手 Bot 及版本只在人工操作时确认；不得写入仓库、操作清单、audit 或最终报告。
 
-diagnostics 按固定 allowlist 聚合，不得携带原始字段名、值、长度、hash、路径或异常正文。
-
-### 必须新增的测试
-
-至少覆盖：
-
-1. 严格 seed/seat/profile 参数校验；bool、重复 seed、非法座位和未确认 seed 契约拒绝。
-2. 每个 seed × 四座位 × 两策略的精确赛程，AB/BA 稳定且顺序平衡。
-3. 合法 v7 rule/deepseek audit 的配对、四种 score bucket、胜负与 delta。
-4. rule audit 出现模型计数、deepseek audit 观测守恒错误或 mode 不匹配时整对无效。
-5. 缺侧、重复侧、未知条件、错误 schema/version、非完成协议、transport/诊断、非正常结果均 fail-closed。
-6. platform error 与 invalid score shape 不进入质量指标。
-7. overall 与 seat 子桶、score、胜负、AB/BA、模型结果和 fallback 的全部守恒。
-8. 精确 Fraction、零分母、输入排列不变性和 canonical JSON 无 NaN/Infinity。
-9. frozen/slots、不可变 mapping、输入对象不被修改。
-10. 报告和模块边界扫描不包含 seed、Bot/match/player、牌、prompt、路径、URL、key 或异常正文。
-11. 不导入 Botzone transport/connector/runner、DeepSeek client、engine 私有状态或配置；真实网络计数为 0。
-
-最低验证：
+复跑：
 
 ```text
 python -m unittest tests.test_botzone_policy_benchmark -q
@@ -163,14 +73,95 @@ python -m unittest discover -q
 git diff --check
 ```
 
-### 验收与后续
+任何检查点、回归、工作区、进程或外部目录门槛失败都返回 `precondition_failed`，不继续创建清单或运行 preflight。
 
-全部门槛通过时唯一判定：
+### 赛程清单
 
-```text
-botzone_paired_policy_benchmark_harness_verified
+必须直接调用现有：
+
+```python
+BenchmarkConditions(
+    profile_version=PROFILE_VERSION,
+    seed_contract_confirmed=True,
+    opponent_profile_confirmed=True,
+)
+build_paired_schedule((24001, 24002), conditions)
 ```
 
-完成后建立仅含本步骤允许实现/测试文件的独立 Git 检查点。不得在同一步运行真实 Botzone 或 DeepSeek，不得请求 live 授权。
+不得手工重新实现排序或 AB/BA 逻辑。生成结果必须为 8 个 pair、16 个 game，并满足：
 
-该判定只证明成对赛程和聚合载体成立，不证明 DeepSeek 优于 RuleBased。后续 L5-A4c 才规划容量试验：建议先使用 2 个全新固定 seed × 4 个座位，共 8 对 / 16 局，验证人工流程、配对完整性与 v7 audit 可用性；容量通过后再预注册正式样本量和判定门槛。
+- 每个 seed 精确覆盖 seat `0..3`；
+- 每个 pair 精确包含 `rule` 与 `deepseek`；
+- 每个 seat 精确 2 个 pair / 4 个 game；
+- AB/BA 为 `4/4`；
+- rule/deepseek game 为 `8/8`。
+
+在仓库外容量根目录写入一个 canonical JSON 操作清单。允许清单保存本次非敏感 seed、seat、策略顺序、game/pair 序号、相对 state 子目录和相对 audit 文件名；禁止保存：
+
+- Bot ID、账号、match/session/player 标识；
+- Botzone URL、local-AI key、DeepSeek key 或 Header；
+- 手牌、history、action、prompt、RAG、模型响应或 reasoning；
+- 真实 audit 内容。
+
+清单必须在任何 live 授权前生成并记录 bytes 与 SHA-256。后续不得改写顺序、seed、seat、模式或文件绑定；若需要修改，整个容量任务作废并重新规划，不得现场调整。
+
+### 每局操作契约
+
+后续 live 阶段必须严格按清单串行执行，每次只允许一个 connector 和一个人工测试桌：
+
+1. 对应 state 子目录必须全新且为空；audit 文件必须不存在。
+2. 按清单以 `--agent rule` 或 `--agent deepseek` 启动 connector。
+3. 页面显示本地 AI 已连接后，人工创建唯一新桌并设置清单中的 seat、seed 和固定 profile。
+4. `需要进贡=否`；任何非零 tribute、`tribute` 或 `return` 立即停止整个容量任务且不重试。
+5. 每局必须 `exit=0 / finished_target`，生成一份 v7 audit，并保留该局独立最小 tombstone 供后续统一清理。
+6. 不在容量任务中重试失败局、替换 seed、交换座位、替换对手或补采。
+7. 任一局协议失败、异常分数、平台违规、audit 缺失、页面设置无法确认或人工操作偏离清单，立即停止剩余赛程并判容量无效。
+
+正式聚合只允许在 16 局全部结束后，由调用方按清单构造 `PolicyAuditSubmission` 并调用 `aggregate_policy_audits()`。不得按结果选择 audit、跳过失败 pair 或修改提交顺序来改变结论。
+
+### 零网络双模式 preflight
+
+在两个独立、全新、空的仓库外 preflight state 目录中，分别执行恰好一次：
+
+```text
+python -m integrations.botzone --agent rule --preflight-only ...
+python -m integrations.botzone --agent deepseek --preflight-only ...
+```
+
+要求：
+
+- 使用项目 `.venv` 解释器；
+- `PYTHON_DOTENV_DISABLED=1` 在子进程环境中生效；
+- Botzone URL / DeepSeek key 只检查 `present`；
+- endpoint/model/timeout/retries 只检查是否精确匹配 `https://api.deepseek.com`、`deepseek-v4-flash`、60、0，不输出正文；
+- 每次 exit 0、stdout 单行 `preflight_ready`、stderr 空、state 最终为空、无残留进程；
+- Botzone GET、DeepSeek request、DNS/socket/HTTP、connector cycle 与 Agent action 全部为 0。
+
+任一 preflight 失败即停止；不得重试、换目录或进入 live。
+
+### 授权准备
+
+全部离线门槛通过后，唯一判定：
+
+```text
+botzone_paired_policy_capacity_preflight_ready
+```
+
+随后只向项目所有者提出一次新的 L5-A4c-live 批量授权问题，不得在本步骤联网。授权文本必须完整列明：
+
+- 16 个串行 connector / 人工无贡桌，8 局 rule、8 局 deepseek；
+- 当前 Botzone local-AI endpoint 每局最多 100 次 GET，总上限 1600 次；
+- DeepSeek 只在 8 个 deepseek game 中调用，单次 timeout 60 秒、retries 0，模型请求总上限 800 次；
+- 每局最长 3600 秒，完成一局即停；任何失败立即停止整批且不重试；
+- DeepSeek 局会发送本家未公开手牌、公开局面、engine 合法候选、手牌评估、记牌摘要、场景标签和本地 RAG 片段到 `https://api.deepseek.com` 的 `deepseek-v4-flash`；
+- 不发送 Botzone URL/key、match/session、实体牌 ID、其他玩家隐藏牌或 `.env` 内容；
+- 只使用 seed `24001/24002`、四座位轮换、固定对手版本与固定无贡 profile；
+- runmatch 请求数为 0，只允许人工网页建桌。
+
+没有项目所有者对该完整批量预算和敏感出站范围的明确授权，不得启动第一局。
+
+### 边界
+
+本步骤不得修改仓库文件、不得提交代码或 docs、不得读取 `.env` 或输出配置值。仓库外操作清单只用于后续人工执行，不是 benchmark 报告。
+
+即使 preflight ready，也只证明 16 局容量流程已准备，不证明 Botzone/DeepSeek 可达、配对完成、动作质量或胜率提升。

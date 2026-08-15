@@ -80,6 +80,10 @@ L5-A4a 已完成并判定 `botzone_finished_score_observability_verified`：检�
 
 当前阶段为 L5-A4b：离线实现固定 seed、四座位轮换、同对手/同桌面 profile 的成对赛程与 v7 audit 聚合载体。任何缺侧、重复、协议失败、非正常结果或观测守恒错误都必须整对排除；最终报告不得保留 seed、Bot ID、match 或逐局内容。本阶段不运行 connector、DeepSeek 或真实对局。
 
+L5-A4b 已完成并判定 `botzone_paired_policy_benchmark_harness_verified`：检查点 `e1b4e14f2806b962c16a08434f8fef589bf9630b` 仅包含 `evaluation/botzone_policy_benchmark.py` 与对应测试。定向 8 项、全量 612 项和 diff check 通过；确定性 AB/BA 赛程、严格 v7 audit 配对、Fraction 聚合、座位守恒和脱敏边界均已锁定。该结果仍不包含真实配对样本。
+
+当前阶段转为 L5-A4c：先在零网络下锁定 seed `24001/24002`、四座位、两策略的 8 对 / 16 局人工操作清单，并分别完成 rule/deepseek preflight。只有清单 hash、外部目录、旧桌清理和双 preflight 全部通过后，才提出覆盖整批容量试验的新授权；本阶段本身不联网。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15

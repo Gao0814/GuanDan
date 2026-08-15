@@ -244,6 +244,22 @@
 - 报告只保留总体/座位整数计数与精确有理数，不保留 seed、Bot ID、match、逐局、牌、动作或模型正文。
 - L5-A4b 通过后，L5-A4c 才以 2 个新 seed × 4 座位的 8 对 / 16 局做容量验证；该容量试验不形成策略优劣结论。
 
+### L5-A4b 实际结果
+
+- 判定 `botzone_paired_policy_benchmark_harness_verified`，独立检查点为 `e1b4e14f2806b962c16a08434f8fef589bf9630b`，提交仅含 benchmark 模块与对应测试。
+- 载体使用现有 v7 audit，生成确定性的 seed × 四座位 × `rule/deepseek` AB/BA 赛程；缺侧、重复、协议/分数/观测无效时整对排除。
+- 报告只输出总体/座位聚合整数和最简分数，不序列化 seed、Bot/match/player、逐局 audit 或模型内容。
+- 定向 8 项、全量 612 项与 `git diff --check` 通过；只使用标准库且零网络。
+- 下一步 L5-A4c 先离线锁定 seed `24001/24002` 的 8 对 / 16 局操作清单，完成 rule/deepseek 双模式零网络 preflight，并单独请求整批 live 授权；不得直接开始第一局。
+
+### L5-A4c 容量准入计划
+
+- 固定无贡、级牌 2、上轮头游/末游 0/3、双方等级 2、相同三个对手 Bot 及版本。
+- 两个 seed 均覆盖 seat `0..3`；每个条件各一局 rule/deepseek，AB/BA `4/4`，共 16 局。
+- 仓库外 canonical 操作清单在授权前生成并锁定；每局使用独立 state/audit，串行且不补采。
+- rule/deepseek 各执行一次零网络 preflight；全部通过后才提出覆盖 1600 次 Botzone GET、最多 800 次 DeepSeek 请求的批量授权。
+- 容量任务只验证人工流程和 v7 audit 配对可用性；即使 8 对全部有效，也不得据此宣称策略收益。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

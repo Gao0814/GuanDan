@@ -89,6 +89,10 @@ L5-A4a 验证通过：定向 24 项、扩展相关 33 项、全量 604 项、`gi
 
 L5-A4b 测试必须覆盖确定性 seed×seat×mode 赛程、AB/BA 平衡、严格 v7 audit 复核、缺失/重复/异常整对排除、四个 score bucket、胜负与 paired delta、seat-to-overall 和模型观测守恒、精确 Fraction、输入排列不变、canonical JSON 与隐私边界。测试只能使用合成 v7 audit，不导入或调用 transport、connector、DeepSeek client、配置或真实网络。
 
+L5-A4b 验证通过：定向 8 项、全量 612 项、`git diff --check`。测试已覆盖严格条件/seed、确定性四座位 AB/BA 赛程、合法 v7 成对聚合、缺失/重复/未知提交、错误 mode/profile、transport/非正常结果、DeepSeek 观测守恒、零分母 Fraction、输入排列不变与敏感字段扫描。检查点为 `e1b4e14f2806b962c16a08434f8fef589bf9630b`，实现只使用标准库且真实网络为 0。
+
+L5-A4c 不新增代码测试；离线准入必须复跑上述 8 项与全量 612 项，并验证现有 `build_paired_schedule((24001, 24002), conditions)` 精确生成 8 对、16 局、四座位各 2 对、rule/deepseek 各 8 局、AB/BA 各 4。rule/deepseek preflight 必须分别 exit 0、固定 stdout、空 stderr/state、零网络且无残留。任何门槛失败都不得进入 live 或请求部分授权。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口
