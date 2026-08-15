@@ -215,6 +215,13 @@
 - 定向 30 项、全量 597 项与 `git diff --check` 通过；无真实网络、`.env`、凭据、prompt/response 持久化或上传 ZIP 改动。
 - 下一步 L5-A3b 只做真实进程零网络 preflight 和 v6 live 门槛预注册，通过后再独立请求 L5-A3c 授权。
 
+### L5-A3c 实际结果
+
+- 判定 `botzone_deepseek_observed_live_smoke_verified`：唯一人工无贡桌 connector `exit=0 / finished_target`，12/12/12 request/response/Header，qualified finished=1，transport failure、timeout 和协议诊断均为 0。
+- v6 audit 为 619 bytes，SHA-256 `f29029e9b6dfe0dc8cfcf96b85e7b3a917270eaf4c6f357846d78060c8e60ac9`。
+- 11 次 Agent 决策由 `local_shortcut=1`、`model=10` 构成；10 次模型尝试均 success，RuleBased fallback=0，全部守恒通过。
+- 这证明本次有 10 次合法模型动作生效，不证明优于规则基线。下一步 L5-A3d 只清理最小 finished tombstone；随后 L5-A4a 设计对照评估。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

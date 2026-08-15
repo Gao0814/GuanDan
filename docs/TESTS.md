@@ -81,6 +81,8 @@ L5-A2b22 未运行测试、preflight 或网络。唯一最小 finished tombstone
 
 L5-A3a 验证通过：定向 30 项、全量 597 项、`git diff --check`。新增测试覆盖不可变快照、严格类别/整数、五类动作来源、四类模型结果、DeepSeek/adapter 两层 fallback、pending/finished 去重、v6 audit 与 malformed observability fail-closed；未新增真实网络、配置读取或敏感持久化。L5-A3b 需复跑该基线并执行一次零网络 deepseek preflight，不能直接进入 live。
 
+L5-A3c 是单次 live 观测，不是代码测试：connector exit 0，cycles=13，request/response/Header=12/12/12，qualified finished=1，transport failure/timeout/diagnostics=0。v6 audit 为 619 bytes、SHA-256 `f29029e9b6dfe0dc8cfcf96b85e7b3a917270eaf4c6f357846d78060c8e60ac9`；Agent decision=11（local shortcut=1、model=10），model attempt/success=10/10，fallback=0。该结果验证模型路径观测契约，但不测试相对动作质量。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口
