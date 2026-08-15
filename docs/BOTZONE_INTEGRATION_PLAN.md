@@ -87,6 +87,8 @@ L5-A3a 已封存为 `0c51c5ff85f4edbe980dc1b5e63397da6f5747cc`，判定 `botzone
 
 L5-A3c 已判定 `botzone_deepseek_observed_live_smoke_verified`：唯一人工无贡桌有 11 次 Agent 决策，其中 10 次模型成功并成为最终合法动作，1 次本地快捷路径，零 fallback；协议闭环与 v6 守恒全部通过。下一步 L5-A3d 清理 finished tombstone，之后 L5-A4a 设计 RuleBased/DeepSeek 对照评估；不得由该单局推断策略增益。
 
+L5-A3d 已清理唯一 observed-live tombstone，state 为空；新 cleanup audit 为 345 bytes、SHA-256 `a71e233af98d55000a074413b8f4cc97e564db484bf52b5c204e5758681a0225`。官方裁判正常结算让胜方同队获得相同的 1/2/3、负方为 0，错误结算为 `-2/0/1/1`；当前 connector 虽解析 scores 却未聚合。L5-A4a 先离线补齐该结果真值边界，再设计成对策略评估。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

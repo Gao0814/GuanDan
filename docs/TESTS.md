@@ -83,6 +83,8 @@ L5-A3a 验证通过：定向 30 项、全量 597 项、`git diff --check`。新�
 
 L5-A3c 是单次 live 观测，不是代码测试：connector exit 0，cycles=13，request/response/Header=12/12/12，qualified finished=1，transport failure/timeout/diagnostics=0。v6 audit 为 619 bytes、SHA-256 `f29029e9b6dfe0dc8cfcf96b85e7b3a917270eaf4c6f357846d78060c8e60ac9`；Agent decision=11（local shortcut=1、model=10），model attempt/success=10/10，fallback=0。该结果验证模型路径观测契约，但不测试相对动作质量。
 
+L5-A3d 未运行测试、preflight 或网络。唯一最小 finished tombstone 严格验证后删除，state 文件数 1→0；既有 audits 不变，新 cleanup audit 为 345 bytes、SHA-256 `a71e233af98d55000a074413b8f4cc97e564db484bf52b5c204e5758681a0225`。L5-A4a 测试必须使用 synthetic finished rows，覆盖正常 0/1/2/3 团队分数、`-2/0/1/1` 错误结果、畸形 score、qualified provenance 与 v7 audit 守恒，真实网络为 0。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

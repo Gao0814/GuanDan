@@ -222,6 +222,12 @@
 - 11 次 Agent 决策由 `local_shortcut=1`、`model=10` 构成；10 次模型尝试均 success，RuleBased fallback=0，全部守恒通过。
 - 这证明本次有 10 次合法模型动作生效，不证明优于规则基线。下一步 L5-A3d 只清理最小 finished tombstone；随后 L5-A4a 设计对照评估。
 
+### L5-A3d 实际结果
+
+- 判定 `botzone_observed_live_tombstone_cleanup_verified`：唯一最小 finished tombstone 严格验证后精确删除，state 文件数 1→0，目录保留且为空。
+- L5-A3c v6 与此前 v5/cleanup audits 均不变；新 cleanup audit 为 345 bytes，SHA-256 `a71e233af98d55000a074413b8f4cc97e564db484bf52b5c204e5758681a0225`。
+- network/connector/test/code-change 均为 0。下一步 L5-A4a 先离线把官方 finished scores 转换为低基数、守恒的本家团队结果聚合。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
