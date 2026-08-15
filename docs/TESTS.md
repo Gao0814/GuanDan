@@ -77,6 +77,8 @@ L5-A2b20 未运行测试、preflight 或网络。唯一 `play/inflight` session 
 
 L5-A2b21 未运行代码测试；它是单次 live 协议验收。结果为 connector `exit=0 / finished_target`，cycles=25、successful=24、request/response/Header=23/23/23、finished raw/qualified=2/1、four-player-unqualified=1、transport failure/timeout/diagnostics=0。v5 audit 为 449 bytes、SHA-256 `6eed257558d1ddd58239b8a5d094d3ebe209895abb5c74cd323824dd44c305d4`。该 audit 不统计模型调用，因此测试结论只覆盖 `deepseek` 模式的协议闭环，不覆盖模型实际参与或动作质量。
 
+L5-A2b22 未运行测试、preflight 或网络。唯一最小 finished tombstone 经严格验证后删除，state 文件数 1→0；原 v5 audit 不变，新 cleanup audit 为 405 bytes、SHA-256 `10037c02ffeca2e4967aa3925e893d4386cd9df76cd213086c8ede2260079c13`。L5-A3a 的测试必须全部使用 fake client/transport，覆盖模型结果、最终来源、fallback、重放去重和 v6 audit 守恒，真实网络计数保持 0。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

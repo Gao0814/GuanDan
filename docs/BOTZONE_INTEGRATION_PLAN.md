@@ -81,6 +81,8 @@ L5-A2b20 已清理该残留 `play/inflight` session：用户明确关闭桌面�
 
 L5-A2b21 首次完成真实人工无贡桌闭环，判定 `botzone_manual_no_tribute_deepseek_mode_smoke_verified`：23/23/23 request/response/Header、qualified finished=1、零 transport failure/timeout/协议诊断，connector 正常因 `finished_target` 退出。该里程碑确认本机 `deepseek` 模式 connector 可完成 Botzone 协议闭环，但 v5 没有模型调用成功与 fallback 计数，不能证明 DeepSeek 实际参与。L5-A2b22 先清理成功局 tombstone；L5-A3a 再离线增加脱敏且守恒的模型路径聚合计数。
 
+L5-A2b22 已完成成功局清理：唯一最小 finished tombstone 严格验证后删除，state 为空，原 v5 audit 不变；新 cleanup audit 为 405 bytes、SHA-256 `10037c02ffeca2e4967aa3925e893d4386cd9df76cd213086c8ede2260079c13`。L5-A3a 将在 integration 层离线增加模型调用结果与最终动作来源聚合，保持 agents/engine、协议和动作选择不变。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

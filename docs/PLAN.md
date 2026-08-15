@@ -202,6 +202,12 @@
 - 该结果只证明 `deepseek` 模式 connector 的 Botzone 无贡协议闭环。v5 未记录模型调用或 fallback，不能证明 DeepSeek 实际参与、动作质量或胜率。
 - 下一步 L5-A2b22 只在项目所有者明确授权后严格验证并删除唯一 finished tombstone；随后再进入 L5-A3a 的离线模型调用可观测性设计。
 
+### L5-A2b22 实际结果
+
+- 判定 `botzone_successful_smoke_tombstone_cleanup_verified`：唯一最小 finished tombstone 经 schema、文件名和 state 根目录归属验证后精确删除，state 文件数 1→0，目录保留且为空。
+- L5-A2b21 v5 audit 保持不变；新 cleanup audit 为 405 bytes，SHA-256 `10037c02ffeca2e4967aa3925e893d4386cd9df76cd213086c8ede2260079c13`。
+- network/connector/test/code-change 均为 0。下一步进入 L5-A3a，只离线增加模型尝试、结果、fallback 与最终动作来源的低基数守恒聚合。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
