@@ -157,6 +157,12 @@
 - state 审计前后目录摘要不变，独立聚合 audit 只保留固定计数并通过结构和值白名单校验。
 - 下一步 L5-A2b15 只精确删除该已审计 finished tombstone，并确认 state 为空；暂不修改 connector/audit 生命周期。清理后转为网页人工建桌路线，不再调用 runmatch，且必须另行取得 live 授权。
 
+### L5-A2b15 实际结果
+
+- 判定 `botzone_finished_tombstone_cleanup_verified`：删除前唯一 state 文件再次严格验证为 finished tombstone，删除后固定 state 目录为空。
+- L5-A2b14 聚合 audit 的 996 bytes、SHA-256、schema/value allowlist 与敏感扫描保持不变；零测试、preflight、connector 和网络请求。
+- 下一步 L5-A2b16 重新取得完整 live 授权；不再调用 runmatch，先启动唯一 connector，项目所有者确认页面已连接后再人工创建且只创建一个无贡 GuanDan 测试桌。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

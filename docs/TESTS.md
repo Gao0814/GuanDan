@@ -63,6 +63,8 @@ L5-A2b13 未产生可用 v5 完成 audit：唯一 connector/runmatch 尝试后�
 
 L5-A2b14 未运行项目测试、preflight 或网络。只读审计确认 completion audit 缺失，state 有 1 个合法 finished tombstone；所有 active-session 聚合为 0，前后目录摘要一致。聚合 audit 通过固定 schema/value allowlist 和敏感形态白名单扫描；该结果不替代 live 验收。L5-A2b15 不运行测试或网络，只复核同一 audit/tombstone 后做一次精确、非递归删除，并验收 state 为空、audit 不变。
 
+L5-A2b15 未运行项目测试、preflight 或网络。删除前唯一文件严格为 finished tombstone，删除后 state 文件数为 0；L5-A2b14 audit 的 996 bytes 与 SHA-256 保持不变。L5-A2b16 不重复回归/preflight，live 验收新增 runmatch request=0、connector 已连接人工确认、网页新桌进入对局人工确认、无贡 stage、非零 request/response/Header、qualified finished=1 和 v5 安全边界。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

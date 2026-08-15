@@ -67,6 +67,8 @@ L5-A2b13 唯一 live 未形成可审计闭环：connector 与 runmatch GET 各�
 
 L5-A2b14 已完成，判定 `botzone_live_residual_state_audit_verified`。completion audit 仍缺失；state 只含一个可验证的 finished tombstone，未发现可归因的 active session、pending delivery、handler completion 或缓存 response。前后目录摘要一致，仓库外 audit 只保存固定聚合并通过 schema/value allowlist。该证据不说明 runmatch 是否创建、local-AI 是否收到请求、DeepSeek 是否被调用或对局处于何阶段。L5-A2b15 仅精确清理该 tombstone；后续 live 改用网页人工建桌，connector 连接后由项目所有者确认页面创建成功，不再调用 runmatch。
 
+L5-A2b15 已精确删除唯一已审计 finished tombstone，state 为空且既有聚合 audit 不变，判定 `botzone_finished_tombstone_cleanup_verified`。L5-A2b16 不再发送 runmatch GET：唯一 connector 启动后，由项目所有者先确认本地 AI 页面显示已连接，再人工创建一个“需要进贡=否”的 GuanDan 桌并确认进入对局。只有该双重人工确认与 v5 request/response/Header/qualified-finished 证据同时成立，才可验收人工桌闭环。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09
