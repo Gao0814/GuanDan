@@ -1,69 +1,47 @@
 # 下一步实施提示词
 
-## Step L5-A2b17：四手窗口零重叠轮换契约
+## Step L5-A2b18：旧 active session 精确处置授权
 
-L5-A2b16 永久判定：
-
-```text
-botzone_manual_no_tribute_deepseek_mode_smoke_invalid
-```
-
-唯一 connector 在项目所有者确认人工新桌进入对局前自行 exit 5：cycles=4、requests/responses/headers=`4/3/3`、finished raw/qualified=`0/0`、唯一诊断 `history_alignment_failed=1`，非 timeout transport failure 与 timeout 均为 0。v5 audit 合法且脱敏；state 留有一份有效 active session，未读取原文、修改或清理。该运行不得归属于后续人工新桌，也不证明 DeepSeek 调用。
-
-现有代码存在一个可独立离线证明、与该诊断一致的契约缺口：`session.merge_history()` 与 `bot_io._merge_history()` 只接受重复窗口或至少一项 suffix/prefix 重叠；但 Botzone 只在本家需要决策时交付 request，两次本家请求间可能恰好发生四个公开动作，使固定四手窗口完整轮换且与上一窗口零重叠。当前实现会把这种合法 full-window replacement 误判为 `history_alignment_failed`。
-
-本步只实现并测试该离线契约。不得读取或修改 live state/audit，不得运行 preflight、connector、runmatch、Botzone 或 DeepSeek 网络请求，不得修改 `engine/`、`agents/`、CLI、RAG 或 evaluation。
-
-### 允许修改
-
-- `integrations/botzone/session.py`
-- `integrations/botzone/bot_io.py`
-- `tests/test_botzone_session.py`
-- `tests/test_botzone_bot_io.py`
-- 如端到端合成回归确有必要，只允许最小修改现有 Botzone connector/session E2E 测试；不得修改 runtime、transport 或 adapter 业务代码。
-
-### 固定行为
-
-1. 保持首次窗口、完全重复窗口和现有可验证 suffix/prefix overlap 行为不变。
-2. 当且仅当以下条件全部成立时，允许零重叠追加：
-   - incoming window 精确包含 4 个已严格解析的 `HistoryEntry`；
-   - 与 latest window 不相等；
-   - 所有 1..4 长度的 suffix/prefix overlap 均不存在；
-   - accumulated 仍以 latest window 为严格后缀。
-3. 合法零重叠时，将 incoming 的 4 个事件全部追加到 accumulated，并将 latest window 替换为 incoming；不得猜测或构造窗口之外的事件。
-4. 零重叠 incoming 少于 4 项仍必须 `history_alignment_failed` / `replay_history_invalid`，不得放宽。
-5. overlap 存在时仍采用最长 overlap；不得因新增 full-replacement 分支重复累计事件。
-6. durable session 与 Bot envelope replay 必须保持等价语义，不能只修其中一条路径。
-7. 不改变四槽前缀空位解析、牌 ID/claim、pending/ack、action provenance、finished tombstone 或诊断名称。
-
-### 测试要求
-
-- `latest=[a,b,c,d]`、`incoming=[e,f,g,h]` 的合法完整替换，累计历史增加 4。
-- 初期不足四项 latest 后收到无重叠完整四项 incoming，仍可完整追加。
-- 无重叠 incoming 为 0..3 项时 fail-closed。
-- 有 1..4 项 overlap、完全重复窗口、滑动窗口行为保持原结果。
-- pass、finished-player skip、自然牌与配子 response 的历史项不会被改写。
-- Bot envelope replay 与 durable direct-stage 对同一窗口序列得到相同累计 history/latest window。
-- 输入对象保持不变；非法窗口不产生部分 state 写入或 Agent 调用。
-- 既有 pending/header/ack、重启恢复、adapter observation 与双 wire mode 回归通过。
-
-### 验证
-
-先运行新增/相关 Botzone 定向测试，再运行：
-
-```text
-python -m unittest discover -q
-git diff --check
-```
-
-静态扫描确认没有新增网络客户端、配置读取、`.env`、真实 URL/key、live state/audit、DeepSeek 调用或 engine 私有状态依赖。
-
-### 判定
-
-全部行为、回归和边界通过后，唯一判定：
+L5-A2b17 已完成并封存：
 
 ```text
 botzone_four_event_history_rotation_contract_verified
 ```
 
-完成后建立只含允许源码/测试的独立检查点。既有 active state 保持未读、未改、未清理；后续必须另设 state 处置与人工桌准入步骤。本结果不追认 L5-A2b16，也不证明 live、DeepSeek、动作质量或胜率。
+检查点 `5bb44fd4052e181d08455594ab0879c0ee305dfb` 精确包含 `bot_io.py`、`session.py` 及两份对应测试；定向 17 项、相关 65 项、全量 590 项和 `git diff --check` 通过。完整四事件零重叠窗口现可安全追加，短窗口零重叠继续 fail-closed，envelope replay 与 durable session 语义一致。
+
+L5-A2b16 留下的一份 active session 仍保持未读、未改、未清理。它不是 finished tombstone，不能在没有项目所有者明确授权时删除。本步只允许在本机严格复核并精确删除这一份已废弃 session；不得修改代码、运行测试/preflight、启动 connector、调用 Botzone/DeepSeek、读取 `.env` 或连接配置。
+
+### 项目所有者必须确认并授权
+
+```text
+所有历史 Botzone 本地 AI 测试桌均已结束或关闭：是
+我确认 L5-A2b16 已永久无效，不再恢复该旧会话：是
+我明确授权执行 L5-A2b18：只读解析固定 state 目录中的唯一 session；仅当它严格符合当前 session schema、文件路径与内部 match key 一致、delivery_state=idle、pending_response/pending_effect 均为空、finished 为空且没有残留 connector 时，精确删除这一份旧 session 文件。禁止递归删除、通配符、删除 state 目录或改动任何 audit；任何门槛不满足立即停止。
+```
+
+### 固定执行
+
+1. 确认 HEAD 包含 `5bb44fd4052e181d08455594ab0879c0ee305dfb`，工作区干净，没有命令行匹配 `integrations.botzone` 的进程。
+2. 只检查固定 state/audit 目录；不得扫描其他用户目录。
+3. 复核 L5-A2b16 v5 audit 仍为 432 bytes、SHA-256 `924169f62cc033412735d88c0ee50f59cca4ec38f2ed67f94e2d7871380dcf8c`，schema v5 与敏感扫描通过；L5-A2b14 聚合 audit 仍为 996 bytes、原 SHA-256 不变。
+4. state 必须精确含一个普通文件。使用当前 `session.py` 的严格 schema 解析，只在内存中验证：
+   - 不是 tombstone；
+   - stage 仅为 `deal` 或 `play`；
+   - `delivery_state == "idle"`；
+   - `pending_response is None`；
+   - `pending_effect is None`；
+   - `finished is None`；
+   - 文件名与内部 match key 的 SHA-256 命名规则一致。
+5. `handler_completed` 或 `cached_response` 只可作为布尔聚合报告；只要存在 pending/inflight/effect 就禁止删除。不得输出 match、牌、history、response、digest、文件名、路径或异常正文。
+6. 解析目标 resolved path，确认其父目录精确为固定 state 根；仅调用一次非递归单文件删除。禁止 glob 删除、目录删除、重命名、覆盖或清理 audit。
+7. 删除后确认 state 目录仍存在且为空；两份既有 audit 的 bytes/SHA-256 不变；无残留 connector。
+8. 只报告固定聚合：删除前/后文件数、schema valid、stage 类别、delivery state、pending/effect/finished/cached/handler 布尔值、`state_empty`、audit unchanged、零网络计数。
+
+### 判定
+
+- 全部门槛满足且唯一旧 session 被精确删除：`botzone_abandoned_active_session_cleanup_verified`。
+- session 合法但存在 pending/inflight/effect，或 schema/key/audit 不匹配：`botzone_abandoned_active_session_cleanup_invalid`，不得删除。
+- 缺少授权、工作区/进程/目录前置不满足：对应 `precondition_failed`。
+
+本步不形成协议闭环、DeepSeek 调用、动作质量或胜率结论。成功后才允许进入 L5-A2b19 的人工网页无贡桌新授权；不得在同一步启动 live。

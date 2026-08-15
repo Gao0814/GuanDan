@@ -67,6 +67,8 @@ L5-A2b15 未运行项目测试、preflight 或网络。删除前唯一文件严�
 
 L5-A2b16 live 在人工新桌确认前以 `history_alignment_failed` 停止：request/response/Header=`4/3/3`，finished=0，transport timeout/failure=0。L5-A2b17 离线测试必须新增完整四项零重叠窗口替换，同时保留重复、最长 overlap、短窗口零重叠拒绝、pending/ack、重启、adapter observation 与 envelope/direct 等价性；实现和测试不得读取残留 live state 或联网。
 
+L5-A2b17 已通过定向 17 项、相关 65 项、全量 590 项和 `git diff --check`。测试确认完整四项无 overlap 全量追加、初期短 latest 到完整 incoming、短 incoming 拒绝、重复/最长 overlap、累计 history 超过四项、latest 上限四项及 envelope/direct 等价。实现检查点为 `5bb44fd4052e181d08455594ab0879c0ee305dfb`，未读取 live state 或联网。L5-A2b18 不运行测试，只做授权后的严格单文件 state 处置。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

@@ -71,6 +71,8 @@ L5-A2b15 已精确删除唯一已审计 finished tombstone，state 为空且既�
 
 L5-A2b16 在人工新桌确认前收到 4 个 request 并完成 3 个 response/Header，随后以 `history_alignment_failed` fail-closed；这些流量不能归入新桌，结论保持 invalid。当前 merge 契约假定连续 request 的四手窗口至少有一项重叠，但本地 AI 两次决策间可能完整经过四个动作，官方固定窗口因而合法地零重叠。L5-A2b17 只允许在 incoming 精确为 4 项且不存在任何 overlap 时追加完整窗口；少于 4 项的零重叠继续拒绝，并要求 direct durable session 与 Bot envelope replay 语义一致。
 
+L5-A2b17 已按该边界封存为 `5bb44fd4052e181d08455594ab0879c0ee305dfb`：完整四项零重叠窗口追加、短窗口拒绝、最长 overlap 与 envelope/direct 等价性均通过回归，判定 `botzone_four_event_history_rotation_contract_verified`。旧 active session 不因代码修复自动失效或删除；L5-A2b18 只在项目所有者明确放弃旧会话、确认旧桌关闭，且 session 严格为 idle、无 pending/effect 时执行单文件删除。之后才重新准备人工桌 live。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

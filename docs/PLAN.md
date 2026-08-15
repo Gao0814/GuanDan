@@ -169,6 +169,13 @@
 - 因人工桌确认尚未发生，这些请求不能归入新桌；state 保留一份 active session 且未读取/修改，live 判定 `botzone_manual_no_tribute_deepseek_mode_smoke_invalid`。
 - 现有合并器只覆盖有 overlap 的四手滑窗，但两次本家 request 间可恰好发生四个动作，形成合法零重叠 full-window replacement。下一步 L5-A2b17 直接补 durable session 与 envelope replay 的等价离线契约，不新增 live 诊断或重试。
 
+### L5-A2b17 实际结果
+
+- 检查点 `5bb44fd4052e181d08455594ab0879c0ee305dfb` 精确包含两个实现文件和两份测试。
+- 完整 4 项零重叠窗口可全量追加；0..3 项零重叠仍拒绝；overlap、重复、累计历史、latest-window 上限及 envelope/direct 等价性保持。
+- 定向 17、相关 65、全量 590 项与补丁检查通过，零网络且未读取残留 live state。
+- 下一步 L5-A2b18 在项目所有者明确确认旧桌结束并授权后，严格复核旧 active session 无 pending/inflight/effect，再精确删除；不得与新 live 合并。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
