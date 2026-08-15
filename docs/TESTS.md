@@ -73,6 +73,8 @@ L5-A2b18 未运行测试、preflight 或网络。唯一旧 session 经当前 sch
 
 L5-A2b19 因 state 在聊天确认到达前变为 1 而按门槛停止；该现象发生在用户已操作网页、但确认消息尚未送达的窗口，故属于握手验收失败，不是代码测试结论。L5-A2b20 不运行测试或网络，只对唯一残留 session 做严格 schema/key/path 验证、脱敏聚合审计和授权后的单文件删除；后续 live 不再把确认消息前 state=1 作为失败条件。
 
+L5-A2b20 未运行测试、preflight 或网络。唯一 `play/inflight` session 在用户关闭桌面并放弃 pending response 后，经 schema/key/path 与敏感边界验证精确删除；state 文件数 1→0，新 cleanup audit 为 564 bytes、SHA-256 `7abc9fdc7b8590b522295cc321d8c4317ce04bdab04e1fd7fa32f6207fbabf8e`。L5-A2b21 不重复回归/preflight，验收以启动前 state=0、用户单桌承诺、事后页面确认和 v5 request/response/Header/qualified-finished 聚合为准，不再以聊天确认前 state 是否非空判失败。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

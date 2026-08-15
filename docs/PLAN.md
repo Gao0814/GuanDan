@@ -189,6 +189,12 @@
 - 门槛把正常的“网页建桌立即产生 state、聊天确认稍后到达”误作旧流量。下一次不再以确认消息到达时间约束 state；改为启动前 state=0/旧桌全关/单桌承诺，connector 启动后页面一旦显示连接即可直接建桌并随后确认。
 - 下一步 L5-A2b20 先在项目所有者关闭当前桌并明确放弃旧 session 后，生成脱敏聚合并精确清理该单一 state；不与 live 合并。
 
+### L5-A2b20 实际结果
+
+- 判定 `botzone_failed_manual_session_cleanup_verified`：唯一残留 session 为合法 `play/inflight`，pending response/effect 与 handler/cached response 存在，finished 不存在；项目所有者关闭桌面并明确放弃恢复后精确删除。
+- state 文件数 1→0，新 cleanup audit 为 564 bytes、SHA-256 `7abc9fdc7b8590b522295cc321d8c4317ce04bdab04e1fd7fa32f6207fbabf8e`，旧 audit 不变；零代码/测试/preflight/网络。
+- 下一步 L5-A2b21 采用简化人工时序：connector 成功启动后发出一次建桌窗口消息，用户在页面显示连接时直接建唯一无贡桌并随后确认；state 变为非空不再按聊天消息时序判失败。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
