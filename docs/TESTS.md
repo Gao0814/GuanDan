@@ -79,6 +79,8 @@ L5-A2b21 未运行代码测试；它是单次 live 协议验收。结果为 conn
 
 L5-A2b22 未运行测试、preflight 或网络。唯一最小 finished tombstone 经严格验证后删除，state 文件数 1→0；原 v5 audit 不变，新 cleanup audit 为 405 bytes、SHA-256 `10037c02ffeca2e4967aa3925e893d4386cd9df76cd213086c8ede2260079c13`。L5-A3a 的测试必须全部使用 fake client/transport，覆盖模型结果、最终来源、fallback、重放去重和 v6 audit 守恒，真实网络计数保持 0。
 
+L5-A3a 验证通过：定向 30 项、全量 597 项、`git diff --check`。新增测试覆盖不可变快照、严格类别/整数、五类动作来源、四类模型结果、DeepSeek/adapter 两层 fallback、pending/finished 去重、v6 audit 与 malformed observability fail-closed；未新增真实网络、配置读取或敏感持久化。L5-A3b 需复跑该基线并执行一次零网络 deepseek preflight，不能直接进入 live。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

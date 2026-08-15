@@ -70,6 +70,8 @@ L5-A2b21 已完成并判定 `botzone_manual_no_tribute_deepseek_mode_smoke_verif
 
 L5-A2b22 已完成并判定 `botzone_successful_smoke_tombstone_cleanup_verified`：唯一 finished tombstone 严格验证后精确删除，state 文件数 1→0，目录保留且为空。原 v5 audit 不变；新 cleanup audit 为 405 bytes、SHA-256 `10037c02ffeca2e4967aa3925e893d4386cd9df76cd213086c8ede2260079c13`。未运行网络、connector、测试或代码修改。当前进入 L5-A3a：离线实现 DeepSeek runtime 的低基数、脱敏、守恒聚合，不直接恢复 live。
 
+L5-A3a 已完成并判定 `botzone_deepseek_runtime_observability_verified`：检查点 `0c51c5ff85f4edbe980dc1b5e63397da6f5747cc`，v6 audit 在保留 v5 字段的基础上新增五类动作来源、四类模型结果及严格守恒，失效时拒绝写盘。定向 30 项、全量 597 项与 diff check 通过，工作区干净。该结果仍不是模型实际调用证据；下一步 L5-A3b 仅执行零网络 preflight 并预注册 L5-A3c live 判定。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15

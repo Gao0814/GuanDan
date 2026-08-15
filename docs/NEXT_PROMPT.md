@@ -1,106 +1,34 @@
 # 下一步实施提示词
 
-## Step L5-A3a：DeepSeek runtime 脱敏聚合可观测性
+## Step L5-A3b：v6 可观测性 live 准入与门槛预注册
 
-L5-A2b22 已完成，唯一判定：
-
-```text
-botzone_successful_smoke_tombstone_cleanup_verified
-```
-
-L5-A2b21 的唯一 finished tombstone 已严格验证并删除，state 文件数 `1 → 0`，目录保留且为空；原 v5 audit 不变。新 cleanup audit 为 405 bytes，SHA-256：
+L5-A3a 已完成并封存：
 
 ```text
-10037c02ffeca2e4967aa3925e893d4386cd9df76cd213086c8ede2260079c13
+botzone_deepseek_runtime_observability_verified
 ```
 
-L5-A2b21 已证明 `deepseek` 模式 connector 能完成 Botzone 人工无贡桌协议闭环，但 v5 audit 没有模型调用与 fallback 计数。本步骤只离线实现低基数、可守恒、不可反推牌局内容的 runtime 聚合可观测性；不得联网或恢复 live。
+实现检查点：
 
-### 范围
+```text
+0c51c5ff85f4edbe980dc1b5e63397da6f5747cc
+```
 
-优先新增：
+v6 audit 已在 integration 层加入不可变、低基数、可守恒的 Agent/模型聚合，并保持 v5 字段语义不变。本步骤只做代码检查点复核、回归、真实进程环境的零网络 preflight，以及下一次人工网页桌 live 的固定门槛和授权问题；不得启动 connector、创建对局或联网。
 
-- `integrations/botzone/agent_observability.py`
-- `tests/test_botzone_agent_observability.py`
+### 固定前置
 
-仅在确有需要时最小修改：
+1. HEAD 必须包含 `0c51c5ff85f4edbe980dc1b5e63397da6f5747cc`，并复核该提交范围与报告一致；工作区必须干净。
+2. state 目录必须存在且为空；L5-A2b21 v5 audit 与 L5-A2b22 cleanup audit 的 bytes/SHA-256 必须保持不变。
+3. 不得存在 `integrations.botzone` connector 残留进程。旧桌关闭情况不阻塞零网络 preflight，只在后续请求 live 授权前由项目所有者确认。
+4. 只以脱敏元数据核对 Botzone URL 与 DeepSeek key 为 `present`，endpoint/model/timeout/retries 精确为已锁定的 `https://api.deepseek.com`、`deepseek-v4-flash`、60、0；不得输出值或读取 `.env` 内容。
+5. 使用项目 `.venv`，在受监督子进程中设置 `PYTHON_DOTENV_DISABLED=1`；不得修改持久配置。
 
-- `integrations/botzone/agent_runtime.py`
-- `integrations/botzone/play_adapter.py`
-- `integrations/botzone/runner.py`
-- `integrations/botzone/__main__.py`
-- 与上述契约直接相关的现有 Botzone 测试
+任一前置失败只报告固定 `precondition_failed`，不得创建 state/audit、启动 preflight 或请求 live 授权。
 
-禁止修改：
+### 回归与零网络 preflight
 
-- `engine/`
-- `agents/`
-- Botzone cards/models/protocol/poll/session/transport 语义
-- 上传 Bot ZIP、RAG 语料、配置文件与 `.env`
-- `docs/`（实施结果由后续规划任务统一更新）
-
-### 固定观测模型
-
-新增 frozen/slots 的不可变快照与受控 recorder。内部可使用整数 Counter，但对外只返回排序稳定、不可变、JSON 友好的低基数计数；不得保留逐手事件。
-
-每个真正进入 Agent 动作选择的 `play` 决策必须精确归入一个最终来源：
-
-- `rule_primary`：显式 `--agent rule` 的规则 Agent 正常选择；
-- `local_shortcut`：DeepSeekAIAgent 的 only-pass、一次出完或 opening formula 本地快捷路径，未调用模型；
-- `model`：模型返回严格合法 action ID，并成为最终动作；
-- `deepseek_rule_fallback`：模型 timeout、异常或无效 suggestion 后，由 DeepSeekAIAgent 内部 RuleBased fallback 形成最终动作；
-- `adapter_rule_fallback`：主 Agent 抛异常、返回非严格整数或 outside-legal ID，由 Botzone adapter 外层 RuleBased fallback 形成最终动作。
-
-每次实际调用 `_StrictDeepSeekClient.suggest_action_id()` 必须精确归入一个模型结果：
-
-- `success`：严格非 bool 整数，且存在于当前 `legal_actions`；
-- `timeout`：捕获 `TimeoutError`；
-- `exception`：其他 delegate 异常；
-- `invalid_suggestion`：正常返回但对象、action ID 类型、合法集合或结构无效。
-
-所有模型自由文本继续丢弃。不得把异常消息、异常类名、HTTP 状态、延迟、URL、prompt、response、reasoning、action ID、玩家、match 或牌局内容写入 recorder/snapshot/audit。
-
-### 守恒与行为边界
-
-- `agent_decision_count == sum(decision_source_counts)`。
-- `model_attempt_count == sum(model_outcome_counts)`。
-- DeepSeek 正常组合下，`model_attempt_count == model + deepseek_rule_fallback`；`local_shortcut` 与 `adapter_rule_fallback` 不增加模型调用。
-- `rule_fallback_count == deepseek_rule_fallback + adapter_rule_fallback`。
-- deal、pending resend、Header 重发、ack、finished、transport timeout/failure 均不增加 Agent 或模型计数。
-- 同一已持久化 request 不得因重启、重发或重复 poll 重复计数。
-- 多 match/player 只汇总整数，不保留 identity；finished 清理 Agent cache 不清空本次 runner 的累计聚合。
-- recorder 或快照异常不得改变合法动作、fallback、pending/effect、ack 或 connector 停止语义；无法形成一致快照时 audit 必须 fail-closed，不得输出部分模型指标。
-- 计数必须拒绝 bool、负数、未知类别、重复类别和不可变性破坏。
-
-### Runner 与 audit
-
-`RunnerSummary` 以安全默认值新增：
-
-- `agent_mode`
-- `agent_decision_count`
-- `decision_source_counts`
-- `model_attempt_count`
-- `model_outcome_counts`
-- `rule_fallback_count`
-
-audit 从 v5 加法升级为 v6：保留所有 v5 字段、名称与语义，仅增加上述固定聚合字段。映射统一序列化为按类别名排序的 `[name, count]` 数组；零计数不得伪造事件。`write_audit()` 必须在写盘前复核类型、allowlist 与全部守恒。
-
-默认 rule 模式必须可审计且零模型计数；deepseek preflight 仍不产生 Agent/model 事件。现有 CLI 参数、退出码、stdout、transport 与 state 行为保持不变。
-
-### 必须新增的离线测试
-
-1. recorder/snapshot frozen、slots、不可变、稳定 JSON、严格整数和 allowlist。
-2. rule primary、三个本地快捷路径、合法模型选择、timeout、其他异常、None/bool/string/float/负数/越界 ID 的精确分类。
-3. DeepSeek 内部 fallback 与 adapter 外层 fallback 分离；每个决策和每次模型调用只计一次。
-4. fallback 自身异常/非法 ID、provenance 缺失和 handler failure 不伪造成功动作来源。
-5. deal、pending resend、transport failure、重启、ack、finished 不重复增加计数。
-6. 多 match/player 聚合守恒，finished cache cleanup 后 runner 累计不丢失。
-7. v6 audit 精确字段快照、v5 字段逐项不变、稳定排序、malformed summary fail-closed。
-8. audit 与所有 repr/异常路径不含 URL、key、Header、match、玩家、牌、history、prompt、response、reasoning、action ID 或异常正文。
-9. fake client/transport 下验证实际 DNS/socket/HTTP/Botzone/DeepSeek 请求数为 0。
-10. 现有 rule/deepseek response、provenance、session、connector、runner 与 preflight 回归保持不变。
-
-最低验证：
+先运行：
 
 ```text
 python -m unittest tests.test_botzone_agent_observability tests.test_botzone_deepseek_agent_runtime tests.test_botzone_runner tests.test_botzone_live_preflight -q
@@ -108,14 +36,95 @@ python -m unittest discover -q
 git diff --check
 ```
 
-### 验收判定
-
-全部离线门槛通过时唯一判定：
+随后使用已存在、为空、仓库外的 state 目录，恰好运行一次：
 
 ```text
-botzone_deepseek_runtime_observability_verified
+python -m integrations.botzone --agent deepseek --preflight-only
 ```
 
-完成后建立只含本步骤允许文件的独立 Git 检查点。不得运行 preflight、connector、runmatch 或任何真实网络请求，不得读取真实配置或 `.env`，也不得请求 live 授权。
+可通过参数或当前进程环境传入 state 目录，但不得回显路径。硬上限 30 秒，不重试。成功必须同时满足：
 
-该判定只证明聚合观测契约与既有动作路径兼容，不证明 DeepSeek 可达、实际调用成功、动作质量或胜率。后续 L5-A3b 必须先做零网络 preflight 与固定 live 审计门槛设计，再单独请求授权。
+- exit code 0；
+- stdout 规范化后只有 `preflight_ready`；
+- stderr 为空；
+- state 前后为空；
+- 无残留进程；
+- Botzone GET、DeepSeek request、DNS/socket/HTTP、transport、connector cycle、Agent decision 与 `suggest_action_id()` 均为 0。
+
+失败时唯一判定为对应 `precondition_failed` 或：
+
+```text
+botzone_deepseek_observability_live_preflight_invalid
+```
+
+不得重跑、联网或请求授权。
+
+### 下一次 live 的预注册审计门槛
+
+preflight 通过后，只准备授权问题，不执行 live。下一次必须继续使用人工网页无贡桌，永久禁止 runmatch；使用一个 connector、一个新桌、全新且不存在的 v6 audit 文件，state 启动前为空。
+
+v6 协议完整性门槛：
+
+- connector `exit=0` 且 `stop_reason=finished_target`；
+- request、response、Header 均非零；
+- qualified finished 精确为 1，finished 分类守恒；
+- transport failure=0，协议 diagnostics/detail/profile 为空；
+- state 最终只允许一份最小 finished tombstone；
+- `agent_mode=deepseek`，audit 写入本身证明 `observability_valid=true` 的内部门槛已通过。
+
+v6 Agent/模型守恒门槛：
+
+- `agent_decision_count == sum(decision_source_counts)` 且大于 0；
+- `model_attempt_count == sum(model_outcome_counts)`；
+- `model_attempt_count == model + deepseek_rule_fallback`；
+- `rule_fallback_count == deepseek_rule_fallback + adapter_rule_fallback`；
+- 所有类别均属于 L5-A3a 固定 allowlist，计数为严格非 bool 非负整数，数组 canonical 且无重复；
+- `agent_decision_count <= responses_prepared`，不得推导或持久化逐手数据。
+
+描述性判定顺序：
+
+1. 任一协议、守恒、敏感边界或完整性门槛失败：
+
+```text
+botzone_deepseek_observed_live_smoke_invalid
+```
+
+2. 协议闭环通过，但 `model_outcome_counts.success == 0` 或 `decision_source_counts.model == 0`：
+
+```text
+botzone_deepseek_live_no_model_success_observed
+```
+
+3. 协议闭环通过，且至少一次模型 `success` 最终形成 `model` 来源合法动作：
+
+```text
+botzone_deepseek_observed_live_smoke_verified
+```
+
+第三项只证明本次小样本中观察到至少一次合法模型动作，不证明动作优于 RuleBased、因果收益或胜率提升。
+
+### preflight 通过后的用户确认与授权问题
+
+先要求项目所有者确认：
+
+```text
+所有历史 Botzone 本地 AI 测试桌均已结束或关闭：是
+本次只创建一个新的 GuanDan 测试桌：是
+我会等待实施任务回复 connector_running_create_one_table_when_page_connected，并在页面显示“已连接”后创建“需要进贡=否、用本地 AI 替代我”的唯一新桌：是
+进入对局后我会回复“人工新桌已创建并进入对局”：是
+页面未连接、建桌失败或出现贡还时，我不会创建第二桌：是
+```
+
+只有全部确认为“是”，才提出以下完整授权，仍不得代替用户回答：
+
+```text
+我明确授权执行 L5-A3c：不调用 runmatch；使用当前 BOTZONE_LOCAL_AI_URL 启动唯一一个 deepseek 模式 connector，向 local-AI endpoint 最多发送 100 次 GET，单次 Botzone GET timeout 为 120 秒；允许将本家未公开手牌、公开局面、engine 合法候选、手牌评估、记牌摘要、场景标签和本地 RAG 片段发送到 https://api.deepseek.com 的 deepseek-v4-flash。DeepSeek timeout 为 60 秒、retries 为 0；最长运行 3600 秒，qualified finished=1 即停。实施任务发出 connector_running_create_one_table_when_page_connected 后，我只创建一个人工无贡桌并在进入后确认。若出现 tribute/return、非零 tribute、协议错误或固定失败门槛，立即停止且不重试。v6 audit 只保存固定聚合计数，不保存 URL、密钥、Header、match、玩家、牌、history、prompt、response、reasoning、action ID 或异常正文。
+```
+
+preflight 与全部准入准备通过时，本步骤唯一判定：
+
+```text
+botzone_deepseek_observability_live_preflight_ready
+```
+
+本步骤不得创建新 Git 提交或修改仓库文件；只输出脱敏门槛结果和授权问题。用户授权必须在后续 L5-A3c 实施任务的当前上下文中明确给出，历史授权不可复用。

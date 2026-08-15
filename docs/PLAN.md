@@ -208,6 +208,13 @@
 - L5-A2b21 v5 audit 保持不变；新 cleanup audit 为 405 bytes，SHA-256 `10037c02ffeca2e4967aa3925e893d4386cd9df76cd213086c8ede2260079c13`。
 - network/connector/test/code-change 均为 0。下一步进入 L5-A3a，只离线增加模型尝试、结果、fallback 与最终动作来源的低基数守恒聚合。
 
+### L5-A3a 实际结果
+
+- 判定 `botzone_deepseek_runtime_observability_verified`，检查点 `0c51c5ff85f4edbe980dc1b5e63397da6f5747cc`。
+- 新增 frozen/slots 快照与 recorder；v6 audit 加法保留 v5 字段，固定统计五类最终动作来源、四类模型结果、模型尝试与规则回退，并在不一致时拒绝写盘。
+- 定向 30 项、全量 597 项与 `git diff --check` 通过；无真实网络、`.env`、凭据、prompt/response 持久化或上传 ZIP 改动。
+- 下一步 L5-A3b 只做真实进程零网络 preflight 和 v6 live 门槛预注册，通过后再独立请求 L5-A3c 授权。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
