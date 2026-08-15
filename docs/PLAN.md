@@ -182,6 +182,13 @@
 - 仅删除该旧 session，state 文件数由 1 变为 0；目录保留，两份既有 audit 完全不变，零测试/preflight/connector/网络。
 - 下一步 L5-A2b19 重新取得人工网页桌完整授权。采用“connector 启动 → 用户确认已连接 → state 仍为空 → 实施任务允许建桌 → 用户确认进入对局”的握手顺序，不调用 runmatch。
 
+### L5-A2b19 实际结果与握手修正
+
+- 唯一 connector 在聊天中的“已连接且已进入对局”确认到达前观察到 state 从 0 变 1，按预注册门槛立即终止；随后确认消息才到达，故该桌不能追认。
+- 无完成 v5 audit，runmatch=0，state 保留一个未读文件，无残留 connector；判定 `botzone_manual_no_tribute_deepseek_mode_smoke_invalid`。
+- 门槛把正常的“网页建桌立即产生 state、聊天确认稍后到达”误作旧流量。下一次不再以确认消息到达时间约束 state；改为启动前 state=0/旧桌全关/单桌承诺，connector 启动后页面一旦显示连接即可直接建桌并随后确认。
+- 下一步 L5-A2b20 先在项目所有者关闭当前桌并明确放弃旧 session 后，生成脱敏聚合并精确清理该单一 state；不与 live 合并。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

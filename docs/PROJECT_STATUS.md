@@ -62,6 +62,8 @@ L5-A2b17 已完成并封存为 `5bb44fd4052e181d08455594ab0879c0ee305dfb`，判�
 
 L5-A2b18 已完成并判定 `botzone_abandoned_active_session_cleanup_verified`：唯一旧 session 为严格合法的 `play/idle`，无 pending/effect/finished，文件名与内部 key 一致；仅该文件被删除，state 现为空，两份旧 audit 保持不变。步骤零测试、preflight、connector 与网络。下一步 L5-A2b19 采用握手式人工建桌：新授权后启动唯一 connector，用户先确认“已连接”，state 仍为空后才收到“请创建新桌”，随后只创建一个无贡桌并确认进入对局；runmatch 禁用。
 
+L5-A2b19 已执行并判定 `botzone_manual_no_tribute_deepseek_mode_smoke_invalid`：connector 在聊天确认到达前看到 state=1，按过严握手门槛终止；随后项目所有者才确认已连接且人工桌已进入。无完成 audit，runmatch=0，state 保留一个未读文件，无残留 connector。下一步 L5-A2b20 先确认网页桌全部关闭并明确放弃旧会话，再脱敏聚合和精确清理。后续握手取消“确认消息前 state 必须为空”，改用启动前干净状态、单桌承诺和事后页面确认。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-10

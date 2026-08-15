@@ -71,6 +71,8 @@ L5-A2b17 已通过定向 17 项、相关 65 项、全量 590 项和 `git diff --
 
 L5-A2b18 未运行测试、preflight 或网络。唯一旧 session 经当前 schema 验证为 `play/idle`、无 pending/effect/finished 后被单文件删除；state 目录为空，两份 audit 不变。L5-A2b19 不重复 590 项回归/preflight，新增验收门槛为握手前 state=0、runmatch=0、人工已连接/建桌双确认、无贡 stage、非零 request/response/Header、qualified finished=1、零协议诊断与零非 timeout transport failure。
 
+L5-A2b19 因 state 在聊天确认到达前变为 1 而按门槛停止；该现象发生在用户已操作网页、但确认消息尚未送达的窗口，故属于握手验收失败，不是代码测试结论。L5-A2b20 不运行测试或网络，只对唯一残留 session 做严格 schema/key/path 验证、脱敏聚合审计和授权后的单文件删除；后续 live 不再把确认消息前 state=1 作为失败条件。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

@@ -75,6 +75,8 @@ L5-A2b17 已按该边界封存为 `5bb44fd4052e181d08455594ab0879c0ee305dfb`：�
 
 L5-A2b18 已精确清除该旧 active session：删除前为合法 `play/idle` 且无 pending/effect/finished，删除后 state 为空，旧 audit 不变，判定 `botzone_abandoned_active_session_cleanup_verified`。L5-A2b19 不使用 runmatch，新增人工时序门槛：connector 启动后先等页面“已连接”，等待期间 state 必须为空；实施任务明确允许后，项目所有者才创建唯一无贡桌并确认进入对局。提前出现 state/request 视为旧流量并停止。
 
+L5-A2b19 证明上述“确认消息前 state 必须为空”不适合人工网页流程：项目所有者已在页面进入新桌，但聊天确认稍后到达，connector 因 state=1 提前终止。该运行保持 invalid，未形成 audit。L5-A2b20 先在用户明确关闭桌面并放弃恢复后清理单一残留 session；L5-A2b21 将改用启动前 state=0、旧桌全关、只建一桌作为归属前置，connector 启动后允许用户看到页面连接即直接建桌，文字确认可随后到达。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09
