@@ -69,6 +69,8 @@ L5-A2b14 已完成，判定 `botzone_live_residual_state_audit_verified`。compl
 
 L5-A2b15 已精确删除唯一已审计 finished tombstone，state 为空且既有聚合 audit 不变，判定 `botzone_finished_tombstone_cleanup_verified`。L5-A2b16 不再发送 runmatch GET：唯一 connector 启动后，由项目所有者先确认本地 AI 页面显示已连接，再人工创建一个“需要进贡=否”的 GuanDan 桌并确认进入对局。只有该双重人工确认与 v5 request/response/Header/qualified-finished 证据同时成立，才可验收人工桌闭环。
 
+L5-A2b16 在人工新桌确认前收到 4 个 request 并完成 3 个 response/Header，随后以 `history_alignment_failed` fail-closed；这些流量不能归入新桌，结论保持 invalid。当前 merge 契约假定连续 request 的四手窗口至少有一项重叠，但本地 AI 两次决策间可能完整经过四个动作，官方固定窗口因而合法地零重叠。L5-A2b17 只允许在 incoming 精确为 4 项且不存在任何 overlap 时追加完整窗口；少于 4 项的零重叠继续拒绝，并要求 direct durable session 与 Bot envelope replay 语义一致。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

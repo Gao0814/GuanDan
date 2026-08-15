@@ -65,6 +65,8 @@ L5-A2b14 未运行项目测试、preflight 或网络。只读审计确认 comple
 
 L5-A2b15 未运行项目测试、preflight 或网络。删除前唯一文件严格为 finished tombstone，删除后 state 文件数为 0；L5-A2b14 audit 的 996 bytes 与 SHA-256 保持不变。L5-A2b16 不重复回归/preflight，live 验收新增 runmatch request=0、connector 已连接人工确认、网页新桌进入对局人工确认、无贡 stage、非零 request/response/Header、qualified finished=1 和 v5 安全边界。
 
+L5-A2b16 live 在人工新桌确认前以 `history_alignment_failed` 停止：request/response/Header=`4/3/3`，finished=0，transport timeout/failure=0。L5-A2b17 离线测试必须新增完整四项零重叠窗口替换，同时保留重复、最长 overlap、短窗口零重叠拒绝、pending/ack、重启、adapter observation 与 envelope/direct 等价性；实现和测试不得读取残留 live state 或联网。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

@@ -163,6 +163,12 @@
 - L5-A2b14 聚合 audit 的 996 bytes、SHA-256、schema/value allowlist 与敏感扫描保持不变；零测试、preflight、connector 和网络请求。
 - 下一步 L5-A2b16 重新取得完整 live 授权；不再调用 runmatch，先启动唯一 connector，项目所有者确认页面已连接后再人工创建且只创建一个无贡 GuanDan 测试桌。
 
+### L5-A2b16 实际结果与直接修复
+
+- 唯一 connector 在项目所有者确认人工新桌前 exit 5；request/response/Header=`4/3/3`，唯一诊断为 `history_alignment_failed`，没有 transport timeout/failure 或 finished。
+- 因人工桌确认尚未发生，这些请求不能归入新桌；state 保留一份 active session 且未读取/修改，live 判定 `botzone_manual_no_tribute_deepseek_mode_smoke_invalid`。
+- 现有合并器只覆盖有 overlap 的四手滑窗，但两次本家 request 间可恰好发生四个动作，形成合法零重叠 full-window replacement。下一步 L5-A2b17 直接补 durable session 与 envelope replay 的等价离线契约，不新增 live 诊断或重试。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
