@@ -195,6 +195,13 @@
 - state 文件数 1→0，新 cleanup audit 为 564 bytes、SHA-256 `7abc9fdc7b8590b522295cc321d8c4317ce04bdab04e1fd7fa32f6207fbabf8e`，旧 audit 不变；零代码/测试/preflight/网络。
 - 下一步 L5-A2b21 采用简化人工时序：connector 成功启动后发出一次建桌窗口消息，用户在页面显示连接时直接建唯一无贡桌并随后确认；state 变为非空不再按聊天消息时序判失败。
 
+### L5-A2b21 实际结果
+
+- 判定 `botzone_manual_no_tribute_deepseek_mode_smoke_verified`：唯一人工无贡桌 connector 正常退出，`finished_target`，23/23/23 request/response/Header，qualified finished=1，transport failure、timeout 和协议 diagnostics 均为 0。
+- v5 audit 为 449 bytes，SHA-256 `6eed257558d1ddd58239b8a5d094d3ebe209895abb5c74cd323824dd44c305d4`；state 仅保留一份最小 finished tombstone，无残留 connector，runmatch=0。
+- 该结果只证明 `deepseek` 模式 connector 的 Botzone 无贡协议闭环。v5 未记录模型调用或 fallback，不能证明 DeepSeek 实际参与、动作质量或胜率。
+- 下一步 L5-A2b22 只在项目所有者明确授权后严格验证并删除唯一 finished tombstone；随后再进入 L5-A3a 的离线模型调用可观测性设计。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

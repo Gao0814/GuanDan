@@ -79,9 +79,11 @@ L5-A2b19 证明上述“确认消息前 state 必须为空”不适合人工网�
 
 L5-A2b20 已清理该残留 `play/inflight` session：用户明确关闭桌面并放弃 pending response 后，严格 schema/key/path 验证、脱敏 cleanup audit 和单文件删除均通过，state 为空。L5-A2b21 的人工归属不再依赖聊天到达顺序：只要求 connector 启动前 state=0/旧桌全关/单桌承诺；实施任务发出运行标记后，用户在页面连接时直接建桌，state 0→1 为预期，最终以用户单桌确认与 v5 协议聚合共同验收。
 
+L5-A2b21 首次完成真实人工无贡桌闭环，判定 `botzone_manual_no_tribute_deepseek_mode_smoke_verified`：23/23/23 request/response/Header、qualified finished=1、零 transport failure/timeout/协议诊断，connector 正常因 `finished_target` 退出。该里程碑确认本机 `deepseek` 模式 connector 可完成 Botzone 协议闭环，但 v5 没有模型调用成功与 fallback 计数，不能证明 DeepSeek 实际参与。L5-A2b22 先清理成功局 tombstone；L5-A3a 再离线增加脱敏且守恒的模型路径聚合计数。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
-更新时间：2026-08-09
+更新时间：2026-08-15
 
 ## 0. Phase 0：手动建桌无贡 profile 官方协议封板（2026-08-09）
 

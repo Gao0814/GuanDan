@@ -66,9 +66,11 @@ L5-A2b19 已执行并判定 `botzone_manual_no_tribute_deepseek_mode_smoke_inval
 
 L5-A2b20 已完成并判定 `botzone_failed_manual_session_cleanup_verified`：唯一 session 为严格合法的 `play/inflight`，pending response/effect 与 handler/cached response 存在；网页桌已关闭且项目所有者明确放弃恢复后，精确删除该文件，state 现为空。新 cleanup audit 为 564 bytes、SHA-256 `7abc9fdc7b8590b522295cc321d8c4317ce04bdab04e1fd7fa32f6207fbabf8e`，旧 audit 不变。下一步 L5-A2b21 不再等待建桌前聊天确认：connector 成功启动后通知用户，用户看到页面连接即可直接建唯一无贡桌，进入后再确认。
 
+L5-A2b21 已完成并判定 `botzone_manual_no_tribute_deepseek_mode_smoke_verified`：唯一人工无贡桌 connector 以 `exit=0 / finished_target` 完成，23 个请求均有 response/Header，qualified finished=1，transport failure、timeout 和协议诊断均为 0。v5 audit 为 449 bytes、SHA-256 `6eed257558d1ddd58239b8a5d094d3ebe209895abb5c74cd323824dd44c305d4`；state 仅余一份最小 finished tombstone。该结果不证明模型实际调用，因为 v5 没有相应计数。下一步 L5-A2b22 先离线清理该 tombstone，再规划 L5-A3a 脱敏模型调用可观测性。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
-更新时间：2026-08-10
+更新时间：2026-08-15
 
 ## 1. 当前基线
 
