@@ -100,7 +100,7 @@ class BotzoneLivePreflightTests(unittest.TestCase):
             write_audit(audit, summary, exit_code_for(summary))
             payload = json.loads(audit.read_text(encoding="utf-8"))
             self.assertEqual(payload["schema"], "botzone_local_smoke_audit")
-            self.assertEqual(payload["version"], 6)
+            self.assertEqual(payload["version"], 7)
             self.assertEqual(payload["finished_qualified"], 0)
             self.assertEqual(payload["transport_timeouts"], 0)
             self.assertEqual(payload["transport_failure_categories"], [])
@@ -113,6 +113,9 @@ class BotzoneLivePreflightTests(unittest.TestCase):
             self.assertEqual(payload["model_attempt_count"], 0)
             self.assertEqual(payload["model_outcome_counts"], [])
             self.assertEqual(payload["rule_fallback_count"], 0)
+            self.assertEqual(payload["result_category_counts"], [])
+            self.assertEqual(payload["normal_result_count"], 0)
+            self.assertEqual(payload["local_team_score_counts"], [])
             self.assertNotIn("url", json.dumps(payload).lower())
             self.assertNotIn("match", json.dumps(payload).lower())
 

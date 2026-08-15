@@ -255,7 +255,7 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 )(context)
         self.assertEqual(recorder.snapshot("deepseek").agent_decision_count, 0)
 
-    def test_v6_audit_is_sorted_aggregate_only_and_rejects_inconsistent_snapshot(self) -> None:
+    def test_v7_audit_preserves_agent_aggregates_and_rejects_inconsistent_snapshot(self) -> None:
         summary = RunnerSummary(
             1,
             1,
@@ -278,9 +278,10 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
             target = Path(root).parent / "agent-observability-audit.json"
             write_audit(target, summary, 6)
             payload = json.loads(target.read_text(encoding="utf-8"))
-            self.assertEqual(payload["version"], 6)
+            self.assertEqual(payload["version"], 7)
             self.assertEqual(payload["decision_source_counts"], [["model", 1]])
             self.assertEqual(payload["model_outcome_counts"], [["success", 1]])
+            self.assertEqual(payload["result_category_counts"], [])
             for marker in ("match", "history", "prompt", "reasoning", "action_id"):
                 self.assertNotIn(marker, json.dumps(payload).lower())
             with self.assertRaises(ValueError):

@@ -22,6 +22,7 @@ from .agent_observability import AgentObservabilityRecorder, AgentObservabilityS
 from .agent_runtime import build_agent_factory
 from .play_adapter import NoTributeRuleBasedHandler
 from .poll import ENVELOPE_SHAPE_DETAILS, REQUIRED_FIELDS_PROFILES
+from .result_observability import ResultObservabilitySnapshot
 from .runtime_config import RuntimeConfig
 from .session import SessionStore
 
@@ -50,6 +51,10 @@ class RunnerSummary:
     model_outcome_counts: tuple[tuple[str, int], ...] = ()
     rule_fallback_count: int = 0
     observability_valid: bool = True
+    result_category_counts: tuple[tuple[str, int], ...] = ()
+    normal_result_count: int = 0
+    local_team_score_counts: tuple[tuple[str, int], ...] = ()
+    result_observability_valid: bool = True
 
 
 class ForegroundRunner:
@@ -64,6 +69,7 @@ class ForegroundRunner:
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
         observability_snapshot: Callable[[], AgentObservabilitySnapshot] | None = None,
+        result_observability_snapshot: Callable[[], ResultObservabilitySnapshot] | None = None,
         agent_mode: str = "rule",
     ) -> None:
         self._connector = connector
@@ -72,6 +78,10 @@ class ForegroundRunner:
         self._sleep = sleep
         self._clock = clock
         self._observability_snapshot = observability_snapshot
+        connector_result_snapshot = getattr(connector, "result_observability_snapshot", None)
+        self._result_observability_snapshot = result_observability_snapshot or (
+            connector_result_snapshot if callable(connector_result_snapshot) else None
+        )
         self._agent_mode = agent_mode
 
     def run(
@@ -175,6 +185,18 @@ class ForegroundRunner:
         except Exception:
             observability_valid = False
             snapshot = AgentObservabilitySnapshot("rule", 0, (), 0, (), 0)
+        result_observability_valid = True
+        try:
+            result_snapshot = (
+                self._result_observability_snapshot()
+                if self._result_observability_snapshot is not None
+                else ResultObservabilitySnapshot((), 0, ())
+            )
+            if sum(count for _, count in result_snapshot.result_category_counts) != qualified:
+                raise ValueError("invalid_result_observability")
+        except Exception:
+            result_observability_valid = False
+            result_snapshot = ResultObservabilitySnapshot((), 0, ())
         return RunnerSummary(
             cycles,
             successes,
@@ -198,6 +220,10 @@ class ForegroundRunner:
             snapshot.model_outcome_counts,
             snapshot.rule_fallback_count,
             observability_valid,
+            result_snapshot.result_category_counts,
+            result_snapshot.normal_result_count,
+            result_snapshot.local_team_score_counts,
+            result_observability_valid,
         )
 
 
@@ -240,6 +266,7 @@ def build_foreground_runner(
         sleep=sleep,
         clock=clock,
         observability_snapshot=handler.observability_snapshot,
+        result_observability_snapshot=connector.result_observability_snapshot,
         agent_mode=agent_mode,
     )
 
@@ -265,7 +292,13 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
     root = Path(__file__).resolve().parents[2]
     if not target.is_absolute() or target.is_relative_to(root):
         raise ValueError("invalid_audit_path")
-    if type(exit_code) is not int or type(summary.observability_valid) is not bool or not summary.observability_valid:
+    if (
+        type(exit_code) is not int
+        or type(summary.observability_valid) is not bool
+        or not summary.observability_valid
+        or type(summary.result_observability_valid) is not bool
+        or not summary.result_observability_valid
+    ):
         raise ValueError("invalid_audit_summary")
     _validate_v5_aggregates(summary)
     snapshot = AgentObservabilitySnapshot(
@@ -276,9 +309,16 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
         summary.model_outcome_counts,
         summary.rule_fallback_count,
     )
+    result_snapshot = ResultObservabilitySnapshot(
+        summary.result_category_counts,
+        summary.normal_result_count,
+        summary.local_team_score_counts,
+    )
+    if sum(count for _, count in result_snapshot.result_category_counts) != summary.finished_qualified:
+        raise ValueError("invalid_audit_summary")
     payload = {
         "schema": "botzone_local_smoke_audit",
-        "version": 6,
+        "version": 7,
         "exit_code": exit_code,
         "stop_reason": summary.stopped,
         "cycles": summary.cycles,
@@ -296,6 +336,7 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
         "diagnostic_details": [[name, count] for name, count in summary.diagnostic_details],
         "diagnostic_profiles": [[name, count] for name, count in summary.diagnostic_profiles],
         **snapshot.to_json(),
+        **result_snapshot.to_json(),
     }
     try:
         target.parent.mkdir(parents=True, exist_ok=True)

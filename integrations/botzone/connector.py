@@ -12,6 +12,11 @@ from .bot_io import BotEnvelopeError, REQUIRED_FIELDS_PROFILES, encode_bot_respo
 from .http_transport import TRANSPORT_CATEGORIES, TransportError
 from .models import DealRequest, PlayRequest, UnsupportedStage
 from .poll import ENVELOPE_SHAPE_DETAILS, PollFormatError, PollRequest, WIRE_MODES, parse_poll
+from .result_observability import (
+    ResultObservabilityError,
+    ResultObservabilityRecorder,
+    ResultObservabilitySnapshot,
+)
 from .session import HandlerContext, HandlerResult, PendingDelivery, SessionStorageError, SessionStore
 
 
@@ -47,10 +52,20 @@ FINISHED_CATEGORIES = frozenset(
 class MockConnector:
     """Coordinates pure poll parsing and stored pending responses via injection."""
 
-    def __init__(self, store: SessionStore, transport: Transport, handler: RequestHandler) -> None:
+    def __init__(
+        self,
+        store: SessionStore,
+        transport: Transport,
+        handler: RequestHandler,
+        result_observability: ResultObservabilityRecorder | None = None,
+    ) -> None:
         self._store = store
         self._transport = transport
         self._handler = handler
+        self._result_observability = (
+            result_observability if result_observability is not None else ResultObservabilityRecorder()
+        )
+        self._result_observability_failed = False
         self._play_pending: set[str] = set()
         self._play_acknowledged: set[str] = set()
         self._finished_qualified: set[str] = set()
@@ -133,6 +148,10 @@ class MockConnector:
                 self._finished_qualified.add(row.match_id)
                 qualified += 1
                 category = "qualified"
+                try:
+                    self._result_observability.record_qualified_finished(row.local_player_id, row.scores)
+                except Exception:
+                    self._result_observability_failed = True
             finished_categories[category] += 1
             if cleaned:
                 try:
@@ -153,6 +172,11 @@ class MockConnector:
             diagnostic_profiles,
             finished_categories=finished_categories,
         )
+
+    def result_observability_snapshot(self) -> ResultObservabilitySnapshot:
+        if self._result_observability_failed:
+            raise ResultObservabilityError("observability_unavailable")
+        return self._result_observability.snapshot()
 
     def _process_request(self, request: PollRequest) -> tuple[int, Counter[str], Counter[str], Counter[str]]:
         diagnostics: Counter[str] = Counter()
