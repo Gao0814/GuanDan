@@ -65,6 +65,8 @@ L5-A2b12e 已以固定宿主机目录通过零网络 preflight：单行 `preflig
 
 L5-A2b13 唯一 live 未形成可审计闭环：connector 与 runmatch GET 各一次，页面未显示对局，随后 connector 被终止；completion audit 缺失，state 非空且未读取/清理。结论固定为 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`。L5-A2b14 只允许在本机内存中按现有 session schema 提取低基数聚合，并用前后目录摘要证明 state 未改变；不得记录文件名、match、牌、history、response、digest 或异常正文，也不得联网或清理。
 
+L5-A2b14 已完成，判定 `botzone_live_residual_state_audit_verified`。completion audit 仍缺失；state 只含一个可验证的 finished tombstone，未发现可归因的 active session、pending delivery、handler completion 或缓存 response。前后目录摘要一致，仓库外 audit 只保存固定聚合并通过 schema/value allowlist。该证据不说明 runmatch 是否创建、local-AI 是否收到请求、DeepSeek 是否被调用或对局处于何阶段。L5-A2b15 仅精确清理该 tombstone；后续 live 改用网页人工建桌，connector 连接后由项目所有者确认页面创建成功，不再调用 runmatch。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09

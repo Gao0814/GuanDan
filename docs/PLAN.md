@@ -151,6 +151,12 @@
 - 判定 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`。现有证据不能确认 runmatch 创建、local-AI request、DeepSeek 调用或任何对局闭环。
 - 下一步 L5-A2b14 仅做零网络、只读、脱敏的残留 state 与缺失 audit 审计；不得清理 state 或直接恢复 live。
 
+### L5-A2b14 实际结果
+
+- 判定 `botzone_live_residual_state_audit_verified`：completion audit 缺失；state 仅剩一个合法 finished tombstone，没有可归因的 active deal/play、pending/ack 或 Agent 证据。
+- state 审计前后目录摘要不变，独立聚合 audit 只保留固定计数并通过结构和值白名单校验。
+- 下一步 L5-A2b15 只精确删除该已审计 finished tombstone，并确认 state 为空；暂不修改 connector/audit 生命周期。清理后转为网页人工建桌路线，不再调用 runmatch，且必须另行取得 live 授权。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

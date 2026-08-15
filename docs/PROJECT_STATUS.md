@@ -52,6 +52,8 @@ L5-A2b12e 宿主机零网络 preflight 已通过：stdout=`preflight_ready`、ex
 
 L5-A2b13 已执行且永久判定 `botzone_deepseek_runmatch_no_tribute_smoke_invalid`：唯一 connector 启动、唯一 runmatch GET 发出，但 Botzone 页面未显示对局；随后按不重试约束终止 connector。没有可用完成 audit，state 非空且保持未读/未清理，工作区干净。该结果不能证明 runmatch 创建、请求到达、DeepSeek 调用或协议闭环。下一步 L5-A2b14 只读审计残留 state 的固定聚合状态与 completion-audit 缺失边界，禁止联网或清理。
 
+L5-A2b14 已完成并判定 `botzone_live_residual_state_audit_verified`：completion audit 缺失；固定 state 仅有 1 个可严格解析的 finished tombstone，active `deal/play`、pending/inflight、handler completed、response/effect/cache 均为 0。审计前后 state 文件数、总字节数和目录摘要完全一致；仓库外聚合 audit 结构和值白名单通过。该证据不归因 runmatch 创建、local-AI 请求、DeepSeek 调用或对局阶段。下一步 L5-A2b15 只精确清理该 tombstone；之后采用网页人工建桌，不再使用 runmatch，live 仍需新授权。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-10
