@@ -176,6 +176,12 @@
 - 定向 17、相关 65、全量 590 项与补丁检查通过，零网络且未读取残留 live state。
 - 下一步 L5-A2b18 在项目所有者明确确认旧桌结束并授权后，严格复核旧 active session 无 pending/inflight/effect，再精确删除；不得与新 live 合并。
 
+### L5-A2b18 实际结果
+
+- 判定 `botzone_abandoned_active_session_cleanup_verified`：唯一 session 严格为 `play/idle`，pending/effect/finished 为空，文件名与内部 key 一致；cached response 与 handler completed 仅作聚合记录。
+- 仅删除该旧 session，state 文件数由 1 变为 0；目录保留，两份既有 audit 完全不变，零测试/preflight/connector/网络。
+- 下一步 L5-A2b19 重新取得人工网页桌完整授权。采用“connector 启动 → 用户确认已连接 → state 仍为空 → 实施任务允许建桌 → 用户确认进入对局”的握手顺序，不调用 runmatch。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

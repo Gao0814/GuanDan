@@ -60,6 +60,8 @@ L5-A2b16 已执行且判定 `botzone_manual_no_tribute_deepseek_mode_smoke_inval
 
 L5-A2b17 已完成并封存为 `5bb44fd4052e181d08455594ab0879c0ee305dfb`，判定 `botzone_four_event_history_rotation_contract_verified`。完整四事件零重叠轮换已在 session 与 envelope replay 中等价支持，短窗口无重叠继续 fail-closed；17/65/590 测试和补丁检查通过。旧 active state 仍未读未改。下一步 L5-A2b18 需项目所有者明确授权：仅当旧桌已关闭且唯一 session 为 idle、无 pending/inflight/effect 时精确删除，清理与新 live 不合并。
 
+L5-A2b18 已完成并判定 `botzone_abandoned_active_session_cleanup_verified`：唯一旧 session 为严格合法的 `play/idle`，无 pending/effect/finished，文件名与内部 key 一致；仅该文件被删除，state 现为空，两份旧 audit 保持不变。步骤零测试、preflight、connector 与网络。下一步 L5-A2b19 采用握手式人工建桌：新授权后启动唯一 connector，用户先确认“已连接”，state 仍为空后才收到“请创建新桌”，随后只创建一个无贡桌并确认进入对局；runmatch 禁用。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-10

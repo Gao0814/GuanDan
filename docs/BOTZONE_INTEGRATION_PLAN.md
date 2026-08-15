@@ -73,6 +73,8 @@ L5-A2b16 在人工新桌确认前收到 4 个 request 并完成 3 个 response/H
 
 L5-A2b17 已按该边界封存为 `5bb44fd4052e181d08455594ab0879c0ee305dfb`：完整四项零重叠窗口追加、短窗口拒绝、最长 overlap 与 envelope/direct 等价性均通过回归，判定 `botzone_four_event_history_rotation_contract_verified`。旧 active session 不因代码修复自动失效或删除；L5-A2b18 只在项目所有者明确放弃旧会话、确认旧桌关闭，且 session 严格为 idle、无 pending/effect 时执行单文件删除。之后才重新准备人工桌 live。
 
+L5-A2b18 已精确清除该旧 active session：删除前为合法 `play/idle` 且无 pending/effect/finished，删除后 state 为空，旧 audit 不变，判定 `botzone_abandoned_active_session_cleanup_verified`。L5-A2b19 不使用 runmatch，新增人工时序门槛：connector 启动后先等页面“已连接”，等待期间 state 必须为空；实施任务明确允许后，项目所有者才创建唯一无贡桌并确认进入对局。提前出现 state/request 视为旧流量并停止。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-09
