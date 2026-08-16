@@ -93,6 +93,8 @@ L5-A4b 验证通过：定向 8 项、全量 612 项、`git diff --check`。测�
 
 L5-A4c 不新增代码测试；离线准入必须复跑上述 8 项与全量 612 项，并验证现有 `build_paired_schedule((24001, 24002), conditions)` 精确生成 8 对、16 局、四座位各 2 对、rule/deepseek 各 8 局、AB/BA 各 4。rule/deepseek preflight 必须分别 exit 0、固定 stdout、空 stderr/state、零网络且无残留。任何门槛失败都不得进入 live 或请求部分授权。
 
+L5-A4c 首次前置因缺少旧桌清理确认和容量根目录而在测试前停止；8/612 回归、目录探针、赛程生成和双 preflight 均未运行。该 `precondition_failed` 不是测试失败，也不改变 612 项基线。收到两项人工输入后，L5-A4c2 才执行原定验证，不能以历史结果替代。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

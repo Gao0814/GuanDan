@@ -84,6 +84,8 @@ L5-A4b 已完成并判定 `botzone_paired_policy_benchmark_harness_verified`：�
 
 当前阶段转为 L5-A4c：先在零网络下锁定 seed `24001/24002`、四座位、两策略的 8 对 / 16 局人工操作清单，并分别完成 rule/deepseek preflight。只有清单 hash、外部目录、旧桌清理和双 preflight 全部通过后，才提出覆盖整批容量试验的新授权；本阶段本身不联网。
 
+L5-A4c 首次准入在操作前返回 `precondition_failed`：检查点、提交范围和进程门槛通过，但缺少“全部历史本地 AI 测试桌已结束”的明确确认，以及一个已存在、为空、仓库外的容量根目录。未运行回归、未生成清单、未创建目录、未执行 preflight，网络预算未消耗。当前只等待这两项人工输入。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15

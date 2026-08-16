@@ -260,6 +260,13 @@
 - rule/deepseek 各执行一次零网络 preflight；全部通过后才提出覆盖 1600 次 Botzone GET、最多 800 次 DeepSeek 请求的批量授权。
 - 容量任务只验证人工流程和 v7 audit 配对可用性；即使 8 对全部有效，也不得据此宣称策略收益。
 
+### L5-A4c 首次前置结果
+
+- L5-A4a/L5-A4b 检查点、L5-A4b 提交范围、无残留 connector 与既有 `README.md` 隔离均已确认。
+- 项目所有者尚未明确确认全部历史本地 AI 测试桌已结束，也未提供已存在、为空、仓库外的容量试验根目录。
+- 因此在回归、清单生成、目录写入和 preflight 前返回 `precondition_failed`；网络与试验预算均未消耗。
+- 下一步 L5-A4c1 只收集上述两项人工输入。输入齐全后再由 L5-A4c2 恢复目录资格、8/612 回归、清单生成和双模式零网络 preflight，不得提前 live。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
