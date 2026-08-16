@@ -86,6 +86,10 @@ L5-A4b 已完成并判定 `botzone_paired_policy_benchmark_harness_verified`：�
 
 L5-A4c 首次准入在操作前返回 `precondition_failed`：检查点、提交范围和进程门槛通过，但缺少“全部历史本地 AI 测试桌已结束”的明确确认，以及一个已存在、为空、仓库外的容量根目录。未运行回归、未生成清单、未创建目录、未执行 preflight，网络预算未消耗。当前只等待这两项人工输入。
 
+L5-A4c 随后进入容量执行，但第 3/16 局在人工建桌前以 `poll_malformed` 结束；按预注册规则整批永久判定 `botzone_paired_policy_capacity_invalid`。前两局虽均正常完成，且 DeepSeek 局记录 9 次 model success 和零 fallback，也不得单独或迁移计分。第 3 局同一时段存在额外人工测试桌观察，无法归因 runtime 或平台。
+
+当前阶段为 L5-A4d 容量恢复：保留实际部署 DeepSeek 模式的 local shortcuts，旧 seed `24001/24002` 和旧根目录只读封存；新批次使用 `25001/25002` 与全新仓库外根目录。先恢复人工单桌前置、生成新 manifest 和双模式零网络 preflight，再申请新的整批授权，不直接 live。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15

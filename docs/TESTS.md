@@ -95,6 +95,10 @@ L5-A4c 不新增代码测试；离线准入必须复跑上述 8 项与全量 612
 
 L5-A4c 首次前置因缺少旧桌清理确认和容量根目录而在测试前停止；8/612 回归、目录探针、赛程生成和双 preflight 均未运行。该 `precondition_failed` 不是测试失败，也不改变 612 项基线。收到两项人工输入后，L5-A4c2 才执行原定验证，不能以历史结果替代。
 
+L5-A4c 容量运行不是代码测试：第 1 局 rule 与第 2 局 deepseek 的 v7 audit 完成闭环，第 2 局聚合为 15 次 local shortcut、9 次 model success、fallback=0；第 3 局在 request=0 时产生 `poll_malformed` 并触发整批停止。前两局不得因成功而绕过缺失的其余 14 局，也不得进入新的聚合报告。
+
+L5-A4d 不修改测试基线。恢复准入需复跑 L5-A4b 定向 8 项、全量 612 项与 diff check，并验证 `build_paired_schedule((25001, 25002), conditions)` 仍为 8 对/16 局、rule/deepseek 各 8、AB/BA 各 4。新批次前必须完成两个独立零网络 preflight；容量运行中不得并行额外测试桌或用人工观察替代 v7 audit。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

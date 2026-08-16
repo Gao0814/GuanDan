@@ -99,6 +99,10 @@ L5-A4c 只做小容量准入：seed `24001/24002` × seat `0..3` × 两策略，
 
 L5-A4c 首次前置未进入执行：尚缺旧桌全部关闭确认和一个已存在、为空、仓库外的容量根目录。回归、清单、目录写入、preflight 与网络均为 0。L5-A4c1 只收集两项输入；不得把缺失人工输入误判为 benchmark、runtime 或平台故障。
 
+L5-A4c 后续批次在第 3 局停止：前两局 rule/deepseek 均完整且正常胜，DeepSeek 局有 `local_shortcut=15`、`model success=9`、fallback=0；第 3 局在建桌前 `poll_malformed`，且同一时段存在额外人工测试桌。预注册规则要求整批停止且不补采，因此唯一判定 `botzone_paired_policy_capacity_invalid`，旧批次不能形成 benchmark。
+
+L5-A4d 保留当前部署 treatment：DeepSeek 模式继续包含合法本地快捷路径，模型暴露由 v7 单独聚合；forced-model 只能作为未来独立消融。恢复批次永久排除 `24001/24002`，改用 `25001/25002`、全新根目录与严格单桌操作。现有证据不足以放宽 `poll_malformed` fail-closed；若无人工干扰的新批次复现，再另行离线诊断。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

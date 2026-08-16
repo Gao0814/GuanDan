@@ -267,6 +267,22 @@
 - 因此在回归、清单生成、目录写入和 preflight 前返回 `precondition_failed`；网络与试验预算均未消耗。
 - 下一步 L5-A4c1 只收集上述两项人工输入。输入齐全后再由 L5-A4c2 恢复目录资格、8/612 回归、清单生成和双模式零网络 preflight，不得提前 live。
 
+### L5-A4c 实际容量结果
+
+- 原批次已按 seed `24001/24002`、四座位和两策略生成 8 对/16 局清单。
+- 第 1 局 rule 与第 2 局 deepseek 均完成协议闭环并正常团队胜；DeepSeek 局有 15 次 local shortcut、9 次 model success、fallback=0。
+- 第 3 局 deepseek 在人工建桌前以 `poll_malformed` 停止，request/response/Header/finished 与 Agent/模型计数均为 0；同一时段另有额外人工测试桌操作，不能形成单一根因归因。
+- 按预注册停止规则，整批判定 `botzone_paired_policy_capacity_invalid`；第 3 局不重开，第 4–16 局不继续，前两局不迁移到新批次。
+- 实际部署比较继续保留 local shortcuts，并通过 v7 单独报告模型暴露；不在容量恢复中改造为 forced-model treatment。
+
+### L5-A4d 恢复计划
+
+- 旧容量根目录、manifest、audit/state 全部只读保留；旧 seed `24001/24002` 永久排除。
+- 新批次锁定 seed `25001/25002`，仍为 8 对/16 局、AB/BA `4/4`，并使用全新仓库外根目录。
+- 在回归和 preflight 前重新取得“全部历史/额外测试桌已关闭”确认；新批次期间严禁额外测试桌、CLI DeepSeek 对局或第二 connector。
+- 先生成新 manifest 并完成 rule/deepseek 双模式零网络 preflight，再单独请求整批 live 授权。
+- 若严格单桌的新批次再次在建桌前出现 `poll_malformed`，停止容量运行并另立离线诊断，不在 live 中忽略或重试。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。
