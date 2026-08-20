@@ -101,6 +101,8 @@ L5-A4d 不修改测试基线。恢复准入需复跑 L5-A4b 定向 8 项、全�
 
 L5-A4d1 已收到人工旧桌清理确认和新根目录路径，但尚未产生测试结果。实施顺序必须是目录资格/探针先于 8/612 回归，回归先于 manifest，manifest 先于两个 preflight；任何一步失败都不得使用历史 612 项或旧 preflight 结果替代。
 
+L5-A4d1 实际复跑定向 8 项、全量 612 项和 `git diff --check` 均通过；目录探针也通过。后续 manifest 封装命令在写入前失败，因此该步骤没有生成新的赛程测试 artifact，也没有运行 preflight。L5-A4d2b 不重复测试，只在内存中断言现有生成器对 `25001/25002` 产生 8 对/16 局及 AB/BA、seat、mode 守恒，再执行一次 canonical manifest 原子写入。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

@@ -290,6 +290,14 @@
 - 下一步只执行目录资格、8/612 回归、新 manifest 和 rule/deepseek 双模式零网络 preflight；不得启动 connector、建桌或联网。
 - 全部门槛通过后只提出新的整批授权问题，不在同一步开始 16 局。
 
+### L5-A4d1 实际结果
+
+- 新根目录资格/原子探针、检查点范围、定向 8 项、全量 612 项和 diff check 均通过。
+- 调用现有赛程生成器的本地封装命令在任何写入前执行失败；按本步骤不重试规则立即停止。
+- 新根目录仍为空，manifest/state/audit 均未创建，两个 preflight 未启动，全部网络/模型计数为 0。
+- 判定 `botzone_paired_policy_capacity_recovery_preflight_invalid`；该结果不否定 benchmark、seed 或目录，但阻止进入 live。
+- 下一步 L5-A4d2a 只请求一次 manifest 恢复写入授权。授权后 L5-A4d2b 使用独立仓库外 Python runner 做内存断言和一次原子写入，不运行 preflight 或网络。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

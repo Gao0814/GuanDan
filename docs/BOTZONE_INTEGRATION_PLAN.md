@@ -105,6 +105,8 @@ L5-A4d 保留当前部署 treatment：DeepSeek 模式继续包含合法本地快
 
 L5-A4d1 已收到旧桌全部结束确认和新根目录 `D:\VsCodeProject\BotzonePairedCapacity-25001-25002`。路径输入不等于目录资格通过；实施任务仍须先验证目录存在、为空、仓库外并完成原子探针。之后只允许复跑 8/612、生成新 manifest 和执行双模式零网络 preflight，ready 后另行申请整批授权。
 
+L5-A4d1 的目录、检查点和 8/612 门槛通过，但 manifest 封装命令在零写入状态失败。新根目录保持为空，preflight/network 为 0，结论为 `botzone_paired_policy_capacity_recovery_preflight_invalid`。恢复拆为 L5-A4d2a/b：先取得同一空目录的一次写入授权，再用仓库外 Python runner 调用现有赛程生成器并原子生成唯一 manifest；不得把封装失败误判为需要新 seed 或 runtime 修改。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15
