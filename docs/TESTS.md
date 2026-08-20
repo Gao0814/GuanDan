@@ -107,6 +107,8 @@ L5-A4d2b 实际未进入上述内存断言：仓库外 runner 在导入 `evaluat
 
 L5-A4d2d 已完成上述导入资格、内存守恒和原子写入，固定 manifest 为 3256 bytes / `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`。L5-A4d3 不重复代码测试；测试门槛改为 manifest 全量复核、16 个预注册 state/audit 布局守恒，以及 rule/deepseek 各一次 preflight 的 exit/stdout/stderr/state/零网络门槛。
 
+L5-A4d3 的布局与 manifest 门槛通过，但旧进程检查自匹配，故两个 preflight 执行次数均为 0。L5-A4d3a 不重复代码测试或布局创建；只把进程候选限制为 `python.exe/pythonw.exe` 且具有独立 `-m integrations.botzone` 参数，再执行原定 rule/deepseek 各一次 preflight 与零网络守恒检查。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

@@ -111,6 +111,8 @@ L5-A4d2b 的 runner 因缺少项目模块导入路径，在导入 `evaluation` �
 
 L5-A4d2d 已在该边界内成功：manifest 为 3256 bytes / SHA-256 `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`，8 对/16 局及策略、AB/BA、seat 守恒通过，根目录无其他内容。L5-A4d3 只按 manifest 创建隔离 state/audit 布局并运行 rule/deepseek 各一次零网络 preflight；ready 后另取整批授权，不在同一步 live。
 
+L5-A4d3 的布局通过，但残留检查以命令行文本匹配自身而假阳性，两个 preflight 均未启动。L5-A4d3a 仅枚举 `python.exe/pythonw.exe` 并匹配其 `-m integrations.botzone` 参数，避免 PowerShell/Codex 自匹配。项目所有者已授予全部计划内操作常驻默认授权；未来不再单独请求 preflight/live 授权，仍保留固定预算、脱敏、fail-closed 与人工单桌边界。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

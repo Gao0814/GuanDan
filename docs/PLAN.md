@@ -301,6 +301,8 @@
 - 下一步 L5-A4d2c 只请求新的导入恢复授权。获授权后的 L5-A4d2d 必须先证明 module spec/origin 指向已核验仓库根，再生成并原子写入 manifest；不得修改持久 `PYTHONPATH`、安装项目、复制源码或运行 preflight/live。
 - L5-A4d2d 已通过导入资格并原子生成唯一 manifest：3256 bytes，SHA-256 `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`；赛程守恒为 8 对/16 局、两策略各 8、AB/BA 各 4、四座位各 2 对，判定 `botzone_paired_policy_capacity_manifest_recovery_verified`。
 - 下一步 L5-A4d3 按 manifest 创建预注册 state/audit 布局，并分别执行一次 rule/deepseek 零网络 preflight。ready 后只输出 L5-A4d4 授权文本；若唯一缺项是授权，不再修改文档或提交 Git。
+- L5-A4d3 已完成布局与 manifest 复核，但残留检查因搜索命令匹配自身而假阳性；两个 preflight 均未启动，结论为 `botzone_paired_policy_capacity_recovery_preflight_invalid`。
+- 项目所有者现已授予本项目全部计划内操作的常驻默认授权。后续不再设置项目级授权门槛；L5-A4d3a 直接以仅枚举 Python connector 的方式恢复双 preflight，ready 后直接衔接容量执行准备，只在人工建桌时请求操作确认。
 
 ### L5-A2b7 任务上下文阻塞
 
