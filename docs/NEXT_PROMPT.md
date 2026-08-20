@@ -1,59 +1,60 @@
 # 下一步实施提示词
 
-## Step L5-A4d2c：容量 manifest runner 导入恢复授权
+## Step L5-A4d3：容量布局与双模式零网络 preflight
 
-L5-A4d2b 未达到 verified，规范化判定：
-
-```text
-botzone_paired_policy_capacity_manifest_recovery_invalid
-```
-
-### 已确认事实
-
-- 新容量根目录 `D:\VsCodeProject\BotzonePairedCapacity-25001-25002` 仍存在且为空，文件数为 0。
-- `capacity-manifest.json` 及其临时文件均不存在。
-- 未创建 16 个 state 子目录或 audit 子目录。
-- 仓库外 runner 在导入项目 `evaluation` 模块时退出；失败发生在内存赛程生成和任何 manifest 写入之前。
-- 未运行 rule/deepseek preflight、connector、Botzone、DeepSeek、DNS/socket/HTTP 或 Agent。
-- 仓库未修改；既有 `README.md` 改动未触碰。
-
-L5-A4d2b 不得重试或追认为通过。由于没有生成 artifact、写入状态或采集样本，seed `25001/25002` 和同一空容量根目录仍可用于新的独立恢复任务。
-
-### 本步骤唯一动作
-
-本步骤只请求一次新的 L5-A4d2d manifest 写入授权；不执行工具、不创建 runner、不写目录、不运行测试/preflight，也不联网。
-
-请项目所有者明确回复：
+L5-A4d2d 已完成，唯一判定：
 
 ```text
-我明确授权执行 L5-A4d2d：在仍为空的 D:\VsCodeProject\BotzonePairedCapacity-25001-25002 中，使用全新的仓库外 Python runner，从已核验的仓库根 D:\VsCodeProject\GuanDan 显式设置仅本次子进程使用的项目模块导入路径，调用现有 build_paired_schedule((25001, 25002), conditions)，并原子生成一次 capacity-manifest.json。不得修改仓库或持久环境变量，不得安装包、复制项目源码、运行 preflight/connector、访问 Botzone/DeepSeek，也不得读取或修改旧容量目录。
+botzone_paired_policy_capacity_manifest_recovery_verified
 ```
 
-没有完整授权时保持：
+### 固定前置
+
+- 容量根目录：`D:\VsCodeProject\BotzonePairedCapacity-25001-25002`。
+- 根目录当前只包含 `capacity-manifest.json`，不得存在其他文件或目录。
+- manifest：3256 bytes，SHA-256 `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`。
+- 赛程：seed `25001/25002`、8 对/16 局、rule/deepseek 各 8 局、AB/BA 各 4 对、四个本家座位各 2 对。
+- L5-A4a/L5-A4b 检查点与 L5-A4d1 的定向 8 项、全量 612 项、`git diff --check` 证据继续有效，本步骤不重复测试。
+- 既有 `README.md` 改动属于项目所有者，本步骤不得触碰或提交。
+
+本步骤已由项目所有者指定为下一动作，不再请求目录布局或零网络 preflight 授权。它不得启动 live connector、创建 Botzone 对局或调用 DeepSeek。
+
+### 执行边界
+
+1. 只读复核 HEAD、工作区、无残留 connector，以及容量根目录当前精确只有固定 manifest。任一不符立即停止，不清理、不修正。
+2. 重新读取 manifest，严格验证 bytes、SHA-256、schema/version、固定 profile、seed、seat、pair/game 序号、策略顺序、AB/BA、相对 state/audit 名称与全部守恒。不得信任未验证路径。
+3. 所有 manifest 相对路径必须为 canonical、安全、无 `..`、无绝对路径，解析后仍位于容量根目录；重复、冲突或未知布局立即停止。
+4. 只创建 manifest 预注册的 16 个独立 state 目录及其 audit 父目录。state 必须初始为空；每局 audit 目标必须不存在。不得创建未列入布局的 game artifact。
+5. 使用项目 `.venv\Scripts\python.exe`，并在两个独立子进程中设置 `PYTHON_DOTENV_DISABLED=1`；不得读取 `.env`，不得输出 URL、key 或环境值。
+6. 配置只做低敏元数据门槛：Botzone URL/key present；DeepSeek key present；endpoint=`https://api.deepseek.com`、model=`deepseek-v4-flash`、timeout=60、retries=0。任何不匹配在子进程前停止。
+7. 从 manifest 中固定选择 game 1 的 rule state 与 game 2 的 deepseek state；分别恰好运行一次：
 
 ```text
-precondition_failed: capacity_manifest_import_recovery_authorization_missing
+python -m integrations.botzone --agent rule --state-dir <game-01 state> --preflight-only
+python -m integrations.botzone --agent deepseek --state-dir <game-02 state> --preflight-only
 ```
 
-### L5-A4d2d 锁定边界
+8. 每次 preflight 都必须在 30 秒内自行 exit 0，stdout 规范化后精确为单行 `preflight_ready`，stderr 为空，所用 state 前后为空且无残留 Python/connector 进程。
+9. 两次 preflight 的 Botzone GET、DeepSeek request、DNS/socket/HTTP、transport、connector cycle、Agent action 与 `suggest_action_id()` 均必须为 0。不得用网络探针验证配置。
+10. rule preflight 失败时不得启动 deepseek preflight；任一步失败都停止，保留已创建的预注册空布局，不删除 manifest、不重跑、不改参数、不进入 live。
+11. 两次都通过后，复核 16 个 state 目录仍为空、16 个 game audit 目标仍不存在、manifest bytes/hash 不变，并写出只含固定布尔值、计数、退出码、耗时类别和 manifest hash 的脱敏 preflight 汇总；不得包含路径、配置值、stdout 原始 bytes 或异常正文。
 
-获得授权后的独立任务必须：
+### 判定
 
-1. 只读确认 HEAD、工作区、无 connector 残留，以及新容量根目录仍存在且完全为空；失败即停止，不清理、不换路径。
-2. 不重复 8/612 回归；L5-A4d1 已完成的测试证据继续有效。
-3. 在系统临时目录创建全新仓库外 runner 和独立资格目录；不得把 runner 或资格 artifact 写入容量根目录。
-4. runner 启动时只对该子进程把已核验仓库根加入模块搜索路径；不得修改用户/系统 `PYTHONPATH`、`.pth`、虚拟环境、源码或 Git 工作区。
-5. 在写入容量根目录前先完成导入资格：`evaluation.botzone_policy_benchmark` 的 module spec/origin 必须解析到已核验仓库根，且成功导入 `BenchmarkConditions` 与 `build_paired_schedule`。只记录布尔值和固定阶段，不记录完整路径或异常正文。
-6. 资格通过后在内存中生成赛程，并严格断言 8 对、16 局、四座位各 2 对、rule/deepseek 各 8、AB/BA 各 4，seed 仅为 `25001/25002`。
-7. 生成 canonical JSON，只保留 schema/version、固定 profile、seed、seat、策略顺序、game/pair 序号和预定相对 state/audit 名称；不得保存 URL/key、Bot/match/player、牌、history、action、prompt、RAG 或模型内容。
-8. 通过同目录固定临时文件、flush/fsync 和 `os.replace()` 原子写入唯一 `capacity-manifest.json`；目标或临时文件已存在时拒绝覆盖。
-9. 写入后重新解析并验证完整结构，记录 bytes、SHA-256 和固定聚合计数；不得输出 manifest 正文。
-10. runner、导入资格、赛程断言或写入任一失败即停止且不得修正后重跑；只允许清理由本任务创建且已登记的临时 runner/资格文件，不得删除容量根目录中的未知内容。
-
-成功时唯一判定：
+全部通过时唯一判定：
 
 ```text
-botzone_paired_policy_capacity_manifest_import_recovery_verified
+botzone_paired_policy_capacity_recovery_preflight_ready
 ```
 
-成功后才进入 L5-A4d3：创建 16 个隔离 state 子目录和 audit 目录，并执行 rule/deepseek 双模式零网络 preflight。L5-A4d2d 本身不得申请或执行 live。
+否则唯一判定：
+
+```text
+botzone_paired_policy_capacity_recovery_preflight_invalid
+```
+
+### 成功后的下一动作
+
+ready 后不得直接 live。只输出 L5-A4d4 的完整批量授权文本，等待项目所有者明确回复；由于届时唯一缺项是授权，不得修改 `NEXT_PROMPT.md` 或其他文档，也不得创建 Git 提交。
+
+L5-A4d4 授权必须明确覆盖：按 manifest 串行执行 16 局人工无贡桌；每局一个 connector、一个 state、一个 v7 audit；最多 1600 次 Botzone GET、最多 800 次 DeepSeek 请求；DeepSeek timeout 60 秒、retries 0；任一局失败全批停止且不得补采；禁止额外测试桌、runmatch、CLI DeepSeek 对局和第二 connector；允许向 DeepSeek 发送此前已授权的本家手牌与公开决策上下文。

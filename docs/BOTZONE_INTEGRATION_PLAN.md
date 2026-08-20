@@ -109,6 +109,8 @@ L5-A4d1 的目录、检查点和 8/612 门槛通过，但 manifest 封装命令�
 
 L5-A4d2b 的 runner 因缺少项目模块导入路径，在导入 `evaluation` 时于零写入状态退出；同一容量根目录仍为空，结论为 `botzone_paired_policy_capacity_manifest_recovery_invalid`。L5-A4d2c/d 继续保留 seed 与目录，但新增导入资格边界：仅对子进程显式加入已核验仓库根，module spec/origin 必须回指该根；禁止持久环境修改、安装项目、复制源码、preflight 或 live。
 
+L5-A4d2d 已在该边界内成功：manifest 为 3256 bytes / SHA-256 `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`，8 对/16 局及策略、AB/BA、seat 守恒通过，根目录无其他内容。L5-A4d3 只按 manifest 创建隔离 state/audit 布局并运行 rule/deepseek 各一次零网络 preflight；ready 后另取整批授权，不在同一步 live。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

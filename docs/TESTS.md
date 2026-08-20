@@ -105,6 +105,8 @@ L5-A4d1 实际复跑定向 8 项、全量 612 项和 `git diff --check` 均通�
 
 L5-A4d2b 实际未进入上述内存断言：仓库外 runner 在导入 `evaluation` 时退出，容量根目录仍为 0 文件，preflight/network 为 0。L5-A4d2d 不重复 8/612；新增的前置是 module spec/origin 必须指向已核验仓库根，并在独立资格目录完成导入后才允许生成赛程和写入 manifest。
 
+L5-A4d2d 已完成上述导入资格、内存守恒和原子写入，固定 manifest 为 3256 bytes / `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`。L5-A4d3 不重复代码测试；测试门槛改为 manifest 全量复核、16 个预注册 state/audit 布局守恒，以及 rule/deepseek 各一次 preflight 的 exit/stdout/stderr/state/零网络门槛。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

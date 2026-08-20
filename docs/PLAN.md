@@ -299,6 +299,8 @@
 - 下一步 L5-A4d2a 只请求一次 manifest 恢复写入授权。授权后 L5-A4d2b 使用独立仓库外 Python runner 做内存断言和一次原子写入，不运行 preflight 或网络。
 - L5-A4d2b 的仓库外 runner 在导入项目 `evaluation` 模块时退出，且发生在赛程生成和任何写入之前；根目录仍为空，判定 `botzone_paired_policy_capacity_manifest_recovery_invalid`。
 - 下一步 L5-A4d2c 只请求新的导入恢复授权。获授权后的 L5-A4d2d 必须先证明 module spec/origin 指向已核验仓库根，再生成并原子写入 manifest；不得修改持久 `PYTHONPATH`、安装项目、复制源码或运行 preflight/live。
+- L5-A4d2d 已通过导入资格并原子生成唯一 manifest：3256 bytes，SHA-256 `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`；赛程守恒为 8 对/16 局、两策略各 8、AB/BA 各 4、四座位各 2 对，判定 `botzone_paired_policy_capacity_manifest_recovery_verified`。
+- 下一步 L5-A4d3 按 manifest 创建预注册 state/audit 布局，并分别执行一次 rule/deepseek 零网络 preflight。ready 后只输出 L5-A4d4 授权文本；若唯一缺项是授权，不再修改文档或提交 Git。
 
 ### L5-A2b7 任务上下文阻塞
 

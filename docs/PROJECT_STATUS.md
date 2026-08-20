@@ -96,6 +96,8 @@ L5-A4d1 随后完成目录探针、检查点复核和 8/612 回归，但赛程 m
 
 L5-A4d2b 获得授权后使用仓库外 runner，但该 runner 未能导入项目 `evaluation` 模块，在内存赛程生成和任何 manifest 写入前退出。按不重试规则停止；新根目录仍为 0 文件，manifest/state/audit/preflight/网络均为 0。规范化判定为 `botzone_paired_policy_capacity_manifest_recovery_invalid`。当前进入 L5-A4d2c，只请求一次显式子进程模块路径的恢复授权。
 
+L5-A4d2d 随后以仅限 runner 子进程的项目导入路径完成恢复：新根目录现仅有 3256-byte canonical manifest，SHA-256 `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`；8 对/16 局、rule/deepseek、AB/BA 和 seat 守恒全部通过，临时文件不存在，零 preflight/connector/network。判定 `botzone_paired_policy_capacity_manifest_recovery_verified`。当前进入 L5-A4d3 的布局与双模式零网络 preflight。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15
