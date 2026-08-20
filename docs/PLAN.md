@@ -307,6 +307,8 @@
 - 项目所有者已关闭网页桌。下一步 L5-A4e1 依据常驻授权严格审计并精确清理唯一 game 1 state；成功后永久封存该 seed/root，再离线设计 connector 存活握手和新批次。
 - L5-A4e1 资格审计发现此前未观察到的 game 1 completion audit，因与“audit 不存在”前提冲突而 fail-closed；state 未解析/删除，cleanup audit 未创建，判定 `botzone_paired_policy_failed_game_state_cleanup_invalid`。
 - 下一步 L5-A4e2 只读解析 v7 audit 与 session state 的固定聚合并分类两者关系。仅 `abandoned_session_consistent` 可进入后续精确清理；不得以 audit 文件存在推断对局成功。
+- L5-A4e2 确认 v7 audit 与 v3 finished tombstone 各自严格合法，但两者都缺少共同 match/本地运行标识，故只能归类 `evidence_relation_unknown`，判定 `botzone_paired_policy_failed_game_evidence_inconclusive`。两个源文件永久保留且不计分。
+- 下一步 L5-A4e3 离线增加严格 32-hex `run_token`：同一 token 进入 session/tombstone 与 completion audit，但不进入网络、Agent 或聚合报告；旧 v7/v3 路径保持兼容。通过后才规划全新 seed/root。
 
 ### L5-A2b7 任务上下文阻塞
 

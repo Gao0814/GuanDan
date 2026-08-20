@@ -1,57 +1,64 @@
 # 下一步实施提示词
 
-## Step L5-A4e2：game 1 audit/state 只读关系审计
+## Step L5-A4e3：Botzone 容量运行本地 provenance token
 
-L5-A4e1 未完成，唯一判定：
-
-```text
-botzone_paired_policy_failed_game_state_cleanup_invalid
-```
-
-### 新证据与停止原因
-
-- game 1 completion audit 已存在，game audit 文件数为 1。
-- 这与 L5-A4e1 的资格前提“game 1 audit 不存在”直接冲突，因此未读取 audit 正文、未解析 state、未删除文件、未写 cleanup audit。
-- game 1 state 仍有 1 个活动文件；game 2–16 state 均为空。
-- manifest 仍为 3256 bytes，SHA-256 `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`。
-- cleanup audit 和临时 cleanup 文件均不存在；仓库未修改，零网络、零 connector、零 DeepSeek。
-- 25001/25002 批次继续保持 `botzone_paired_policy_capacity_batch_invalid`；不得重开 game 1 或启动 game 2–16。
-
-项目所有者常驻默认授权继续有效。本步骤是纯只读审计，不询问项目授权，不删除或写入任何容量文件。
-
-### 目标
-
-在不输出原始 audit/state 内容的前提下，确认新出现的 game 1 v7 audit 与残留 state 是否能被归为同一次未完成运行，并确定后续是否具备精确清理资格。不得预设 audit 表示成功完成。
-
-### 执行要求
-
-1. 只读复核 HEAD、工作区、无残留 Python connector，以及 manifest bytes/hash。进程检查仅枚举 `python.exe/pythonw.exe` 且要求独立 `-m integrations.botzone` 参数。
-2. 严格复核布局：game 1 audit 目标精确存在 1 个普通文件；game 1 state 精确存在 1 个普通文件；game 2–16 state 为空；其他 15 个 game audit 目标不存在；不得存在额外文件、目录或链接。
-3. 记录 game 1 audit/state 的 bytes 与 SHA-256，用于前后只读不变性验证；不得输出文件名以外的 session/match 标识。
-4. 严格解析 game 1 audit 的 v7 schema、version、固定字段集合、整数/bool 类型、守恒和 allowlist。只输出固定聚合：exit code、stop reason、agent mode、cycles、request/response/header、transport timeout/failure、finished raw/qualified/classification、diagnostics 是否为空、决策来源、模型尝试/结果、fallback 与结果聚合。
-5. audit malformed、未知 schema/字段、守恒失败、敏感字段命中或 agent mode 与 manifest game 1 不符时，立即判 inconclusive；不得继续解析 state。
-6. 严格解析唯一 state 的当前 session schema/version、文件名—内部 key 一致性、stage、delivery、finished、pending response/effect、handler/cached response 的存在性。不得输出 key、digest、牌、history、response 或玩家内容。
-7. 只按以下固定关系分类：
-   - audit 为 exit 0 / `finished_target` / qualified finished，而 state 不是最小 finished tombstone：`completed_audit_state_conflict`；
-   - audit 为未完成或失败停止，state 为同一 game 1 的非 finished 活动 session：`abandoned_session_consistent`；
-   - audit 与 state 都表示相同 qualified finished：`finished_evidence_consistent`；
-   - 其他任何组合：`evidence_relation_unknown`。
-8. 不使用时间戳、文件创建顺序或猜测补足关联；不能从固定路径、agent mode、完成分类和结构守恒证明关系时必须保持 unknown。
-9. 结束时重新验证两个源文件的 bytes/SHA-256 和整个布局不变。不得创建 summary、临时文件或 cleanup audit；只在最终回复中报告脱敏固定聚合。
-10. 本步骤不得删除 state/audit、运行测试/preflight/connector、访问 Botzone/DeepSeek、修改仓库或开始新批次。
-
-### 判定
-
-仅当 audit/state 均严格合法且关系分类不是 unknown 时：
-
-```text
-botzone_paired_policy_failed_game_evidence_reconciled
-```
-
-否则：
+L5-A4e2 唯一判定：
 
 ```text
 botzone_paired_policy_failed_game_evidence_inconclusive
 ```
 
-若分类为 `abandoned_session_consistent`，下一步 L5-A4e3 才依据常驻授权精确删除该 state，并保留 game 1 audit。若为 completed/conflict/unknown，不得清理，必须按分类另行规划。新 seed/root 与 connector 存活握手均排在证据处置之后。
+### 固定结论
+
+- game 1 v7 audit 严格有效：exit 0、`finished_target`、request/response/Header=`27/27/27`、qualified finished=1、rule decisions=26、正常团队负、`score_0=1`，零 transport/协议/model/fallback 异常。
+- 唯一 state 是严格最小 v3 finished tombstone，68 bytes，无 pending/effect/handler/cache。
+- audit 为 701 bytes / SHA-256 `a277c492b7e7f826551bf60f9ce6b03cd86344fd7d95ddb6a68acefdb815b9f8`；state 为 68 bytes / SHA-256 `890d7427b8d5cbc477ab919c5847c11bb1d27fa913ead1d5250fb06d379db4c9`；只读审计前后均不变。
+- 两者都不保存共同的 match 或本地运行标识。固定路径、策略模式和完成分类不足以证明属于同一次运行，关系只能是 `evidence_relation_unknown`。
+- 旧 audit/tombstone 必须原样保留，不清理、不计分；25001/25002 seed 和容量根目录永久只读封存。
+
+项目所有者常驻默认授权继续有效。本步骤是纯离线代码契约实现，不询问授权，不运行真实 connector、Botzone 或 DeepSeek。
+
+### 目标
+
+为每次受监督容量 connector 启动增加一个非敏感、调用方显式提供的本地 `run_token`。同一 token 必须进入该运行的 session/tombstone 和 completion audit，使两类本地证据可严格关联；token 不得进入 Botzone 请求/Header、DeepSeek prompt/request、Agent observation、合法动作或聚合 benchmark 报告。
+
+### 推荐修改范围
+
+- `integrations/botzone/session.py`
+- `integrations/botzone/runner.py`
+- `integrations/botzone/__main__.py`
+- `evaluation/botzone_policy_benchmark.py`
+- 对应 Botzone session/runner/CLI/policy benchmark 测试
+
+如现有边界要求，可新增一个只含 token 校验常量/纯函数的 `integrations/botzone/run_provenance.py`。不得修改 engine、agents、DeepSeek client、transport、protocol、adapter、RAG、上传 Bot 或 docs。
+
+### 契约要求
+
+1. `run_token` 仅接受精确字符串，格式固定为 32 个小写十六进制字符；bool、非字符串、大小写、空白、长度错误和其他字符全部拒绝。token 由容量 manifest 离线生成，不从 match/player、牌、URL、key 或其他敏感值派生。
+2. CLI 新增可选 `--run-token`。未提供时保持现有普通运行兼容；容量运行必须显式提供。preflight 不要求 token，也不得创建 session/audit。
+3. `SessionStore` 在显式 token 模式下把同一 token 写入活动 session 和 finished tombstone；handler context、Agent 与 transport 不得接收该字段。
+4. 保持旧 v3 session/tombstone 可严格读取；显式 token 使用新的 session/tombstone version，并要求 token 字段精确存在。不得把无 token 的旧文件静默升级或与 token 运行混用。
+5. completion audit 在显式 token 模式下升级为新版本并包含同一 token；未提供 token 时现有 v7 字段、bytes 语义与测试保持兼容。audit 仍不得包含 match/session/player、牌、history、prompt、response、URL/key。
+6. runner/CLI 必须把一个 token 同时传给 SessionStore 与 audit writer；缺失、不同或 malformed 时 fail-closed，不得生成可被误关联的 audit。
+7. pending 重发、重启恢复与 finished cleanup 必须保留同一 token；使用不同 token 打开已有 token session 时返回固定诊断，不处理或覆盖原 state。
+8. `PolicyAuditSubmission` 或等价内存输入可携带预期 token；新版本 audit 只有 token 精确匹配时才有效。token 不得进入 frozen aggregate report、`to_dict()`、diagnostics 或 repr。
+9. benchmark 继续支持现有 v7 测试夹具和已封存 audit；新容量批次只接受带 token 的新版本 audit，不得把 v7 与 token 版本混在同一新批次。
+10. 测试覆盖：严格 token 语法、CLI 传递、active→pending/inflight→finished 保持、重启同 token、不同 token 冲突、audit/session token 相等、默认兼容、benchmark 匹配/不匹配/缺失、报告脱敏、Agent/transport 隔离。
+11. 全部测试使用 fake transport/client 和临时目录；网络、真实配置、`.env`、旧容量目录和现有 game 1 证据均不得读取。
+
+### 验收
+
+- 新增定向回归全部通过；
+- 全量回归通过；
+- `git diff --check` 通过；
+- 默认无 token 的现有 v7 audit 与 v3 session/tombstone 快照保持兼容；
+- 静态扫描确认 token 不进入 transport、Header、Agent、DeepSeek、RAG 或聚合报告；
+- 建立独立实现检查点，提交范围仅限上述实现与测试文件。
+
+成功时唯一判定：
+
+```text
+botzone_paired_policy_run_provenance_contract_verified
+```
+
+本步骤不生成新 manifest、state/audit 布局或 seed，不执行 preflight/live。通过后 L5-A4e4 才规划新 seed/root 与带 token 的容量恢复批次。

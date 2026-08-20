@@ -113,6 +113,8 @@ L5-A4d3 的布局与 manifest 门槛通过，但旧进程检查自匹配，故�
 
 L5-A4e1 因 game 1 audit 实际存在而在 state 解析/删除前停止。L5-A4e2 仍不运行代码测试；只读验收覆盖 v7 schema/字段/守恒、session schema/归属、audit/state bytes-hash 前后不变、其余 15 局为空，以及四种固定关系分类。任何 malformed 或 unknown 关系都不得清理。
 
+L5-A4e2 实际分类为 `evidence_relation_unknown`，源 audit/state bytes 与 hash 前后不变。L5-A4e3 测试必须覆盖 token 严格语法、CLI→runner→SessionStore/audit 传递、活动/重启/finished 保持、不同 token 冲突、v7/v3 默认兼容、新 audit 与 benchmark token 匹配，以及 token 不进入 Agent/transport/聚合报告；全部使用合成输入和零网络。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

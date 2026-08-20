@@ -117,6 +117,8 @@ L5-A4d3 的布局通过，但残留检查以命令行文本匹配自身而假阳
 
 L5-A4e1 实际发现 game 1 audit 已出现，故原“无 audit”清理前提失效，未做删除。L5-A4e2 改为纯只读证据关系审计：严格验证 v7 audit 和 session state，只允许固定分类 `completed_audit_state_conflict`、`abandoned_session_consistent`、`finished_evidence_consistent` 或 `evidence_relation_unknown`；只有 abandoned-consistent 才可进入后续精确清理。
 
+L5-A4e2 最终为 `evidence_relation_unknown`：v7 audit 与 v3 tombstone 均合法且表示完成，但缺少共同 provenance，不能合并或清理。L5-A4e3 新增仅本地使用的 32-hex run token，并在 token 模式下贯穿 session/tombstone/audit；默认旧路径兼容，token 不进入 Botzone、DeepSeek、Agent 或最终聚合报告。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15
