@@ -305,6 +305,8 @@
 - 项目所有者现已授予本项目全部计划内操作的常驻默认授权。后续不再设置项目级授权门槛；L5-A4d3a 直接以仅枚举 Python connector 的方式恢复双 preflight，ready 后直接衔接容量执行准备，只在人工建桌时请求操作确认。
 - 25001/25002 批次进入第 1 局后发现人工桌已创建但 connector 已不在运行；game 1 无 completion audit 且留下 1 个活动 state。第 1 局不可计入或重开，第 2–16 局不得启动，整批判定 `botzone_paired_policy_capacity_batch_invalid`。
 - 项目所有者已关闭网页桌。下一步 L5-A4e1 依据常驻授权严格审计并精确清理唯一 game 1 state；成功后永久封存该 seed/root，再离线设计 connector 存活握手和新批次。
+- L5-A4e1 资格审计发现此前未观察到的 game 1 completion audit，因与“audit 不存在”前提冲突而 fail-closed；state 未解析/删除，cleanup audit 未创建，判定 `botzone_paired_policy_failed_game_state_cleanup_invalid`。
+- 下一步 L5-A4e2 只读解析 v7 audit 与 session state 的固定聚合并分类两者关系。仅 `abandoned_session_consistent` 可进入后续精确清理；不得以 audit 文件存在推断对局成功。
 
 ### L5-A2b7 任务上下文阻塞
 

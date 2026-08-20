@@ -115,6 +115,8 @@ L5-A4d3 的布局通过，但残留检查以命令行文本匹配自身而假阳
 
 25001/25002 容量执行在 game 1 失效：网页桌创建后 connector 已不在运行，completion audit 缺失且 state 留有单一活动文件；整批停止且不得重开/续跑。网页桌已由项目所有者关闭。L5-A4e1 只做该 state 的 schema/归属/活动状态审计与精确单文件清理；之后永久封存该批次，并在新 seed 前先建立可持续覆盖人工建桌等待期的 connector 存活握手。
 
+L5-A4e1 实际发现 game 1 audit 已出现，故原“无 audit”清理前提失效，未做删除。L5-A4e2 改为纯只读证据关系审计：严格验证 v7 audit 和 session state，只允许固定分类 `completed_audit_state_conflict`、`abandoned_session_consistent`、`finished_evidence_consistent` 或 `evidence_relation_unknown`；只有 abandoned-consistent 才可进入后续精确清理。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15
