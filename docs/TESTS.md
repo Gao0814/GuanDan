@@ -103,6 +103,8 @@ L5-A4d1 已收到人工旧桌清理确认和新根目录路径，但尚未产生
 
 L5-A4d1 实际复跑定向 8 项、全量 612 项和 `git diff --check` 均通过；目录探针也通过。后续 manifest 封装命令在写入前失败，因此该步骤没有生成新的赛程测试 artifact，也没有运行 preflight。L5-A4d2b 不重复测试，只在内存中断言现有生成器对 `25001/25002` 产生 8 对/16 局及 AB/BA、seat、mode 守恒，再执行一次 canonical manifest 原子写入。
 
+L5-A4d2b 实际未进入上述内存断言：仓库外 runner 在导入 `evaluation` 时退出，容量根目录仍为 0 文件，preflight/network 为 0。L5-A4d2d 不重复 8/612；新增的前置是 module spec/origin 必须指向已核验仓库根，并在独立资格目录完成导入后才允许生成赛程和写入 manifest。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

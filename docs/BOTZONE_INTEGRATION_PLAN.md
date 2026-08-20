@@ -107,6 +107,8 @@ L5-A4d1 已收到旧桌全部结束确认和新根目录 `D:\VsCodeProject\Botzo
 
 L5-A4d1 的目录、检查点和 8/612 门槛通过，但 manifest 封装命令在零写入状态失败。新根目录保持为空，preflight/network 为 0，结论为 `botzone_paired_policy_capacity_recovery_preflight_invalid`。恢复拆为 L5-A4d2a/b：先取得同一空目录的一次写入授权，再用仓库外 Python runner 调用现有赛程生成器并原子生成唯一 manifest；不得把封装失败误判为需要新 seed 或 runtime 修改。
 
+L5-A4d2b 的 runner 因缺少项目模块导入路径，在导入 `evaluation` 时于零写入状态退出；同一容量根目录仍为空，结论为 `botzone_paired_policy_capacity_manifest_recovery_invalid`。L5-A4d2c/d 继续保留 seed 与目录，但新增导入资格边界：仅对子进程显式加入已核验仓库根，module spec/origin 必须回指该根；禁止持久环境修改、安装项目、复制源码、preflight 或 live。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15
