@@ -1,6 +1,6 @@
 # 下一步实施提示词
 
-## Step L5-A4d：Botzone 成对容量恢复准入
+## Step L5-A4d1：Botzone 成对容量恢复零网络准入
 
 L5-A4c 小容量批次已停止，唯一判定：
 
@@ -72,33 +72,20 @@ deepseek = 当前部署的 DeepSeek 模式，包括既有 local shortcuts
 - AB/BA 各 4 对
 - runmatch=0，只允许人工网页建桌
 
-### 当前人工前置
+### 人工前置已收到
 
-在运行任何回归、目录探针、清单或 preflight 前，项目所有者必须提供：
+项目所有者已明确提供：
 
 ```text
 所有历史及额外本地 AI 测试桌已全部结束：是
 新容量根目录：D:\VsCodeProject\BotzonePairedCapacity-25001-25002
 ```
 
-该目录必须由项目所有者预先创建，位于仓库外、当前为空，且不得复用旧容量目录、`BotzoneState` 或 `BotzoneAudit`。
+该回复只满足人工输入，不替代目录资格验证。实施任务必须确认该目录由项目所有者预先创建、位于仓库外、当前为空，且没有复用旧容量目录、`BotzoneState` 或 `BotzoneAudit`。不得读取、修改或清理旧容量根目录。
 
-PowerShell 创建方式：
+### 本步骤执行
 
-```powershell
-$root = "D:\VsCodeProject\BotzonePairedCapacity-25001-25002"
-if (Test-Path -LiteralPath $root) {
-    throw "目录已存在，请不要清理或复用"
-}
-New-Item -ItemType Directory -Path $root | Out-Null
-(Get-ChildItem -LiteralPath $root -Force).Count
-```
-
-最后必须输出 `0`。
-
-### 收到前置后的离线准入
-
-输入齐全后才执行：
+严格按以下顺序执行：
 
 1. 验证新目录绝对、仓库外、存在、为空；执行单文件原子写/重命名/删除探针，最终仍为空。
 2. 复核 L5-A4a/L5-A4b 检查点及工作区；既有 `README.md` 保持未触碰。
@@ -114,7 +101,7 @@ git diff --check
 5. 创建 16 个隔离 state 子目录和 audit 目录；不得把 Bot ID、URL、key、match、牌或模型正文写入 manifest。
 6. 使用两个独立空 state 目录，分别执行一次 rule/deepseek 零网络 preflight；均须 exit 0、stdout=`preflight_ready`、stderr/state 空、零网络、无残留。
 
-任一离线门槛失败即停止，不得重试、换 seed、换目录或进入 live。
+若新根目录不存在、不是绝对路径、位于仓库内、非空或原子探针失败，立即返回 `precondition_failed`；不得清理目录、换路径或继续回归。任一后续离线门槛失败也立即停止，不得重试、换 seed、换目录或进入 live。
 
 ### 建桌操作约束
 

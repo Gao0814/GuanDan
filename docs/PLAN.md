@@ -283,6 +283,13 @@
 - 先生成新 manifest 并完成 rule/deepseek 双模式零网络 preflight，再单独请求整批 live 授权。
 - 若严格单桌的新批次再次在建桌前出现 `poll_malformed`，停止容量运行并另立离线诊断，不在 live 中忽略或重试。
 
+### L5-A4d1 人工前置已满足
+
+- 项目所有者已确认所有历史及额外本地 AI 测试桌均已结束。
+- 新容量根目录由项目所有者指定为 `D:\VsCodeProject\BotzonePairedCapacity-25001-25002`；该输入尚需实施任务验证存在、为空、仓库外和原子写能力。
+- 下一步只执行目录资格、8/612 回归、新 manifest 和 rule/deepseek 双模式零网络 preflight；不得启动 connector、建桌或联网。
+- 全部门槛通过后只提出新的整批授权问题，不在同一步开始 16 局。
+
 ### L5-A2b7 任务上下文阻塞
 
 - 独立实施任务无法读取规划任务中的 Bot ID 与授权原文，按 `precondition_failed: runmatch_participants_missing` 在零配置、零网络状态停止；授权未消耗。

@@ -90,6 +90,8 @@ L5-A4c 随后进入容量执行，但第 3/16 局在人工建桌前以 `poll_mal
 
 当前阶段为 L5-A4d 容量恢复：保留实际部署 DeepSeek 模式的 local shortcuts，旧 seed `24001/24002` 和旧根目录只读封存；新批次使用 `25001/25002` 与全新仓库外根目录。先恢复人工单桌前置、生成新 manifest 和双模式零网络 preflight，再申请新的整批授权，不直接 live。
 
+L5-A4d1 的人工输入已齐全：项目所有者确认所有历史/额外测试桌已结束，并提供新根目录 `D:\VsCodeProject\BotzonePairedCapacity-25001-25002`。当前尚未验证目录或运行回归/preflight；下一任务必须先做仓库外、存在、为空和原子探针检查，然后才生成 seed `25001/25002` 的新 manifest。该阶段保持零网络。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15
