@@ -113,6 +113,8 @@ L5-A4d2d 已在该边界内成功：manifest 为 3256 bytes / SHA-256 `3af862cf3
 
 L5-A4d3 的布局通过，但残留检查以命令行文本匹配自身而假阳性，两个 preflight 均未启动。L5-A4d3a 仅枚举 `python.exe/pythonw.exe` 并匹配其 `-m integrations.botzone` 参数，避免 PowerShell/Codex 自匹配。项目所有者已授予全部计划内操作常驻默认授权；未来不再单独请求 preflight/live 授权，仍保留固定预算、脱敏、fail-closed 与人工单桌边界。
 
+25001/25002 容量执行在 game 1 失效：网页桌创建后 connector 已不在运行，completion audit 缺失且 state 留有单一活动文件；整批停止且不得重开/续跑。网页桌已由项目所有者关闭。L5-A4e1 只做该 state 的 schema/归属/活动状态审计与精确单文件清理；之后永久封存该批次，并在新 seed 前先建立可持续覆盖人工建桌等待期的 connector 存活握手。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

@@ -109,6 +109,8 @@ L5-A4d2d 已完成上述导入资格、内存守恒和原子写入，固定 mani
 
 L5-A4d3 的布局与 manifest 门槛通过，但旧进程检查自匹配，故两个 preflight 执行次数均为 0。L5-A4d3a 不重复代码测试或布局创建；只把进程候选限制为 `python.exe/pythonw.exe` 且具有独立 `-m integrations.botzone` 参数，再执行原定 rule/deepseek 各一次 preflight 与零网络守恒检查。
 
+25001/25002 批次的 game 1 没有 completion audit，且人工桌进入时 connector 已退出并留下 1 个活动 state；因此 16 局容量门槛在首局失败，后续不得继续。L5-A4e1 不运行代码测试；其验收只覆盖单文件 schema/归属、其余 15 个空 state、16 个缺失 game audit、精确删除前后 `1→0`、manifest hash 不变、脱敏 cleanup audit 与零网络计数。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

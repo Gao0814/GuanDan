@@ -1,65 +1,53 @@
 # 下一步实施提示词
 
-## Step L5-A4d3a：双模式 preflight 恢复
+## Step L5-A4e1：失效容量批次 state 审计与清理
 
-L5-A4d3 未达到 ready，唯一判定：
+25001/25002 容量批次在第 1 局即停止，规范化判定：
 
 ```text
-botzone_paired_policy_capacity_recovery_preflight_invalid
+botzone_paired_policy_capacity_batch_invalid
 ```
 
-### 项目所有者常驻授权
+### 固定事实
 
-项目所有者已明确：本项目后续全部计划内操作默认授权，不再逐步询问授权。该常驻授权覆盖仓库外 state/audit 写入、零网络 preflight、Botzone connector/GET、人工无贡测试桌和既定 DeepSeek endpoint/model/数据范围与预算。
+- 项目所有者已人工创建并进入第 1 桌，但当时唯一 Python connector 已不在运行。
+- game 1 completion audit 不存在。
+- game 1 state 目录已有 1 个活动文件，不能视为空白、完成或可重试对局。
+- 第 1 局不满足 exit 0、`finished_target`、独立 v7 audit 的预注册门槛。
+- 第 2–16 局均不得启动；第 1 局不得重启、补采或迁移计分。
+- 项目所有者已确认网页第 1 桌关闭。
+- 该失败归因边界是 connector 生命周期没有覆盖人工桌完整对局，不归责于人工建桌操作；当前证据不足以断言 connector 为何提前结束。
 
-后续任务不得再以“缺少用户授权”为停止原因，也不得只为申请授权修改文档或创建 Git 提交。仅在以下情况暂停并请求项目所有者执行或提供信息：
+项目所有者的常驻默认授权继续有效。本步骤不得再次询问 state 审计或精确清理授权；只有操作系统权限审批可由平台提示。
 
-- Botzone 网页必须由用户人工创建/结束测试桌或确认连接状态；
-- 缺少无法从本地安全确定的 Bot ID、座位、目录等运行输入；
-- Codex/操作系统弹出不可绕过的权限审批；
-- 实际技术门槛失败，需要报告结果并重新规划。
+### 本步骤范围
 
-常驻授权不允许输出密钥、URL 中的连接凭据、Header、Cookie、手牌原文、prompt/response 原文，也不允许破坏性清理未知文件、越过 manifest 预算、修改 `.env` 或执行项目外任务。
-
-### 已完成边界
-
-- 固定 manifest：3256 bytes，SHA-256 `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`。
-- 8 对/16 局、rule/deepseek 各 8、AB/BA 各 4、四座位各 2 对的守恒已验证。
-- 16 个预注册 state 目录已创建且均为空；16 个 game audit 目标均不存在。
-- manifest bytes/hash 不变；仓库未修改，既有 `README.md` 改动未触碰。
-- L5-A4d3 的 rule/deepseek preflight 均未启动，网络与模型请求为 0。
-
-### 已确认失败原因
-
-旧残留 connector 检查在命令行文本中搜索 `integrations.botzone`，因此匹配了包含该搜索字样的检查命令自身。这是假阳性，不是 connector 残留、配置失败或 preflight 失败。
-
-L5-A4d3 不得追认为通过；L5-A4d3a 是新的独立恢复执行，不修改 preflight 参数或 manifest。
+本步骤只做零网络、只读资格审计和在资格通过后的单文件精确清理。不得运行测试、preflight、connector、Botzone、DeepSeek，不得修改仓库、manifest、game audit 或其他 state 目录。
 
 ### 执行要求
 
-1. 只读复核 HEAD、工作区、manifest bytes/hash，以及 16 个 state 目录为空、16 个 audit 目标不存在。不得重新创建或清理布局。
-2. 残留检查只枚举进程名为 `python.exe` 或 `pythonw.exe` 的进程，再检查其命令行是否包含独立参数 `-m integrations.botzone`；不得把 PowerShell/Codex/检查命令自身列为候选。
-3. 记录候选 Python connector 数量，不记录完整命令行、路径、参数值或环境内容。数量非 0 时技术门槛失败并停止，不终止未知进程。
-4. 使用项目 `.venv\Scripts\python.exe`；两个子进程均显式设置 `PYTHON_DOTENV_DISABLED=1`，不读取 `.env`。
-5. 低敏配置门槛保持：Botzone local-AI URL present；DeepSeek key present；endpoint=`https://api.deepseek.com`、model=`deepseek-v4-flash`、timeout=60、retries=0。不得输出 URL/key。
-6. 使用已预注册的 game 1 rule state，恰好运行一次 rule preflight。必须在 30 秒内 exit 0、stdout 规范化后为单行 `preflight_ready`、stderr 为空、state 前后为空、无残留 Python connector。
-7. rule 通过后，使用已预注册的 game 2 deepseek state，恰好运行一次 deepseek preflight；门槛与 rule 相同。
-8. 两次运行的 Botzone GET、DeepSeek request、DNS/socket/HTTP、transport、connector cycle、Agent action 与 `suggest_action_id()` 必须全部为 0。
-9. 任一步失败即停止，不重跑、不改参数、不清理预注册布局、不进入 live。
-10. 两次都通过后，写出原 L5-A4d3 规定的脱敏 preflight 汇总，并复核 manifest、16 个空 state 与 16 个不存在的 game audit 目标保持不变。
+1. 只读复核 HEAD、工作区和 manifest：3256 bytes，SHA-256 `3af862cf31f9600746812b0534c4d0b66ce6c8fbd6fdc94c1331f19451b2607e`。
+2. 残留检查只枚举 `python.exe/pythonw.exe`，并要求独立参数 `-m integrations.botzone`；不得匹配 PowerShell/Codex/检查命令自身。发现 connector 时停止，不终止进程。
+3. 严格复核容量布局：game 1 completion audit 不存在；game 1 state 精确只有 1 个普通文件；game 2–16 state 均为空；全部 16 个 game audit 目标均不存在。任何额外文件、目录或链接立即停止。
+4. 只解析 game 1 的唯一 state 文件，不输出原文。必须验证当前 session schema/version、文件名与内部 session key 一致、路径属于预注册 game 1 state、finished 不存在，并记录固定低基数聚合：stage、delivery、pending response/effect、handler/cached response 的存在性。
+5. 若 state malformed、已 finished、文件归属不一致、存在未知字段/对象、或无法证明它只属于已关闭的 game 1，则判 invalid 并原样保留，不尝试修复或删除。
+6. 资格通过后，依据项目所有者“网页桌已关闭”和常驻授权，只对已登记的精确文件执行一次非递归删除；不得删除目录、manifest、其他 state 或任何 audit。
+7. 删除后验证 game 1 state 文件数从 1 变为 0，16 个 state 目录均为空，manifest bytes/hash 不变，16 个 game audit 目标仍不存在。
+8. 在容量根的 audit 父目录写入一个固定命名、与 16 个 game audit 目标不冲突的脱敏 cleanup audit。仅记录 schema/version、批次失效、game index、删除前后计数、固定状态分类、manifest hash、零网络计数和检查布尔值；不得记录 session/match/player、牌、history、response、digest、路径或异常正文。
+9. 输出 cleanup audit 的 bytes/SHA-256，并复核无敏感字段。任何失败都不得重跑、扩大删除范围或继续新批次。
 
-### 判定与衔接
+### 判定
 
 全部通过时唯一判定：
 
 ```text
-botzone_paired_policy_capacity_recovery_preflight_ready
+botzone_paired_policy_failed_game_state_cleanup_verified
 ```
 
 否则唯一判定：
 
 ```text
-botzone_paired_policy_capacity_recovery_preflight_invalid
+botzone_paired_policy_failed_game_state_cleanup_invalid
 ```
 
-ready 后不再请求 L5-A4d4 授权。直接按常驻授权进入容量执行准备；只有在需要项目所有者人工创建下一张无贡测试桌时，才提示具体操作，不得把人工操作提示写成授权问题。
+成功后将 `25001/25002` 与当前容量根目录永久只读封存，不再作为容量样本。下一步 L5-A4e2 才离线设计 connector 存活握手和新的 seed/root；不得直接启动新批次。
