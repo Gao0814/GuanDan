@@ -121,6 +121,8 @@ L5-A4e2 最终为 `evidence_relation_unknown`：v7 audit 与 v3 tombstone 均合
 
 L5-A4e3 检查点 `45d34f0d443847aea527929e2a7c0ebf9e4bdd5a` 已验证 token 模式 v4/v8、旧 v3/v7 兼容和 benchmark 脱敏。L5-A4e4 新批次固定 `26001/26002`，每局 token 由非敏感赛程字段确定性派生；先完成新 manifest/布局和双 preflight。后续 live 必须监控实际子进程句柄，并在每局用 manifest token 同时核对 v8 audit 与 v4 tombstone。
 
+L5-A4e4 已通过 tokenized manifest、16 个隔离布局和双模式零网络 preflight，判定 `botzone_paired_policy_tokenized_capacity_preflight_ready`。L5-A4e5 串行执行 16 局：每局先持有 connector 子进程句柄，再提示人工建桌；有效局要求 v8 audit、v4 tombstone 与 manifest token 三方一致。固定 progress 只允许局间恢复，任一局失败全批停止。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

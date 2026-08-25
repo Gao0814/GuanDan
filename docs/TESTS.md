@@ -117,6 +117,8 @@ L5-A4e2 实际分类为 `evidence_relation_unknown`，源 audit/state bytes 与 
 
 L5-A4e3 实际通过定向 34、兼容 35、全量 617 与 diff check。L5-A4e4 不重复代码测试；验收改为新 manifest 的 16-token 唯一性/公式/赛程守恒、路径隔离、16 个空 state/缺失 audit、rule/deepseek 各一次带 token preflight、manifest 不变及全部零网络计数。
 
+L5-A4e4 上述门槛全部通过：manifest 3635 bytes / `f1793c…63241`，summary 653 bytes / `785ff0…d995a`，双 preflight ready 且零网络。L5-A4e5 不是代码回归；每局验收覆盖进程句柄、人工握手、exit/finished/request 守恒、零 transport/protocol 异常、v8/v4/token 三方一致和正常结果；16 局后再运行现有离线 aggregate 并要求 8/8 pairs valid。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

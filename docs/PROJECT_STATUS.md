@@ -108,6 +108,8 @@ L5-A4e2 只读审计显示 game 1 v7 audit 为正常完成的 rule 团队负局�
 
 L5-A4e3 已完成并封存为 `45d34f0d443847aea527929e2a7c0ebf9e4bdd5a`：显式 32-hex token 贯穿 session/tombstone v4 与 completion audit v8，默认 v3/v7 保持兼容，benchmark 匹配后仍不输出 token。34 项定向、35 项兼容、617 项全量通过。当前进入 L5-A4e4：新 seed/root、tokenized manifest、隔离布局与双模式零网络 preflight。
 
+L5-A4e4 已完成：26001/26002 manifest 含 16 个唯一 token、8 对/16 局及全部赛程守恒，3635 bytes / `f1793c…63241`；16 个 state 为空、audit 不存在，rule/deepseek 双 preflight 均 ready，653-byte summary `785ff0…d995a` 且零网络。判定 `botzone_paired_policy_tokenized_capacity_preflight_ready`。当前 L5-A4e5 直接按常驻授权进入串行人工桌容量批次。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15
