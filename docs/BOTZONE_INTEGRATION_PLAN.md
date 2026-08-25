@@ -962,3 +962,8 @@ L5-A4f6 只做浏览器 UI 契约发现：用 screenshot+DOM 锁定可见游戏�
 UI discovery 已确认游戏选择浮层、GuanDan selected proof、人工验证码和后续建桌表单。实际按钮为“创建”，表单 readiness signal 为唯一可见的“载入上次配置”与“开始游戏！”。任务停在表单且没有 live 副作用。
 
 L5-A4f7 复用该保留标签页，用 `35001` 配置表单并完成两次 readback；只在表单已准备后启动 connector，连接后点击一次开始游戏，随后 Browser 完全只读。标签页丢失或验证码重现时 fail-closed，不自行重走流程。
+### L5-A4f7 / L5-A4f8：从自动基线进入单对
+
+`35001` 自动 RuleBased pilot 已通过：UI 双 readback、唯一提交、对局页只读、34 组请求、33 次规则决策、正常终局及 v8/v4/token 全部闭环。自动建桌链路现可作为后续配对执行基线。
+
+L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→deepseek 顺序完成一个单对。每局独立 tokenized evidence，第二局前必须验收第一局；最终只调用现有 benchmark 做单对描述聚合。单对通过前不恢复 16 局容量。

@@ -1748,3 +1748,8 @@ L5-A4f6 不新增代码测试。执行验收覆盖 visible modal scope、GuanDan
 L5-A4f6 已验证 visible game selector、GuanDan current option、唯一创建按钮、验证码门槛及后续表单 readiness；`载入上次配置`/`开始游戏！` 各唯一，所有 connector/network/table-submit count 为 0。
 
 L5-A4f7 不新增代码测试。执行验收要求复用已保留表单、两次完整 readback、connector 提交前存活、唯一开始点击及提交后 Browser write count=0；同时保持 v8/v4/token、RuleBased 来源、request/finished 和 transport/timeout 守恒。标签页或验证码状态变化不得自动重走。
+### L5-A4f7 基线与 L5-A4f8 单对验收
+
+L5-A4f7 的执行验收全部通过：两次 readback、提交后 browser write=0、34/34/34、qualified=1、33 rule primary、零模型/fallback/transport failure，以及 v8/v4/token/无残留守恒。该结果不是新增代码测试。
+
+L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 readback/session/v8/v4/token、rule 与 deepseek 来源守恒、正常结果和 existing benchmark 单对聚合。任一局失败立即停止；单对结果不得解释为统计或胜率结论。

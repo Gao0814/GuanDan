@@ -1652,3 +1652,8 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 已验证页面状态为主页 → 游戏选择浮层 → 人工验证码 → GuanDan 建桌表单；浮层不是 accessibility dialog，GuanDan 由选择控件当前值证明 selected，动作按钮实际为唯一“创建”而非“确认”。
 - 验证后建桌表单中的 `载入上次配置` 和 `开始游戏！` 各唯一可见；未点击开始、未启动 connector/网络/模型，判定 `botzone_guandan_table_ui_selector_contract_verified`。
 - 下一步 L5-A4f7 直接复用当前保留表单，载入配置并两次 readback；表单准备完成后才启动 connector，连接后点击唯一 `开始游戏！`，进入对局后 Browser 完全只读。
+### L5-A4f7 自动 RuleBased 基线通过
+
+- 复用已验证表单、两次 readback、唯一开始点击与提交后 Browser 只读全部通过；connector 34/34/34 请求闭环、qualified finished 1、33 次 rule primary、零模型/fallback/transport failure，v8/v4/token 一致。
+- 判定 `botzone_codex_verified_ui_rule_pilot_verified`；该结果只封板自动 UI/RuleBased 链路，不形成策略收益。
+- 下一步 L5-A4f8 使用全新 `36001` 串行执行 rule→deepseek 同条件单对；每局独立 state/audit/token，任一局失败整对停止，最后只做 existing benchmark 描述性聚合。
