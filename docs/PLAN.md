@@ -316,6 +316,8 @@
 - 由于该启动没有保留 exit/stdout/stderr，不能归因于 connector、Botzone、DeepSeek 或协议。现有 connector 已有成功 live 证据；缺口是容量外层没有复用可捕获流的 launcher，而旧 launcher 又不能传递 agent/state/run-token。
 - 下一步 L5-A4e6 只离线扩展现有 `live_launcher.py` 的 tokenized 参数与流证据，不重写 connector 或新增诊断载体。通过后先做全新 seed/root 的单局可见前台启动资格，再决定是否重建 16 局批次。
 - 项目所有者已授权后续 live 使用 Codex 桌面/浏览器控制监督页面并代为创建唯一无贡桌；登录完成后不再逐局要求“已连接/已进入对局”文字确认。只有登录、验证码、安全确认或页面不可可靠识别时才暂停人工处理，敏感连接信息不得读取或持久化。
+- L5-A4e6 已封存为 `2209bb71e35c4142c28bf1218fb316f8cf67da2d`：既有 launcher 现严格传递 agent、仓库外 state 和 32-hex run token，在同一进程内保留独立 stdout/stderr；32 项定向、619 项全量与 diff check 通过，判定 `botzone_tokenized_live_launcher_contract_verified`。
+- 下一步 L5-A4e7 不恢复容量批次，只用全新 seed `27001`、seat 0、deepseek 做一局可见前台 pilot。Codex 监督页面并建桌，必须完成 launcher/process/UI/v8/v4/token 闭环后才允许规划新的 16 局。
 
 ### L5-A2b7 任务上下文阻塞
 

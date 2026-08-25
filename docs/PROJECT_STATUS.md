@@ -114,6 +114,8 @@ L5-A4e5 在 game 1 建桌提示前停止：唯一 connector 已退出，没有 v
 
 项目所有者已明确授权 Codex 在后续 live 中直接监督 Botzone 页面并执行建桌操作。完成一次登录后，页面“已连接”、唯一无贡桌创建和进入对局确认由 Codex 自行完成，不再要求逐局文字回复；该授权不允许读取或记录 local-AI URL、连接密钥、Cookie 或账号信息，也不能替代 connector 进程/stream/audit 门槛。
 
+L5-A4e6 已完成并提交为 `2209bb71e35c4142c28bf1218fb316f8cf67da2d`：tokenized launcher 强制 agent/state/run-token，在同进程调用 connector 并捕获独立 stream；定向 32、全量 619 与 diff check 通过，工作区干净，判定 `botzone_tokenized_live_launcher_contract_verified`。当前进入 L5-A4e7：全新 seed `27001` 的单局 visible-foreground DeepSeek pilot，由 Codex UI supervision 完成连接确认与建桌，不恢复任何旧容量批次。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15

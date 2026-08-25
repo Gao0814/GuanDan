@@ -127,6 +127,8 @@ L5-A4e5 实际在 game 1 建桌提示前失效：connector 已退出，state 为
 
 后续 live 人工握手改为 Codex UI supervision：项目所有者完成一次登录并打开目标页面后，Codex 通过桌面/浏览器控制检查“已连接”、创建唯一无贡桌、核对预注册设置并确认进入对局。无需逐局向项目所有者索要状态回复；验证码、平台安全确认或不可可靠识别的页面仍必须暂停。UI supervision 不得读取/记录连接密钥、URL、Cookie 或账号信息，也不放宽单 connector、单桌、process handle、stream、v8/v4/token 与 fail-closed 门槛。
 
+L5-A4e6 已补齐 launcher 的 agent/state/run-token 参数、同进程传递与独立 stream 证据，检查点为 `2209bb71e35c4142c28bf1218fb316f8cf67da2d`，判定 `botzone_tokenized_live_launcher_contract_verified`。L5-A4e7 先用全新 `27001/seat0/deepseek` 做一局可见前台 pilot；只有 UI supervision、进程生命周期、正常完成及 v8/v4/token 全部闭环后，才允许使用另一组全新 seed 重建 paired capacity。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

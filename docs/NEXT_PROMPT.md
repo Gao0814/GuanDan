@@ -1,69 +1,60 @@
 # 下一步实施提示词
 
-## Step L5-A4e6：tokenized capacity launcher 兼容性封板
+## Step L5-A4e7：tokenized launcher 单局可见前台 pilot
 
-L5-A4e5 已停止，唯一判定：
-
-```text
-botzone_paired_policy_tokenized_capacity_invalid
-```
-
-### 固定事实
-
-- 失效批次根目录为 `D:\VsCodeProject\BotzonePairedCapacity-26001-26002`；manifest 仍为 3635 bytes，SHA-256 `f1793c836670378e03de2269232faaa845931eff296d9d81e6a8fecc85663241`。
-- `capacity-progress.json` 已原子标记 `batch_invalid_before_table`，completed=0、next game=1；game 1 state 为空、v8 audit 不存在，game 2--16 未启动。
-- 唯一 connector 在提示人工建桌前退出；没有保留合格的 connector exit code、stdout、stderr 或启动阶段证据，因此不能归因于 Botzone GET、DeepSeek、协议、run token、配置或 state 文件操作。
-- 该批次永久无效，不得重试、补采、继续后续局或复用 seed `26001/26002`。
-- 既有 connector 本体已经分别完成过人工无贡协议闭环和 DeepSeek 观测闭环；本步不得重写 connector、adapter、协议或 Agent。
-- 当前 `integrations/botzone/live_launcher.py` 只支持通用时限/audit/stream 参数，不能显式传递容量运行需要的 `--agent`、`--state-dir` 与 `--run-token`。L5-A4e5 因而没有复用已验证的流捕获 launcher，外层启动失败也没有留下可分类证据。
-
-项目所有者常驻默认授权继续有效；本步为纯离线实现，不询问授权。
-
-项目所有者另已明确授权后续 live 任务使用 Codex 桌面/浏览器控制监督 Botzone 页面。完成一次登录并打开本地 AI/测试桌页面后，Codex 应自行确认“已连接”、创建唯一无贡桌、填写预注册 seed/seat/profile、确认进入对局并监控结束，不再要求项目所有者逐局回复“已连接”或“已进入对局”。仅登录、验证码、平台安全确认、浏览器控制不可用或页面状态无法可靠识别时暂停请求人工处理；不得读取、回显或持久化连接密钥、local-AI URL、Cookie 或账号信息。
-
-### 目标
-
-只加固现有 Windows live launcher，使它能安全、显式地启动 tokenized rule/deepseek connector，并在 connector 进入任何网络路径前就具备可审计的进程退出码及独立 stdout/stderr。不得新增另一套 connector、诊断 runner 或进程树。
-
-### 允许修改
-
-- `integrations/botzone/live_launcher.py`
-- `tests/test_botzone_live_launcher.py`
-- 如现有 launcher 测试边界确有需要，可最小更新一份直接相关 Botzone launcher 测试；不得修改 `engine/`、`agents/`、protocol/session/runner、DeepSeek client、CLI 或 evaluation。
-
-### 实现契约
-
-1. launcher 新增并严格要求 `--agent rule|deepseek`、仓库外绝对 `--state-dir`、严格 32 位小写十六进制 `--run-token`；继续要求既有 timeout/cycle/wall/finished/audit/stdout/stderr 参数。
-2. `connector_argv()` 必须把 agent、state dir 与 run token 原样传给现有 `integrations.botzone.__main__.main()`，不得自行读取环境配置、构造 transport、Agent 或 session。
-3. launcher 仍在同一 Python 进程内调用既有入口，不创建第二个 connector 子进程；PowerShell 只负责创建并持有这一 launcher 进程。
-4. stdout/stderr 使用拒绝覆盖的仓库外独立文件；任何 parse、stream open、entrypoint 或返回类型错误都保持固定低基数退出分类。
-5. token 只允许存在于进程内参数和现有 provenance 路径；不得进入 `repr`、异常文本、stdout/stderr、launcher summary、测试 snapshot 或文档示例。state/audit 路径同样不得写入错误文本。
-6. 现有无 token launcher 行为若仍有外部使用者，需明确选择：保持兼容的旧入口，或用测试证明本 launcher 仅服务 tokenized capacity。不得静默改变普通 `python -m integrations.botzone` 的 v3/v7 默认行为。
-7. 不得读取 `.env`、真实 URL、API key、旧容量 artifact 或真实 state；不得执行 preflight、connector、Botzone GET、DeepSeek 请求或 DNS/socket/HTTP。
-
-### 测试
-
-- 合法 rule/deepseek 参数均生成精确 connector argv。
-- 非法/缺失/重复 agent、state、token、stream 参数整体拒绝。
-- token 的大写、长度错误、非 hex、bool/非字符串输入均拒绝。
-- state 必须绝对且仓库外；三个输出文件继续满足独立、仓库外、拒绝覆盖边界。
-- fake entrypoint 精确收到 agent/state/token；固定 exit code、stdout/stderr 分流与异常分类保持稳定。
-- 测试中只使用合成 token 和临时目录；扫描确认 token 值不进入 repr、错误输出或持久测试 artifact。
-- 现有 Windows PowerShell 合成 probe 继续通过，且 network/connector/Agent/model count 为 0。
-- 运行 launcher 定向测试、相关 Botzone 回归、全量回归和 `git diff --check`。
-
-### 判定
-
-全部通过：
+L5-A4e6 已完成并封存：
 
 ```text
 botzone_tokenized_live_launcher_contract_verified
 ```
 
-任一实现、兼容、脱敏或测试门槛失败：
+### 固定前置
+
+- 实现检查点：`2209bb71e35c4142c28bf1218fb316f8cf67da2d`，提交范围精确为 `integrations/botzone/live_launcher.py` 与 `tests/test_botzone_live_launcher.py`。
+- launcher 已严格支持 `--agent`、仓库外绝对 `--state-dir` 与 32 位小写 hex `--run-token`，同进程调用既有 connector 并独立捕获 stdout/stderr。
+- 定向 32 项、全量 619 项和 `git diff --check` 均通过；普通 connector 的 v3/v7 默认行为未改。
+- 旧批次 `24001/24002`、`25001/25002`、`26001/26002` 及其全部 artifact 永久只读、不得复用或计分。
+- 项目所有者已常驻授权计划内 Botzone/DeepSeek 操作，并授权 Codex 使用桌面/浏览器控制监督页面和创建唯一测试桌；不得再次询问项目授权。
+
+### 目标
+
+使用全新 seed `27001`、本家座位 `0`、`deepseek` 模式运行恰好一局人工无贡 pilot，验证新版 launcher 从进程启动、页面连接、建桌、对局到 v8/v4/token 证据的完整生命周期。该 pilot 不是 paired benchmark，不形成策略比较或胜率结论。
+
+### 固定预算
+
+- 新仓库外根目录：`D:\VsCodeProject\BotzoneLauncherPilot-27001`；开始时必须不存在或为空，只能创建本 pilot 的 state、audit 和 stream 布局。
+- 一个确定性 32-hex run token，由固定非敏感字段 `pilot/27001/seat0/deepseek` 的 canonical SHA-256 前 32 位派生；不得输出或持久化到 audit/state 以外的位置。
+- 仅一个 launcher/connector 进程、一个人工网页桌、一个 state、一个 v8 audit、一个 stdout 和一个 stderr。
+- Botzone GET 最多 100 次；poll timeout 120 秒；wall 3600 秒；完成一局即停；不重试。
+- DeepSeek 使用当前锁定 endpoint/model，timeout 60 秒、retries 0；不得调用 runmatch、CLI 对局或探测请求。
+- 桌面设置固定：需要进贡=否、级牌 2、随机种子 27001、本家座位 0；其余桌面 profile 与已验证人工 smoke 保持一致。
+
+### 执行
+
+1. 只读核对 HEAD、检查点范围、工作区、无残留 connector，以及 Botzone/DeepSeek 配置的脱敏元数据；不得读取 `.env`、URL 或 key 内容。
+2. 原子创建全新 pilot 布局；state 与 stream 目录必须为空，audit/stdout/stderr 目标必须不存在。若根目录已有未知内容，立即停止，不清理或复用。
+3. 使用项目 `.venv\Scripts\python.exe -m integrations.botzone.live_launcher` 启动唯一进程，显式传入 `deepseek`、state、run token、固定预算和三个输出目标；保留真实进程句柄。
+4. 启动后持续检查真实句柄。若进程在页面连接前退出，禁止建桌；读取固定 exit code 和脱敏 stdout/stderr 类别，验证没有敏感内容后直接判 invalid，不重启。
+5. 通过 Codex 桌面/浏览器控制观察 Botzone 页面。若尚未登录、出现验证码或平台安全确认，仅在此时请求项目所有者处理；其余情况不要求项目所有者回复。
+6. 页面显示“已连接”且进程仍存活后，由 Codex 创建唯一 GuanDan 测试桌，严格选择无贡、seed 27001、本家座位 0 和固定 profile，并确认已进入对局。不得创建第二桌。
+7. 持续监督页面与进程直到 connector 自行退出；不得因页面短暂刷新启动第二进程或重复建桌。
+8. 完成后验收：exit 0、`finished_target`、request=response=Header 且大于 0、qualified finished=1、零 transport failure/timeout、空 diagnostics/detail/profile、正常四人结果、agent mode=`deepseek`、观测守恒全部通过。
+9. v8 audit 与 v4 最小 tombstone 必须严格合法，二者 run token 与本次派生 token 精确一致；state 只能保留该 tombstone。stdout 只能是固定 connector 完成行，stderr 必须为空。
+10. DeepSeek model outcome 与 fallback 必须守恒；允许本局 model exposure 为 0，因为本步骤只验 launcher 生命周期，既有 L5-A3c 已证明真实模型成功路径。
+11. 仅输出脱敏聚合、audit/tombstone/stream bytes 与 SHA-256；不得输出 token、URL、Header、match/player/Bot ID、牌、动作、prompt、reasoning、响应或账号信息。
+
+### 判定
+
+全部门槛通过：
 
 ```text
-botzone_tokenized_live_launcher_contract_invalid
+botzone_tokenized_launcher_live_pilot_verified
 ```
 
-通过后独立提交最小实现检查点。下一步使用全新 seed/root 先做一次可见前台单局启动资格：Codex 持有 launcher 进程句柄并通过桌面/浏览器控制确认 Botzone 页面显示“已连接”，随后自行创建唯一无贡桌并确认进入对局，同时保留固定 stream/exit 证据。该单局成功后再规划新的 16 局批次；不得恢复 `26001/26002`。
+任一启动、UI、协议、transport、结果、stream、v8/v4/token 或敏感边界失败：
+
+```text
+botzone_tokenized_launcher_live_pilot_invalid
+```
+
+失败不得重试或复用 seed `27001`。成功也不得直接计入 paired benchmark；成功后先清理唯一 tombstone，再以全新 seed/root 规划 16 局 tokenized capacity 批次。
