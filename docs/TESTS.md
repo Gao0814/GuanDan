@@ -123,6 +123,8 @@ L5-A4e5 未进入上述逐局验收：game 1 在人工建桌提示前退出，st
 
 L5-A4e6 实际通过 launcher 及相关定向 32 项、全量 619 项和 diff check；检查点 `2209bb71e35c4142c28bf1218fb316f8cf67da2d` 仅含 launcher 与其测试。L5-A4e7 不新增代码回归：live 验收覆盖真实进程句柄、UI 连接/建桌、固定 stream、exit/finished/request 守恒、零 transport/protocol 异常、正常结果及 v8/v4/token 三方一致。该 pilot 不进入 paired aggregate，也不证明策略收益。
 
+L5-A4e7 实际只产生两个 0-byte stream，state/audit/对局请求均为 0，故没有进入 live 验收并判 invalid。L5-A4e8 不新增代码测试；新增执行门槛是 launcher 启动必须返回仍运行的统一 session ID，并在 Browser 操作前后用同一 ID 证明存活。直接 exit、session 丢失或 detached 启动均在建桌前失败；成功仍需完整 v8/v4/token 与对局守恒。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

@@ -129,6 +129,8 @@ L5-A4e5 实际在 game 1 建桌提示前失效：connector 已退出，state 为
 
 L5-A4e6 已补齐 launcher 的 agent/state/run-token 参数、同进程传递与独立 stream 证据，检查点为 `2209bb71e35c4142c28bf1218fb316f8cf67da2d`，判定 `botzone_tokenized_live_launcher_contract_verified`。L5-A4e7 先用全新 `27001/seat0/deepseek` 做一局可见前台 pilot；只有 UI supervision、进程生命周期、正常完成及 v8/v4/token 全部闭环后，才允许使用另一组全新 seed 重建 paired capacity。
 
+L5-A4e7 未进入页面握手：launcher 只创建两个空 stream 后退出，state/audit 为空，未发生对局请求。该边界说明独立流 open 已发生，但不能证明更具体根因；27001 永久封存。Edge Browser 扩展现可精确 claim Botzone 页面。L5-A4e8 使用全新 28001，把 launcher 直接运行在持续统一执行 session 中并持有 session ID，禁止 detached/Start-Process；UI 可自动填表和监督，但最终提交建桌仍遵守一次即时浏览器确认。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

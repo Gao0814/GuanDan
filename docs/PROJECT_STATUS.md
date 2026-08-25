@@ -116,6 +116,8 @@ L5-A4e5 在 game 1 建桌提示前停止：唯一 connector 已退出，没有 v
 
 L5-A4e6 已完成并提交为 `2209bb71e35c4142c28bf1218fb316f8cf67da2d`：tokenized launcher 强制 agent/state/run-token，在同进程调用 connector 并捕获独立 stream；定向 32、全量 619 与 diff check 通过，工作区干净，判定 `botzone_tokenized_live_launcher_contract_verified`。当前进入 L5-A4e7：全新 seed `27001` 的单局 visible-foreground DeepSeek pilot，由 Codex UI supervision 完成连接确认与建桌，不恢复任何旧容量批次。
 
+L5-A4e7 在连接前失效：launcher 启动后退出，state 与 v8 audit 不存在，两个 stream 文件均为 0 bytes，未打开/创建桌或发送 Botzone/DeepSeek 对局请求；seed `27001` 永久禁用，判定 `botzone_tokenized_launcher_live_pilot_invalid`。当前 Browser 扩展已成功识别并绑定 Edge 的 Botzone 根页面。下一步 L5-A4e8 用 `28001` 和持久统一执行 session ID 直接托管 launcher，不再使用易被回收的 detached 启动。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15
