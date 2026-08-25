@@ -125,6 +125,8 @@ L5-A4e4 已通过 tokenized manifest、16 个隔离布局和双模式零网络 p
 
 L5-A4e5 实际在 game 1 建桌提示前失效：connector 已退出，state 为空且 v8 audit 缺失，后续局均未启动，progress 固定为 `batch_invalid_before_table`。该证据不支持把失败归因于 Botzone GET、DeepSeek、协议或 connector 本体。现有 `live_launcher.py` 尚不能传递 tokenized capacity 所需的 agent/state/run-token，导致批量外层没有复用此前验证过的 stdout/stderr 捕获边界。L5-A4e6 只扩展该 launcher 并做离线测试；旧批次永久封存，修复后先做全新单局可见前台资格。
 
+后续 live 人工握手改为 Codex UI supervision：项目所有者完成一次登录并打开目标页面后，Codex 通过桌面/浏览器控制检查“已连接”、创建唯一无贡桌、核对预注册设置并确认进入对局。无需逐局向项目所有者索要状态回复；验证码、平台安全确认或不可可靠识别的页面仍必须暂停。UI supervision 不得读取/记录连接密钥、URL、Cookie 或账号信息，也不放宽单 connector、单桌、process handle、stream、v8/v4/token 与 fail-closed 门槛。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15

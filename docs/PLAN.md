@@ -315,6 +315,7 @@
 - L5-A4e5 在第 1 局人工建桌提示前失效：唯一 connector 已退出，game 1 state 为空、v8 audit 不存在，后续 15 局未启动；progress 标记 `batch_invalid_before_table`，整批判定 `botzone_paired_policy_tokenized_capacity_invalid`，seed `26001/26002` 永久禁用。
 - 由于该启动没有保留 exit/stdout/stderr，不能归因于 connector、Botzone、DeepSeek 或协议。现有 connector 已有成功 live 证据；缺口是容量外层没有复用可捕获流的 launcher，而旧 launcher 又不能传递 agent/state/run-token。
 - 下一步 L5-A4e6 只离线扩展现有 `live_launcher.py` 的 tokenized 参数与流证据，不重写 connector 或新增诊断载体。通过后先做全新 seed/root 的单局可见前台启动资格，再决定是否重建 16 局批次。
+- 项目所有者已授权后续 live 使用 Codex 桌面/浏览器控制监督页面并代为创建唯一无贡桌；登录完成后不再逐局要求“已连接/已进入对局”文字确认。只有登录、验证码、安全确认或页面不可可靠识别时才暂停人工处理，敏感连接信息不得读取或持久化。
 
 ### L5-A2b7 任务上下文阻塞
 

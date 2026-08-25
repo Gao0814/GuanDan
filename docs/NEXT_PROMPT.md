@@ -19,6 +19,8 @@ botzone_paired_policy_tokenized_capacity_invalid
 
 项目所有者常驻默认授权继续有效；本步为纯离线实现，不询问授权。
 
+项目所有者另已明确授权后续 live 任务使用 Codex 桌面/浏览器控制监督 Botzone 页面。完成一次登录并打开本地 AI/测试桌页面后，Codex 应自行确认“已连接”、创建唯一无贡桌、填写预注册 seed/seat/profile、确认进入对局并监控结束，不再要求项目所有者逐局回复“已连接”或“已进入对局”。仅登录、验证码、平台安全确认、浏览器控制不可用或页面状态无法可靠识别时暂停请求人工处理；不得读取、回显或持久化连接密钥、local-AI URL、Cookie 或账号信息。
+
 ### 目标
 
 只加固现有 Windows live launcher，使它能安全、显式地启动 tokenized rule/deepseek connector，并在 connector 进入任何网络路径前就具备可审计的进程退出码及独立 stdout/stderr。不得新增另一套 connector、诊断 runner 或进程树。
@@ -64,4 +66,4 @@ botzone_tokenized_live_launcher_contract_verified
 botzone_tokenized_live_launcher_contract_invalid
 ```
 
-通过后独立提交最小实现检查点。下一步使用全新 seed/root 先做一次可见前台单局启动资格：必须先看到 launcher 进程仍存活、Botzone 页面显示已连接，并保留固定 stream/exit 证据，之后才提示人工建桌。该单局成功后再规划新的 16 局批次；不得恢复 `26001/26002`。
+通过后独立提交最小实现检查点。下一步使用全新 seed/root 先做一次可见前台单局启动资格：Codex 持有 launcher 进程句柄并通过桌面/浏览器控制确认 Botzone 页面显示“已连接”，随后自行创建唯一无贡桌并确认进入对局，同时保留固定 stream/exit 证据。该单局成功后再规划新的 16 局批次；不得恢复 `26001/26002`。
