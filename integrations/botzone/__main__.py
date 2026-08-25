@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from .agent_runtime import prepare_agent_factory
 from .http_transport import LocalAIHttpTransport
 from .runner import build_foreground_runner, exit_code_for, write_audit
+from .run_provenance import RunProvenanceError, validate_run_token
 from .runtime_config import RuntimeConfigError, load_runtime_config, preflight_state_directory
 
 
@@ -51,10 +52,17 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     parser.add_argument("--max-wall-seconds", type=int, default=600)
     parser.add_argument("--stop-after-finished", type=int, default=1)
     parser.add_argument("--audit-file")
+    parser.add_argument("--run-token")
     parser.add_argument("--preflight-only", action="store_true", help="validate configuration and storage without polling")
     arguments = parser.parse_args(argv)
     stage = "runtime_config"
     try:
+        run_token = None
+        if not arguments.preflight_only and arguments.run_token is not None:
+            try:
+                run_token = validate_run_token(arguments.run_token)
+            except RunProvenanceError as exc:
+                raise ValueError("invalid_run_token") from exc
         config = load_runtime_config(
             local_ai_url=arguments.url,
             state_directory=arguments.state_dir,
@@ -77,6 +85,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             ),
             agent_mode=arguments.agent,
             prepared_agent_factory=prepared_agent_factory,
+            run_token=run_token,
         )
         summary = runner.run(
             max_cycles=arguments.max_cycles,
@@ -85,7 +94,9 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
         )
         exit_code = exit_code_for(summary)
         if arguments.audit_file is not None:
-            write_audit(arguments.audit_file, summary, exit_code)
+            if runner.run_token != run_token:
+                raise ValueError("run_token_mismatch")
+            write_audit(arguments.audit_file, summary, exit_code, run_token=run_token)
     except (RuntimeConfigError, ValueError) as error:
         print(_configuration_output(preflight_only=arguments.preflight_only, stage=stage, error=error))
         return 2

@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from types import MappingProxyType
 
+from integrations.botzone.run_provenance import TOKEN_AUDIT_VERSION, RunProvenanceError, validate_run_token
+
 
 POLICIES = frozenset({"rule", "deepseek"})
 PROFILE_VERSION = "botzone_no_tribute_level_2/v1"
@@ -115,6 +117,7 @@ AUDIT_FIELDS = frozenset(
         "local_team_score_counts",
     }
 )
+TOKEN_AUDIT_FIELDS = AUDIT_FIELDS | {"run_token"}
 
 
 class PolicyBenchmarkError(ValueError):
@@ -191,6 +194,7 @@ class BenchmarkConditions:
     no_tribute: bool = True
     current_level_rank: int = 2
     previous_rank_profile: str = PREVIOUS_RANK_PROFILE
+    run_provenance_required: bool = False
 
     def __post_init__(self) -> None:
         if (
@@ -201,6 +205,7 @@ class BenchmarkConditions:
             or type(self.current_level_rank) is not int
             or self.current_level_rank != 2
             or self.previous_rank_profile != PREVIOUS_RANK_PROFILE
+            or type(self.run_provenance_required) is not bool
         ):
             raise PolicyBenchmarkError("invalid_conditions")
 
@@ -212,6 +217,7 @@ class BenchmarkConditions:
             "no_tribute": self.no_tribute,
             "current_level_rank": self.current_level_rank,
             "previous_rank_profile": self.previous_rank_profile,
+            "run_provenance_required": self.run_provenance_required,
         }
 
 
@@ -248,6 +254,7 @@ class PolicyAuditSubmission:
     strategy: object
     profile_version: object
     audit: object
+    run_token: object = None
 
     def __post_init__(self) -> None:
         if isinstance(self.audit, Mapping):
@@ -292,16 +299,29 @@ class _ValidatedAudit:
     rule_fallback_count: int
 
 
-def _validate_audit(value: object, expected_strategy: str) -> _ValidatedAudit:
-    if not isinstance(value, Mapping) or set(value) != AUDIT_FIELDS:
+def _validate_audit(
+    value: object,
+    expected_strategy: str,
+    *,
+    expected_run_token: str | None = None,
+) -> _ValidatedAudit:
+    expected_fields = TOKEN_AUDIT_FIELDS if expected_run_token is not None else AUDIT_FIELDS
+    expected_version = TOKEN_AUDIT_VERSION if expected_run_token is not None else 7
+    if not isinstance(value, Mapping) or set(value) != expected_fields:
         raise PolicyBenchmarkError("invalid_audit")
     if (
         value["schema"] != "botzone_local_smoke_audit"
         or type(value["version"]) is not int
-        or value["version"] != 7
+        or value["version"] != expected_version
         or type(value["exit_code"]) is not int
     ):
         raise PolicyBenchmarkError("invalid_audit")
+    if expected_run_token is not None:
+        try:
+            if validate_run_token(value["run_token"]) != expected_run_token:
+                raise PolicyBenchmarkError("invalid_audit")
+        except RunProvenanceError as exc:
+            raise PolicyBenchmarkError("invalid_audit") from exc
     if value["agent_mode"] != expected_strategy or expected_strategy not in POLICIES:
         raise PolicyBenchmarkError("strategy_mismatch")
     if value["exit_code"] != 0 or value["stop_reason"] != "finished_target":
@@ -757,8 +777,21 @@ def aggregate_policy_audits(
             seats[pair.local_seat].incomplete += 1
             continue
         try:
-            rule = _validate_audit(expected_sides["rule"][0].audit, "rule")
-            deepseek = _validate_audit(expected_sides["deepseek"][0].audit, "deepseek")
+            rule_submission = expected_sides["rule"][0]
+            deepseek_submission = expected_sides["deepseek"][0]
+            if conditions.run_provenance_required:
+                rule_token = validate_run_token(rule_submission.run_token)
+                deepseek_token = validate_run_token(deepseek_submission.run_token)
+                if rule_token == deepseek_token:
+                    # Each game must carry its own token; equality would make
+                    # the two independent local runs ambiguous.
+                    raise PolicyBenchmarkError("invalid_audit")
+            else:
+                if rule_submission.run_token is not None or deepseek_submission.run_token is not None:
+                    raise PolicyBenchmarkError("invalid_audit")
+                rule_token = deepseek_token = None
+            rule = _validate_audit(rule_submission.audit, "rule", expected_run_token=rule_token)
+            deepseek = _validate_audit(deepseek_submission.audit, "deepseek", expected_run_token=deepseek_token)
         except PolicyBenchmarkError as error:
             diagnostics["strategy_mismatch" if str(error) == "strategy_mismatch" else "audit_invalid"] += 1
             overall.invalid += 1

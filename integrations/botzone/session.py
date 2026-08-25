@@ -16,6 +16,7 @@ from .cards import RANKS
 from .models import ActionClaim, DealRequest, GlobalState, HistoryEntry, PlayRequest
 from .poll import FinishedRow
 from .protocol import ProtocolValidationError, parse_action_claim
+from .run_provenance import TOKEN_SESSION_VERSION, RunProvenanceError, validate_run_token
 
 
 SESSION_SCHEMA: Final[str] = "botzone_no_tribute_session"
@@ -72,7 +73,7 @@ class HandlerContext:
         }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class SessionRecord:
     match_id: str
     request_digest: str
@@ -89,11 +90,12 @@ class SessionRecord:
     cached_response: bytes | None
     cached_response_digest: str | None
     finished: FinishedRow | None = None
+    run_token: str | None = None
 
     def to_json(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "schema": SESSION_SCHEMA,
-            "version": SESSION_VERSION,
+            "version": TOKEN_SESSION_VERSION if self.run_token is not None else SESSION_VERSION,
             "match_id": self.match_id,
             "request_digest": self.request_digest,
             "stage": self.stage,
@@ -110,6 +112,12 @@ class SessionRecord:
             "cached_response_digest": self.cached_response_digest,
             "finished": _finished_to_json(self.finished),
         }
+        if self.run_token is not None:
+            payload["run_token"] = validate_run_token(self.run_token)
+        return payload
+
+    def __repr__(self) -> str:
+        return "SessionRecord(redacted)"
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,12 +259,17 @@ def _record_from_json(value: object) -> SessionRecord:
         "pending_response", "pending_effect", "delivery_state", "handler_completed", "cached_response",
         "cached_response_digest", "finished",
     }
-    if (
-        set(value) != expected
-        or value["schema"] != SESSION_SCHEMA
-        or type(value["version"]) is not int
-        or value["version"] != SESSION_VERSION
-    ):
+    version = value.get("version")
+    if value.get("schema") != SESSION_SCHEMA or type(version) is not int:
+        raise SessionStorageError("incompatible_session")
+    if version == SESSION_VERSION and set(value) == expected:
+        run_token = None
+    elif version == TOKEN_SESSION_VERSION and set(value) == expected | {"run_token"}:
+        try:
+            run_token = validate_run_token(value["run_token"])
+        except RunProvenanceError as exc:
+            raise SessionStorageError("invalid_run_token") from exc
+    else:
         raise SessionStorageError("incompatible_session")
     match_id = value["match_id"]
     digest = value["request_digest"]
@@ -321,14 +334,31 @@ def _record_from_json(value: object) -> SessionRecord:
         cached_response=cached,
         cached_response_digest=cached_digest,
         finished=finished,
+        run_token=run_token,
     )
 
 
 class SessionStore:
     """Disk-backed store; all persisted files are namespaced by a hashed key."""
 
-    def __init__(self, state_directory: Path | str) -> None:
+    def __init__(self, state_directory: Path | str, *, run_token: str | None = None) -> None:
         self._root = Path(state_directory)
+        try:
+            self._run_token = None if run_token is None else validate_run_token(run_token)
+        except RunProvenanceError as exc:
+            raise SessionStorageError("invalid_run_token") from exc
+
+    @property
+    def run_token(self) -> str | None:
+        return self._run_token
+
+    def _validate_record_token(self, record: SessionRecord) -> None:
+        if record.run_token != self._run_token:
+            raise SessionStorageError("run_token_mismatch")
+
+    def _validate_tombstone_token(self, token: str | None) -> None:
+        if token != self._run_token:
+            raise SessionStorageError("run_token_mismatch")
 
     def _path(self, match_id: str) -> Path:
         match_id = _validate_match_id(match_id)
@@ -343,17 +373,21 @@ class SessionStore:
             decoded = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise SessionStorageError("corrupt_session") from exc
-        if _is_tombstone(decoded):
+        tombstone_token = _tombstone_run_token(decoded)
+        if tombstone_token is not _NOT_A_TOMBSTONE:
+            self._validate_tombstone_token(tombstone_token)
             return None
         record = _record_from_json(decoded)
         if record.match_id != match_id:
             raise SessionStorageError("session_key_mismatch")
+        self._validate_record_token(record)
         if record.delivery_state == "inflight" and record.pending_response is not None:
             record = replace(record, delivery_state="pending")
             self.save(record)
         return record
 
     def save(self, record: SessionRecord) -> None:
+        self._validate_record_token(record)
         path = self._path(record.match_id)
         self._atomic_write(path, json.dumps(record.to_json(), ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
@@ -429,6 +463,7 @@ class SessionStore:
             handler_completed=False,
             cached_response=None,
             cached_response_digest=None,
+            run_token=self._run_token,
         )
         self.save(prepared)
         return prepared, True
@@ -497,9 +532,15 @@ class SessionStore:
             try:
                 decoded = json.loads(path.read_text(encoding="utf-8"))
                 if _is_tombstone(decoded):
+                    self._validate_tombstone_token(_tombstone_run_token(decoded))
                     continue
                 record = _record_from_json(decoded)
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError, SessionStorageError) as exc:
+                self._validate_record_token(record)
+            except SessionStorageError as exc:
+                if str(exc) == "run_token_mismatch":
+                    raise
+                raise SessionStorageError("corrupt_session") from exc
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise SessionStorageError("corrupt_session") from exc
             if record.pending_response is not None and record.delivery_state in {"pending", "inflight"}:
                 header_name = f"X-Match-{record.match_id}"
@@ -548,13 +589,23 @@ class SessionStore:
             decoded = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise SessionStorageError("corrupt_session") from exc
-        if _is_tombstone(decoded):
+        tombstone_token = _tombstone_run_token(decoded)
+        if tombstone_token is not _NOT_A_TOMBSTONE:
+            self._validate_tombstone_token(tombstone_token)
             return False
-        _record_from_json(decoded)
+        record = _record_from_json(decoded)
+        self._validate_record_token(record)
+        tombstone: dict[str, object] = {
+            "schema": TOMBSTONE_SCHEMA,
+            "version": TOKEN_SESSION_VERSION if self._run_token is not None else SESSION_VERSION,
+            "finished": True,
+        }
+        if self._run_token is not None:
+            tombstone["run_token"] = self._run_token
         self._atomic_write(
             path,
             json.dumps(
-                {"schema": TOMBSTONE_SCHEMA, "version": SESSION_VERSION, "finished": True},
+                tombstone,
                 ensure_ascii=True,
                 sort_keys=True,
                 separators=(",", ":"),
@@ -563,11 +614,27 @@ class SessionStore:
         return True
 
 
+_NOT_A_TOMBSTONE = object()
+
+
+def _tombstone_run_token(value: object) -> str | None | object:
+    if not isinstance(value, dict):
+        return _NOT_A_TOMBSTONE
+    legacy = {"schema": TOMBSTONE_SCHEMA, "version": SESSION_VERSION, "finished": True}
+    if value == legacy:
+        return None
+    if set(value) != {"schema", "version", "finished", "run_token"}:
+        return _NOT_A_TOMBSTONE
+    if value.get("schema") != TOMBSTONE_SCHEMA or value.get("version") != TOKEN_SESSION_VERSION or value.get("finished") is not True:
+        return _NOT_A_TOMBSTONE
+    try:
+        return validate_run_token(value.get("run_token"))
+    except RunProvenanceError:
+        return _NOT_A_TOMBSTONE
+
+
 def _is_tombstone(value: object) -> bool:
-    return (
-        isinstance(value, dict)
-        and value == {"schema": TOMBSTONE_SCHEMA, "version": SESSION_VERSION, "finished": True}
-    )
+    return _tombstone_run_token(value) is not _NOT_A_TOMBSTONE
 
 
 def merge_history(

@@ -24,6 +24,7 @@ from .play_adapter import NoTributeRuleBasedHandler
 from .poll import ENVELOPE_SHAPE_DETAILS, REQUIRED_FIELDS_PROFILES
 from .result_observability import ResultObservabilitySnapshot
 from .runtime_config import RuntimeConfig
+from .run_provenance import RunProvenanceError, TOKEN_AUDIT_VERSION, validate_run_token
 from .session import SessionStore
 
 
@@ -71,6 +72,7 @@ class ForegroundRunner:
         observability_snapshot: Callable[[], AgentObservabilitySnapshot] | None = None,
         result_observability_snapshot: Callable[[], ResultObservabilitySnapshot] | None = None,
         agent_mode: str = "rule",
+        run_token: str | None = None,
     ) -> None:
         self._connector = connector
         self._max_failures = max_consecutive_failures
@@ -83,6 +85,14 @@ class ForegroundRunner:
             connector_result_snapshot if callable(connector_result_snapshot) else None
         )
         self._agent_mode = agent_mode
+        try:
+            self._run_token = None if run_token is None else validate_run_token(run_token)
+        except RunProvenanceError as exc:
+            raise ValueError("invalid_run_token") from exc
+
+    @property
+    def run_token(self) -> str | None:
+        return self._run_token
 
     def run(
         self,
@@ -244,6 +254,7 @@ def build_foreground_runner(
     prepared_agent_factory: Callable[[int], object] | None = None,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
+    run_token: str | None = None,
 ) -> ForegroundRunner:
     observability = AgentObservabilityRecorder()
     if agent_mode == "rule":
@@ -258,7 +269,7 @@ def build_foreground_runner(
         )
     else:
         raise ValueError("invalid_agent_mode")
-    connector = MockConnector(SessionStore(config.state_directory), transport, handler)
+    connector = MockConnector(SessionStore(config.state_directory, run_token=run_token), transport, handler)
     return ForegroundRunner(
         connector,
         max_consecutive_failures=config.max_consecutive_failures,
@@ -268,6 +279,7 @@ def build_foreground_runner(
         observability_snapshot=handler.observability_snapshot,
         result_observability_snapshot=connector.result_observability_snapshot,
         agent_mode=agent_mode,
+        run_token=run_token,
     )
 
 
@@ -285,7 +297,7 @@ def exit_code_for(summary: RunnerSummary) -> int:
     return 6
 
 
-def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> None:
+def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int, *, run_token: str | None = None) -> None:
     """Atomically write only deterministic, non-sensitive smoke aggregates."""
 
     target = Path(path).resolve()
@@ -316,9 +328,13 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
     )
     if sum(count for _, count in result_snapshot.result_category_counts) != summary.finished_qualified:
         raise ValueError("invalid_audit_summary")
+    try:
+        validated_token = None if run_token is None else validate_run_token(run_token)
+    except RunProvenanceError as exc:
+        raise ValueError("invalid_run_token") from exc
     payload = {
         "schema": "botzone_local_smoke_audit",
-        "version": 7,
+        "version": TOKEN_AUDIT_VERSION if validated_token is not None else 7,
         "exit_code": exit_code,
         "stop_reason": summary.stopped,
         "cycles": summary.cycles,
@@ -338,6 +354,8 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int) -> Non
         **snapshot.to_json(),
         **result_snapshot.to_json(),
     }
+    if validated_token is not None:
+        payload["run_token"] = validated_token
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as handle:
