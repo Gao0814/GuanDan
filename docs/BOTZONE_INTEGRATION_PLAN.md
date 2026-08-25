@@ -932,3 +932,8 @@ L5-A2b4 已执行唯一 live：连接成功，但在新桌开始前收到缺 Bot
 L5-A4e9 使用全新 `29001` 直接启动 connector，但仍在持续 session ID 门槛前退出；页面、测试桌、state 与 v8 audit 均未进入有效阶段，判定 `botzone_direct_persistent_connector_pilot_invalid`。该 seed/root 永久封存。
 
 后续离线资格确认统一执行 session 能稳定托管长 Python 进程；同时，合成 `example.invalid` 的仓库外 D 盘 state preflight 只有在命令本身获得系统扩展文件权限时才完成并清空。下一步 L5-A4f1 不再增加 launcher 或诊断层，而是让现有 direct connector 命令本身使用相同系统权限与统一 TTY session。只有取得 session ID 后才进入 Browser 连接监督和人工建桌；最终提交执行一次浏览器动作确认。使用全新 `30001`，不调用 runmatch，不复用任何旧 pilot。
+### L5-A4f1 / L5-A4f2：转为项目所有者前台运行
+
+项目所有者在 VS Code PowerShell 中使用显式绝对 state/audit 路径启动现有 connector，已完成一局人工无贡 DeepSeek 闭环：v8 audit、v4 tombstone和 token 一致，27 组请求闭环，17 次模型 success、零 fallback，正常终局。判定 `botzone_owner_operated_deepseek_manual_smoke_verified`。
+
+后续不再让 Codex 托管 live 长进程。L5-A4f2 使用全新 `31001`，由项目所有者依次运行 rule 与 deepseek 两个前台 connector；两局保持 seed、seat、对手和桌面 profile 完全一致，分别产生独立 v8/v4/token evidence，再由现有 benchmark 载体聚合单对描述结果。单对通过前不恢复 16 局容量批次。

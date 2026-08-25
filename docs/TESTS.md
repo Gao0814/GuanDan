@@ -1718,3 +1718,8 @@ L5-A4e9 未取得 direct connector 的持续 session ID，state/audit/网页对�
 随后完成两项离线执行资格：合成 20 秒 Python 进程由统一执行工具返回 session ID 并可继续轮询至 exit 0；合成 URL 的 D 盘仓库外 `--preflight-only --agent rule` 在系统扩展权限下返回 `preflight_ready`，目录最终为空。两项均未调用 Botzone 或 DeepSeek。
 
 L5-A4f1 不新增代码回归。执行验收要求 direct connector 命令自身使用系统扩展权限和统一 TTY session；初次 yield 必须返回 session ID 且没有 exit code。之后才允许 Browser 连接/建桌。最终仍复核 exit/finished/request、transport/protocol、v8/v4/token、DeepSeek observability 与无残留守恒；失败不得重试或新建诊断载体。
+### L5-A4f1 手动闭环与 L5-A4f2 单对验收
+
+项目所有者手动前台 DeepSeek 局的只读 evidence 已通过：v8 audit 804 bytes / `ee747bc2...236d1`，request=response=Header=27、qualified finished=1、transport failure=0；一次 long-poll timeout 不触发失败。Agent decision 26=local shortcut 9+model 17，model attempt/result=17/17 success、fallback=0；v4 最小 tombstone 与 audit token 一致。该结果不是代码测试，也不证明策略优于 RuleBased。
+
+L5-A4f2 不新增代码测试。执行验收覆盖同 seed/seat/opponents/profile 的 rule/deepseek 两局、独立 v8/v4/token、正常结果、transport/timeout 分类、策略观测守恒以及现有 benchmark 对单对输入的严格聚合。任一局失败即停止，不重试、不继续、不恢复 16 局批次。

@@ -1666,3 +1666,8 @@ L5-A4e9 已判定 `botzone_direct_persistent_connector_pilot_invalid`：seed `29
 后续只读/离线核验补充了两项执行证据：统一执行工具能够托管 20 秒 Python 长进程并返回可跨调用轮询的 session ID；使用合成 URL 的 D 盘仓库外 state preflight 在系统扩展权限下返回 `preflight_ready` 且目录清空。当前最具体的边界不是 connector 协议，而是 live 进程本身必须获得仓库外 state/audit 写入及联网所需的系统权限。该结论是下一步设计依据，不追认为三个旧 pilot 的唯一历史根因。
 
 当前进入 L5-A4f1：全新 seed `30001`，直接在受系统权限监督的统一 TTY session 中运行 connector；先取得 session ID，再由已绑定的 Browser 标签页监督连接和唯一人工无贡桌。项目操作不再重复申请授权；最终网页提交仍保留一次代表用户外部操作的即时确认。
+### 项目所有者前台 connector 路线
+
+在 Codex 托管 pilot 连续受启动/session/权限边界影响后，项目所有者使用 VS Code PowerShell 和显式绝对路径自行启动现有 connector，并完成一局人工无贡 DeepSeek 对局。只读 evidence 为 v8 audit 804 bytes / SHA-256 `ee747bc22d7eaae5003cb4e59480384366059b3287e342498e6fcbcdfdf236d1`；exit 0、finished target、request/response/Header 27/27/27、qualified finished 1、transport failure 0。DeepSeek 决策为 local shortcut 9、model 17，17 次模型结果全部 success、fallback 0；正常四人终局，本家团队负。唯一 state 是 token 匹配的 v4 最小 tombstone。
+
+唯一判定为 `botzone_owner_operated_deepseek_manual_smoke_verified`。这证明用户前台运行路线可用，不证明策略增益。当前进入 L5-A4f2：使用全新 `31001` 由项目所有者串行执行 rule/deepseek 两局同条件单对 pilot，Codex 不再托管 connector 长进程。

@@ -1622,3 +1622,8 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - direct connector 命令本身以系统扩展权限和统一 TTY session 启动；拿到持续 session ID 后才使用已绑定 Browser 标签页等待连接并创建唯一人工无贡桌。
 - 项目授权默认有效；仅最终网页建桌提交按平台要求做一次即时动作确认。
 - 通过后只证明单局协议/模型观测闭环；失败则永久封存 seed/root，不重试。
+### L5-A4f1 实际结果与 L5-A4f2
+
+- Codex 托管的 `30001` pilot 未建立连接；后续确认用户终端曾混用 cmd/PowerShell 变量，不能据此继续归因 connector。
+- 项目所有者改用 VS Code PowerShell、显式绝对目录和前台 connector，成功完成 `30002` 人工无贡 DeepSeek 局。v8/v4/token、27 组请求闭环、17 次模型 success、零 fallback 和正常终局均已只读核验，判定 `botzone_owner_operated_deepseek_manual_smoke_verified`。
+- 下一步 L5-A4f2 不再由 Codex 托管长进程：项目所有者以前台 PowerShell 串行运行一个 rule/deepseek 同条件 pair，Codex 只负责固定命令、evidence 守恒和 existing benchmark 聚合。
