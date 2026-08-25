@@ -118,6 +118,8 @@ L5-A4e6 已完成并提交为 `2209bb71e35c4142c28bf1218fb316f8cf67da2d`：token
 
 L5-A4e7 在连接前失效：launcher 启动后退出，state 与 v8 audit 不存在，两个 stream 文件均为 0 bytes，未打开/创建桌或发送 Botzone/DeepSeek 对局请求；seed `27001` 永久禁用，判定 `botzone_tokenized_launcher_live_pilot_invalid`。当前 Browser 扩展已成功识别并绑定 Edge 的 Botzone 根页面。下一步 L5-A4e8 用 `28001` 和持久统一执行 session ID 直接托管 launcher，不再使用易被回收的 detached 启动。
 
+L5-A4e8 同样未取得持续 session ID，launcher 退出后 state/audit 为空、stream 为 0 bytes，seed `28001` 永久禁用，判定 `botzone_persistent_session_launcher_pilot_invalid`。独立离线资格随后证明执行工具可持续托管 `.venv` Python：session ID `45404` 跨调用存活并正常 exit 0。当前 L5-A4e9 删除 launcher 这一层，直接在持续 session 中运行 `integrations.botzone`，使用全新 seed `29001` 与已绑定 Edge Botzone 标签页。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15

@@ -125,6 +125,8 @@ L5-A4e6 实际通过 launcher 及相关定向 32 项、全量 619 项和 diff ch
 
 L5-A4e7 实际只产生两个 0-byte stream，state/audit/对局请求均为 0，故没有进入 live 验收并判 invalid。L5-A4e8 不新增代码测试；新增执行门槛是 launcher 启动必须返回仍运行的统一 session ID，并在 Browser 操作前后用同一 ID 证明存活。直接 exit、session 丢失或 detached 启动均在建桌前失败；成功仍需完整 v8/v4/token 与对局守恒。
 
+L5-A4e8 未获得 session ID 并判 invalid。随后新增的零网络执行资格不是代码测试：项目 `.venv` 合成长进程在初始 yield 后返回 session ID `45404`，下一次轮询输出 completion 并 exit 0。L5-A4e9 据此直接运行 connector CLI，不运行 launcher；验收先要求 direct command 返回 session ID，再进入 Browser/对局/v8/v4/token 门槛。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口

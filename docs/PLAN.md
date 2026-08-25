@@ -320,6 +320,8 @@
 - 下一步 L5-A4e7 不恢复容量批次，只用全新 seed `27001`、seat 0、deepseek 做一局可见前台 pilot。Codex 监督页面并建桌，必须完成 launcher/process/UI/v8/v4/token 闭环后才允许规划新的 16 局。
 - L5-A4e7 仍在页面连接前退出：27001 根目录只留下两个 0-byte stream，state/audit 为空，未建桌或发送对局请求，判定 `botzone_tokenized_launcher_live_pilot_invalid`。stream 已创建但内容为空，边界指向外层进程保活而非参数解析或对局协议，但具体根因未证实。
 - Edge Browser 扩展现已能精确识别并绑定 Botzone 根页面。下一步 L5-A4e8 用全新 `28001`，禁止 detached/Start-Process，改用持久统一执行 session ID 保活 launcher；Codex 自动填桌，但按浏览器安全门槛在最终创建提交前请求一次即时确认。
+- L5-A4e8 仍未取得 session ID，launcher 随后退出并只留下两个空 stream；seed 28001 永久禁用，判定 `botzone_persistent_session_launcher_pilot_invalid`。随后完全离线的 `.venv` 合成长进程成功返回 session ID `45404`、跨调用保持运行并 exit 0，证明统一执行 session 本身可用。
+- 下一步 L5-A4e9 不再修改或使用 launcher，直接以现有 `python -m integrations.botzone` 入口运行在持续 session 中；使用全新 `29001/seat0/deepseek`，由已绑定 Edge Browser 页面完成单局 pilot。
 
 ### L5-A2b7 任务上下文阻塞
 

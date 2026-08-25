@@ -131,6 +131,8 @@ L5-A4e6 已补齐 launcher 的 agent/state/run-token 参数、同进程传递与
 
 L5-A4e7 未进入页面握手：launcher 只创建两个空 stream 后退出，state/audit 为空，未发生对局请求。该边界说明独立流 open 已发生，但不能证明更具体根因；27001 永久封存。Edge Browser 扩展现可精确 claim Botzone 页面。L5-A4e8 使用全新 28001，把 launcher 直接运行在持续统一执行 session 中并持有 session ID，禁止 detached/Start-Process；UI 可自动填表和监督，但最终提交建桌仍遵守一次即时浏览器确认。
 
+L5-A4e8 仍在 session ID 门槛前失败，28001 永久封存。随后离线合成长进程以真实统一执行工具成功返回 session ID、跨工具调用存活并 exit 0，排除“执行工具不支持持久 session”。L5-A4e9 不再叠加 launcher：现有 connector CLI 已具备 agent/state/token/audit 参数，故直接运行于持续 session，使用全新 29001；Browser 页面继续由扩展精确 claim。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15
