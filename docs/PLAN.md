@@ -1642,3 +1642,8 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 页面在最终提交前显示“游戏桌被房主关闭了”；connector 未收到请求，最终被中断。v8 audit 为 695 bytes / `a8785d80...8a24f`，exit 130、4 次 idle timeout、0 request/Agent/model，state 为空。判定 `botzone_codex_corrected_ui_rule_pilot_invalid`。
 - 当前证据不能确认是否误点提前终止，只能确认目标桌未进入 local-AI 链路；不得把怀疑升级为根因。
 - 下一步 L5-A4f5 使用全新 `34001`，严格限定提交前点击白名单；最终开始游戏后 Browser 完全只读，只轮询 connector 和读取页面状态。
+### L5-A4f5 结果与 UI 契约发现
+
+- 白名单内游戏选择确认被点击，但页面未进入建桌表单并仍停留主页；未启动 connector、未创建目录/桌、未联网或调用模型，判定 `botzone_codex_click_fenced_rule_pilot_invalid`，`34001` 永久禁用。
+- 失败边界现收窄到游戏选择 modal 的选中状态、确认按钮作用域或确认后的页面状态转换。
+- 下一步 L5-A4f6 不使用 live seed/connector，只以 Browser screenshot+DOM 发现 GuanDan 选项、selected proof、modal-scoped confirm 及建桌表单 readiness signal；到达表单后停止，不点击开始游戏。

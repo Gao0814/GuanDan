@@ -1686,3 +1686,8 @@ L5-A4f3 保持 `botzone_codex_automated_rule_pilot_invalid`。只读核验表明
 L5-A4f4 判定 `botzone_codex_corrected_ui_rule_pilot_invalid`。页面在提交前显示房主关闭，connector 没有收到任何 request/response/Header，最终 exit 130 interrupted；v8 audit 695 bytes / `a8785d80...8a24f`，只有 4 次 idle timeout，Agent/model 为 0，state 为空。项目所有者怀疑进入页面后发生误操作，但没有动作证据，不能确认具体根因。
 
 当前进入 L5-A4f5：全新 `34001`，浏览器写操作限定为明确白名单和唯一语义 locator；开始游戏后 browser write count 必须为 0，只允许只读监督和 connector 轮询。该步骤先验证自动 UI 安全，不恢复策略 pair。
+### L5-A4f5 游戏选择状态转换失败
+
+L5-A4f5 判定 `botzone_codex_click_fenced_rule_pilot_invalid`：游戏选择阶段的白名单确认已点击，但页面没有进入预期建桌表单；connector、state/audit、网页桌、DeepSeek 和 runmatch 均未启动，`34001` 不复用。这不是 connector 或协议失败，当前边界是网页游戏选择/确认的 UI 契约尚未锁定。
+
+当前进入 L5-A4f6：纯 Browser UI selector contract discovery。使用可见 modal 作用域证明 GuanDan 真正 selected，再点击同一 modal 的唯一确认并等待“载入上次配置/开始游戏”表单信号；到达表单后立即停止，不创建桌、不启动 connector。

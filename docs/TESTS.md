@@ -1738,3 +1738,8 @@ L5-A4f4 不新增代码测试。执行验收要求两次 Browser DOM readback：
 L5-A4f4 audit 为 exit 130、request/Agent=0、4 次 timeout、空 state；页面出现房主关闭，但缺少可归因动作证据，因此只判 UI 生命周期失败，不归因误点。
 
 L5-A4f5 不新增代码测试。执行验收新增点击白名单、每次点击前后 DOM 证据、两次完整 readback，以及最终开始游戏后的 browser write action count=0。对局页只允许 snapshot/URL/title/screenshot 和 connector polling；其余 v8/v4/token、RuleBased、request/finished 和 timeout 守恒保持不变。
+### L5-A4f5 结果与 L5-A4f6 UI 契约验收
+
+L5-A4f5 在 connector/目录/网络均为 0 的状态下停于游戏选择确认后的主页，说明 browser 白名单本身不足以证明 UI 状态转换；这不是代码回归失败。
+
+L5-A4f6 不新增代码测试。执行验收覆盖 visible modal scope、GuanDan selected/checked proof、modal 内唯一 confirm、确认后的 modal disappearance/form readiness，以及“载入上次配置/开始游戏”同表单存在。最终提交、connector、GET、DeepSeek 和 runmatch 均必须为 0。

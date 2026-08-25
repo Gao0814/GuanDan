@@ -1,113 +1,90 @@
 # 下一任务提示词
 
-## Step L5-A4f5：点击白名单保护的 Codex 自动 RuleBased pilot
+## Step L5-A4f6：Botzone GuanDan 建桌 UI 选择器契约发现
 
-L5-A4f4 唯一判定：
-
-```text
-botzone_codex_corrected_ui_rule_pilot_invalid
-```
-
-### 已封存证据
-
-`33001` 根目录只读证据如下，必须原样保留且不得复用：
-
-- v8 audit：695 bytes，SHA-256 `a8785d804626e074d6a4ceeda5bbc41a0f1737e80725aee6e5b400e0c488a24f`；
-- exit `130`，stop reason=`interrupted`；
-- cycles=`4`，transport timeout=`4`，无其他 transport failure；
-- requests/responses/Headers=`0/0/0`；
-- Agent/model decisions=`0/0`；
-- state 文件数=`0`，无残留 connector；
-- audit token 形状合法。
-
-页面曾显示“游戏桌被房主关闭了”，但没有动作日志或目标桌完成证据，不能确认是误点、页面状态切换还是其他 UI 生命周期原因。唯一可确认的是：本次目标桌没有进入 local-AI 请求链路。不得把项目所有者的怀疑写成已证实根因。
-
-### 目标
-
-使用全新 seed `34001` 再做一局 Codex 自动 RuleBased pilot。新增浏览器点击白名单和“开始游戏后完全只读”边界，防止误触关闭/离开/返回/刷新等控制。
-
-### 固定参数
-
-- seed：`34001`
-- seat：`0`
-- agent：`rule`
-- run token：`22b9ad674b07e69fee7b13ddfa033b17`
-- 根目录：`D:\VsCodeProject\BotzoneClickFencedPilot-34001`
-- state：根目录下全新空 `state`
-- audit：根目录下不存在的 `audit\completion.json`
-- GuanDan、需要进贡=`否`、级牌=`2`、上轮头游/末游=`0/3`
-- 目标 Bot ID：仅使用项目所有者在当前任务中提供的值做内存匹配，不持久化、不输出
-- local-AI GET 上限 100、poll timeout 120 秒、wall 3600 秒、finished 1
-- 一个 connector、一个桌、零 runmatch、零 DeepSeek、零重试
-
-### 权限
-
-- 项目计划内操作使用常驻默认授权，不再询问项目授权。
-- 仓库外写入和真实网络直接调用 `require_escalated`；不要先发文字授权问题。
-- 最终“开始游戏”点击仍按浏览器平台规则执行唯一一次即时确认。
-- 不读取或输出 `.env`、URL、连接密钥、API key、Header、Cookie、账号、Bot/match ID、牌或动作内容。
-
-### 浏览器点击白名单
-
-最终开始游戏前，Codex 只允许点击语义和当前 DOM 明确匹配的以下控件：
-
-1. 主页面 `创建游戏桌`；
-2. 游戏选择中的 `GuanDan`；
-3. 游戏选择阶段的 `确认`；
-4. 建桌页面的 `载入上次配置`；
-5. 固定设置所需的 select/input/radio 控件；
-6. 最终且唯一的 `开始游戏`。
-
-禁止点击或触发任何包含以下语义的控件：关闭、取消、返回、退出、结束、终止、离开、解散、删除、重新开始、刷新、浏览器后退、页面 `×`、对局内操作按钮。禁止坐标猜测；只使用 Browser DOM/Playwright 的语义 locator。
-
-点击每个白名单命令前必须读取最新 DOM，确认 locator 唯一、可见、启用且文字精确匹配；点击后立即读取 DOM 验证预期状态转换。无效点击不得盲目重试。
-
-### 执行顺序
-
-1. 只读复核 `33001` audit bytes/SHA-256、空 state 和无残留 connector；不得修改其 root。
-2. 确认新 `34001` root 不存在，Botzone 页面已登录且没有活动测试桌。若存在旧桌，只报告阻塞，不自动关闭。
-3. 按白名单进入 GuanDan 建桌页并载入上次配置；此时尚未启动 connector。
-4. 填写设置并在内存中读取第一份 readback：game=GuanDan、tribute=否、seed=34001、seat=0、level=2、first/last=0/3、target_bot_match=true、三个 opponent_selected=true、local_ai_replacement=true。不得输出 Bot ID/名称。
-5. 字段不符时允许通过对应 input/select 修正一次；再次 readback 仍不符则停止。不得点击取消/关闭/返回。
-6. 表单停留在最终 `开始游戏` 前。以系统扩展权限创建全新空 state/audit 目录并完成现有 rule preflight；必须 `preflight_ready`、state 空。
-7. 在受系统权限的统一 TTY session 中直接运行现有 connector；必须取得 session ID 且无 exit code。禁止 launcher、Start-Process、detached/background 或第二进程。
-8. 等待页面显示本地 AI 已连接，并持续轮询同一 session。connector 若在提交前退出，立即 invalid，禁止提交。
-9. 连接后读取第二份完整 readback。全部匹配后，在最终 `开始游戏` 前请求唯一即时确认；确认后只点击一次。
-10. 点击成功后立即进入“浏览器只读冻结”：只允许 DOM snapshot、URL/title 读取、截图和 connector session 轮询。禁止所有 browser click/fill/type/press/select、reload/back/forward/close 和 CUA 操作。
-11. 只读确认页面已进入目标对局且没有“房主关闭”提示；不与游戏页面交互。connector 自行结束前不得主动中断。
-12. connector 结束后只读验收 v8 audit、v4 tombstone、token 和请求/结果守恒；不删除 tombstone，不修改仓库。
-
-### 通过门槛
-
-唯一通过判定：
-
-```text
-botzone_codex_click_fenced_rule_pilot_verified
-```
-
-必须同时满足：
-
-- 所有浏览器写操作都在白名单内，并有点击前后 DOM 状态证据；
-- 两次 readback 精确匹配固定字段；
-- `开始游戏` 后 browser write action count=`0`；
-- completion audit 在最终提交之后产生；
-- connector exit `0`、stop reason=`finished_target`；
-- requests=responses=Headers 且大于 0；
-- qualified finished=`1`、normal result=`1`；
-- transport failures=`0`；timeout 只按 idle/timeout 守恒；
-- 无其他 diagnostics/detail/profile；
-- agent mode=rule、全部决策为 rule primary、model/fallback=`0`；
-- v8 audit、v4 最小 tombstone与固定 token 一致；
-- 无 active state 或残留 connector；未调用 runmatch、DeepSeek 或第二桌。
-
-任一门槛失败：
+L5-A4f5 唯一判定：
 
 ```text
 botzone_codex_click_fenced_rule_pilot_invalid
 ```
 
-失败后停止，不重试、不补采、不复用 `34001`/root，不新增诊断载体。
+白名单内的游戏选择确认已点击，但页面没有进入预期建桌表单，仍停留在主页。按契约未盲目重试；connector、pilot 目录、网页桌、DeepSeek、runmatch 和仓库改动均为 0。seed `34001` 永久禁用。
+
+### 目标
+
+本步骤只发现并锁定 Botzone 当前网页中从主页进入 GuanDan 建桌表单的真实 UI 契约。不得启动 connector、不得点击最终“开始游戏”、不得创建对局、不得消耗新的 live seed。
+
+需要明确：
+
+- “创建游戏桌”打开后的可见 modal/dialog 作用域；
+- GuanDan 选项的唯一语义 locator；
+- 选中后的可读状态；
+- 该 modal 内唯一“确认”按钮；
+- 点击确认后的成功状态信号；
+- “载入上次配置”和最终“开始游戏”所在表单作用域。
+
+### 权限与隐私
+
+- 项目计划内操作使用常驻默认授权，不再询问项目授权。
+- 本步骤不需要仓库外写入、connector、Botzone local-AI GET 或 DeepSeek 网络。
+- 不读取或输出连接 URL、密钥、Cookie、账号、Bot ID/名称、match、牌或其他敏感值。
+- 截图与 DOM 只在当前任务内存中检查，不写入仓库或外部审计。
+- 若任一点击被确认会直接创建外部桌而非仅打开/切换配置表单，必须在该点击前按浏览器平台规则做即时确认；否则不提前询问。
+
+### 浏览器规则
+
+1. 使用 Browser 扩展 claim 当前已登录的 `https://www.botzone.org.cn/` 标签页；不得使用桌面坐标猜测或其他浏览器。
+2. 每一步先取得当前 screenshot 与 DOM snapshot，确认页面状态后再操作。
+3. 所有 locator 必须位于当前可见 modal/dialog 或明确的建桌表单作用域内；禁止全页面按第一个同名文本点击。
+4. 禁止点击关闭、取消、返回、退出、结束、终止、离开、解散、删除、刷新、浏览器后退、页面 `×` 或最终“开始游戏”。
+5. 任一步无唯一 locator、元素不可见/不可用、选中状态不可证明或状态转换不符时立即停止；不得盲目重试或改用坐标。
+
+### 执行顺序
+
+1. 只读确认无残留 connector，`34001` 没有 state/audit/root，工作区没有新的代码/测试改动。
+2. claim Botzone 标签页并读取主页 DOM；确认存在唯一可见“创建游戏桌”。
+3. 点击“创建游戏桌”一次，随后读取 screenshot 和 DOM；确认游戏选择 modal/dialog 可见。
+4. 在该 modal 内查找 GuanDan 选项。读取其控件类型、可见文本和当前 selected/checked 状态；不得读取其他 Bot 或账号信息。
+5. 若未选中，使用该 modal 内的语义 locator 点击 GuanDan 一次。随后重新读取 DOM，并以 checked/selected/active 等可读状态证明 GuanDan 已选中。仅文字存在不算选中证据。
+6. 在同一 modal 内定位唯一可见且启用的“确认”按钮。记录非敏感 locator 结构和按钮计数；确认作用域外同名按钮不会被命中。
+7. 点击该 modal 的“确认”一次，并用状态等待而不是固定盲等：等待 modal 消失，或等待建桌表单中的“载入上次配置”/“开始游戏”出现。
+8. 读取新的 screenshot 和 DOM：
+   - 若已出现建桌表单，确认 `载入上次配置` 与最终 `开始游戏` 均存在且位于同一表单作用域；到此立即停止，禁止继续点击；
+   - 若仍在主页，读取当前可见 modal、alert/dialog、错误提示和 console error 的低敏感摘要，立即停止，不重试；
+   - 若页面进入其他状态，只输出非敏感状态类别并停止。
+9. 将当前标签页标记 handoff，保留给下一任务；不得关闭页面或提交桌。
+
+### 输出契约
+
+只输出以下非敏感 UI 契约：
+
+- page state 序列；
+- 每一步 modal/form 的可见性；
+- GuanDan locator 类型与 selected proof；
+- modal-scoped confirm locator 与匹配数量；
+- 点击确认后的 readiness signal；
+- `载入上次配置` 和 `开始游戏` 的表单作用域与匹配数量；
+- browser write action count；
+- connector/GET/DeepSeek/runmatch/table-submit count 均为 0。
+
+不得输出完整 DOM、截图、Bot ID/名称、账号、URL 参数或隐藏字段。
+
+### 判定
+
+成功进入建桌表单且未点击最终提交：
+
+```text
+botzone_guandan_table_ui_selector_contract_verified
+```
+
+未进入表单或契约不唯一：
+
+```text
+botzone_guandan_table_ui_selector_contract_invalid
+```
+
+invalid 时不重试当前交互序列；下一步必须基于已观察的具体状态重新规划，不得直接启动 connector。
 
 ### 后续边界
 
-本步骤只验证自动 UI 安全和 RuleBased 协议闭环；通过后才使用全新 seed/root 规划 Codex 自动 RuleBased/DeepSeek 单对，不形成策略收益或胜率结论。
+只有 UI selector contract verified 后，才能使用全新 seed/root 恢复 Codex 自动 RuleBased pilot。该步骤不形成协议、策略或胜率结论。

@@ -952,3 +952,8 @@ L5-A4f4 按项目所有者确认的 UI 路径执行：主页创建游戏桌 → 
 `33001` 页面在目标提交前进入房主关闭状态，connector 零请求并被中断；证据只支持 UI 生命周期失败，不支持确认误点根因。audit/state 原样封存。
 
 L5-A4f5 为浏览器引入执行级点击白名单：提交前仅允许创建桌、选择 GuanDan、确认、载入配置、设置控件和最终开始游戏；禁止关闭/取消/返回/退出/刷新等语义。最终开始后 Browser 完全只读，不再操作游戏页。使用全新 `34001` 验证单局 RuleBased 闭环。
+### L5-A4f5 / L5-A4f6：先锁定游戏选择 UI 契约
+
+`34001` 在 connector 前即因游戏选择确认未进入表单而 invalid；没有 live 或仓库证据产生。当前不能继续用新 seed 猜测页面行为。
+
+L5-A4f6 只做浏览器 UI 契约发现：用 screenshot+DOM 锁定可见游戏选择 modal、GuanDan 的 selected proof、modal-scoped confirm 和确认后的表单 readiness signal。成功以出现“载入上次配置”和最终“开始游戏”为界，禁止点击开始游戏。该契约 verified 后才恢复自动 RuleBased pilot。
