@@ -309,6 +309,8 @@
 - 下一步 L5-A4e2 只读解析 v7 audit 与 session state 的固定聚合并分类两者关系。仅 `abandoned_session_consistent` 可进入后续精确清理；不得以 audit 文件存在推断对局成功。
 - L5-A4e2 确认 v7 audit 与 v3 finished tombstone 各自严格合法，但两者都缺少共同 match/本地运行标识，故只能归类 `evidence_relation_unknown`，判定 `botzone_paired_policy_failed_game_evidence_inconclusive`。两个源文件永久保留且不计分。
 - 下一步 L5-A4e3 离线增加严格 32-hex `run_token`：同一 token 进入 session/tombstone 与 completion audit，但不进入网络、Agent 或聚合报告；旧 v7/v3 路径保持兼容。通过后才规划全新 seed/root。
+- L5-A4e3 已封存为 `45d34f0d443847aea527929e2a7c0ebf9e4bdd5a`：token 模式使用 session/tombstone v4 与 audit v8，默认 v3/v7 兼容；34/35/617 回归通过，判定 `botzone_paired_policy_run_provenance_contract_verified`。
+- 下一步 L5-A4e4 使用新 seed `26001/26002`、新根目录和 16 个确定性唯一 token 生成 manifest/布局并运行双 preflight。ready 后按常驻授权进入 L5-A4e5，人工建桌前必须持有并复核实际 connector 子进程句柄。
 
 ### L5-A2b7 任务上下文阻塞
 

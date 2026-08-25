@@ -106,6 +106,8 @@ L5-A4e1 随后发现 game 1 completion audit 已存在，直接违反清理资�
 
 L5-A4e2 只读审计显示 game 1 v7 audit 为正常完成的 rule 团队负局，唯一 state 是最小 finished tombstone；但两者都没有共同 match 或本地运行标识，无法证明属于同一次 connector 启动，关系为 `evidence_relation_unknown`，判定 `botzone_paired_policy_failed_game_evidence_inconclusive`。源证据原样封存，不清理、不计分。当前转入 L5-A4e3 的离线 run-token provenance 契约。
 
+L5-A4e3 已完成并封存为 `45d34f0d443847aea527929e2a7c0ebf9e4bdd5a`：显式 32-hex token 贯穿 session/tombstone v4 与 completion audit v8，默认 v3/v7 保持兼容，benchmark 匹配后仍不输出 token。34 项定向、35 项兼容、617 项全量通过。当前进入 L5-A4e4：新 seed/root、tokenized manifest、隔离布局与双模式零网络 preflight。
+
 随后独立实施任务返回 `precondition_failed: runmatch_participants_missing`：该任务上下文没有实际 Bot ID 或可核对的紧邻授权消息，因此未创建 state/audit、未读取配置、未启动 connector，网络与模型请求均为 0。此前授权未消耗。下一步需在同一个 live 实施任务中重新发送敏感输入和完整授权，不能依赖规划文档或跨任务摘要传递。
 
 更新时间：2026-08-15

@@ -119,6 +119,8 @@ L5-A4e1 实际发现 game 1 audit 已出现，故原“无 audit”清理前提�
 
 L5-A4e2 最终为 `evidence_relation_unknown`：v7 audit 与 v3 tombstone 均合法且表示完成，但缺少共同 provenance，不能合并或清理。L5-A4e3 新增仅本地使用的 32-hex run token，并在 token 模式下贯穿 session/tombstone/audit；默认旧路径兼容，token 不进入 Botzone、DeepSeek、Agent 或最终聚合报告。
 
+L5-A4e3 检查点 `45d34f0d443847aea527929e2a7c0ebf9e4bdd5a` 已验证 token 模式 v4/v8、旧 v3/v7 兼容和 benchmark 脱敏。L5-A4e4 新批次固定 `26001/26002`，每局 token 由非敏感赛程字段确定性派生；先完成新 manifest/布局和双 preflight。后续 live 必须监控实际子进程句柄，并在每局用 manifest token 同时核对 v8 audit 与 v4 tombstone。
+
 独立实施任务无法继承规划任务中的敏感输入，已以 `runmatch_participants_missing` 在零网络状态停止。后续采用同任务输入恢复：项目所有者必须直接在执行 live 的任务中提供三个 Bot ID 和完整授权，实施任务核对后立即执行；不得把 ID 写入 docs，也不得再通过新任务转交。
 
 更新时间：2026-08-15
