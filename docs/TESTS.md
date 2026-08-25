@@ -1743,3 +1743,8 @@ L5-A4f5 不新增代码测试。执行验收新增点击白名单、每次点击
 L5-A4f5 在 connector/目录/网络均为 0 的状态下停于游戏选择确认后的主页，说明 browser 白名单本身不足以证明 UI 状态转换；这不是代码回归失败。
 
 L5-A4f6 不新增代码测试。执行验收覆盖 visible modal scope、GuanDan selected/checked proof、modal 内唯一 confirm、确认后的 modal disappearance/form readiness，以及“载入上次配置/开始游戏”同表单存在。最终提交、connector、GET、DeepSeek 和 runmatch 均必须为 0。
+### L5-A4f6 UI 契约与 L5-A4f7 执行验收
+
+L5-A4f6 已验证 visible game selector、GuanDan current option、唯一创建按钮、验证码门槛及后续表单 readiness；`载入上次配置`/`开始游戏！` 各唯一，所有 connector/network/table-submit count 为 0。
+
+L5-A4f7 不新增代码测试。执行验收要求复用已保留表单、两次完整 readback、connector 提交前存活、唯一开始点击及提交后 Browser write count=0；同时保持 v8/v4/token、RuleBased 来源、request/finished 和 transport/timeout 守恒。标签页或验证码状态变化不得自动重走。

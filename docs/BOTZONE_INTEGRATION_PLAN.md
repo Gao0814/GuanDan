@@ -957,3 +957,8 @@ L5-A4f5 为浏览器引入执行级点击白名单：提交前仅允许创建桌
 `34001` 在 connector 前即因游戏选择确认未进入表单而 invalid；没有 live 或仓库证据产生。当前不能继续用新 seed 猜测页面行为。
 
 L5-A4f6 只做浏览器 UI 契约发现：用 screenshot+DOM 锁定可见游戏选择 modal、GuanDan 的 selected proof、modal-scoped confirm 和确认后的表单 readiness signal。成功以出现“载入上次配置”和最终“开始游戏”为界，禁止点击开始游戏。该契约 verified 后才恢复自动 RuleBased pilot。
+### L5-A4f6 / L5-A4f7：复用已验证 GuanDan 表单
+
+UI discovery 已确认游戏选择浮层、GuanDan selected proof、人工验证码和后续建桌表单。实际按钮为“创建”，表单 readiness signal 为唯一可见的“载入上次配置”与“开始游戏！”。任务停在表单且没有 live 副作用。
+
+L5-A4f7 复用该保留标签页，用 `35001` 配置表单并完成两次 readback；只在表单已准备后启动 connector，连接后点击一次开始游戏，随后 Browser 完全只读。标签页丢失或验证码重现时 fail-closed，不自行重走流程。

@@ -1691,3 +1691,8 @@ L5-A4f4 判定 `botzone_codex_corrected_ui_rule_pilot_invalid`。页面在提交
 L5-A4f5 判定 `botzone_codex_click_fenced_rule_pilot_invalid`：游戏选择阶段的白名单确认已点击，但页面没有进入预期建桌表单；connector、state/audit、网页桌、DeepSeek 和 runmatch 均未启动，`34001` 不复用。这不是 connector 或协议失败，当前边界是网页游戏选择/确认的 UI 契约尚未锁定。
 
 当前进入 L5-A4f6：纯 Browser UI selector contract discovery。使用可见 modal 作用域证明 GuanDan 真正 selected，再点击同一 modal 的唯一确认并等待“载入上次配置/开始游戏”表单信号；到达表单后立即停止，不创建桌、不启动 connector。
+### L5-A4f6 GuanDan 建桌 UI 契约
+
+L5-A4f6 判定 `botzone_guandan_table_ui_selector_contract_verified`。当前网页流程已锁定为主页 → 游戏选择浮层 → 人工验证码 → GuanDan 建桌表单；浮层不是 dialog，GuanDan selected 由选择控件当前值证明，提交到表单的按钮是唯一“创建”。验证码通过后，`载入上次配置` 和 `开始游戏！` 在同一表单中各唯一可见。该步骤未开始游戏、未启动 connector 或网络。
+
+当前标签页保留在建桌表单。L5-A4f7 使用全新 `35001` 直接复用该页，不重新走验证码；载入配置并 readback 后启动 connector，页面已连接后第二次 readback，再点击唯一开始按钮并冻结 Browser 写操作。

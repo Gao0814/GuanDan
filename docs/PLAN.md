@@ -1647,3 +1647,8 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 白名单内游戏选择确认被点击，但页面未进入建桌表单并仍停留主页；未启动 connector、未创建目录/桌、未联网或调用模型，判定 `botzone_codex_click_fenced_rule_pilot_invalid`，`34001` 永久禁用。
 - 失败边界现收窄到游戏选择 modal 的选中状态、确认按钮作用域或确认后的页面状态转换。
 - 下一步 L5-A4f6 不使用 live seed/connector，只以 Browser screenshot+DOM 发现 GuanDan 选项、selected proof、modal-scoped confirm 及建桌表单 readiness signal；到达表单后停止，不点击开始游戏。
+### L5-A4f6 UI selector contract 结果
+
+- 已验证页面状态为主页 → 游戏选择浮层 → 人工验证码 → GuanDan 建桌表单；浮层不是 accessibility dialog，GuanDan 由选择控件当前值证明 selected，动作按钮实际为唯一“创建”而非“确认”。
+- 验证后建桌表单中的 `载入上次配置` 和 `开始游戏！` 各唯一可见；未点击开始、未启动 connector/网络/模型，判定 `botzone_guandan_table_ui_selector_contract_verified`。
+- 下一步 L5-A4f7 直接复用当前保留表单，载入配置并两次 readback；表单准备完成后才启动 connector，连接后点击唯一 `开始游戏！`，进入对局后 Browser 完全只读。
