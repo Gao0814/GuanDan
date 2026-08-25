@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from integrations.botzone.live_launcher import (
     LAUNCHER_CONFIGURATION_EXIT,
@@ -19,15 +20,25 @@ from integrations.botzone.live_launcher import (
 )
 
 
-def _argv(root: Path) -> tuple[str, ...]:
+TOKEN = "0123456789abcdef0123456789abcdef"
+
+
+def _argv(root: Path, *, agent: str = "rule", token: object = TOKEN) -> tuple[object, ...]:
+    state = root / "state"
+    streams = root / "streams"
+    state.mkdir(exist_ok=True)
+    streams.mkdir(exist_ok=True)
     return (
+        "--agent", agent,
+        "--state-dir", str(state),
+        "--run-token", token,
         "--timeout-seconds", "30",
         "--max-cycles", "100",
         "--max-wall-seconds", "600",
         "--stop-after-finished", "1",
         "--audit-file", str(root / "audit.json"),
-        "--stdout-file", str(root / "stdout.txt"),
-        "--stderr-file", str(root / "stderr.txt"),
+        "--stdout-file", str(streams / "stdout.txt"),
+        "--stderr-file", str(streams / "stderr.txt"),
     )
 
 
@@ -46,45 +57,84 @@ class BotzoneLiveLauncherTests(unittest.TestCase):
                 return 23
 
             self.assertEqual(run_launcher(config, entrypoint), 23)
-            self.assertEqual(original, _argv(root))
+            self.assertEqual(config.agent, "rule")
             self.assertEqual(tuple(received), connector_argv(config))
-            self.assertEqual((root / "stdout.txt").read_text(encoding="utf-8"), "synthetic_stdout\n")
-            self.assertEqual((root / "stderr.txt").read_text(encoding="utf-8"), "synthetic_stderr\n")
-            (root / "stdout.txt").rename(root / "stdout-closed.txt")
-            (root / "stderr.txt").rename(root / "stderr-closed.txt")
+            self.assertEqual(tuple(received[:6]), ("--agent", "rule", "--state-dir", str(root / "state"), "--run-token", TOKEN))
+            self.assertEqual((root / "streams" / "stdout.txt").read_text(encoding="utf-8"), "synthetic_stdout\n")
+            self.assertEqual((root / "streams" / "stderr.txt").read_text(encoding="utf-8"), "synthetic_stderr\n")
+            self.assertNotIn(TOKEN, repr(config))
+            self.assertNotIn(TOKEN, (root / "streams" / "stdout.txt").read_text(encoding="utf-8"))
+            self.assertNotIn(TOKEN, (root / "streams" / "stderr.txt").read_text(encoding="utf-8"))
+            (root / "streams" / "stdout.txt").rename(root / "streams" / "stdout-closed.txt")
+            (root / "streams" / "stderr.txt").rename(root / "streams" / "stderr-closed.txt")
 
     def test_entrypoint_failure_is_normalized_and_both_streams_close(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             config = parse_launcher_args(_argv(root))
             self.assertEqual(run_launcher(config, lambda _: (_ for _ in ()).throw(RuntimeError("synthetic"))), LAUNCHER_ENTRYPOINT_EXIT)
-            self.assertEqual((root / "stdout.txt").read_text(encoding="utf-8"), "")
-            self.assertEqual((root / "stderr.txt").read_text(encoding="utf-8"), "launcher_entrypoint_failure\n")
-            (root / "stdout.txt").unlink()
-            (root / "stderr.txt").unlink()
+            self.assertEqual((root / "streams" / "stdout.txt").read_text(encoding="utf-8"), "")
+            self.assertEqual((root / "streams" / "stderr.txt").read_text(encoding="utf-8"), "launcher_entrypoint_failure\n")
+            (root / "streams" / "stdout.txt").unlink()
+            (root / "streams" / "stderr.txt").unlink()
 
     def test_paths_existing_outputs_unknown_flags_and_bool_like_values_fail_closed(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             invalid = list(_argv(root))
-            invalid[1] = True  # type: ignore[list-item]
+            invalid[5] = True  # type: ignore[list-item]
             with self.assertRaises(LauncherError):
                 parse_launcher_args(invalid)
-            for flag in ("--url", "--state-dir", "--preflight-only", "--unknown"):
+            for flag in ("--url", "--preflight-only", "--unknown"):
                 with self.subTest(flag=flag):
                     with self.assertRaises(LauncherError):
                         parse_launcher_args(_argv(root) + (flag, "x"))
-            (root / "stdout.txt").write_text("existing", encoding="utf-8")
+            (root / "streams" / "stdout.txt").write_text("existing", encoding="utf-8")
             with self.assertRaises(LauncherError):
                 parse_launcher_args(_argv(root))
         with self.assertRaises(LauncherError):
-            parse_launcher_args(("--timeout-seconds", "30", "--max-cycles", "100", "--max-wall-seconds", "600", "--stop-after-finished", "1", "--audit-file", "relative", "--stdout-file", "relative", "--stderr-file", "relative"))
+            parse_launcher_args(("--agent", "rule", "--state-dir", "relative", "--run-token", TOKEN, "--timeout-seconds", "30", "--max-cycles", "100", "--max-wall-seconds", "600", "--stop-after-finished", "1", "--audit-file", "relative", "--stdout-file", "relative", "--stderr-file", "relative"))
+
+    def test_token_agent_and_state_are_strict_and_streams_never_contain_token(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for agent in ("rule", "deepseek"):
+                with self.subTest(agent=agent):
+                    case_root = root / agent
+                    case_root.mkdir()
+                    config = parse_launcher_args(_argv(case_root, agent=agent))
+                    self.assertEqual(config.agent, agent)
+            for token in (TOKEN.upper(), TOKEN[:-1], TOKEN[:-1] + "g", True, 1):
+                with self.subTest(token_type=type(token).__name__):
+                    case_root = root / ("token-" + str(len(list(root.iterdir()))))
+                    case_root.mkdir()
+                    with self.assertRaises(LauncherError):
+                        parse_launcher_args(_argv(case_root, token=token))
+            missing_root = root / "missing"
+            missing_root.mkdir()
+            arguments = list(_argv(missing_root))
+            del arguments[0:2]
+            with self.assertRaises(LauncherError):
+                parse_launcher_args(arguments)
+            missing_token_root = root / "missing-token"
+            missing_token_root.mkdir()
+            arguments = list(_argv(missing_token_root))
+            del arguments[4:6]
+            with self.assertRaises(LauncherError):
+                parse_launcher_args(arguments)
 
     def test_main_has_a_fixed_configuration_failure(self) -> None:
         output = StringIO()
         with redirect_stdout(output):
             self.assertEqual(main(["--unknown", "x"]), LAUNCHER_CONFIGURATION_EXIT)
         self.assertEqual(output.getvalue(), "launcher_configuration_error\n")
+
+    def test_stream_open_failure_has_the_same_fixed_configuration_exit(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = StringIO()
+            with patch("pathlib.Path.open", side_effect=OSError("synthetic")), redirect_stdout(output):
+                self.assertEqual(main(_argv(Path(temporary))), LAUNCHER_CONFIGURATION_EXIT)
+            self.assertEqual(output.getvalue(), "launcher_configuration_error\n")
 
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell regression")
     def test_windows_powershell_starts_module_twice_without_powershell_redirects(self) -> None:
@@ -96,7 +146,7 @@ class BotzoneLiveLauncherTests(unittest.TestCase):
                 root = base / f"run-{index}"
                 root.mkdir()
                 args = _argv(root)
-                quoted = ",".join("'" + value.replace("'", "''") + "'" for value in ("-m", "integrations.botzone.live_launcher", *args))
+                quoted = ",".join("'" + str(value).replace("'", "''") + "'" for value in ("-m", "integrations.botzone.live_launcher", *args))
                 project_text = str(project).replace("'", "''")
                 command = (
                     "$env:CODEX_LAUNCHER_OFFLINE_PROBE='1';"
@@ -115,8 +165,8 @@ class BotzoneLiveLauncherTests(unittest.TestCase):
                     check=False,
                 )
                 outcomes.append((completed.returncode, {
-                    "stdout": (root / "stdout.txt").read_text(encoding="utf-8"),
-                    "stderr": (root / "stderr.txt").read_text(encoding="utf-8"),
+                    "stdout": (root / "streams" / "stdout.txt").read_text(encoding="utf-8"),
+                    "stderr": (root / "streams" / "stderr.txt").read_text(encoding="utf-8"),
                 }))
             self.assertEqual([code for code, _ in outcomes], [17, 17])
             self.assertEqual([streams for _, streams in outcomes], [

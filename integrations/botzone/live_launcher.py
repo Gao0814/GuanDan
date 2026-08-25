@@ -1,4 +1,4 @@
-"""Windows-safe foreground launcher with in-process stream redirection."""
+"""Windows-safe tokenized-capacity foreground launcher with redirected streams."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ from collections.abc import Callable, Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
+
+from .run_provenance import RunProvenanceError, validate_run_token
 
 
 LAUNCHER_CONFIGURATION_EXIT = 64
@@ -22,8 +24,11 @@ class LauncherError(ValueError):
     """Stable, non-sensitive launcher configuration error."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class LauncherConfig:
+    agent: str
+    state_directory: Path
+    run_token: str
     timeout_seconds: int
     max_cycles: int
     max_wall_seconds: int
@@ -31,6 +36,9 @@ class LauncherConfig:
     audit_file: Path
     stdout_file: Path
     stderr_file: Path
+
+    def __repr__(self) -> str:
+        return "LauncherConfig(redacted)"
 
 
 def _positive(value: object) -> int:
@@ -58,11 +66,34 @@ def _external_file(value: object) -> Path:
     return resolved
 
 
+def _external_directory(value: object) -> Path:
+    directory = _external_file(value)
+    if Path(value).is_symlink() or not directory.is_dir():
+        raise LauncherError("invalid_path")
+    return directory
+
+
+def _agent(value: object) -> str:
+    if type(value) is not str or value not in {"rule", "deepseek"}:
+        raise LauncherError("invalid_argument")
+    return value
+
+
+def _run_token(value: object) -> str:
+    try:
+        return validate_run_token(value)
+    except RunProvenanceError as exc:
+        raise LauncherError("invalid_argument") from exc
+
+
 def parse_launcher_args(argv: Sequence[object]) -> LauncherConfig:
     """Accept exactly the bounded connector arguments plus private stream paths."""
 
     items = tuple(argv)
     expected = {
+        "--agent",
+        "--state-dir",
+        "--run-token",
         "--timeout-seconds",
         "--max-cycles",
         "--max-wall-seconds",
@@ -82,6 +113,9 @@ def parse_launcher_args(argv: Sequence[object]) -> LauncherConfig:
     if set(values) != expected:
         raise LauncherError("invalid_argument")
     config = LauncherConfig(
+        agent=_agent(values["--agent"]),
+        state_directory=_external_directory(values["--state-dir"]),
+        run_token=_run_token(values["--run-token"]),
         timeout_seconds=_parse_positive(values["--timeout-seconds"]),
         max_cycles=_parse_positive(values["--max-cycles"]),
         max_wall_seconds=_parse_positive(values["--max-wall-seconds"]),
@@ -103,6 +137,9 @@ def parse_launcher_args(argv: Sequence[object]) -> LauncherConfig:
 
 def connector_argv(config: LauncherConfig) -> tuple[str, ...]:
     return (
+        "--agent", config.agent,
+        "--state-dir", str(config.state_directory),
+        "--run-token", config.run_token,
         "--timeout-seconds", str(config.timeout_seconds),
         "--max-cycles", str(config.max_cycles),
         "--max-wall-seconds", str(config.max_wall_seconds),
@@ -167,7 +204,11 @@ def main(argv: Sequence[object] | None = None) -> int:
         print("launcher_configuration_error")
         return LAUNCHER_CONFIGURATION_EXIT
     entrypoint = _offline_probe_entrypoint if os.environ.get(_PROBE_MODE) == "1" else _connector_main
-    return run_launcher(config, entrypoint)
+    try:
+        return run_launcher(config, entrypoint)
+    except LauncherError:
+        print("launcher_configuration_error")
+        return LAUNCHER_CONFIGURATION_EXIT
 
 
 if __name__ == "__main__":
