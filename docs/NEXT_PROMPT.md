@@ -1,67 +1,84 @@
-# 下一步实施提示词
+# 下一任务提示词
 
-## Step L5-A4e9：direct persistent connector 单局 pilot
+## Step L5-A4f1：受权限监督的 direct connector 单局 pilot
 
-L5-A4e8 已停止，唯一判定：
+本轮只执行一次全新的 Botzone 人工无贡 DeepSeek pilot，不修改仓库代码或测试，不复用任何历史 seed、state、audit、stream 或测试桌。
 
-```text
-botzone_persistent_session_launcher_pilot_invalid
-```
+### 已锁定事实
 
-### 已确认边界
+- L5-A4e7 `27001`、L5-A4e8 `28001`、L5-A4e9 `29001` 均永久 invalid，不得重试或复用。
+- Browser 扩展已经精确识别并绑定 `https://www.botzone.org.cn/` 的 Botzone 页面；不得退回依赖桌面截图猜测 URL。
+- 统一执行工具已用完全离线的 20 秒 Python 进程验证可返回持续 session ID，并能在后续轮询中正常结束；执行工具并非天然不支持长进程。
+- 当前进程中的 Botzone URL、DeepSeek key/base/model/timeout/retries 元数据均为 present 或匹配；不得输出其值、读取 `.env` 或记录敏感配置。
+- `python-dotenv` 支持进程级 `PYTHON_DOTENV_DISABLED=1`；本次 connector 子进程必须显式设置该值。
+- 使用合成 URL 和全新 D 盘仓库外目录的 `--preflight-only --agent rule` 已在系统扩展权限下返回 `preflight_ready`，目录最终为空。当前最具体的执行边界是：state/audit 位于 Codex 默认可写根之外，因此真正的 connector 进程本身也必须以系统扩展权限启动；不能只在父步骤创建目录后再用默认权限运行 connector。
+- 这只是当前证据支持的主要边界，不把它表述为已经证明的唯一历史根因。
+- 项目内计划操作已获项目所有者常驻默认授权；不要再次询问项目授权。系统权限确认和浏览器最终提交确认仍按平台安全要求执行，并明确说明不是项目授权。
 
-- seed `28001` pilot 的 launcher 启动未返回可持续 session ID，随后退出；state/audit 为空、两个 stream 为 0 bytes，未进入页面连接或建桌。该 seed/root 永久只读。
-- 现有证据仍不能确定 launcher 具体退出原因，不得继续修改 launcher 或建立新的启动诊断载体。
-- 随后使用项目 `.venv` 完成一次完全离线的统一执行 session 资格：合成长进程在 10 秒 yield 后返回 session ID `45404`，跨工具调用继续运行，最终输出 completion 并 exit 0。该结果证明 Codex 当前执行工具支持持续前台会话。
-- Edge Browser 扩展已成功识别并绑定标题 `Botzone`、URL `https://www.botzone.org.cn/` 的现有标签页。
-- `integrations.botzone.__main__` 本身已经支持 `--agent`、`--state-dir`、`--run-token`、预算与 v8 audit；在持续执行 session 下不再需要 `live_launcher.py` 的 Windows stream 重定向层。
+### 固定参数
 
-项目所有者常驻项目授权继续有效。最终点击浏览器“创建测试桌”前仍按浏览器安全规则做一次即时动作确认；不得再次询问 Botzone/DeepSeek 项目授权。
+- seed：`30001`
+- seat：`0`
+- agent：`deepseek`
+- run token：`9f866470c8d87008091fdbe5caf0eeb5`
+- 新根目录：`D:\VsCodeProject\BotzoneEscalatedPilot-30001`
+- state：根目录下全新空 `state`
+- audit：根目录下不存在的 `audit\completion.json`
+- Botzone：当前 `BOTZONE_LOCAL_AI_URL`
+- DeepSeek：当前已核验 endpoint/model；timeout `60` 秒，retries `0`
+- local-AI GET 上限：`100`
+- connector wall 上限：`3600` 秒
+- 完成 `1` 局即停
+- 只允许一个 connector、一个人工网页测试桌；不调用 runmatch，不重试
 
-### 目标
+### 执行顺序
 
-使用全新 seed `29001`、seat `0`、`deepseek`，直接在 Codex 持续前台统一执行 session 中运行现有 connector 入口，完成恰好一局人工无贡 pilot。该步骤不修改代码、不使用 launcher、不计入 paired benchmark。
+1. 只读确认 HEAD 包含 `2209bb71e35c4142c28bf1218fb316f8cf67da2d`，工作区除项目所有者既有改动外没有新的代码/测试改动；确认无残留 connector。不得因无关 README/docs 改动清理或还原用户内容。
+2. 使用系统扩展文件权限创建唯一新根目录及空 `state`；确认 completion audit 不存在。若根目录已存在、state 非空或 audit 已存在，直接 `precondition_failed`，不得清理后继续。
+3. 不再创建新的 launcher、probe、driver 或诊断载体。若需要验证 state 边界，只允许使用现有 `python -m integrations.botzone --preflight-only`，并且该命令本身必须在与 live 相同的系统扩展权限下执行。不得联网探测或读取 `.env`。
+4. 在唯一 PowerShell 子进程环境中设置 `PYTHON_DOTENV_DISABLED=1`、DeepSeek timeout `60`、retries `0`。不要输出 URL、key 或其他配置值。
+5. 直接运行 `.venv\Scripts\python.exe -m integrations.botzone`，参数为 `--agent deepseek`、上述 state/token、poll timeout `120`、`--max-cycles 100`、`--max-wall-seconds 3600`、`--stop-after-finished 1` 与 completion audit。该命令必须：
+   - 通过工具的 `require_escalated` 系统权限执行；
+   - 使用 `tty=true`；
+   - 初次 yield 后返回仍在运行的统一 session ID，且不得同时返回 exit code；
+   - 不使用 `Start-Process`、detached 进程或 `live_launcher.py`；
+   - 后续始终用同一个 session ID 轮询，不启动第二进程。
+6. 如果 direct command 在取得 session ID 前退出，立即判 invalid。必须报告工具返回的真实 exit code 和固定 stdout/stderr 类别；不得只写“未取得 session ID”，不得重试。
+7. 获得 session ID 后，使用 Browser 扩展打开已绑定的 Botzone 页面并监督“本地 AI 已连接”。在连接状态出现前不得创建桌。
+8. 连接后填写一个全新 GuanDan 测试桌：需要进贡=`否`，本家座位=`0`，使用锁定 seed `30001`，其余参与 Bot 使用已核验的现有选择。只在最终“创建/提交”点击前请求一次浏览器动作确认；该确认是代表用户创建外部对局的即时确认，不是项目授权。
+9. 提交后持续监督页面并轮询同一 connector session，直到进程自行结束或 3600 秒上限。不得因为聊天时序、state 首次出现或页面短暂刷新判失败；以进程、页面和最终 audit 为准。
+10. 结束后只读验证 state/audit 聚合，不输出 URL、Header、match、token、手牌、prompt、模型响应或逐手内容。
 
-### 固定预算
+### 验收
 
-- 新仓库外根目录：`D:\VsCodeProject\BotzoneDirectPilot-29001`，开始时必须不存在或为空。
-- token 由 canonical `direct-pilot/29001/seat0/deepseek` 的 SHA-256 前 32 位派生，不输出。
-- 一个 direct connector 进程、一个统一执行 session、一个网页桌、一个 state 和一个 v8 audit；不创建 launcher stream 文件。
-- Botzone GET 最多 100 次；poll timeout 120 秒；wall 3600 秒；finished 1；不重试。
-- DeepSeek 使用锁定 endpoint/model，timeout 60 秒、retries 0；禁止 runmatch、CLI 对局和 probe。
-- 桌面固定：无贡、级牌 2、seed 29001、本家座位 0，其余 profile 与成功人工 smoke 一致。
-
-### 执行
-
-1. 核对 HEAD、工作区、无残留 connector、配置脱敏元数据和精确 Botzone Browser 标签页；不得读取 `.env`、URL、key、Cookie 或账号信息。
-2. 原子创建全新空 state 与缺失 audit 目标；根目录有未知内容立即停止。
-3. 使用统一执行工具直接前台运行：
-
-   ```text
-   .venv\Scripts\python.exe -m integrations.botzone
-   ```
-
-   并显式传入 `--agent deepseek`、state、run token、timeout/cycle/wall/finished 和 audit。必须启用持续会话能力并设置约 10 秒初始 yield；禁止 `live_launcher`、Start-Process、后台 job、`&`、分离子进程或未等待 promise。
-4. 只有启动工具返回非空 session ID 且无 exit code 才可继续。若直接退出，完整保留该次工具返回的固定 exit code 与脱敏 output category，立即判 invalid；不得建桌或重启。
-5. 用同一 session ID 做一次空轮询确认仍运行，再 claim Botzone 标签页。浏览器动作前后继续用同一 ID 检查存活。
-6. 页面显示本地 AI“已连接”后，Codex 填写唯一 GuanDan 无贡桌、seed 29001、seat 0 与固定 profile。最终点击创建前做一次即时浏览器动作确认；确认后只点击一次。
-7. 对局期间交替监控 Browser 与统一执行 session，直到 direct connector 自行退出；不得启动第二进程或创建第二桌。
-8. 完成门槛：exit 0、`finished_target`、request=response=Header 且大于 0、qualified finished=1、零 transport failure/timeout、空 diagnostics/detail/profile、正常四人结果、agent mode deepseek、全部观测守恒。
-9. v8 audit 与 v4 最小 tombstone 的 token 必须与派生 token 一致；state 仅留该 tombstone。统一执行输出只能含固定 connector 完成行，stderr 不得有异常。
-10. DeepSeek outcome/fallback 守恒；允许 model exposure=0。仅输出脱敏聚合和 artifact bytes/SHA-256，不输出 token、URL、Header、ID、牌、动作、prompt 或模型内容。
-
-### 判定
-
-全部通过：
-
-```text
-botzone_direct_persistent_connector_pilot_verified
-```
-
-任一 session、Browser、动作确认、协议、transport、结果、v8/v4/token 或敏感边界失败：
+唯一通过判定：
 
 ```text
-botzone_direct_persistent_connector_pilot_invalid
+botzone_escalated_direct_connector_pilot_verified
 ```
 
-失败不得复用 `29001`。成功后先离线清理 tombstone，再以全新 seed/root 规划 paired capacity；pilot 不进入策略比较。
+必须同时满足：
+
+- connector 自行 exit `0`，stop reason=`finished_target`；
+- requests、responses、Headers 均为正且三者相等；
+- `finished_qualified=1`，正常四人结果为 1；
+- transport failures/timeouts 和全部协议 diagnostics/detail/profile 均为 0；
+- v8 audit、v4 finished tombstone 与 manifest-less 固定 run token 一致；
+- `agent_mode=deepseek`，决策来源/模型尝试/结果/fallback 守恒；
+- 至少一次模型 `success` 进入最终合法响应；
+- 无残留 connector；
+- 未调用 runmatch，未创建第二桌。
+
+任一条件失败时唯一判定：
+
+```text
+botzone_escalated_direct_connector_pilot_invalid
+```
+
+失败后不得重试、补采、复用 seed `30001` 或该根目录。若在建桌前失败，保留真实进程 exit/stdout/stderr 类别和空/非空 state/audit 事实；不要再增加诊断载体。
+
+### 边界
+
+- 本步不修改仓库文件，不运行完整回归，不形成 paired benchmark。
+- 不读取或输出 `.env`、URL、API key、Header、Cookie、match ID、手牌、prompt、RAG 原文、模型响应或 run token。
+- 该 pilot 即使通过，也只证明“受权限监督的 direct connector 能完成一局且模型动作被观测”；不证明 DeepSeek 优于 RuleBased、因果收益或胜率提升。

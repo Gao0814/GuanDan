@@ -927,3 +927,8 @@ L5-A2b3b 已完成：当前新进程六项门槛、24 项定向、唯一 preflig
 L5-A2b4 已执行唯一 live：连接成功，但在新桌开始前收到缺 Bot envelope 必需字段的 object；detail=`envelope_required_fields_missing`，无 response/header/finished，未进入 Agent/DeepSeek。判定 `botzone_deepseek_connector_no_tribute_smoke_invalid`，授权已消耗。
 
 执行 `docs/NEXT_PROMPT.md` 中的 L5-A2b5。只增加 required-fields 的固定安全 profile 与聚合测试；不得保存原始请求或直接恢复 live。
+### L5-A4e9 / L5-A4f1：从 launcher 失败转向权限一致的 direct pilot
+
+L5-A4e9 使用全新 `29001` 直接启动 connector，但仍在持续 session ID 门槛前退出；页面、测试桌、state 与 v8 audit 均未进入有效阶段，判定 `botzone_direct_persistent_connector_pilot_invalid`。该 seed/root 永久封存。
+
+后续离线资格确认统一执行 session 能稳定托管长 Python 进程；同时，合成 `example.invalid` 的仓库外 D 盘 state preflight 只有在命令本身获得系统扩展文件权限时才完成并清空。下一步 L5-A4f1 不再增加 launcher 或诊断层，而是让现有 direct connector 命令本身使用相同系统权限与统一 TTY session。只有取得 session ID 后才进入 Browser 连接监督和人工建桌；最终提交执行一次浏览器动作确认。使用全新 `30001`，不调用 runmatch，不复用任何旧 pilot。

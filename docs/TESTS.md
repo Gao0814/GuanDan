@@ -1711,3 +1711,10 @@ L5-A2a 前置实际结果：检查点、工作区、23/569 回归和四项脱敏
 - connector/runner 双层 allowlist，未知 profile 不进入 audit；
 - audit 只聚合 profile，不包含 key/value、长度、hash、match、牌或异常正文；
 - 全部使用合成输入，网络与模型请求为 0。
+### L5-A4e9 / L5-A4f1 执行验收
+
+L5-A4e9 未取得 direct connector 的持续 session ID，state/audit/网页对局均为空，判定 invalid。该结果不是新增代码测试。
+
+随后完成两项离线执行资格：合成 20 秒 Python 进程由统一执行工具返回 session ID 并可继续轮询至 exit 0；合成 URL 的 D 盘仓库外 `--preflight-only --agent rule` 在系统扩展权限下返回 `preflight_ready`，目录最终为空。两项均未调用 Botzone 或 DeepSeek。
+
+L5-A4f1 不新增代码回归。执行验收要求 direct connector 命令自身使用系统扩展权限和统一 TTY session；初次 yield 必须返回 session ID 且没有 exit code。之后才允许 Browser 连接/建桌。最终仍复核 exit/finished/request、transport/protocol、v8/v4/token、DeepSeek observability 与无残留守恒；失败不得重试或新建诊断载体。

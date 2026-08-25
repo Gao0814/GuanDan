@@ -1610,3 +1610,15 @@ Botzone JSON input
 ### 9.7 当前下一步
 
 L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `envelope_required_fields_missing`。当前执行 L5-A2b5，只做零网络安全形状画像；不得重跑 live。
+### L5-A4e9：direct persistent connector pilot
+
+- 全新 seed `29001` 的 direct connector 在获得持续 session ID 前即退出；未进入页面连接或建桌，state 为空、v8 audit 不存在、无残留进程。
+- 唯一判定为 `botzone_direct_persistent_connector_pilot_invalid`；seed 与根目录永久封存。
+- 后续离线核验确认统一执行工具可正常托管长进程，且 D 盘仓库外 state preflight 在系统扩展权限下可返回 `preflight_ready`。当前最具体边界是 connector 本身需要获得仓库外写入及网络所需的系统权限，不能只在默认权限中直接启动。
+
+### L5-A4f1：受权限监督的 direct connector pilot
+
+- 使用全新 seed `30001`、seat 0、DeepSeek 与固定 run token；不使用 launcher、runmatch、后台 detached 进程或新增诊断载体。
+- direct connector 命令本身以系统扩展权限和统一 TTY session 启动；拿到持续 session ID 后才使用已绑定 Browser 标签页等待连接并创建唯一人工无贡桌。
+- 项目授权默认有效；仅最终网页建桌提交按平台要求做一次即时动作确认。
+- 通过后只证明单局协议/模型观测闭环；失败则永久封存 seed/root，不重试。

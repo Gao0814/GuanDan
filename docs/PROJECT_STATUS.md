@@ -1659,3 +1659,10 @@ endpoint/model 门槛通过，但当前 DeepSeek runtime 配置不满足已授�
 ### 后续边界
 
 L5-A2b1/L5-A2b4 均已执行且 invalid，历史授权不可复用。L5-A2b5 只允许离线诊断加固；当前仍不形成 Botzone 协议闭环、DeepSeek 可达、动作质量或胜率结论。
+### L5-A4e9 与下一步
+
+L5-A4e9 已判定 `botzone_direct_persistent_connector_pilot_invalid`：seed `29001` 的 direct connector 启动后立即退出，未返回可复用 session ID；未进入网页连接或建桌，state 为空、v8 audit 未生成、无残留 connector。该 seed 与 pilot 根目录不得重试或复用。
+
+后续只读/离线核验补充了两项执行证据：统一执行工具能够托管 20 秒 Python 长进程并返回可跨调用轮询的 session ID；使用合成 URL 的 D 盘仓库外 state preflight 在系统扩展权限下返回 `preflight_ready` 且目录清空。当前最具体的边界不是 connector 协议，而是 live 进程本身必须获得仓库外 state/audit 写入及联网所需的系统权限。该结论是下一步设计依据，不追认为三个旧 pilot 的唯一历史根因。
+
+当前进入 L5-A4f1：全新 seed `30001`，直接在受系统权限监督的统一 TTY session 中运行 connector；先取得 session ID，再由已绑定的 Browser 标签页监督连接和唯一人工无贡桌。项目操作不再重复申请授权；最终网页提交仍保留一次代表用户外部操作的即时确认。
