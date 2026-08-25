@@ -942,3 +942,8 @@ L5-A4e9 使用全新 `29001` 直接启动 connector，但仍在持续 session ID
 L5-A4f2 game 1 的 RuleBased 协议与 evidence 全部有效，但项目所有者确认网页 seed 不是预注册 `31001`，故整对 invalid，game 2 未启动。该结果不是 connector 或策略故障，而是实验条件不一致。
 
 L5-A4f3 使用全新 `32001` 隔离验证 Codex 自动操作：受权限的持续 connector session + Browser DOM 填表 + 提交前 readback。readback 必须精确验证 GuanDan、无贡、seed、seat、level、first/last 和三个对手槽；只在字段全部匹配后进入最终提交。单局通过后才恢复自动化 pair。
+### L5-A4f3 / L5-A4f4：旧队列 evidence 与正确建桌流程
+
+`32001` connector 在目标网页提交前已处理并完成一局，生成严格有效且 token 匹配的 v8/v4 evidence；由于没有目标 seed/table readback，来源不可归属，故只读封存且 pilot invalid。这揭示自动化时序必须先准备表单、再启动 connector，而不是连接后才逐层进入建桌页面。
+
+L5-A4f4 按项目所有者确认的 UI 路径执行：主页创建游戏桌 → GuanDan → 确认 → 载入上次配置 → 内存核对目标 Bot → 右下角设置。表单首次 readback 通过后才启动 connector；页面已连接后第二次 readback，再进入最终开始游戏。使用全新 `33001`，真实 Bot ID 不落盘。

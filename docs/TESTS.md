@@ -1728,3 +1728,8 @@ L5-A4f2 不新增代码测试。执行验收覆盖同 seed/seat/opponents/profil
 L5-A4f2 game 1 的 v8/v4、22 组请求、21 次 rule primary、正常结果和零异常均通过，但网页 seed 与预注册 `31001` 不同，因此 pair invalid；这不是代码测试失败。
 
 L5-A4f3 不新增代码回归。执行验收新增 Browser DOM readback：提交前必须精确验证 game、tribute、seed、seat、level、first/last 和三个非敏感 opponent-selected 布尔值；同时要求 direct connector 持续 session、v8/v4/token、RuleBased 来源、请求/finished 和 transport/protocol 守恒。任一字段或运行门槛失败不得提交/重试。
+### L5-A4f3 evidence 与 L5-A4f4 UI 顺序验收
+
+L5-A4f3 的 `32001` v8/v4 evidence 本身有效：33/33/33 请求、qualified finished 1、RuleBased、零 transport failure、token 匹配；但 audit 在目标桌提交前产生，因此运行归属失败，不能计入 pilot。该结论不是代码测试失败。
+
+L5-A4f4 不新增代码测试。执行验收要求两次 Browser DOM readback：connector 前与页面已连接后分别核对 GuanDan、无贡、seed、seat、level、first/last、目标 Bot match 和三个对手槽；completion audit 必须在最终开始游戏后产生。其余 v8/v4/token、RuleBased 来源、request/finished 与 transport/timeout 守恒保持不变。

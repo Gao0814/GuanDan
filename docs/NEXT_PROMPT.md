@@ -1,98 +1,119 @@
 # 下一任务提示词
 
-## Step L5-A4f3：Codex 自动运行与建桌的 RuleBased pilot
+## Step L5-A4f4：修正 UI 顺序的 Codex 自动 RuleBased pilot
 
-L5-A4f2 已停止，唯一判定：
+L5-A4f3 唯一判定保持：
 
 ```text
-botzone_owner_operated_single_pair_capacity_invalid
+botzone_codex_automated_rule_pilot_invalid
 ```
 
-第 1 局的 connector、v8 audit、v4 tombstone、RuleBased 决策和正常团队胜均严格有效；唯一失败是项目所有者网页实际填写的随机 seed 不是预注册 `31001`。因此该局不能作为 pair 样本，第 2 局不得启动，原 manifest/audit/state 必须原样保留，seed/root 不得复用。
+### 已封存证据
 
-### 目标
+`32001` 根目录只读核验完成，源文件不得修改、删除或复用：
 
-使用全新 seed `32001`，由 Codex 自动持有一个 RuleBased connector 的持续前台 session，并通过已经绑定的 Edge Browser 标签页自动填写一个人工无贡 GuanDan 测试桌。提交前必须读取网页控件值并逐字段核对，避免人工 seed 输入偏差。
+- v8 audit：771 bytes，SHA-256 `6bde11f5f71f1af5244874eac30d0bf18ad6ca493ce992113da9bac5bf4e45e3`；
+- exit `0`、stop reason=`finished_target`；
+- requests/responses/Headers=`33/33/33`，qualified finished=`1`；
+- transport failures=`0`，long-poll timeout=`2` 且只产生对应 timeout 诊断；
+- agent mode=`rule`，模型尝试=`0`；
+- 唯一 state 为 v4 finished tombstone，115 bytes，SHA-256 `e2b1b430d7501a986829debd15da60963915af30fe24a20a5c2637279abaf0a5`，token 与 audit 一致。
 
-该步骤只验证自动运行与建桌链路，不进入 RuleBased/DeepSeek 比较。
+该对局在浏览器设置 readback 和最终提交前已经结束，无法归属于 Codex 自动创建且已核对 `seed=32001` 的桌。上述 evidence 只作为未知来源/旧队列完成记录封存，不进入任何 pilot、capacity 或策略聚合。
 
-### 权限规则
+### 项目所有者确认的正确网页流程
 
-- 项目所有者已对本项目计划内的 Botzone/DeepSeek、仓库外 state/audit 创建、connector 启动和浏览器操作给予常驻默认授权；不要再在聊天中询问项目授权。
-- 需要仓库外写入或真实网络时，直接通过工具请求 `require_escalated` 系统权限；该工具确认不是项目授权，不要先发一轮文字询问。
-- Botzone 最终“创建/提交”属于代表用户创建外部对局。即使项目已默认授权，浏览器平台仍要求在点击前进行一次即时确认；这是唯一保留的用户确认。不要在更早阶段询问。
-- 不读取或输出 `.env`、URL、连接密钥、API key、Header、Cookie、账号、Bot ID 或其他敏感值。
+必须严格按以下顺序操作：
+
+1. 在 Botzone 主页面点击“创建游戏桌”；
+2. 选择 `GuanDan`；
+3. 点击该游戏选择阶段的“确认”；
+4. 页面加载后点击“载入上次配置”；
+5. 在内存中确认目标 Bot ID 与项目所有者在当前任务消息中提供的值一致；不得把该 ID 写入文档、Git、audit 或最终报告；
+6. 在页面右下角完成本局设置；
+7. 只有 connector 显示已连接且所有字段 readback 通过后，点击“开始游戏”。
+
+此前计划错误地先启动 connector、再逐步进入建桌页面，给旧队列/未知桌事件留下了提前完成窗口。本步骤先把网页表单准备到最终提交前，再启动 connector。
 
 ### 固定参数
 
-- seed：`32001`
+- seed：`33001`
 - seat：`0`
 - agent：`rule`
-- run token：`eb533b1a510ae5808655c105fdfd30ac`
-- 根目录：`D:\VsCodeProject\BotzoneAutomatedPilot-32001`
-- state：`D:\VsCodeProject\BotzoneAutomatedPilot-32001\state`
-- audit：`D:\VsCodeProject\BotzoneAutomatedPilot-32001\audit\completion.json`
+- run token：`dc6cffeb1a8764b1851b21100f573be7`
+- 根目录：`D:\VsCodeProject\BotzoneCorrectedUiPilot-33001`
+- state：根目录下全新空 `state`
+- audit：根目录下不存在的 `audit\completion.json`
 - 需要进贡：`否`
 - 级牌：`2`
-- 上轮头游/末游：使用默认 `0/3`
-- 本家座位：`0`
-- 对手：使用此前人工成功桌所用的三个现有 GuanDan Bot；不得把其 ID 写入文档或报告
-- local-AI GET 上限：`100`
-- poll timeout：`120` 秒
-- wall：`3600` 秒
+- 上轮头游/末游：`0/3`
+- 使用项目所有者提供的目标 Bot 配置；Bot ID 仅在当前任务内存中使用
+- local-AI GET 上限：100
+- poll timeout：120 秒
+- wall：3600 秒
 - 完成 1 局即停
 - 一个 connector、一个网页桌、零 runmatch、零重试
 
+### 权限规则
+
+- 项目计划内操作沿用常驻默认授权，不再询问项目授权。
+- 仓库外写入和真实网络直接通过工具请求 `require_escalated`；不要先发文字授权问题。
+- 最终“开始游戏”属于代表用户创建外部对局，浏览器平台仍要求点击前进行一次即时确认；这是唯一保留确认。
+- 不读取或输出 `.env`、URL、连接密钥、API key、Header、Cookie、账号、Bot ID、match ID、牌或动作内容。
+
 ### 执行顺序
 
-1. 只读确认当前 HEAD 包含 `2209bb71e35c4142c28bf1218fb316f8cf67da2d`、`45d34f0d443847aea527929e2a7c0ebf9e4bdd5a` 和 `31e2fa5a474a377baa3fb80a4a427766623b96c7`；不得还原项目所有者无关改动。
-2. 确认没有残留 connector，Botzone 页面已登录且没有活动测试桌。若页面存在旧桌，只报告阻塞，不自动删除或结束旧桌。
-3. 以系统扩展权限确认新根目录不存在并创建空 state/audit 目录。若根目录已存在，直接 `precondition_failed`，不得清理后继续。
-4. 使用项目 `.venv`，在唯一子进程环境设置 `PYTHON_DOTENV_DISABLED=1`。先以相同 state 路径执行现有 rule `--preflight-only`；必须 exit 0、stdout=`preflight_ready`、stderr 空、state 仍为空。该 preflight 不联网。
-5. 直接运行现有 `.venv\Scripts\python.exe -m integrations.botzone`，显式传入 rule、绝对 state/audit、固定 token、timeout/cycle/wall/finished 参数：
-   - `exec_command` 必须使用 `sandbox_permissions=require_escalated`、`tty=true`、初始 yield 约 10 秒；
-   - 必须返回仍运行的 session ID 且没有 exit code；
-   - 禁止 `Start-Process`、launcher、detached/background shell 或第二个 connector；
-   - 后续始终使用同一 session ID 轮询。
-6. 获得 session ID 后，使用 Browser 扩展 claim 当前 `https://www.botzone.org.cn/` 标签页。重新打开本地 AI 配置只用于读取连接状态，不修改或重新提交连接密钥。
-7. 等待页面显示“已连接”。等待期间同步轮询 connector；如果进程先退出，立即按实际 exit/audit 判 invalid，不创建桌、不重试。
-8. 自动打开“创建游戏桌”，选择 GuanDan 和“用本地 AI 替代我”，填写固定设置。使用 DOM 控件而不是坐标猜测；每次交互后读取最新 DOM。
-9. 在最终提交前，必须生成并核对一份内存 readback，至少包含：game=GuanDan、tribute=否、seed=32001、seat=0、level=2、first/last=0/3、三个对手槽均已选择且没有第二个本地 AI。readback 只输出非敏感字段和三个 `opponent_selected=true`，不得输出 Bot ID/名称。
-10. 任一字段不符时自动纠正一次并重新读取；仍不符则停止，不提交。全部匹配后，在最终“创建/提交”按钮前发出唯一即时浏览器确认；确认后只点击一次。
-11. 提交后持续轮询同一 session，并通过 Browser 监督对局已进入及结束。不得因聊天响应时序、state 首次出现或页面刷新暂态中止。
-12. connector 自行退出后，只读验证 v8 audit、v4 tombstone 与固定 token；不得删除 tombstone。本步骤不修改仓库文件。
+1. 只读确认 `32001` audit/state 的 bytes/SHA-256 未变化；确认其 connector 已退出。不得清理该 root。
+2. 确认新 `33001` 根目录不存在、无残留 connector、Botzone 没有活动测试桌。若旧桌存在，只报告阻塞，不自动结束。
+3. 使用 Browser 扩展 claim 已登录的 Botzone 页面。先按项目所有者给出的正确流程进入 GuanDan 建桌页面并“载入上次配置”。此时尚未启动 connector。
+4. 用 DOM 控件完成表单设置，并读取一份内存 readback：
+   - game=`GuanDan`
+   - tribute=`否`
+   - seed=`33001`
+   - seat=`0`
+   - level=`2`
+   - first/last=`0/3`
+   - target bot ID match=`true`
+   - 三个对手槽 selected=`true`
+   - local-AI replacement configured=`true`
+5. 只允许输出上述非敏感字段；Bot ID/名称不得输出。字段不符时自动纠正一次并重新读取；仍不符则停止，不启动 connector。
+6. 表单保持在最终“开始游戏”按钮前。以系统扩展权限创建唯一新 state/audit 目录，并用现有 rule `--preflight-only` 验证 state；必须 `preflight_ready`、state 空。
+7. 通过受系统权限的统一 TTY session 直接运行 `.venv\Scripts\python.exe -m integrations.botzone`：rule、固定绝对 state/audit/token、timeout 120、cycles 100、wall 3600、finished 1。必须返回 session ID 且无 exit code；禁止 launcher、Start-Process、detached/background shell 或第二进程。
+8. 立即重新读取页面连接状态并轮询同一 connector session。若 connector 在显示“已连接”前退出，按真实 audit 判 invalid，不提交、不重试。
+9. 页面显示“已连接”后，再次核对完整 readback。全部匹配后，在“开始游戏”最终点击前请求唯一即时浏览器确认；确认后只点击一次。
+10. 提交后持续监督页面和同一 session，直至 connector 自行结束。不得把提交前收到的 finished 记录计入目标桌；如果 connector 在提交前产生 completion audit，本次立即 invalid。
+11. 完成后只读验收 v8 audit、v4 tombstone、token、RuleBased 来源和请求/结果守恒；不删除 tombstone，不修改仓库。
 
 ### 通过门槛
 
 唯一通过判定：
 
 ```text
-botzone_codex_automated_rule_pilot_verified
+botzone_codex_corrected_ui_rule_pilot_verified
 ```
 
 必须同时满足：
 
-- 提交前 readback 全部精确匹配固定字段；
+- 网页步骤和两次 readback 均符合固定流程；
+- completion audit 只能在点击“开始游戏”之后产生；
 - connector exit `0`、stop reason=`finished_target`；
 - requests=responses=Headers 且大于 0；
-- finished qualified=`1`、normal result=`1`；
-- transport failures=`0`；允许独立 long-poll timeout，但只能与 timeout/idle 诊断守恒；
+- qualified finished=`1`、normal result=`1`；
+- transport failures=`0`；timeout 仅按 idle/timeout 守恒；
 - 无其他 diagnostics/detail/profile；
-- `agent_mode=rule`，全部 Agent 决策为 rule primary，模型尝试/fallback=`0`；
-- v8 audit 与 v4 最小 tombstone token 精确匹配固定 token；
+- `agent_mode=rule`，全部决策为 rule primary，模型/fallback=`0`；
+- v8 audit、v4 最小 tombstone与固定 token 一致；
 - 无 active/pending/effect/handler/cache state，无残留 connector；
-- 未调用 runmatch、DeepSeek 或第二个测试桌。
-
-### 失败门槛
+- 未调用 runmatch、DeepSeek 或第二桌。
 
 任一门槛失败：
 
 ```text
-botzone_codex_automated_rule_pilot_invalid
+botzone_codex_corrected_ui_rule_pilot_invalid
 ```
 
-失败后停止，不重试、不补采、不复用 seed `32001` 或根目录。保留原 evidence；不得新增 launcher 或诊断载体。
+失败后停止，不重试、不补采、不复用 seed `33001` 或该 root，不新增诊断载体。
 
 ### 后续边界
 
-该 pilot 通过后，才能用全新 seed/root 规划 Codex 自动执行的 RuleBased/DeepSeek 单对；通过本局不代表策略收益或胜率提升。
+本 pilot 只验证正确 UI 顺序下的自动运行与建桌。通过后才使用全新 seed/root 自动执行 RuleBased/DeepSeek 单对；不形成策略收益或胜率结论。

@@ -1632,3 +1632,8 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - game 1 RuleBased 本身完整成功：v8/v4 匹配、22/22/22 请求闭环、21 次规则决策、正常团队胜、零模型/fallback/协议/transport 异常。
 - 项目所有者确认网页 seed 并非预注册 `31001`，因此该局不可计入 pair，game 2 不得启动；判定 `botzone_owner_operated_single_pair_capacity_invalid`，原 root/evidence 永久封存。
 - 下一步 L5-A4f3 改为 Codex 自动运行单个 rule connector 并自动填写网页；提交前用 DOM readback 精确核对 seed/seat/无贡/级牌/对手槽，先验证自动化链路再恢复 pair。
+### L5-A4f3 evidence 封存与 UI 顺序修正
+
+- `32001` connector 在 Browser readback/提交前已完成一局：v8 audit 771 bytes / `6bde11f5...4e45e3`，33/33/33 请求闭环，v4 tombstone 115 bytes / `e2b1b430...f0a5`，二者 token 匹配。因目标桌尚未由 Codex 创建，evidence 只作为未知来源/旧队列完成记录封存，pilot 仍为 invalid。
+- 项目所有者明确正确 UI：主页创建游戏桌 → 选择 GuanDan → 确认 → 载入上次配置 → 内存核对目标 Bot ID → 右下角设置 → 开始游戏。
+- 下一步 L5-A4f4 先把网页准备到最终提交前并完成 readback，再启动 connector；连接后第二次 readback，通过后才开始游戏。真实 Bot ID 不写入 docs/audit/report。

@@ -1676,3 +1676,8 @@ L5-A4e9 已判定 `botzone_direct_persistent_connector_pilot_invalid`：seed `29
 L5-A4f2 的第 1 局技术链路完整成功：RuleBased connector finished target，request/response/Header 22/22/22，21 次 rule primary，正常团队胜 `score_1`，零模型、fallback、协议诊断、transport failure 和 timeout；v8 audit 与 v4 tombstone 严格匹配。但网页实际 seed 不是预注册 `31001`，因此整对唯一判定 `botzone_owner_operated_single_pair_capacity_invalid`，第 2 局未启动，原 manifest/audit/state 不变。
 
 当前转入 L5-A4f3。使用全新 `32001` 只做一局 Codex 自动 RuleBased pilot：connector 由受系统权限的统一 session 托管，Botzone 表单由 Browser DOM 填写并在最终提交前逐字段 readback。项目操作使用常驻默认授权；系统扩展权限直接通过工具请求，只有最终外部建桌提交保留平台强制的即时确认。
+### L5-A4f3 自动 pilot evidence 处置
+
+L5-A4f3 保持 `botzone_codex_automated_rule_pilot_invalid`。只读核验表明 `32001` 实际产生 exit 0 的 RuleBased v8 audit 和匹配 v4 finished tombstone，但发生在网页设置 readback 与最终提交之前，无法归属为 Codex 创建的目标桌。audit 为 771 bytes / `6bde11f5...4e45e3`，state 为 115 bytes / `e2b1b430...f0a5`；源 evidence 原样封存，不计入任何聚合。
+
+项目所有者补充了真实 UI 流程：先从主页创建桌、选择 GuanDan 并确认，再载入上次配置、核对目标 Bot、完成右下角设置，最后开始游戏。当前 L5-A4f4 使用全新 `33001`：先完成表单和 readback，再启动 connector，连接后复核并提交，消除 connector 提前消费未知桌的时序窗口。Bot ID 只在任务内存中使用，不持久化。
