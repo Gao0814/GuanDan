@@ -312,7 +312,9 @@
 - L5-A4e3 已封存为 `45d34f0d443847aea527929e2a7c0ebf9e4bdd5a`：token 模式使用 session/tombstone v4 与 audit v8，默认 v3/v7 兼容；34/35/617 回归通过，判定 `botzone_paired_policy_run_provenance_contract_verified`。
 - 下一步 L5-A4e4 使用新 seed `26001/26002`、新根目录和 16 个确定性唯一 token 生成 manifest/布局并运行双 preflight。ready 后按常驻授权进入 L5-A4e5，人工建桌前必须持有并复核实际 connector 子进程句柄。
 - L5-A4e4 已通过：tokenized manifest 为 3635 bytes（SHA-256 报告 `f1793c…63241`），16 个 state/audit 隔离布局与 rule/deepseek 双 preflight 均通过；脱敏 summary 为 653 bytes（`785ff0…d995a`），零网络，判定 `botzone_paired_policy_tokenized_capacity_preflight_ready`。
-- 当前 L5-A4e5 按常驻授权串行执行 16 局；每局用真实子进程句柄覆盖人工建桌等待期，并在进入下一局前验证 v8 audit/v4 tombstone/manifest token 三方一致。批次可在局间恢复，局内中断则整批停止。
+- L5-A4e5 在第 1 局人工建桌提示前失效：唯一 connector 已退出，game 1 state 为空、v8 audit 不存在，后续 15 局未启动；progress 标记 `batch_invalid_before_table`，整批判定 `botzone_paired_policy_tokenized_capacity_invalid`，seed `26001/26002` 永久禁用。
+- 由于该启动没有保留 exit/stdout/stderr，不能归因于 connector、Botzone、DeepSeek 或协议。现有 connector 已有成功 live 证据；缺口是容量外层没有复用可捕获流的 launcher，而旧 launcher 又不能传递 agent/state/run-token。
+- 下一步 L5-A4e6 只离线扩展现有 `live_launcher.py` 的 tokenized 参数与流证据，不重写 connector 或新增诊断载体。通过后先做全新 seed/root 的单局可见前台启动资格，再决定是否重建 16 局批次。
 
 ### L5-A2b7 任务上下文阻塞
 

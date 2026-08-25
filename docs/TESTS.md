@@ -119,6 +119,8 @@ L5-A4e3 实际通过定向 34、兼容 35、全量 617 与 diff check。L5-A4e4 
 
 L5-A4e4 上述门槛全部通过：manifest 3635 bytes / `f1793c…63241`，summary 653 bytes / `785ff0…d995a`，双 preflight ready 且零网络。L5-A4e5 不是代码回归；每局验收覆盖进程句柄、人工握手、exit/finished/request 守恒、零 transport/protocol 异常、v8/v4/token 三方一致和正常结果；16 局后再运行现有离线 aggregate 并要求 8/8 pairs valid。
 
+L5-A4e5 未进入上述逐局验收：game 1 在人工建桌提示前退出，state/audit 均缺失，progress 为 `batch_invalid_before_table`，其余局未启动。没有 exit/stdout/stderr 时不得将该失败计为 transport、protocol、DeepSeek 或 run-token 测试失败。L5-A4e6 的离线测试改为锁定 launcher 对 agent/state/run-token 的严格传递、单进程流捕获、固定退出分类和 token 脱敏；不得执行 live 或复用旧 seed。
+
 首次独立 L5-A2b7 实施因任务上下文缺失 Bot ID/授权而在操作前返回 `precondition_failed`；state/audit、配置读取、connector、Botzone GET 和 DeepSeek 请求均为 0。恢复验收必须新增“敏感参与者与授权来自当前实施任务紧邻用户消息”的前置检查；仅 docs 中的状态声明不能替代该检查。
 
 ## 1. 测试入口
