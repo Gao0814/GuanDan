@@ -1733,3 +1733,8 @@ L5-A4f3 不新增代码回归。执行验收新增 Browser DOM readback：提交
 L5-A4f3 的 `32001` v8/v4 evidence 本身有效：33/33/33 请求、qualified finished 1、RuleBased、零 transport failure、token 匹配；但 audit 在目标桌提交前产生，因此运行归属失败，不能计入 pilot。该结论不是代码测试失败。
 
 L5-A4f4 不新增代码测试。执行验收要求两次 Browser DOM readback：connector 前与页面已连接后分别核对 GuanDan、无贡、seed、seat、level、first/last、目标 Bot match 和三个对手槽；completion audit 必须在最终开始游戏后产生。其余 v8/v4/token、RuleBased 来源、request/finished 与 transport/timeout 守恒保持不变。
+### L5-A4f4 结果与 L5-A4f5 浏览器写保护
+
+L5-A4f4 audit 为 exit 130、request/Agent=0、4 次 timeout、空 state；页面出现房主关闭，但缺少可归因动作证据，因此只判 UI 生命周期失败，不归因误点。
+
+L5-A4f5 不新增代码测试。执行验收新增点击白名单、每次点击前后 DOM 证据、两次完整 readback，以及最终开始游戏后的 browser write action count=0。对局页只允许 snapshot/URL/title/screenshot 和 connector polling；其余 v8/v4/token、RuleBased、request/finished 和 timeout 守恒保持不变。

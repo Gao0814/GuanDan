@@ -1681,3 +1681,8 @@ L5-A4f2 的第 1 局技术链路完整成功：RuleBased connector finished targ
 L5-A4f3 保持 `botzone_codex_automated_rule_pilot_invalid`。只读核验表明 `32001` 实际产生 exit 0 的 RuleBased v8 audit 和匹配 v4 finished tombstone，但发生在网页设置 readback 与最终提交之前，无法归属为 Codex 创建的目标桌。audit 为 771 bytes / `6bde11f5...4e45e3`，state 为 115 bytes / `e2b1b430...f0a5`；源 evidence 原样封存，不计入任何聚合。
 
 项目所有者补充了真实 UI 流程：先从主页创建桌、选择 GuanDan 并确认，再载入上次配置、核对目标 Bot、完成右下角设置，最后开始游戏。当前 L5-A4f4 使用全新 `33001`：先完成表单和 readback，再启动 connector，连接后复核并提交，消除 connector 提前消费未知桌的时序窗口。Bot ID 只在任务内存中使用，不持久化。
+### L5-A4f4 UI 生命周期失败
+
+L5-A4f4 判定 `botzone_codex_corrected_ui_rule_pilot_invalid`。页面在提交前显示房主关闭，connector 没有收到任何 request/response/Header，最终 exit 130 interrupted；v8 audit 695 bytes / `a8785d80...8a24f`，只有 4 次 idle timeout，Agent/model 为 0，state 为空。项目所有者怀疑进入页面后发生误操作，但没有动作证据，不能确认具体根因。
+
+当前进入 L5-A4f5：全新 `34001`，浏览器写操作限定为明确白名单和唯一语义 locator；开始游戏后 browser write count 必须为 0，只允许只读监督和 connector 轮询。该步骤先验证自动 UI 安全，不恢复策略 pair。

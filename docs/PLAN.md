@@ -1637,3 +1637,8 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - `32001` connector 在 Browser readback/提交前已完成一局：v8 audit 771 bytes / `6bde11f5...4e45e3`，33/33/33 请求闭环，v4 tombstone 115 bytes / `e2b1b430...f0a5`，二者 token 匹配。因目标桌尚未由 Codex 创建，evidence 只作为未知来源/旧队列完成记录封存，pilot 仍为 invalid。
 - 项目所有者明确正确 UI：主页创建游戏桌 → 选择 GuanDan → 确认 → 载入上次配置 → 内存核对目标 Bot ID → 右下角设置 → 开始游戏。
 - 下一步 L5-A4f4 先把网页准备到最终提交前并完成 readback，再启动 connector；连接后第二次 readback，通过后才开始游戏。真实 Bot ID 不写入 docs/audit/report。
+### L5-A4f4 结果与点击防护
+
+- 页面在最终提交前显示“游戏桌被房主关闭了”；connector 未收到请求，最终被中断。v8 audit 为 695 bytes / `a8785d80...8a24f`，exit 130、4 次 idle timeout、0 request/Agent/model，state 为空。判定 `botzone_codex_corrected_ui_rule_pilot_invalid`。
+- 当前证据不能确认是否误点提前终止，只能确认目标桌未进入 local-AI 链路；不得把怀疑升级为根因。
+- 下一步 L5-A4f5 使用全新 `34001`，严格限定提交前点击白名单；最终开始游戏后 Browser 完全只读，只轮询 connector 和读取页面状态。
