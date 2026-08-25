@@ -1627,3 +1627,8 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - Codex 托管的 `30001` pilot 未建立连接；后续确认用户终端曾混用 cmd/PowerShell 变量，不能据此继续归因 connector。
 - 项目所有者改用 VS Code PowerShell、显式绝对目录和前台 connector，成功完成 `30002` 人工无贡 DeepSeek 局。v8/v4/token、27 组请求闭环、17 次模型 success、零 fallback 和正常终局均已只读核验，判定 `botzone_owner_operated_deepseek_manual_smoke_verified`。
 - 下一步 L5-A4f2 不再由 Codex 托管长进程：项目所有者以前台 PowerShell 串行运行一个 rule/deepseek 同条件 pair，Codex 只负责固定命令、evidence 守恒和 existing benchmark 聚合。
+### L5-A4f2 结果与自动化恢复
+
+- game 1 RuleBased 本身完整成功：v8/v4 匹配、22/22/22 请求闭环、21 次规则决策、正常团队胜、零模型/fallback/协议/transport 异常。
+- 项目所有者确认网页 seed 并非预注册 `31001`，因此该局不可计入 pair，game 2 不得启动；判定 `botzone_owner_operated_single_pair_capacity_invalid`，原 root/evidence 永久封存。
+- 下一步 L5-A4f3 改为 Codex 自动运行单个 rule connector 并自动填写网页；提交前用 DOM readback 精确核对 seed/seat/无贡/级牌/对手槽，先验证自动化链路再恢复 pair。

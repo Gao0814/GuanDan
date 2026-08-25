@@ -937,3 +937,8 @@ L5-A4e9 使用全新 `29001` 直接启动 connector，但仍在持续 session ID
 项目所有者在 VS Code PowerShell 中使用显式绝对 state/audit 路径启动现有 connector，已完成一局人工无贡 DeepSeek 闭环：v8 audit、v4 tombstone和 token 一致，27 组请求闭环，17 次模型 success、零 fallback，正常终局。判定 `botzone_owner_operated_deepseek_manual_smoke_verified`。
 
 后续不再让 Codex 托管 live 长进程。L5-A4f2 使用全新 `31001`，由项目所有者依次运行 rule 与 deepseek 两个前台 connector；两局保持 seed、seat、对手和桌面 profile 完全一致，分别产生独立 v8/v4/token evidence，再由现有 benchmark 载体聚合单对描述结果。单对通过前不恢复 16 局容量批次。
+### L5-A4f2 / L5-A4f3：从人工输入偏差转向 DOM 校验自动化
+
+L5-A4f2 game 1 的 RuleBased 协议与 evidence 全部有效，但项目所有者确认网页 seed 不是预注册 `31001`，故整对 invalid，game 2 未启动。该结果不是 connector 或策略故障，而是实验条件不一致。
+
+L5-A4f3 使用全新 `32001` 隔离验证 Codex 自动操作：受权限的持续 connector session + Browser DOM 填表 + 提交前 readback。readback 必须精确验证 GuanDan、无贡、seed、seat、level、first/last 和三个对手槽；只在字段全部匹配后进入最终提交。单局通过后才恢复自动化 pair。

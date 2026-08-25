@@ -1723,3 +1723,8 @@ L5-A4f1 不新增代码回归。执行验收要求 direct connector 命令自身
 项目所有者手动前台 DeepSeek 局的只读 evidence 已通过：v8 audit 804 bytes / `ee747bc2...236d1`，request=response=Header=27、qualified finished=1、transport failure=0；一次 long-poll timeout 不触发失败。Agent decision 26=local shortcut 9+model 17，model attempt/result=17/17 success、fallback=0；v4 最小 tombstone 与 audit token 一致。该结果不是代码测试，也不证明策略优于 RuleBased。
 
 L5-A4f2 不新增代码测试。执行验收覆盖同 seed/seat/opponents/profile 的 rule/deepseek 两局、独立 v8/v4/token、正常结果、transport/timeout 分类、策略观测守恒以及现有 benchmark 对单对输入的严格聚合。任一局失败即停止，不重试、不继续、不恢复 16 局批次。
+### L5-A4f2 结果与 L5-A4f3 自动化验收
+
+L5-A4f2 game 1 的 v8/v4、22 组请求、21 次 rule primary、正常结果和零异常均通过，但网页 seed 与预注册 `31001` 不同，因此 pair invalid；这不是代码测试失败。
+
+L5-A4f3 不新增代码回归。执行验收新增 Browser DOM readback：提交前必须精确验证 game、tribute、seed、seat、level、first/last 和三个非敏感 opponent-selected 布尔值；同时要求 direct connector 持续 session、v8/v4/token、RuleBased 来源、请求/finished 和 transport/protocol 守恒。任一字段或运行门槛失败不得提交/重试。

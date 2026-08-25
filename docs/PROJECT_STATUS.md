@@ -1671,3 +1671,8 @@ L5-A4e9 已判定 `botzone_direct_persistent_connector_pilot_invalid`：seed `29
 在 Codex 托管 pilot 连续受启动/session/权限边界影响后，项目所有者使用 VS Code PowerShell 和显式绝对路径自行启动现有 connector，并完成一局人工无贡 DeepSeek 对局。只读 evidence 为 v8 audit 804 bytes / SHA-256 `ee747bc22d7eaae5003cb4e59480384366059b3287e342498e6fcbcdfdf236d1`；exit 0、finished target、request/response/Header 27/27/27、qualified finished 1、transport failure 0。DeepSeek 决策为 local shortcut 9、model 17，17 次模型结果全部 success、fallback 0；正常四人终局，本家团队负。唯一 state 是 token 匹配的 v4 最小 tombstone。
 
 唯一判定为 `botzone_owner_operated_deepseek_manual_smoke_verified`。这证明用户前台运行路线可用，不证明策略增益。当前进入 L5-A4f2：使用全新 `31001` 由项目所有者串行执行 rule/deepseek 两局同条件单对 pilot，Codex 不再托管 connector 长进程。
+### L5-A4f2 配对失败与自动操作方向
+
+L5-A4f2 的第 1 局技术链路完整成功：RuleBased connector finished target，request/response/Header 22/22/22，21 次 rule primary，正常团队胜 `score_1`，零模型、fallback、协议诊断、transport failure 和 timeout；v8 audit 与 v4 tombstone 严格匹配。但网页实际 seed 不是预注册 `31001`，因此整对唯一判定 `botzone_owner_operated_single_pair_capacity_invalid`，第 2 局未启动，原 manifest/audit/state 不变。
+
+当前转入 L5-A4f3。使用全新 `32001` 只做一局 Codex 自动 RuleBased pilot：connector 由受系统权限的统一 session 托管，Botzone 表单由 Browser DOM 填写并在最终提交前逐字段 readback。项目操作使用常驻默认授权；系统扩展权限直接通过工具请求，只有最终外部建桌提交保留平台强制的即时确认。
