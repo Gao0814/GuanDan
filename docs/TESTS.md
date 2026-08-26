@@ -1753,3 +1753,12 @@ L5-A4f7 不新增代码测试。执行验收要求复用已保留表单、两次
 L5-A4f7 的执行验收全部通过：两次 readback、提交后 browser write=0、34/34/34、qualified=1、33 rule primary、零模型/fallback/transport failure，以及 v8/v4/token/无残留守恒。该结果不是新增代码测试。
 
 L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 readback/session/v8/v4/token、rule 与 deepseek 来源守恒、正常结果和 existing benchmark 单对聚合。任一局失败立即停止；单对结果不得解释为统计或胜率结论。
+
+### L5-A4g1 计划测试：benchmark idle timeout 与显式范围
+
+- 锁定零 timeout/空 diagnostics 与非零 timeout/唯一匹配 diagnostic 两条有效路径。
+- 锁定 timeout 缺诊断、计数不等、零 timeout 带诊断、混合诊断及真实 transport failure 的无效路径。
+- 新增 selected-seat schedule 的严格类型、非空、去重、范围、顺序和 AB/BA 一致性测试。
+- 锁定正式 `build_paired_schedule()` 仍覆盖每 seed 的四个座位。
+- 单 seed/单 seat 聚合只要求声明的一对，不产生未声明座位的 incomplete。
+- 报告 dataclass、`to_dict()`、canonical JSON 与隐私字段集合保持不变；测试只用合成 audit，不读取 `36001` live evidence。

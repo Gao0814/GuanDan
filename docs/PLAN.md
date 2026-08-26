@@ -1657,3 +1657,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 复用已验证表单、两次 readback、唯一开始点击与提交后 Browser 只读全部通过；connector 34/34/34 请求闭环、qualified finished 1、33 次 rule primary、零模型/fallback/transport failure，v8/v4/token 一致。
 - 判定 `botzone_codex_verified_ui_rule_pilot_verified`；该结果只封板自动 UI/RuleBased 链路，不形成策略收益。
 - 下一步 L5-A4f8 使用全新 `36001` 串行执行 rule→deepseek 同条件单对；每局独立 state/audit/token，任一局失败整对停止，最后只做 existing benchmark 描述性聚合。
+
+### L5-A4f8 结果与 L5-A4g1 benchmark 契约修正
+
+- `36001` 的 RuleBased 与 DeepSeek 两局均各自完成 v8/v4/token 闭环；RuleBased 为 `30/30/30` 且有 1 次 idle timeout，DeepSeek 为 `21/21/21` 且有 2 次 idle timeout，8 次模型结果均 success、fallback 为 0。
+- 现有 benchmark 把非零 long-poll timeout 及其固定 diagnostic 一律拒绝；调用方又使用了完整四座位 schedule 聚合仅采样的 seat 0，导致其余 seat 被计为 incomplete。
+- 因此单对正式判定保持 `botzone_codex_verified_ui_single_pair_capacity_invalid`，两局不重跑、不补采、不复用 seed/root。
+- 下一步 L5-A4g1 只修改离线 benchmark 与测试：保留正式四座位 builder，新增显式 selected-seat builder，并只接受计数守恒、无真实 transport failure 的 idle timeout。
+- L5-A4g1 不读取 live evidence；通过后另以 L5-A4g2 对封存证据做独立只读恢复，原 invalid 判定不得改写。

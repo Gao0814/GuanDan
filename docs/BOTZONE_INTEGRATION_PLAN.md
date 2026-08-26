@@ -967,3 +967,11 @@ L5-A4f7 复用该保留标签页，用 `35001` 配置表单并完成两次 readb
 `35001` 自动 RuleBased pilot 已通过：UI 双 readback、唯一提交、对局页只读、34 组请求、33 次规则决策、正常终局及 v8/v4/token 全部闭环。自动建桌链路现可作为后续配对执行基线。
 
 L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→deepseek 顺序完成一个单对。每局独立 tokenized evidence，第二局前必须验收第一局；最终只调用现有 benchmark 做单对描述聚合。单对通过前不恢复 16 局容量。
+
+### L5-A4f8：有效单局证据被 benchmark 范围门槛拒绝
+
+- RuleBased 与 DeepSeek 两局分别以 `finished_target` 正常结束，request/response/Header 守恒、qualified finished 为 1，且没有真实 transport failure 或协议错误。
+- 两局分别包含 1/2 次 long-poll idle timeout；runtime 已将这类 timeout 视为正常等待，但 benchmark 仍要求 timeout 为 0 且 diagnostics 为空。
+- 本次只采样 seat 0，却使用完整四座位 schedule，未采样 seat 被聚合器标为 incomplete。
+- 该批次仍判 `botzone_codex_verified_ui_single_pair_capacity_invalid`。下一步不再 live，而是以 L5-A4g1 修正离线 timeout 守恒与显式 selected-seat schedule 契约。
+- 正式四座位赛程必须保持默认；selected-seat 只能由调用方显式声明，不能根据已有 audit 自动缩小范围。

@@ -1701,3 +1701,11 @@ L5-A4f6 判定 `botzone_guandan_table_ui_selector_contract_verified`。当前网
 L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 readback 与 seed `35001` 匹配，开始游戏只点击一次且后续 Browser 完全只读；connector exit 0、34/34/34、qualified finished 1、transport failure 0、33 次 rule primary、零模型/fallback。v8 audit 771 bytes / `a2b1897a...561f3`，v4 tombstone 115 bytes / `28c91d1c...f3ade8`，provenance 一致。
 
 当前进入 L5-A4f8：全新 `36001`，按同一已验证 UI 顺序串行执行 rule/deepseek 单对，条件必须完全一致；两局通过后由现有 benchmark 做单对描述聚合，不恢复历史批次。
+
+### L5-A4f8 单对证据与当前阻塞
+
+- 自动 UI 下的 rule/deepseek 两局均完成独立协议闭环；DeepSeek 局观察到 8 次 model success、零 fallback。
+- 两局只有允许的 long-poll idle timeout，没有 transport failure 或协议 detail/profile。
+- 当前阻塞是 evaluation 契约：它拒绝任何非零 timeout，且完整四座位 schedule 不适合只采样 seat 0 的容量单对。
+- 当前唯一判定仍为 `botzone_codex_verified_ui_single_pair_capacity_invalid`；`36001` 证据只读封存，不重跑或补采。
+- 下一任务是 L5-A4g1 离线契约修正；未进入新的 Botzone/DeepSeek live。
