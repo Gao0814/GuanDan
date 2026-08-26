@@ -287,6 +287,39 @@ def build_paired_schedule(seeds: Iterable[object], conditions: BenchmarkConditio
     return tuple(result)
 
 
+def build_selected_paired_schedule(
+    seeds: Iterable[object],
+    local_seats: tuple[object, ...],
+    conditions: BenchmarkConditions,
+) -> tuple[ScheduledPair, ...]:
+    """Build an explicit, selected-seat subset of the formal paired schedule.
+
+    This is deliberately opt-in: :func:`build_paired_schedule` remains the
+    complete seed-by-four-seat benchmark schedule.  The selected schedule
+    reuses its AB/BA assignment exactly, while its returned order follows the
+    caller's validated seed and seat tuples.
+    """
+
+    if (
+        type(local_seats) is not tuple
+        or not local_seats
+        or any(type(seat) is not int or seat not in range(4) for seat in local_seats)
+        or len(set(local_seats)) != len(local_seats)
+    ):
+        raise PolicyBenchmarkError("invalid_selected_seats")
+    try:
+        seed_values = tuple(seeds)
+    except TypeError:
+        raise PolicyBenchmarkError("invalid_seeds") from None
+    formal = build_paired_schedule(seed_values, conditions)
+    by_condition = {(pair.seed, pair.local_seat): pair for pair in formal}
+    return tuple(
+        by_condition[(seed, seat)]
+        for seed in seed_values
+        for seat in local_seats
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _ValidatedAudit:
     outcome: str
@@ -339,7 +372,6 @@ def _validate_audit(
         or scalars["requests_seen"] != scalars["headers_sent"]
         or scalars["finished_qualified"] != 1
         or scalars["transport_failures"] != 0
-        or scalars["transport_timeouts"] != 0
         or scalars["normal_result_count"] != 1
         or scalars["agent_decision_count"] > scalars["responses_prepared"]
     ):
@@ -350,7 +382,19 @@ def _validate_audit(
     diagnostics = _pairs(value["diagnostics"], DIAGNOSTICS)
     details = _pairs(value["diagnostic_details"], DETAILS)
     profiles = _pairs(value["diagnostic_profiles"], PROFILES)
-    if failures or diagnostics or details or profiles or sum(count for _, count in finished) != scalars["finished_seen"]:
+    if (
+        failures
+        or details
+        or profiles
+        or sum(count for _, count in finished) != scalars["finished_seen"]
+    ):
+        raise PolicyBenchmarkError("invalid_audit")
+    expected_timeout_diagnostic = (
+        (("transport_timeout", scalars["transport_timeouts"]),)
+        if scalars["transport_timeouts"]
+        else ()
+    )
+    if diagnostics != expected_timeout_diagnostic:
         raise PolicyBenchmarkError("invalid_audit")
     if dict(finished).get("qualified", 0) != 1:
         raise PolicyBenchmarkError("invalid_audit")
@@ -719,10 +763,10 @@ def aggregate_policy_audits(
         expected[(pair.seed, pair.local_seat)] = pair
         seeds.add(pair.seed)
     for index, seed in enumerate(sorted(seeds)):
-        for seat in range(4):
-            pair = expected.get((seed, seat))
+        for seat in sorted(pair.local_seat for pair in expected.values() if pair.seed == seed):
+            pair = expected[(seed, seat)]
             expected_first = "rule" if (index + seat) % 2 == 0 else "deepseek"
-            if pair is None or pair.first_strategy != expected_first:
+            if pair.first_strategy != expected_first:
                 raise PolicyBenchmarkError("invalid_schedule")
 
     by_pair: dict[tuple[int, int], list[PolicyAuditSubmission]] = defaultdict(list)

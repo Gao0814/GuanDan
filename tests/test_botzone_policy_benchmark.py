@@ -13,7 +13,9 @@ from evaluation.botzone_policy_benchmark import (
     ScheduledPair,
     aggregate_policy_audits,
     build_paired_schedule,
+    build_selected_paired_schedule,
 )
+from integrations.botzone.run_provenance import TOKEN_AUDIT_VERSION
 
 
 def _conditions(*, confirmed: bool = True, opponents_confirmed: bool = True) -> BenchmarkConditions:
@@ -81,8 +83,26 @@ def _audit(
     }
 
 
-def _submission(seed: int, seat: int, strategy: str, audit: dict[str, object]) -> PolicyAuditSubmission:
-    return PolicyAuditSubmission(seed, seat, strategy, PROFILE_VERSION, audit)
+def _submission(
+    seed: int,
+    seat: int,
+    strategy: str,
+    audit: dict[str, object],
+    run_token: str | None = None,
+) -> PolicyAuditSubmission:
+    return PolicyAuditSubmission(seed, seat, strategy, PROFILE_VERSION, audit, run_token)
+
+
+def _with_idle_timeout(audit: dict[str, object], count: int) -> dict[str, object]:
+    audit["transport_timeouts"] = count
+    audit["diagnostics"] = [["transport_timeout", count]]
+    return audit
+
+
+def _tokenized_audit(audit: dict[str, object], run_token: str) -> dict[str, object]:
+    audit["version"] = TOKEN_AUDIT_VERSION
+    audit["run_token"] = run_token
+    return audit
 
 
 class BotzonePolicyBenchmarkTests(unittest.TestCase):
@@ -110,6 +130,49 @@ class BotzonePolicyBenchmarkTests(unittest.TestCase):
             first = [entry.first_strategy for entry in schedule_a if entry.local_seat == seat]
             self.assertLessEqual(abs(first.count("rule") - first.count("deepseek")), 1)
         self.assertNotIn("5", repr(schedule_a[0]))
+
+    def test_selected_schedule_is_explicit_ordered_subset_of_formal_schedule(self) -> None:
+        conditions = _conditions()
+        selected = build_selected_paired_schedule((13, 5), (3, 1), conditions)
+        formal = {
+            (pair.seed, pair.local_seat): pair
+            for pair in build_paired_schedule((13, 5), conditions)
+        }
+        self.assertEqual(
+            [(pair.seed, pair.local_seat) for pair in selected],
+            [(13, 3), (13, 1), (5, 3), (5, 1)],
+        )
+        self.assertEqual(selected, tuple(formal[(pair.seed, pair.local_seat)] for pair in selected))
+        self.assertEqual(
+            build_selected_paired_schedule((13, 5), (3, 1), conditions),
+            selected,
+        )
+        self.assertEqual(
+            [pair.first_strategy for pair in selected],
+            [formal[(pair.seed, pair.local_seat)].first_strategy for pair in selected],
+        )
+
+    def test_selected_schedule_rejects_non_tuple_empty_or_invalid_seats(self) -> None:
+        for seats in ((), [0], (True,), (0, 0), (4,), (-1,)):  # type: ignore[list-item]
+            with self.subTest(seats=seats):
+                with self.assertRaises(PolicyBenchmarkError):
+                    build_selected_paired_schedule((1,), seats, _conditions())  # type: ignore[arg-type]
+
+    def test_selected_single_seat_requests_only_its_declared_pair(self) -> None:
+        schedule = build_selected_paired_schedule((11,), (0,), _conditions())
+        report = aggregate_policy_audits(
+            schedule,
+            (
+                _submission(11, 0, "rule", _audit("rule", "win", "score_1")),
+                _submission(11, 0, "deepseek", _audit("deepseek", "loss", "score_0")),
+            ),
+            _conditions(),
+        )
+        self.assertEqual(
+            (report.requested_pair_count, report.valid_pair_count, report.invalid_pair_count, report.incomplete_pair_count),
+            (1, 1, 0, 0),
+        )
+        self.assertEqual(sum(item.valid_pair_count for item in report.seat_summaries), 1)
 
     def test_valid_pairs_aggregate_scores_fractions_model_paths_and_seats(self) -> None:
         schedule = build_paired_schedule((7,), _conditions())
@@ -179,6 +242,76 @@ class BotzonePolicyBenchmarkTests(unittest.TestCase):
         report = aggregate_policy_audits(schedule, cases, _conditions())
         self.assertEqual((report.valid_pair_count, report.invalid_pair_count), (0, 4))
         self.assertEqual(report.diagnostics, (("audit_invalid", 2), ("condition_mismatch", 1), ("strategy_mismatch", 1)))
+
+    def test_matching_idle_timeout_diagnostics_are_accepted(self) -> None:
+        conditions = BenchmarkConditions(PROFILE_VERSION, True, True, run_provenance_required=True)
+        schedule = build_selected_paired_schedule((19,), (0,), conditions)
+        rule_token = "1" * 32
+        deepseek_token = "2" * 32
+        report = aggregate_policy_audits(
+            schedule,
+            (
+                _submission(
+                    19,
+                    0,
+                    "rule",
+                    _tokenized_audit(_with_idle_timeout(_audit("rule", "win", "score_1"), 1), rule_token),
+                    rule_token,
+                ),
+                _submission(
+                    19,
+                    0,
+                    "deepseek",
+                    _tokenized_audit(_with_idle_timeout(_audit("deepseek", "loss", "score_0"), 2), deepseek_token),
+                    deepseek_token,
+                ),
+            ),
+            conditions,
+        )
+        self.assertEqual((report.valid_pair_count, report.invalid_pair_count, report.incomplete_pair_count), (1, 0, 0))
+
+    def test_idle_timeout_contract_rejects_any_mismatch_or_transport_failure(self) -> None:
+        schedule = build_selected_paired_schedule((23,), (0,), _conditions())
+
+        def report_for(rule_audit: dict[str, object]) -> object:
+            return aggregate_policy_audits(
+                schedule,
+                (
+                    _submission(23, 0, "rule", rule_audit),
+                    _submission(23, 0, "deepseek", _audit("deepseek", "loss", "score_0")),
+                ),
+                _conditions(),
+            )
+
+        cases: tuple[tuple[str, dict[str, object]], ...] = (
+            ("timeout_without_diagnostic", dict(_audit("rule", "win", "score_1"), transport_timeouts=1)),
+            (
+                "timeout_diagnostic_count_mismatch",
+                dict(_with_idle_timeout(_audit("rule", "win", "score_1"), 2), diagnostics=[["transport_timeout", 1]]),
+            ),
+            ("zero_timeout_with_diagnostic", dict(_audit("rule", "win", "score_1"), diagnostics=[["transport_timeout", 1]])),
+            (
+                "timeout_with_other_diagnostic",
+                dict(
+                    _with_idle_timeout(_audit("rule", "win", "score_1"), 1),
+                    diagnostics=[["transport_timeout", 1], ["unsupported_stage", 1]],
+                ),
+            ),
+            ("transport_failure", dict(_audit("rule", "win", "score_1"), transport_failures=1)),
+            (
+                "failure_category",
+                dict(_audit("rule", "win", "score_1"), transport_failure_categories=[["unclassified", 1]]),
+            ),
+            ("bool_timeout", dict(_audit("rule", "win", "score_1"), transport_timeouts=True)),
+            ("negative_timeout", dict(_audit("rule", "win", "score_1"), transport_timeouts=-1)),
+            ("wrong_timeout_type", dict(_audit("rule", "win", "score_1"), transport_timeouts=[])),
+            ("unknown_diagnostic", dict(_audit("rule", "win", "score_1"), diagnostics=[["unknown", 1]])),
+        )
+        for name, audit in cases:
+            with self.subTest(name=name):
+                report = report_for(audit)
+                self.assertEqual((report.valid_pair_count, report.invalid_pair_count), (0, 1))
+                self.assertEqual(report.diagnostics, (("audit_invalid", 1),))
 
     def test_deepseek_observability_conservation_and_invalid_score_shape_are_excluded(self) -> None:
         schedule = build_paired_schedule((4,), _conditions())
