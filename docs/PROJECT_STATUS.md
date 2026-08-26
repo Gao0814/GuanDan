@@ -1716,3 +1716,10 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - selected-seat schedule 与严格 idle-timeout 守恒契约已实现；正式四座位行为及报告 schema 未变。
 - 定向 13 项、全量 624 项通过；未接触 live evidence 或网络。
 - 当前进入 L5-A4g2：只读复核并聚合 `36001` seat 0 单对，不重跑或改写源证据。
+
+### L5-A4g2 已完成
+
+- 两次只读恢复输出字节一致，源 evidence 角色级 inventory 未变化。
+- 单对 requested/valid=`1/1`，invalid/incomplete/duplicate=`0/0/0`，双方均为 `score_0`，delta=0。
+- DeepSeek 模型暴露 1 局、8 次 success、零 fallback；只作描述，不形成收益结论。
+- 当前进入 L5-A4h1：全新 `37001/37002`、四座位、8 对/16 局的自动 UI 容量批次。

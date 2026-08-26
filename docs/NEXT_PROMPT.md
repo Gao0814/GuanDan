@@ -1,70 +1,82 @@
 # 下一任务提示词
 
-## Step L5-A4g2：`36001` 单对 evidence 独立只读恢复聚合
+## Step L5-A4h1：已验证 UI 下的 2 seed × 4 seat 自动成对容量批次
 
 ### 已封板前置
 
-L5-A4g1 唯一判定：
+L5-A4g2 唯一判定：
 
 ```text
-botzone_policy_benchmark_idle_timeout_scope_contract_verified
+botzone_single_pair_capacity_recovery_verified
 ```
 
-实现检查点：
+恢复聚合 requested/valid=`1/1`，invalid/incomplete/duplicate=`0/0/0`，diagnostics 为空；RuleBased 与 DeepSeek 均为正常团队负、`score_0`，pair delta=`0`。DeepSeek 暴露 1 局、8 次 success、无 fallback。该结果只证明只读聚合链有效，不构成策略收益或胜率结论。
 
-```text
-569d5431a83e98a2f32928ded7fcda8846e5a8f0
-```
+实现基线：
 
-该提交仅包含：
+- 自动 UI RuleBased 基线已通过；
+- `569d5431a83e98a2f32928ded7fcda8846e5a8f0` 已支持严格 idle-timeout 守恒和 selected-seat schedule；
+- 正式 `build_paired_schedule()` 仍固定生成每 seed 四座位的完整 AB/BA 赛程；
+- 当前全量基线为 624 项。
 
-- `evaluation/botzone_policy_benchmark.py`
-- `tests/test_botzone_policy_benchmark.py`
-
-定向 13 项、全量 624 项和 `git diff --check` 已通过。正式四座位 builder 与报告 schema 未变；新增 `build_selected_paired_schedule()`，并只接受与固定 `transport_timeout` diagnostic 严格守恒的 idle timeout。
-
-L5-A4f8 原判定永久保持：
-
-```text
-botzone_codex_verified_ui_single_pair_capacity_invalid
-```
-
-本步骤生成新的只读恢复结论，不追认或改写原判定。
+L5-A4f8 原 `botzone_codex_verified_ui_single_pair_capacity_invalid` 永久保留；`36001` 及其 root 不再使用。
 
 ### 目标
 
-只读复核已封存的 `36001` RuleBased/DeepSeek 两局 evidence，使用 L5-A4g1 的显式 seat 0 schedule 和 timeout 守恒契约进行独立聚合。不得重跑、补采、清理、修复或重写任何源 evidence。
+使用全新 seed `37001`、`37002`，在同一个任务内完成：
 
-### 源目录
+1. 仓库外 manifest、16 个隔离 state/audit 布局与双模式零网络准入；
+2. 通过已验证的 Botzone GuanDan UI，按正式 schedule 串行执行 8 对、16 局；
+3. 每局保存独立 v8 completion audit 与 v4 finished tombstone；
+4. 全部完成后使用现有 `aggregate_policy_audits()` 聚合完整四座位报告。
 
-只读源根目录：
+本步骤不新增代码或诊断载体。项目计划内操作沿用常驻默认授权，不再询问项目授权；工具系统或网页平台若要求权限/动作确认，直接使用其正常确认流程。
+
+### 固定批次
+
+- seeds：`(37001, 37002)`
+- local seats：`0,1,2,3`
+- pairs/games：`8 / 16`
+- profile：GuanDan、需要进贡=`否`、级牌=`2`、上轮头游/末游=`0/3`
+- opponents：16 局使用同一组三个既有 Bot，只在内存中核对相等，不输出或持久化 ID
+- schedule：必须直接调用 `build_paired_schedule((37001, 37002), conditions)`；不得手写、删减或重排
+- 每对按 schedule 的 `first_strategy → second_strategy` 执行；预期 AB/BA=`4/4`
+- 每局唯一 32 位小写 hex run token；16 个 token 互异，不输出
+- 每局 local-AI GET 上限 `100`、poll timeout `120` 秒、wall `3600` 秒、finished target `1`
+- DeepSeek timeout/retries=`60/0`
+- 同一时刻最多一个 connector、一个活动网页桌；runmatch=`0`、失败局重试=`0`
+
+### 仓库外根目录
 
 ```text
-D:\VsCodeProject\BotzoneVerifiedUiPair-36001
+D:\VsCodeProject\BotzoneVerifiedUiCapacity-37001-37002
 ```
 
-预期逻辑角色：
+开始时该路径必须不存在或为全新空目录。若非空，立即判 invalid，不读取、删除或复用其中内容。
 
-- `pair-manifest.json`
-- game 1 RuleBased 的 v8 completion audit 与唯一 v4 finished tombstone
-- game 2 DeepSeek 的 v8 completion audit 与唯一 v4 finished tombstone
+固定布局：
 
-不得输出 state 文件真实名称、run token、Bot/match/player ID、URL、Header、手牌、history、prompt、RAG、模型响应或逐手动作。
+```text
+capacity-manifest.json
+progress.json
+preflight-summary.json
+games/game-01-<mode>/state/
+games/game-01-<mode>/audit/completion.json
+...
+games/game-16-<mode>/state/
+games/game-16-<mode>/audit/completion.json
+final-report.json
+batch-summary.json
+```
 
-### 执行边界
+manifest 仅保存 schema/version、pair/game index、seed、seat、AB/BA 顺序、agent mode、相对 state/audit 路径、run token、固定 profile 和预算。不得保存 Bot ID、URL、Header、Cookie、账号、match/player ID、手牌、history、prompt、RAG 或模型响应。
 
-- 不修改仓库文件，不提交 Git。
-- 不运行 preflight、connector、Browser、runmatch、Botzone GET、DeepSeek 或其他网络。
-- 不读取 `.env`、API key、Botzone URL、Cookie 或环境中的连接值。
-- 不删除 tombstone，不更名或补写 manifest/audit/state。
-- 外部 verifier 只能写入一个全新的系统临时恢复目录；源目录全程只读。
-- 项目内操作使用既有默认授权；若工具系统要求仓库外只读/临时写权限，直接使用工具权限流程，不另发项目授权问题。
+manifest 使用 UTF-8 canonical JSON，先写同目录临时文件、flush/fsync 后 `os.replace()`；写入后记录 bytes/SHA-256，批次期间不得改写。16 个 state 目录必须为空，16 个 completion 目标必须不存在。
 
-### 前置复核
+### 离线准入
 
-1. 当前 HEAD 必须包含检查点 `569d5431...`，且该提交范围精确为两个文件。
-2. `evaluation/botzone_policy_benchmark.py` 与对应测试相对检查点不得有差异。
-3. 运行：
+1. HEAD 必须包含 `569d5431...`，提交范围保持两个 benchmark 文件；工作区不得有本任务造成的修改。
+2. 运行：
 
 ```text
 python -m unittest tests.test_botzone_policy_benchmark -q
@@ -72,86 +84,92 @@ python -m unittest discover -q
 git diff --check
 ```
 
-预期分别为 13 / 624 项通过。
+预期 13 / 624 项通过。
+3. 仅以 present/match 复核 Botzone URL、DeepSeek key、endpoint、model、timeout=`60`、retries=`0`；不得输出或持久化值。
+4. 使用不会匹配检查命令自身的进程枚举确认无残留 connector。
+5. 对 16 个 state 目录分别做仓库外原子创建/替换/清理资格探针，探针后全部为空。
+6. 使用 manifest 中首个 rule game 与首个 deepseek game 的 state 目录，各运行一次现有 `--preflight-only`；均须 exit `0`、stdout=`preflight_ready`、stderr 为空、state 仍为空。
+7. `preflight-summary.json` 只保存固定布尔值、退出分类和零网络计数，不保存配置或路径正文。
 
-4. 记录源 evidence 的角色级文件数量、bytes 和 SHA-256；不要在恢复输出中保存真实 state 文件名。
-5. 源目录必须只有本 pair 预注册角色允许的 evidence；发现未知文件、缺失文件、多个 tombstone、临时文件或 active session 时立即 invalid。
+任一离线门槛失败：
 
-### 严格源证据复核
-
-#### Pair manifest
-
-- 严格 JSON，无重复 key、NaN 或 Infinity。
-- 固定为 seed `36001`、seat `0`、顺序 rule → deepseek、无贡、级牌 `2`、上轮头游/末游 `0/3`。
-- 两局 agent mode、相同桌面 profile、独立合法 run token 和独立 state/audit 角色必须一致。
-- 对手身份只做内存中的三槽相等验证，不输出或持久化具体值。
-
-#### 两份 v8 audit
-
-- schema/version、字段集合、run token、agent mode 与 manifest 精确匹配。
-- 均 exit `0`、stop reason=`finished_target`、qualified finished=`1`、normal result=`1`。
-- requests=responses=Headers 且大于 0。
-- transport failures=`0`、failure categories 为空、detail/profile 为空。
-- timeout 必须与唯一 `transport_timeout` diagnostic 精确守恒；预期 RuleBased 为 1、DeepSeek 为 2，但仍以严格源字段交叉验证，不自行修补。
-- RuleBased 只允许 `rule_primary`，model/fallback=`0`。
-- DeepSeek 决策、model attempt/outcome 和 fallback 守恒；预期 local shortcut=`12`、model=`8`、success=`8`、fallback=`0`，任何不一致立即 invalid。
-
-#### 两份 v4 tombstone
-
-- 每局 state 目录恰好一个最小 finished tombstone，无 active/pending/inflight/effect/handler/cache 字段。
-- schema/version、finished 状态和 run token 与同局 manifest/audit 精确匹配。
-- 不依赖文件名猜测归属；归属必须由隔离目录、manifest 角色和 token 三者共同证明。
-
-### 聚合方式
-
-1. 使用锁定的 `BenchmarkConditions`，要求 seed、对手 profile、无贡、级牌和 run provenance 均已确认。
-2. 必须调用：
-
-```python
-build_selected_paired_schedule((36001,), (0,), conditions)
+```text
+botzone_verified_ui_paired_capacity_invalid
 ```
 
-不得调用完整四座位 builder 后删除 seat，也不得手写或篡改 `ScheduledPair`。
-3. 两份 audit 作为 `PolicyAuditSubmission` 在内存中提交，各自携带 manifest 中对应 token；token 不进入输出。
-4. 调用 `aggregate_policy_audits()`，要求：
+立即停止，不进入 live、不修改代码、不另建诊断载体。全部通过后在同一任务中直接进入 live，不另行询问项目授权。
 
-- requested pair=`1`
-- valid pair=`1`
+### 每局自动 UI 流程
+
+严格串行执行 manifest 的 game 1..16：
+
+1. 确认上一局 connector 已退出、网页桌已结束；首局确认没有旧活动桌。
+2. 从 Botzone 主页面按已验证契约进入：创建游戏桌 → 唯一可见游戏选择控件选 GuanDan → 唯一“创建”按钮 → GuanDan 表单。
+3. 若出现验证码，暂停并让项目所有者人工完成；不得识别、求解或绕过。验证码完成后从当前页面继续，不把等待视为实验失败。
+4. 点击唯一 `载入上次配置`，设置本局 seed、local seat 和固定无贡 profile；对手使用已锁定的同一组三槽。
+5. 第一次 DOM readback 必须精确验证：game、tribute、seed、seat、level、first/last、三个 opponent-selected、local-AI replacement。Bot ID 仅内存比较，输出只给布尔值。
+6. 只有 readback 全部通过，才用该局 state/audit/token 在统一 TTY session 中直接启动现有 connector。禁止 launcher、Start-Process、detached/background 或第二个 connector。
+7. 初次启动必须返回持续 session ID 且无 exit code；等待页面显示本地 AI 已连接。若 connector 在最终提交前退出或 completion audit 提前出现，该批次 invalid。
+8. 执行第二次完整 DOM readback，必须与 manifest 和第一次 readback 一致。
+9. 仅点击一次唯一 `开始游戏！`。点击后 Browser 完全只读，只允许 snapshot、URL/title、screenshot 和 connector polling；不得点击、输入、刷新、返回、关闭或退出。
+10. 等待 connector 自行结束，再验收本局 evidence；通过后原样保留 tombstone/audit并原子更新 `progress.json`，再进入下一局。
+
+页面 locator 必须每局从最新 DOM 重新取得，不复用 stale locator。只读 snapshot/poll 可重复；禁止盲目重复任何写动作。
+
+### 单局验收
+
+每局必须满足：
+
+- 两次 readback 精确一致，且与 manifest 条件匹配；
+- connector 在提交前持续运行，开始按钮只点击一次，提交后 browser writes=`0`；
+- exit `0`、stop reason=`finished_target`；
+- requests=responses=Headers 且大于 0；
+- qualified finished=`1`、normal result=`1`；
+- transport failures=`0`、failure categories 为空；
+- timeout 为 0 时 diagnostics 为空；timeout 大于 0 时仅有与其计数相同的 `transport_timeout`；
+- detail/profile 为空；
+- v8 audit、v4 最小 tombstone、manifest token 和 agent mode 精确匹配；
+- 无 active/pending/inflight/effect/handler/cache state，无残留 connector。
+
+策略门槛：
+
+- rule：全部 Agent 决策均为 `rule_primary`，model attempts/outcomes/fallback=`0`；
+- deepseek：至少一次 `model` success；model outcomes 只允许 success，RuleBased fallback=`0`，decision/attempt/outcome 守恒。
+
+任一局失败立即：
+
+- 终止当前唯一 connector（若仍运行）；
+- 原样保留 manifest、progress、已完成局和失败局 evidence；
+- 不重试、不补采、不继续后续局、不复用 seed/root；
+- 输出 `botzone_verified_ui_paired_capacity_invalid`。
+
+### 最终聚合
+
+16 局全部通过后：
+
+1. 重新验证 manifest bytes/SHA-256 未变，16 份 v8 audit 与 16 份 v4 tombstone逐局 token 匹配。
+2. 将 16 份 audit 作为带 run token 的 `PolicyAuditSubmission` 在内存中提交给 manifest 对应的正式 schedule。
+3. 调用 `aggregate_policy_audits()`，要求：
+
+- requested/valid pair=`8/8`
 - invalid/incomplete/duplicate=`0/0/0`
 - diagnostics 为空
-- seat 0 requested/valid=`1/1`
-- 其他 seat 不得被请求或计为 incomplete
-- AB/BA 与 selected schedule 固定顺序一致
-- score、胜负、模型暴露和所有分数 Fraction 守恒
+- 四个 seat 各 requested/valid=`2/2`
+- AB/BA=`4/4`
+- rule/deepseek 各 8 个正常结果
+- score、胜负、模型暴露、fallback 与 Fraction 全部守恒
 
-5. 只报告 RuleBased/DeepSeek 的正常结果类别、固定 score bucket、pair score 比较和 DeepSeek 聚合暴露计数；不得报告 seed、token 或逐局标识。
+4. `final-report.json` 只保存现有 benchmark `to_dict()` canonical JSON；不得包含 seed、token、路径或逐局内容。
+5. `batch-summary.json` 只保存固定完成计数、manifest/report bytes/SHA-256、零敏感扫描结果和唯一判定。
 
-### 可重复性与恢复输出
-
-- 同一独立 verifier 对同一只读源执行恰好两次；两份 canonical recovery JSON 必须逐字节一致。
-- 新恢复目录只保留 verifier、`run1.json`、`run2.json`、脱敏 recovery summary 和 manifest。
-- 恢复 JSON 不得包含 seed、token、源绝对路径、state 文件名、Bot/match/player ID 或逐局 payload。
-- 两次运行前后重新计算源角色级 inventory、bytes 和 SHA-256，必须完全一致。
-- 扫描恢复输出，不得出现敏感字段或源请求内容。
-
-### 判定
-
-全部门槛通过：
+### 唯一通过判定
 
 ```text
-botzone_single_pair_capacity_recovery_verified
+botzone_verified_ui_paired_policy_capacity_verified
 ```
 
-仅可给出“一对、同 seat、固定续局环境下的描述性结果”。不得表述为统计显著性、因果收益、DeepSeek 优于 RuleBased 或胜率提升。
-
-任一门槛失败：
-
-```text
-botzone_single_pair_capacity_recovery_invalid
-```
-
-立即停止，不修正源 evidence、不重跑 live、不补采、不修改代码。
+只报告 8 对样本中的描述性胜负、score bucket、paired score 比较与 DeepSeek 模型暴露。不得宣称统计显著性、因果收益、DeepSeek 更优或胜率提升。
 
 ### 后续边界
 
-恢复通过后，才规划全新 seed/root 的 2 seed × 4 seat 自动容量批次。`36001` 只用于本次只读恢复，之后继续封存，不进入新批次。
+本批次通过后，下一步才根据 8 对结果决定扩大样本、调整策略或维持现状。不要在本任务中默认启用任何新策略或修改 runtime。

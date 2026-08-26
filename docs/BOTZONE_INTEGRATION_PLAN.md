@@ -982,3 +982,11 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - timeout 仅在固定 `transport_timeout` diagnostic 与计数精确一致时接纳；任意真实 transport failure 或混合诊断仍 fail-closed。
 - 报告 schema、正式四座位 builder、runtime 和 live 链路均未改变。
 - L5-A4g2 将只读验证 `36001` manifest、两份 v8 audit、两份 v4 tombstone及 token 归属，再用 seat 0 selected schedule 聚合一对描述结果。
+
+### L5-A4g2：单对恢复通过并进入正式小容量
+
+- `36001` 恢复聚合完整且可重复；双方均为正常团队负、`score_0`，无法观察到单对分数差异。
+- 恢复没有改写原 invalid，也没有运行 live 或修改源 evidence。
+- L5-A4h1 使用新的 `37001/37002` 正式四座位 schedule：8 对、16 局、AB/BA 各 4。
+- 自动 UI 继续遵守“表单先准备并 readback，再启动 connector；连接后二次 readback；开始后 Browser 只读”的已验证顺序。
+- long-poll timeout 按新 benchmark 守恒契约验收，真实 transport failure 或协议诊断仍使整个批次 fail-closed。

@@ -1770,3 +1770,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - timeout 的匹配 diagnostic 有效路径与缺失、错数、混合、真实 failure 等反例已覆盖。
 - L5-A4g2 不新增代码测试；先复跑 13/624 回归，再对封存 evidence 执行两次字节一致的只读聚合。
 - 恢复验收要求 requested/valid=`1/1`、invalid/incomplete/duplicate=`0/0/0`、空 diagnostics、token 归属和源哈希前后不变。
+
+### L5-A4g2 结果与 L5-A4h1 执行验收
+
+- L5-A4g2 双运行字节一致，源 inventory 不变；聚合 requested/valid=`1/1`，其余失败计数为 0。
+- L5-A4h1 开始前复跑 benchmark 13 项、全量 624 项和 `git diff --check`。
+- 离线准入覆盖 16 个 state 目录原子写资格、manifest 守恒、rule/deepseek 各一次零网络 preflight。
+- 逐局验收覆盖双 readback、持续 connector、单次开始点击、v8/v4/token、request/finished、timeout/diagnostic和策略来源守恒。
+- 最终正式 schedule 必须聚合为 requested/valid=`8/8`、四 seat 各 `2/2`、AB/BA=`4/4`、空 diagnostics。

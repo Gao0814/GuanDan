@@ -1673,3 +1673,10 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - long-poll idle timeout 仅在 timeout 数值与唯一固定 diagnostic 严格守恒、且没有真实 transport failure 时有效。
 - 定向 13 项、全量 624 项和 `git diff --check` 通过；未读取 `36001` evidence，零网络。
 - 下一步 L5-A4g2 对封存的 `36001` 两局做独立只读恢复聚合；原 L5-A4f8 invalid 判定永久保留。
+
+### L5-A4g2 恢复结果与 L5-A4h1
+
+- `36001` 单对只读恢复通过：requested/valid=`1/1`，其余 invalid/incomplete/duplicate 均为 0，diagnostics 为空，双运行字节一致且源 inventory 不变。
+- RuleBased 与 DeepSeek 均为正常团队负、`score_0`，paired delta 为 0；DeepSeek 8 次 model success、零 fallback。
+- 判定 `botzone_single_pair_capacity_recovery_verified`；原 L5-A4f8 invalid 继续保留，恢复结果不构成策略收益。
+- 下一步 L5-A4h1 使用全新 `37001/37002`，按正式四座位 schedule 自动执行 8 对/16 局；同一任务先完成 manifest、隔离布局和双模式零网络准入，门槛通过后直接 live。
