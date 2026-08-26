@@ -1709,3 +1709,10 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 当前阻塞是 evaluation 契约：它拒绝任何非零 timeout，且完整四座位 schedule 不适合只采样 seat 0 的容量单对。
 - 当前唯一判定仍为 `botzone_codex_verified_ui_single_pair_capacity_invalid`；`36001` 证据只读封存，不重跑或补采。
 - 下一任务是 L5-A4g1 离线契约修正；未进入新的 Botzone/DeepSeek live。
+
+### L5-A4g1 已完成
+
+- 检查点：`569d5431a83e98a2f32928ded7fcda8846e5a8f0`。
+- selected-seat schedule 与严格 idle-timeout 守恒契约已实现；正式四座位行为及报告 schema 未变。
+- 定向 13 项、全量 624 项通过；未接触 live evidence 或网络。
+- 当前进入 L5-A4g2：只读复核并聚合 `36001` seat 0 单对，不重跑或改写源证据。

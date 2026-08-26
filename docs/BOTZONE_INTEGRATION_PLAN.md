@@ -975,3 +975,10 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - 本次只采样 seat 0，却使用完整四座位 schedule，未采样 seat 被聚合器标为 incomplete。
 - 该批次仍判 `botzone_codex_verified_ui_single_pair_capacity_invalid`。下一步不再 live，而是以 L5-A4g1 修正离线 timeout 守恒与显式 selected-seat schedule 契约。
 - 正式四座位赛程必须保持默认；selected-seat 只能由调用方显式声明，不能根据已有 audit 自动缩小范围。
+
+### L5-A4g1：benchmark 契约已加固
+
+- 检查点 `569d5431...` 新增显式 selected-seat builder，并复用正式赛程的 AB/BA 分配。
+- timeout 仅在固定 `transport_timeout` diagnostic 与计数精确一致时接纳；任意真实 transport failure 或混合诊断仍 fail-closed。
+- 报告 schema、正式四座位 builder、runtime 和 live 链路均未改变。
+- L5-A4g2 将只读验证 `36001` manifest、两份 v8 audit、两份 v4 tombstone及 token 归属，再用 seat 0 selected schedule 聚合一对描述结果。

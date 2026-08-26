@@ -1665,3 +1665,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 因此单对正式判定保持 `botzone_codex_verified_ui_single_pair_capacity_invalid`，两局不重跑、不补采、不复用 seed/root。
 - 下一步 L5-A4g1 只修改离线 benchmark 与测试：保留正式四座位 builder，新增显式 selected-seat builder，并只接受计数守恒、无真实 transport failure 的 idle timeout。
 - L5-A4g1 不读取 live evidence；通过后另以 L5-A4g2 对封存证据做独立只读恢复，原 invalid 判定不得改写。
+
+### L5-A4g1 实际结果与 L5-A4g2
+
+- L5-A4g1 已封存为 `569d5431a83e98a2f32928ded7fcda8846e5a8f0`，提交范围精确为 benchmark 模块及其测试。
+- 新增显式 selected-seat schedule；正式四座位 builder 与报告 schema 保持不变。
+- long-poll idle timeout 仅在 timeout 数值与唯一固定 diagnostic 严格守恒、且没有真实 transport failure 时有效。
+- 定向 13 项、全量 624 项和 `git diff --check` 通过；未读取 `36001` evidence，零网络。
+- 下一步 L5-A4g2 对封存的 `36001` 两局做独立只读恢复聚合；原 L5-A4f8 invalid 判定永久保留。

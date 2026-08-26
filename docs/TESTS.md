@@ -1762,3 +1762,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 锁定正式 `build_paired_schedule()` 仍覆盖每 seed 的四个座位。
 - 单 seed/单 seat 聚合只要求声明的一对，不产生未声明座位的 incomplete。
 - 报告 dataclass、`to_dict()`、canonical JSON 与隐私字段集合保持不变；测试只用合成 audit，不读取 `36001` live evidence。
+
+### L5-A4g1 验证结果与 L5-A4g2 恢复门槛
+
+- 检查点 `569d5431...`：定向 13 项、全量 624 项、`git diff --check` 通过。
+- selected-seat 的严格输入、顺序、正式赛程对应关系和单 seat 完整性已覆盖。
+- timeout 的匹配 diagnostic 有效路径与缺失、错数、混合、真实 failure 等反例已覆盖。
+- L5-A4g2 不新增代码测试；先复跑 13/624 回归，再对封存 evidence 执行两次字节一致的只读聚合。
+- 恢复验收要求 requested/valid=`1/1`、invalid/incomplete/duplicate=`0/0/0`、空 diagnostics、token 归属和源哈希前后不变。
