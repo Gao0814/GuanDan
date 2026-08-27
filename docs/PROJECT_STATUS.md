@@ -1753,3 +1753,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 两次合成演练一致，module origin、8 对 schedule、manifest/progress 原子契约均通过。
 - qualification artifact 已清理，正式 root 未创建，外部请求为 0。
 - 当前进入 L5-A4h5a：继续使用 `41001/41002`，从正式离线准入与 artifact 创建开始，不重复资格演练。
+
+### L5-A4h5a 正式 metadata 路径失败
+
+- 正式 writer 误读不存在的 schedule 字段，在 manifest 前停止；preflight/live/network 均为 0。
+- root 已被提前创建，因此 `41001/41002` 不复用。
+- 当前进入 L5-A4h6：全新 `42001/42002`，资格与正式运行共享同一 manifest payload 函数，并把 root 创建推迟到完整 payload 验证之后。

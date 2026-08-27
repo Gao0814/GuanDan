@@ -1719,3 +1719,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 全过程零网络、零 connector/Agent/model，临时脚本与 scratch 已清理。
 - `41001/41002` 正式 root 未创建或访问，故批次尚未开始，seeds 继续有效。
 - 下一步 L5-A4h5a 不重复资格演练，直接执行独立基线命令、正式 manifest/progress、双模式 preflight和 16 局 live。
+
+### L5-A4h5a 结果与 L5-A4h6
+
+- 正式 writer 在 manifest 写入前因 `ScheduledPair` 字段假设不匹配而失败；外部请求为 0，但正式 root 已提前创建。
+- 判定 `precondition_failed: formal_manifest_writer_failed_before_manifest`；`41001/41002` 与 root 封存。
+- 根因边界是 qualification 与正式 metadata serializer 不同路径，以及 root 创建早于 payload 完成。
+- L5-A4h6 使用 `42001/42002`，只允许一个共享 `build_manifest_payload()`；字段固定为 seed/local_seat/first_strategy/second_strategy。
+- 完整 8 对/16 局 canonical payload 在内存验证并确定 hash 后才创建正式 root；同路径资格通过后继续原容量流程。

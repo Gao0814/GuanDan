@@ -1816,3 +1816,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 临时目录清空，network/connector/Agent/model 均为 0；正式 root 未创建。
 - L5-A4h5a 不重复 qualification，只运行尚未执行的 13/624、`git diff --check`、正式 artifact、双 preflight 和 live 验收。
 - 纯命令解析问题仍允许修正调用；实际门槛失败与正式 manifest 后的批次失败继续按既定边界处理。
+
+### L5-A4h5a 结果与 L5-A4h6 metadata 同路径验证
+
+- L5-A4h5a 未运行 preflight/live；失败是正式 writer 的 schedule 字段不匹配。
+- L5-A4h6 先锁定 `dataclasses.fields(ScheduledPair)` 精确为四字段，并拒绝任何猜测字段。
+- 同一 `build_manifest_payload()` 必须分别用合成输入和正式输入生成 8 对/16 局结构；不得存在第二套 serializer。
+- root 创建前验证 pair/game 连续 index、seed×seat、AB/BA、mode counts、token 唯一、路径纯函数和 canonical bytes/hash。
+- 同路径资格通过后沿用 13/624、progress 状态演练、双 preflight、16 局 evidence 与 8 对聚合验收。

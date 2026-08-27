@@ -1028,3 +1028,11 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - 资格运行未创建正式 root，也未调用任何 connector、Botzone 或 DeepSeek；临时内容已清理。
 - L5-A4h5a 继续使用 `41001/41002`，不重跑 qualification；按独立基线命令 → 正式 artifact → 双 preflight → 自动 16 局的顺序继续。
 - 正式 manifest 回读成功仍是批次不可重试边界的开始点。
+
+### L5-A4h5a：qualification 与正式 serializer 分叉
+
+- 资格演练虽通过，但正式 writer 对 `ScheduledPair` 使用了未验证字段，说明两者不是同一 metadata 路径。
+- manifest 尚未写入且无网络，但 root 已创建，故旧批次不能现场修复。
+- L5-A4h6 将调度字段锁定为 `seed/local_seat/first_strategy/second_strategy`，pair/game index 均由 enumerate 派生。
+- qualification 与正式运行必须共享唯一 `build_manifest_payload()`；完整 canonical bytes/hash 在内存准备完成后才允许创建 `42001/42002` root。
+- 其余原子 writer、九字段 progress、lobby 归属、UI/connector 与聚合门槛不变。

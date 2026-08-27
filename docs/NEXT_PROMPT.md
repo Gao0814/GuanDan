@@ -1,6 +1,6 @@
 # 下一任务提示词
 
-## Step L5-A4h5a：编排资格通过后的正式 2 seed × 4 seat 自动成对容量批次
+## Step L5-A4h6：正式 schedule 元数据同路径封板后的容量批次
 
 ### 已封板前置
 
@@ -63,9 +63,17 @@ L5-A4h5 编排资格现已完成：
 - qualification script 与 scratch 内容已清理；
 - `41001/41002` 正式 root 尚未创建或访问，因此正式批次尚未开始，seeds 继续有效。
 
+L5-A4h5a 结果：
+
+```text
+precondition_failed: formal_manifest_writer_failed_before_manifest
+```
+
+正式 writer 在生成赛程元数据时读取了调度对象不存在的字段；manifest 尚未写入，network/connector/preflight/live 均为 0。但 writer 已提前创建正式 root，因此 `41001/41002` 与该 root 封存，不删除、不修复、不复用。此前 qualification 与正式 writer 没有共享同一元数据序列化路径，这是本步骤必须消除的缺口。
+
 ### 目标
 
-使用全新 seed `41001`、`41002`，在同一个任务内完成：
+使用全新 seed `42001`、`42002`，在同一个任务内完成：
 
 1. 仓库外 manifest、16 个隔离 state/audit 布局与双模式零网络准入；
 2. 通过已验证的 Botzone GuanDan UI，按正式 schedule 串行执行 8 对、16 局；
@@ -76,12 +84,12 @@ L5-A4h5 编排资格现已完成：
 
 ### 固定批次
 
-- seeds：`(41001, 41002)`
+- seeds：`(42001, 42002)`
 - local seats：`0,1,2,3`
 - pairs/games：`8 / 16`
 - profile：GuanDan、需要进贡=`否`、级牌=`2`、上轮头游/末游=`0/3`
 - opponents：16 局使用同一组三个既有 Bot，只在内存中核对相等，不输出或持久化 ID
-- schedule：必须直接调用 `build_paired_schedule((41001, 41002), conditions)`；不得手写、删减或重排
+- schedule：必须直接调用 `build_paired_schedule((42001, 42002), conditions)`；不得手写、删减或重排
 - 每对按 schedule 的 `first_strategy → second_strategy` 执行；预期 AB/BA=`4/4`
 - 每局唯一 32 位小写 hex run token；16 个 token 互异，不输出
 - 每局 local-AI GET 上限 `100`、poll timeout `120` 秒、wall `3600` 秒、finished target `1`
@@ -91,10 +99,10 @@ L5-A4h5 编排资格现已完成：
 ### 仓库外根目录
 
 ```text
-D:\VsCodeProject\BotzoneVerifiedUiCapacity-41001-41002
+D:\VsCodeProject\BotzoneVerifiedUiCapacity-42001-42002
 ```
 
-已确认编排资格期间未创建或访问该路径。进入本任务时必须再次只验证路径不存在；若已存在，停止并报告 `precondition_failed: capacity_root_already_exists`，不得读取、删除或复用其中内容。
+在完整 manifest payload 已于内存生成、严格验证并编码为 canonical bytes 之前，禁止创建或访问该路径。payload 准备完成后再次只验证路径不存在；若已存在，停止并报告 `precondition_failed: capacity_root_already_exists`，不得读取、删除或复用其中内容。
 
 固定布局：
 
@@ -112,6 +120,16 @@ batch-summary.json
 ```
 
 manifest 仅保存 schema/version、pair/game index、seed、seat、AB/BA 顺序、agent mode、相对 state/audit 路径、run token、固定 profile 和预算。不得保存 Bot ID、URL、Header、Cookie、账号、match/player ID、手牌、history、prompt、RAG 或模型响应。
+
+### 正式 schedule 元数据契约
+
+- `ScheduledPair` 的允许字段精确为 `seed`、`local_seat`、`first_strategy`、`second_strategy`；开始时用 `dataclasses.fields(ScheduledPair)` 复核该集合，不得猜测 `pair_id`、`strategy`、`mode`、`order` 或其他属性。
+- pair index 只能来自 `enumerate(schedule, start=1)`，不得从调度对象读取。
+- 每个 pair 只按 `first_strategy`、`second_strategy` 展开两局；game index 来自展开后的连续 `1..16`。
+- 每局 `agent_mode` 必须等于对应 strategy；相对 state/audit 路径由 game index 与 mode 纯函数生成。
+- 必须先在内存构造完整 manifest object，验证 8 个 pair、16 个 game、seed/seat 交叉积、AB/BA=`4/4`、rule/deepseek=`8/8`、16 个唯一 token和连续 index。
+- 只允许一个 `build_manifest_payload(schedule, tokens, profile, budget)` 实现。qualification 与正式运行必须调用同一个函数；禁止复制、包装或另写“正式 writer 元数据”路径。
+- 该函数返回已经严格验证的 object、canonical bytes 与 SHA-256；任何字段访问或守恒失败都发生在正式 root 创建之前。
 
 manifest 使用 UTF-8 canonical JSON。必须由一个仓库外、仅使用标准库的 writer 完成以下顺序，且每一步失败立即停止：
 
@@ -164,13 +182,14 @@ progress 必须复用 manifest 的同一原子 writer：同目录 O_EXCL 临时�
 
 只有上述演练全部通过，才创建官方初始 `progress.json`。每局后 updater 必须从已严格验证的当前九字段对象计算下一对象，不得从默认值补字段。若 progress 写入本身失败，保留上一份合法 progress，不做第二次写入或现场修复。
 
-### 已完成的编排资格边界
+### 同路径编排资格边界
 
-- 不得重复 qualification、重建资格脚本或重新生成合成结果。
-- 正式批次的开始点仍定义为 `capacity-manifest.json` 已按原子契约成功 replace 并完成回读校验。
-- 在该开始点前，基线命令继续分别作为独立工具调用；禁止 `;`、pipeline、PowerShell backtick、shell 重定向或嵌套 quoting。
-- 若工具调用仍发生纯解析/quoting 问题，可修正调用后继续，不产生 batch invalid；实际测试、配置或文件系统门槛失败才报告 `precondition_failed`。
-- 不得在正式 root 之外遗留新的 runner、qualification 或 scratch artifact。
+- 因 L5-A4h5 的资格没有覆盖正式 metadata 路径，本步骤必须重新资格验证，但只验证新的共享 `build_manifest_payload()`，不得继续使用旧 qualification writer。
+- 用合成 seeds/tokens 调用共享函数两次，要求 object、canonical bytes 与 SHA-256 全部相等；同时复核真实 `ScheduledPair` 字段集合。
+- qualification 只在内存和系统临时 scratch 中验证原子 writer/progress，不得创建正式 root；结束后脚本和 scratch 清理。
+- 正式运行只把输入替换为 `42001/42002` 与正式 tokens，仍调用同一个共享函数；在它成功返回之前不得创建 root。
+- 纯解析、import 或 payload 字段错误发生在 root 前时允许修正共享函数并重新资格验证，不产生 batch invalid。
+- 正式批次开始点仍是 root 创建后，`capacity-manifest.json` 成功 replace 并回读验证；开始点之后保持不可重试边界。
 
 ### 离线准入
 
@@ -193,7 +212,7 @@ git diff --check
 任一离线门槛失败：
 
 ```text
-botzone_verified_ui_paired_capacity_orchestration_recovery_invalid
+botzone_verified_ui_paired_capacity_metadata_recovery_invalid
 ```
 
 立即停止，不进入 live、不修改代码、不另建诊断载体。全部通过后在同一任务中直接进入 live，不另行询问项目授权。
@@ -255,7 +274,7 @@ Botzone 主页面存在“仍在进行”的桌或对局条目，本身不是冲
 - 终止当前唯一 connector（若仍运行）；
 - 原样保留 manifest、progress、已完成局和失败局 evidence；
 - 不重试、不补采、不继续后续局、不复用 seed/root；
-- 输出 `botzone_verified_ui_paired_capacity_orchestration_recovery_invalid`。
+- 输出 `botzone_verified_ui_paired_capacity_metadata_recovery_invalid`。
 
 ### 最终聚合
 
