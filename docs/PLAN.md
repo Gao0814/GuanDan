@@ -1704,3 +1704,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - `39001/39002` 与原 root 封存，不复用。
 - L5-A4h4 使用 `40001/40002`，把 progress 固定为九字段不变 schema，并在 live 前于 scratch 中演练初始态、1–16 完成转换、全部失败态和 malformed 反例。
 - 进度演练与原离线准入通过后，继续同一任务的 16 局容量执行。
+
+### L5-A4h4 结果与 L5-A4h5
+
+- L5-A4h4 在离线基线命令解析阶段停止；测试和任何项目函数均未实际启动，`40001/40002` root/artifact/network 均为 0。
+- 判定 `botzone_verified_ui_paired_capacity_progress_recovery_invalid` 保留，但该结果揭示命令解析不应消耗一次实验批次。
+- `40001/40002` 仍封存；L5-A4h5 使用 `41001/41002`。
+- L5-A4h5 在正式 root/manifest 前增加可修正的 orchestration qualification：独立命令调用、临时脚本 py_compile、仓库 origin 校验和两次合成 dry-run。
+- 只有正式 manifest 原子落盘后才开始不可重试的批次边界；此前纯解析/调用错误必须修正后重新资格验证，不产生 batch invalid。

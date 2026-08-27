@@ -1801,3 +1801,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 缺/多字段、bool、越界、完成计数跳号、hash 不匹配和非法 null/status 组合必须拒绝且不覆盖合法 progress。
 - 每次演练及正式更新都验证 atomic writer 九阶段、canonical 回读和临时文件清理。
 - progress 门槛通过后沿用 13/624、双模式 preflight、16 局 v8/v4/token 与最终 8 对聚合验收。
+
+### L5-A4h4 结果与 L5-A4h5 编排资格
+
+- L5-A4h4 没有实际运行测试；失败属于命令解析，不是回归失败。
+- L5-A4h5 的每条基线命令必须独立调用；临时 qualification script 先 py_compile，再验证仓库 module origin。
+- qualification-only 两次运行使用合成输入，必须逐字段一致、临时目录清空、全部网络与 Agent 计数为 0。
+- 解析/quoting/import-path 资格错误允许修正并重跑；实际代码测试或文件操作失败才形成 precondition failure。
+- 正式 manifest 落盘后继续原 13/624、progress 全状态演练、双 preflight、16 局 evidence 与 8 对聚合验收。

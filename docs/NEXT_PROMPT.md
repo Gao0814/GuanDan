@@ -1,6 +1,6 @@
 # 下一任务提示词
 
-## Step L5-A4h4：进度 schema 封板后的 2 seed × 4 seat 自动成对容量批次
+## Step L5-A4h5：编排资格前置后的 2 seed × 4 seat 自动成对容量批次
 
 ### 已封板前置
 
@@ -45,9 +45,17 @@ botzone_verified_ui_paired_capacity_lobby_recovery_invalid
 
 L5-A4h3 的第 1 局本身完全通过：requests/responses/Headers=`28/28/28`、qualified finished=`1`、transport failure=`0`、RuleBased 与 provenance 守恒。但准备原子更新 `progress.json` 时发现预注册 schema 缺少 updater 预期字段，失败发生在任何 progress 写入前；第 2 局未启动。`39001/39002` 与该 root 永久封存，不读取、清理、修复或复用。
 
+L5-A4h4 原判定永久保留：
+
+```text
+botzone_verified_ui_paired_capacity_progress_recovery_invalid
+```
+
+L5-A4h4 的离线基线命令在 shell/调用解析阶段失败；测试未实际启动，`40001/40002` 的目录、manifest、progress、state、audit 均未创建，preflight/live/network 均为 0。该失败证明“工具命令是否成功解析”不应被当作一次实验门槛失败。`40001/40002` 仍按已给出的 invalid 判定封存，不再复用。
+
 ### 目标
 
-使用全新 seed `40001`、`40002`，在同一个任务内完成：
+使用全新 seed `41001`、`41002`，在同一个任务内完成：
 
 1. 仓库外 manifest、16 个隔离 state/audit 布局与双模式零网络准入；
 2. 通过已验证的 Botzone GuanDan UI，按正式 schedule 串行执行 8 对、16 局；
@@ -58,12 +66,12 @@ L5-A4h3 的第 1 局本身完全通过：requests/responses/Headers=`28/28/28`�
 
 ### 固定批次
 
-- seeds：`(40001, 40002)`
+- seeds：`(41001, 41002)`
 - local seats：`0,1,2,3`
 - pairs/games：`8 / 16`
 - profile：GuanDan、需要进贡=`否`、级牌=`2`、上轮头游/末游=`0/3`
 - opponents：16 局使用同一组三个既有 Bot，只在内存中核对相等，不输出或持久化 ID
-- schedule：必须直接调用 `build_paired_schedule((40001, 40002), conditions)`；不得手写、删减或重排
+- schedule：必须直接调用 `build_paired_schedule((41001, 41002), conditions)`；不得手写、删减或重排
 - 每对按 schedule 的 `first_strategy → second_strategy` 执行；预期 AB/BA=`4/4`
 - 每局唯一 32 位小写 hex run token；16 个 token 互异，不输出
 - 每局 local-AI GET 上限 `100`、poll timeout `120` 秒、wall `3600` 秒、finished target `1`
@@ -73,10 +81,10 @@ L5-A4h3 的第 1 局本身完全通过：requests/responses/Headers=`28/28/28`�
 ### 仓库外根目录
 
 ```text
-D:\VsCodeProject\BotzoneVerifiedUiCapacity-40001-40002
+D:\VsCodeProject\BotzoneVerifiedUiCapacity-41001-41002
 ```
 
-开始时该路径必须不存在或为全新空目录。若非空，立即判 invalid，不读取、删除或复用其中内容。
+编排资格阶段不得创建或访问该路径。资格全部通过后才创建；此时路径必须不存在。若已存在，停止并报告 `precondition_failed: capacity_root_already_exists`，不得读取、删除或复用其中内容。
 
 固定布局：
 
@@ -146,6 +154,22 @@ progress 必须复用 manifest 的同一原子 writer：同目录 O_EXCL 临时�
 
 只有上述演练全部通过，才创建官方初始 `progress.json`。每局后 updater 必须从已严格验证的当前九字段对象计算下一对象，不得从默认值补字段。若 progress 写入本身失败，保留上一份合法 progress，不做第二次写入或现场修复。
 
+### 编排资格阶段
+
+正式批次的开始点定义为：`capacity-manifest.json` 已按原子契约成功 replace 并完成回读校验。在此之前，不得创建正式 root、生成正式 token 或访问 Botzone/DeepSeek。
+
+以下问题属于工具资格失败，不是实验失败，也不消耗 seed/root：shell 解析错误、引号/转义错误、命令未实际启动、临时脚本 import path 错误、参数解析器未进入目标函数。遇到这些问题必须修正调用方式并重新资格验证，不得输出 batch invalid。
+
+资格方式：
+
+1. 基线命令分别作为独立工具调用执行；禁止把多个命令拼成一条 shell 字符串，禁止 `;`、pipeline、PowerShell backtick 续行、shell 重定向和嵌套 quoting。
+2. 需要 Python 逻辑时，使用一个全新的系统临时 qualification 目录和标准库脚本；先执行 `python -m py_compile <script>`，再执行其 `--qualification-only` 模式。
+3. qualification 脚本必须显式把仓库根加入自身 `sys.path`，并验证 `evaluation.botzone_policy_benchmark` 的 module spec/origin 指向当前仓库。
+4. `--qualification-only` 只用合成 seed、合成 token 和系统临时目录，完整演练 schedule、manifest writer、九字段 progress validator/updater 与 canonical 输出；network/connector/Browser/Agent/model count 必须为 0。
+5. qualification 运行两次，结构化结果逐字段一致；两次临时目录均清空。脚本、参数或 import 资格失败可修正后重新运行，直到取得两次有效结果或发现真实代码/环境门槛失败。
+
+只有命令已实际运行后出现的测试失败、代码契约失败、配置门槛失败或文件系统操作失败才是有效 precondition failure。此时停止并报告固定 `precondition_failed`，但因为正式 manifest 尚未创建，不产生 batch invalid，也不启动 live。
+
 ### 离线准入
 
 1. HEAD 必须包含 `569d5431...`，提交范围保持两个 benchmark 文件；工作区不得有本任务造成的修改。
@@ -167,7 +191,7 @@ git diff --check
 任一离线门槛失败：
 
 ```text
-botzone_verified_ui_paired_capacity_progress_recovery_invalid
+botzone_verified_ui_paired_capacity_orchestration_recovery_invalid
 ```
 
 立即停止，不进入 live、不修改代码、不另建诊断载体。全部通过后在同一任务中直接进入 live，不另行询问项目授权。
@@ -229,7 +253,7 @@ Botzone 主页面存在“仍在进行”的桌或对局条目，本身不是冲
 - 终止当前唯一 connector（若仍运行）；
 - 原样保留 manifest、progress、已完成局和失败局 evidence；
 - 不重试、不补采、不继续后续局、不复用 seed/root；
-- 输出 `botzone_verified_ui_paired_capacity_progress_recovery_invalid`。
+- 输出 `botzone_verified_ui_paired_capacity_orchestration_recovery_invalid`。
 
 ### 最终聚合
 

@@ -1741,3 +1741,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 第 1 局 RuleBased evidence 全部门槛通过；批次仅在其后 progress 原子更新前发现 schema 缺字段而停止。
 - 判定 `botzone_verified_ui_paired_capacity_lobby_recovery_invalid`；progress 未改变，第 2 局未启动。
 - 当前进入 L5-A4h4：全新 `40001/40002`，固定九字段 progress schema，并在 live 前完整演练全部状态转换和反例。
+
+### L5-A4h4 命令解析失败
+
+- 离线基线命令未通过解析，测试、目录、manifest、progress、preflight 和网络均未开始。
+- 判定 `botzone_verified_ui_paired_capacity_progress_recovery_invalid` 保留，`40001/40002` 封存。
+- 当前进入 L5-A4h5：使用 `41001/41002`，先在正式 root 之外完成可修正的编排资格；manifest 成功落盘后才进入批次不可重试边界。

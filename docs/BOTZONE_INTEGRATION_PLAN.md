@@ -1013,3 +1013,11 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - L5-A4h4 使用 `40001/40002`，progress 固定为九字段且所有状态字段始终存在。
 - live 前必须离线演练 ready → 16 个完成前缀、全部 invalid failure_stage 和 malformed 拒绝；正式 progress 与每次更新继续使用 flush/fsync/replace 原子 writer。
 - 大厅其他玩家桌处理、双 readback、connector、v8/v4/token 与最终聚合契约保持不变。
+
+### L5-A4h4：命令解析不等于实验失败
+
+- 离线基线命令在解析阶段失败，没有执行测试或创建任何 `40001/40002` artifact，也没有外部请求。
+- 既有 fail-stop 把工具调用错误错误地提升为 batch invalid；该历史判定保留，但后续边界需要修正。
+- L5-A4h5 在正式 root 之前设置 orchestration qualification：独立命令、脚本编译、module origin 和两次合成 dry-run。
+- 解析、quoting、临时 import path 或参数未进入目标函数时，允许修正调用并重新资格验证；这些动作没有 batch side effect。
+- 正式 manifest 成功原子落盘后，才启用失败即停止、seed/root 不复用的实验边界。
