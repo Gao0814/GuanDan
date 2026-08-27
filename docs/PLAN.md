@@ -1727,3 +1727,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 根因边界是 qualification 与正式 metadata serializer 不同路径，以及 root 创建早于 payload 完成。
 - L5-A4h6 使用 `42001/42002`，只允许一个共享 `build_manifest_payload()`；字段固定为 seed/local_seat/first_strategy/second_strategy。
 - 完整 8 对/16 局 canonical payload 在内存验证并确定 hash 后才创建正式 root；同路径资格通过后继续原容量流程。
+
+### L5-A4h6 正式批次起点与 L5-A4h6a
+
+- `42001/42002` 的 manifest payload 已通过真实 `ScheduledPair` 四字段路径验证，且完整 canonical payload/hash 在 root 创建前完成。
+- 正式 root 内 manifest、九字段初始 progress、16 个隔离 state 目录和 16 个 completion audit 目标已原子落盘并回读；8 对/16 局、rule/deepseek 8/8、AB/BA 4/4 与唯一 provenance token 全部守恒。
+- 临时 initial writer 已清理；截至该边界 preflight、connector、网页桌和网络请求均为 0。manifest 现为不可重写的正式批次证据。
+- 下一步 L5-A4h6a 先只读锁定 manifest/progress/layout，在 scratch 中资格验证统一 progress continuation helper，再对 rule/deepseek 各运行一次零网络 preflight。
+- 双 preflight 通过后在同一任务直接按 manifest 串行执行 16 局；不再拆分准备任务或重复请求项目授权。

@@ -1036,3 +1036,11 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - L5-A4h6 将调度字段锁定为 `seed/local_seat/first_strategy/second_strategy`，pair/game index 均由 enumerate 派生。
 - qualification 与正式运行必须共享唯一 `build_manifest_payload()`；完整 canonical bytes/hash 在内存准备完成后才允许创建 `42001/42002` root。
 - 其余原子 writer、九字段 progress、lobby 归属、UI/connector 与聚合门槛不变。
+
+### L5-A4h6：正式 manifest 已成为不可重写边界
+
+- 新批次使用 `42001/42002`；同一真实 `ScheduledPair` payload 路径在 root 创建前完成 8 对/16 局、路径、token、canonical bytes 和 hash 验证。
+- manifest、九字段初始 progress 与 16 局隔离 state/audit 布局已原子创建并回读，initial writer 已清理；外部请求仍为 0。
+- 后续不得重建或规范化 manifest。L5-A4h6a 先只读复核正式 inventory，并在正式 root 外资格验证只负责 progress 状态转换的 continuation helper。
+- helper 不得实现第二套 manifest serializer；只允许严格九字段 progress 的 canonical 原子更新，并在 scratch 中覆盖连续完成、失败态和 malformed 反例。
+- rule/deepseek 各一次零网络 preflight 通过后，同一任务继续 16 局。大厅其他玩家桌不阻塞；当前账号旧桌或归属未知只暂停确认，不自行关闭或把等待判 invalid。

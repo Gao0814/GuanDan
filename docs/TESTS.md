@@ -1824,3 +1824,12 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 同一 `build_manifest_payload()` 必须分别用合成输入和正式输入生成 8 对/16 局结构；不得存在第二套 serializer。
 - root 创建前验证 pair/game 连续 index、seed×seat、AB/BA、mode counts、token 唯一、路径纯函数和 canonical bytes/hash。
 - 同路径资格通过后沿用 13/624、progress 状态演练、双 preflight、16 局 evidence 与 8 对聚合验收。
+
+### L5-A4h6 正式 artifact 结果与 L5-A4h6a 验收
+
+- 正式 manifest payload 已用真实四字段 schedule 路径验证；manifest、九字段 progress 和 16 局隔离布局均已原子回读，root 创建前后边界符合预注册要求。
+- L5-A4h6a 先复跑 benchmark 13 项、全量至少 624 项和 `git diff --check`，并只读验证 manifest hash、初始 progress、16 个空 state 与 16 个缺失 completion audit。
+- continuation helper 必须在 scratch 中两次一致地覆盖 ready → game 1..16、全部固定 failure stage 与 malformed 拒绝；资格过程不得修改正式 root。
+- rule/deepseek preflight 各恰好一次，要求 exit 0、单行 `preflight_ready`、stderr 空、state 不变及全部网络/Agent/model 计数为 0。
+- 双 preflight 通过后沿用逐局双 readback、持续 connector、唯一开始点击、v8/v4/token、idle timeout 守恒和策略来源门槛。
+- 最终聚合要求 requested/valid=`8/8`、其余失败计数为 0、每 seat=`2/2`、AB/BA=`4/4`，并输出不含 seed/token/path 的 canonical 聚合报告。
