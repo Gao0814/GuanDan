@@ -1696,3 +1696,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - `38001/38002` 与原 root 封存，不复用。
 - L5-A4h3 使用 `39001/39002`，新增大厅归属门槛：其他玩家桌直接忽略；明确的本账号旧桌暂停等待清理；归属不确定时询问项目所有者是否继续创建，不得自行停止。
 - 新离线准入通过后继续同一任务的 16 局容量执行。
+
+### L5-A4h3 结果与 L5-A4h4
+
+- L5-A4h3 第 1 局完整通过：28/28/28、qualified finished 1、零 transport failure、RuleBased/provenance 守恒。
+- progress updater 在写入前发现预注册 schema 缺少预期字段，故批次判 `botzone_verified_ui_paired_capacity_lobby_recovery_invalid`；progress 未变，第 2 局未启动。
+- `39001/39002` 与原 root 封存，不复用。
+- L5-A4h4 使用 `40001/40002`，把 progress 固定为九字段不变 schema，并在 live 前于 scratch 中演练初始态、1–16 完成转换、全部失败态和 malformed 反例。
+- 进度演练与原离线准入通过后，继续同一任务的 16 局容量执行。

@@ -1793,3 +1793,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 大厅列表非空不得直接产生 invalid；确认等待不计为 connector timeout 或批次失败。
 - 不得通过点击、加入或关闭既有桌来判断归属；只有本批次新桌允许写操作。
 - 其余 13/624 回归、原子 writer、16 局 evidence 和最终 8 对聚合门槛不变。
+
+### L5-A4h3 结果与 L5-A4h4 progress 演练
+
+- L5-A4h3 第 1 局的 live evidence 验收通过；失败属于 progress schema，不是 connector 或策略测试失败。
+- L5-A4h4 在正式 progress 前演练 ready、game 1..16 完成转换和九种 failure_stage invalid 转换。
+- 缺/多字段、bool、越界、完成计数跳号、hash 不匹配和非法 null/status 组合必须拒绝且不覆盖合法 progress。
+- 每次演练及正式更新都验证 atomic writer 九阶段、canonical 回读和临时文件清理。
+- progress 门槛通过后沿用 13/624、双模式 preflight、16 局 v8/v4/token 与最终 8 对聚合验收。

@@ -1735,3 +1735,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 原子 manifest、state 探针和 rule/deepseek preflight 均通过，但在 live 前把其他玩家桌误判为当前账号旧桌并停止。
 - 判定 `botzone_verified_ui_paired_capacity_recovery_invalid`；connector、网页新桌、Botzone 和 DeepSeek 请求均未发生。
 - 当前进入 L5-A4h3：全新 `39001/39002`；大厅列表非空不再构成阻塞，归属不确定时先询问项目所有者而不是判 invalid。
+
+### L5-A4h3 progress schema 阻塞
+
+- 第 1 局 RuleBased evidence 全部门槛通过；批次仅在其后 progress 原子更新前发现 schema 缺字段而停止。
+- 判定 `botzone_verified_ui_paired_capacity_lobby_recovery_invalid`；progress 未改变，第 2 局未启动。
+- 当前进入 L5-A4h4：全新 `40001/40002`，固定九字段 progress schema，并在 live 前完整演练全部状态转换和反例。

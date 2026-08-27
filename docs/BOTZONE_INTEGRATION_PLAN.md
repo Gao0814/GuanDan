@@ -1005,3 +1005,11 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - L5-A4h3 只把明确属于当前账号或已绑定本地 AI 的活动桌视为冲突；明确属于其他玩家的桌直接忽略。
 - 页面证据不足时必须询问项目所有者是否继续创建，并在等待期间保持任务可恢复；不得自行停止、加入或关闭既有桌。
 - 新批次使用 `39001/39002`，其余原子写入、preflight、双 readback、connector 与聚合边界保持不变。
+
+### L5-A4h3：单局成功后的 progress schema 缺口
+
+- 大厅归属修正后，第 1 局 RuleBased 已完成完整协议与 provenance 闭环，说明 UI/live 门槛可继续工作。
+- 停止点是仓库外 progress 编排：初始 schema 没有预注册 updater 所需字段；由于写入尚未发生，旧 progress 保持有效。
+- L5-A4h4 使用 `40001/40002`，progress 固定为九字段且所有状态字段始终存在。
+- live 前必须离线演练 ready → 16 个完成前缀、全部 invalid failure_stage 和 malformed 拒绝；正式 progress 与每次更新继续使用 flush/fsync/replace 原子 writer。
+- 大厅其他玩家桌处理、双 readback、connector、v8/v4/token 与最终聚合契约保持不变。

@@ -1,6 +1,6 @@
 # 下一任务提示词
 
-## Step L5-A4h3：大厅桌归属加固后的 2 seed × 4 seat 自动成对容量批次
+## Step L5-A4h4：进度 schema 封板后的 2 seed × 4 seat 自动成对容量批次
 
 ### 已封板前置
 
@@ -37,9 +37,17 @@ botzone_verified_ui_paired_capacity_recovery_invalid
 
 L5-A4h2 的离线布局、原子 manifest 九阶段自检、16 个 state 探针及 rule/deepseek 零网络 preflight 全部通过；但执行器把大厅中其他玩家创建的仍在进行桌误当作当前账号的冲突旧桌，在第 1 局前停止。connector、网页建桌、Botzone/DeepSeek 请求均为 0。`38001/38002` 与该 root 永久封存，不读取、清理、修复或复用。
 
+L5-A4h3 原判定永久保留：
+
+```text
+botzone_verified_ui_paired_capacity_lobby_recovery_invalid
+```
+
+L5-A4h3 的第 1 局本身完全通过：requests/responses/Headers=`28/28/28`、qualified finished=`1`、transport failure=`0`、RuleBased 与 provenance 守恒。但准备原子更新 `progress.json` 时发现预注册 schema 缺少 updater 预期字段，失败发生在任何 progress 写入前；第 2 局未启动。`39001/39002` 与该 root 永久封存，不读取、清理、修复或复用。
+
 ### 目标
 
-使用全新 seed `39001`、`39002`，在同一个任务内完成：
+使用全新 seed `40001`、`40002`，在同一个任务内完成：
 
 1. 仓库外 manifest、16 个隔离 state/audit 布局与双模式零网络准入；
 2. 通过已验证的 Botzone GuanDan UI，按正式 schedule 串行执行 8 对、16 局；
@@ -50,12 +58,12 @@ L5-A4h2 的离线布局、原子 manifest 九阶段自检、16 个 state 探针�
 
 ### 固定批次
 
-- seeds：`(39001, 39002)`
+- seeds：`(40001, 40002)`
 - local seats：`0,1,2,3`
 - pairs/games：`8 / 16`
 - profile：GuanDan、需要进贡=`否`、级牌=`2`、上轮头游/末游=`0/3`
 - opponents：16 局使用同一组三个既有 Bot，只在内存中核对相等，不输出或持久化 ID
-- schedule：必须直接调用 `build_paired_schedule((39001, 39002), conditions)`；不得手写、删减或重排
+- schedule：必须直接调用 `build_paired_schedule((40001, 40002), conditions)`；不得手写、删减或重排
 - 每对按 schedule 的 `first_strategy → second_strategy` 执行；预期 AB/BA=`4/4`
 - 每局唯一 32 位小写 hex run token；16 个 token 互异，不输出
 - 每局 local-AI GET 上限 `100`、poll timeout `120` 秒、wall `3600` 秒、finished target `1`
@@ -65,7 +73,7 @@ L5-A4h2 的离线布局、原子 manifest 九阶段自检、16 个 state 探针�
 ### 仓库外根目录
 
 ```text
-D:\VsCodeProject\BotzoneVerifiedUiCapacity-39001-39002
+D:\VsCodeProject\BotzoneVerifiedUiCapacity-40001-40002
 ```
 
 开始时该路径必须不存在或为全新空目录。若非空，立即判 invalid，不读取、删除或复用其中内容。
@@ -100,6 +108,44 @@ manifest 使用 UTF-8 canonical JSON。必须由一个仓库外、仅使用标�
 
 writer 运行后立即自检：记录固定布尔阶段 `exclusive_create/write/flush/fsync/close/replace/readback/canonical/temp_absent`，全部为 true 才可继续；自检不得保存 token 或 payload。16 个 state 目录必须为空，16 个 completion 目标必须不存在。
 
+### `progress.json` 固定契约
+
+`progress.json` 的字段集合从初始态到完成/失败态始终精确为以下九项，不得按状态省略字段，也不得由 updater 临时要求新字段：
+
+```text
+schema
+version
+status
+manifest_sha256
+total_game_count
+completed_game_count
+next_game_index
+failed_game_index
+failure_stage
+```
+
+固定语义：
+
+- `schema="botzone_verified_ui_capacity_progress"`，`version=1`；
+- `manifest_sha256` 为当前正式 manifest 的 64 位小写 hex SHA-256；
+- `total_game_count=16`；
+- 初始态：status=`ready`、completed=`0`、next=`1`、failed=`null`、failure_stage=`null`；
+- 第 i 局完整验收后：completed=`i`；i<16 时 status=`running`、next=`i+1`，i=16 时 status=`completed`、next=`null`；failed/failure_stage 始终为 null；
+- 失败态：status=`invalid`，completed 保持已完成前缀，next 与 failed 均为当前未通过 game index，failure_stage 为固定枚举；
+- failure_stage 只允许 `offline_preflight`、`lobby_gate`、`ui_readback`、`connector_start`、`table_submit`、`connector_run`、`evidence_validation`、`progress_write`、`final_aggregate` 或 null。
+
+所有计数/index 必须为非 bool 严格整数；next/failed 只允许 null 或 `1..16`。状态、计数和 null 组合必须逐条守恒。
+
+progress 必须复用 manifest 的同一原子 writer：同目录 O_EXCL 临时文件 → write → flush → fsync → close → replace → readback/canonical/temp-absent。初始正式 progress 写入前，必须在独立 scratch 目录完成：
+
+1. 初始态写入和回读；
+2. 从 game 1 到 game 16 的全部合法完成转换，每一步都原子写入并严格复核；
+3. 从初始态分别演练每个固定 failure_stage 的 invalid 转换；
+4. 反例验证：缺字段、多字段、错误类型、越界 index、跳号 completed、错误 manifest hash、非法状态组合均拒绝且不覆盖上一份合法文件；
+5. scratch 临时文件与正式文件全部清理，scratch 目录恢复为空。
+
+只有上述演练全部通过，才创建官方初始 `progress.json`。每局后 updater 必须从已严格验证的当前九字段对象计算下一对象，不得从默认值补字段。若 progress 写入本身失败，保留上一份合法 progress，不做第二次写入或现场修复。
+
 ### 离线准入
 
 1. HEAD 必须包含 `569d5431...`，提交范围保持两个 benchmark 文件；工作区不得有本任务造成的修改。
@@ -121,7 +167,7 @@ git diff --check
 任一离线门槛失败：
 
 ```text
-botzone_verified_ui_paired_capacity_lobby_recovery_invalid
+botzone_verified_ui_paired_capacity_progress_recovery_invalid
 ```
 
 立即停止，不进入 live、不修改代码、不另建诊断载体。全部通过后在同一任务中直接进入 live，不另行询问项目授权。
@@ -183,7 +229,7 @@ Botzone 主页面存在“仍在进行”的桌或对局条目，本身不是冲
 - 终止当前唯一 connector（若仍运行）；
 - 原样保留 manifest、progress、已完成局和失败局 evidence；
 - 不重试、不补采、不继续后续局、不复用 seed/root；
-- 输出 `botzone_verified_ui_paired_capacity_lobby_recovery_invalid`。
+- 输出 `botzone_verified_ui_paired_capacity_progress_recovery_invalid`。
 
 ### 最终聚合
 
