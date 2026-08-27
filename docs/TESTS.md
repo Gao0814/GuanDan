@@ -1778,3 +1778,10 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 离线准入覆盖 16 个 state 目录原子写资格、manifest 守恒、rule/deepseek 各一次零网络 preflight。
 - 逐局验收覆盖双 readback、持续 connector、单次开始点击、v8/v4/token、request/finished、timeout/diagnostic和策略来源守恒。
 - 最终正式 schedule 必须聚合为 requested/valid=`8/8`、四 seat 各 `2/2`、AB/BA=`4/4`、空 diagnostics。
+
+### L5-A4h1 失败边界与 L5-A4h2 原子写入门槛
+
+- L5-A4h1 未运行测试后的 live 阶段；失败只发生在 manifest 原子落盘证据不足。
+- L5-A4h2 writer 自检必须逐项证明 `exclusive_create/write/flush/fsync/close/replace/readback/canonical/temp_absent`。
+- 正式 manifest 回读 bytes 必须与预计算 canonical payload 完全一致，临时文件必须不存在，bytes/SHA-256 固定后不可改写。
+- 原子门槛通过后沿用 13/624 回归、16 个 state 资格、双模式 preflight、逐局 v8/v4/token 和最终 8 对聚合验收。

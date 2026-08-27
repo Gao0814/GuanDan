@@ -990,3 +990,10 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - L5-A4h1 使用新的 `37001/37002` 正式四座位 schedule：8 对、16 局、AB/BA 各 4。
 - 自动 UI 继续遵守“表单先准备并 readback，再启动 connector；连接后二次 readback；开始后 Browser 只读”的已验证顺序。
 - long-poll timeout 按新 benchmark 守恒契约验收，真实 transport failure 或协议诊断仍使整个批次 fail-closed。
+
+### L5-A4h1：manifest 原子写入证据不足
+
+- 首个容量恢复批次只到达离线布局；manifest 写入没有满足预注册的 replace 前 `flush + os.fsync` 门槛，因此 fail-closed。
+- 没有进入 preflight 或 live，故该结果与 UI、connector、Botzone 和 DeepSeek 无关。
+- L5-A4h2 更换为 `38001/38002` 和全新 root；manifest writer 固定为 `O_EXCL` 临时文件、二进制写入、同句柄 flush/fsync、关闭、一次 replace、二进制回读与 canonical 校验。
+- 禁止弱化为直接写目标文件或忽略 fsync 错误；该门槛通过后继续原 8 对/16 局执行契约。

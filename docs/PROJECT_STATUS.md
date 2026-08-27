@@ -1723,3 +1723,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 单对 requested/valid=`1/1`，invalid/incomplete/duplicate=`0/0/0`，双方均为 `score_0`，delta=0。
 - DeepSeek 模型暴露 1 局、8 次 success、零 fallback；只作描述，不形成收益结论。
 - 当前进入 L5-A4h1：全新 `37001/37002`、四座位、8 对/16 局的自动 UI 容量批次。
+
+### L5-A4h1 离线准入失败
+
+- 离线布局已创建，但 manifest 写入未满足可验证的 `flush/fsync` 原子契约，故在 preflight 前停止。
+- 判定 `botzone_verified_ui_paired_capacity_invalid`；全部网络、connector、网页桌和模型调用计数为 0。
+- 旧 seed/root 不复用。当前进入 L5-A4h2，使用 `38001/38002` 和显式标准库原子 writer；通过后直接继续完整容量批次。

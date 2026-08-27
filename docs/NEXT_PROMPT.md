@@ -1,6 +1,6 @@
 # 下一任务提示词
 
-## Step L5-A4h1：已验证 UI 下的 2 seed × 4 seat 自动成对容量批次
+## Step L5-A4h2：原子 manifest 恢复后的 2 seed × 4 seat 自动成对容量批次
 
 ### 已封板前置
 
@@ -21,9 +21,17 @@ botzone_single_pair_capacity_recovery_verified
 
 L5-A4f8 原 `botzone_codex_verified_ui_single_pair_capacity_invalid` 永久保留；`36001` 及其 root 不再使用。
 
+L5-A4h1 原判定同样永久保留：
+
+```text
+botzone_verified_ui_paired_capacity_invalid
+```
+
+L5-A4h1 只创建了离线布局，但 manifest 写入没有取得可验证的 `flush/fsync` 原子写入证据；preflight、connector、网页桌、Botzone/DeepSeek 请求均为 0。`37001/37002` 与旧 root 永久封存，不得读取、清理、修复或复用。
+
 ### 目标
 
-使用全新 seed `37001`、`37002`，在同一个任务内完成：
+使用全新 seed `38001`、`38002`，在同一个任务内完成：
 
 1. 仓库外 manifest、16 个隔离 state/audit 布局与双模式零网络准入；
 2. 通过已验证的 Botzone GuanDan UI，按正式 schedule 串行执行 8 对、16 局；
@@ -34,12 +42,12 @@ L5-A4f8 原 `botzone_codex_verified_ui_single_pair_capacity_invalid` 永久保�
 
 ### 固定批次
 
-- seeds：`(37001, 37002)`
+- seeds：`(38001, 38002)`
 - local seats：`0,1,2,3`
 - pairs/games：`8 / 16`
 - profile：GuanDan、需要进贡=`否`、级牌=`2`、上轮头游/末游=`0/3`
 - opponents：16 局使用同一组三个既有 Bot，只在内存中核对相等，不输出或持久化 ID
-- schedule：必须直接调用 `build_paired_schedule((37001, 37002), conditions)`；不得手写、删减或重排
+- schedule：必须直接调用 `build_paired_schedule((38001, 38002), conditions)`；不得手写、删减或重排
 - 每对按 schedule 的 `first_strategy → second_strategy` 执行；预期 AB/BA=`4/4`
 - 每局唯一 32 位小写 hex run token；16 个 token 互异，不输出
 - 每局 local-AI GET 上限 `100`、poll timeout `120` 秒、wall `3600` 秒、finished target `1`
@@ -49,7 +57,7 @@ L5-A4f8 原 `botzone_codex_verified_ui_single_pair_capacity_invalid` 永久保�
 ### 仓库外根目录
 
 ```text
-D:\VsCodeProject\BotzoneVerifiedUiCapacity-37001-37002
+D:\VsCodeProject\BotzoneVerifiedUiCapacity-38001-38002
 ```
 
 开始时该路径必须不存在或为全新空目录。若非空，立即判 invalid，不读取、删除或复用其中内容。
@@ -71,7 +79,18 @@ batch-summary.json
 
 manifest 仅保存 schema/version、pair/game index、seed、seat、AB/BA 顺序、agent mode、相对 state/audit 路径、run token、固定 profile 和预算。不得保存 Bot ID、URL、Header、Cookie、账号、match/player ID、手牌、history、prompt、RAG 或模型响应。
 
-manifest 使用 UTF-8 canonical JSON，先写同目录临时文件、flush/fsync 后 `os.replace()`；写入后记录 bytes/SHA-256，批次期间不得改写。16 个 state 目录必须为空，16 个 completion 目标必须不存在。
+manifest 使用 UTF-8 canonical JSON。必须由一个仓库外、仅使用标准库的 writer 完成以下顺序，且每一步失败立即停止：
+
+1. 以 `os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)` 独占创建同目录临时文件；临时文件必须此前不存在。
+2. 通过 `os.fdopen(fd, "wb")` 一次写入完整 canonical UTF-8 bytes。
+3. 在同一打开文件对象上依次执行 `flush()` 和 `os.fsync(file.fileno())`；不得捕获后忽略异常。
+4. 文件关闭成功后执行一次 `os.replace(temp_path, manifest_path)`。
+5. 重新以二进制只读方式读取正式 manifest，要求 bytes 与预计算 payload 逐字节相等、JSON 可解析、canonical 重编码相等。
+6. 要求临时文件不存在；记录正式文件 bytes/SHA-256，批次期间不得改写。
+
+禁止使用 `Path.write_text()`、`Path.write_bytes()`、`json.dump()` 直接写目标文件、普通覆盖写、shell 重定向或先写正式文件再补做 fsync。Windows 不要求目录 fd 的 fsync；本契约要求临时文件本身在 replace 前完成并成功返回 `flush + os.fsync`。
+
+writer 运行后立即自检：记录固定布尔阶段 `exclusive_create/write/flush/fsync/close/replace/readback/canonical/temp_absent`，全部为 true 才可继续；自检不得保存 token 或 payload。16 个 state 目录必须为空，16 个 completion 目标必须不存在。
 
 ### 离线准入
 
@@ -94,7 +113,7 @@ git diff --check
 任一离线门槛失败：
 
 ```text
-botzone_verified_ui_paired_capacity_invalid
+botzone_verified_ui_paired_capacity_recovery_invalid
 ```
 
 立即停止，不进入 live、不修改代码、不另建诊断载体。全部通过后在同一任务中直接进入 live，不另行询问项目授权。
@@ -141,7 +160,7 @@ botzone_verified_ui_paired_capacity_invalid
 - 终止当前唯一 connector（若仍运行）；
 - 原样保留 manifest、progress、已完成局和失败局 evidence；
 - 不重试、不补采、不继续后续局、不复用 seed/root；
-- 输出 `botzone_verified_ui_paired_capacity_invalid`。
+- 输出 `botzone_verified_ui_paired_capacity_recovery_invalid`。
 
 ### 最终聚合
 

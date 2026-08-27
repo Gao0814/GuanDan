@@ -1680,3 +1680,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - RuleBased 与 DeepSeek 均为正常团队负、`score_0`，paired delta 为 0；DeepSeek 8 次 model success、零 fallback。
 - 判定 `botzone_single_pair_capacity_recovery_verified`；原 L5-A4f8 invalid 继续保留，恢复结果不构成策略收益。
 - 下一步 L5-A4h1 使用全新 `37001/37002`，按正式四座位 schedule 自动执行 8 对/16 局；同一任务先完成 manifest、隔离布局和双模式零网络准入，门槛通过后直接 live。
+
+### L5-A4h1 结果与 L5-A4h2
+
+- L5-A4h1 在离线布局阶段停止：manifest writer 没有满足并证明 replace 前的 `flush + os.fsync` 契约。
+- 判定 `botzone_verified_ui_paired_capacity_invalid`；未运行 preflight、connector、Browser、Botzone 或 DeepSeek，仓库未修改。
+- `37001/37002` 与原 root 永久封存，不修复或复用。
+- L5-A4h2 使用全新 `38001/38002`；仓库外标准库 writer 必须按独占临时文件、write、flush、fsync、close、replace、回读逐字节校验的顺序完成 manifest。
+- 原子门槛通过后在同一任务继续双模式 preflight 与 16 局 live，不再拆分新的准备步骤。
