@@ -1,6 +1,6 @@
 # 下一任务提示词
 
-## Step L5-A4h5：编排资格前置后的 2 seed × 4 seat 自动成对容量批次
+## Step L5-A4h5a：编排资格通过后的正式 2 seed × 4 seat 自动成对容量批次
 
 ### 已封板前置
 
@@ -53,6 +53,16 @@ botzone_verified_ui_paired_capacity_progress_recovery_invalid
 
 L5-A4h4 的离线基线命令在 shell/调用解析阶段失败；测试未实际启动，`40001/40002` 的目录、manifest、progress、state、audit 均未创建，preflight/live/network 均为 0。该失败证明“工具命令是否成功解析”不应被当作一次实验门槛失败。`40001/40002` 仍按已给出的 invalid 判定封存，不再复用。
 
+L5-A4h5 编排资格现已完成：
+
+- qualification 演练独立运行两次且结构化结果一致；
+- 当前仓库 module spec/origin 正确；
+- 正式 schedule 可生成 8 对；
+- manifest writer 与九字段 progress validator/updater 的原子演练全部通过；
+- network/connector/Browser/Agent/model count 均为 0；
+- qualification script 与 scratch 内容已清理；
+- `41001/41002` 正式 root 尚未创建或访问，因此正式批次尚未开始，seeds 继续有效。
+
 ### 目标
 
 使用全新 seed `41001`、`41002`，在同一个任务内完成：
@@ -84,7 +94,7 @@ L5-A4h4 的离线基线命令在 shell/调用解析阶段失败；测试未实�
 D:\VsCodeProject\BotzoneVerifiedUiCapacity-41001-41002
 ```
 
-编排资格阶段不得创建或访问该路径。资格全部通过后才创建；此时路径必须不存在。若已存在，停止并报告 `precondition_failed: capacity_root_already_exists`，不得读取、删除或复用其中内容。
+已确认编排资格期间未创建或访问该路径。进入本任务时必须再次只验证路径不存在；若已存在，停止并报告 `precondition_failed: capacity_root_already_exists`，不得读取、删除或复用其中内容。
 
 固定布局：
 
@@ -154,21 +164,13 @@ progress 必须复用 manifest 的同一原子 writer：同目录 O_EXCL 临时�
 
 只有上述演练全部通过，才创建官方初始 `progress.json`。每局后 updater 必须从已严格验证的当前九字段对象计算下一对象，不得从默认值补字段。若 progress 写入本身失败，保留上一份合法 progress，不做第二次写入或现场修复。
 
-### 编排资格阶段
+### 已完成的编排资格边界
 
-正式批次的开始点定义为：`capacity-manifest.json` 已按原子契约成功 replace 并完成回读校验。在此之前，不得创建正式 root、生成正式 token 或访问 Botzone/DeepSeek。
-
-以下问题属于工具资格失败，不是实验失败，也不消耗 seed/root：shell 解析错误、引号/转义错误、命令未实际启动、临时脚本 import path 错误、参数解析器未进入目标函数。遇到这些问题必须修正调用方式并重新资格验证，不得输出 batch invalid。
-
-资格方式：
-
-1. 基线命令分别作为独立工具调用执行；禁止把多个命令拼成一条 shell 字符串，禁止 `;`、pipeline、PowerShell backtick 续行、shell 重定向和嵌套 quoting。
-2. 需要 Python 逻辑时，使用一个全新的系统临时 qualification 目录和标准库脚本；先执行 `python -m py_compile <script>`，再执行其 `--qualification-only` 模式。
-3. qualification 脚本必须显式把仓库根加入自身 `sys.path`，并验证 `evaluation.botzone_policy_benchmark` 的 module spec/origin 指向当前仓库。
-4. `--qualification-only` 只用合成 seed、合成 token 和系统临时目录，完整演练 schedule、manifest writer、九字段 progress validator/updater 与 canonical 输出；network/connector/Browser/Agent/model count 必须为 0。
-5. qualification 运行两次，结构化结果逐字段一致；两次临时目录均清空。脚本、参数或 import 资格失败可修正后重新运行，直到取得两次有效结果或发现真实代码/环境门槛失败。
-
-只有命令已实际运行后出现的测试失败、代码契约失败、配置门槛失败或文件系统操作失败才是有效 precondition failure。此时停止并报告固定 `precondition_failed`，但因为正式 manifest 尚未创建，不产生 batch invalid，也不启动 live。
+- 不得重复 qualification、重建资格脚本或重新生成合成结果。
+- 正式批次的开始点仍定义为 `capacity-manifest.json` 已按原子契约成功 replace 并完成回读校验。
+- 在该开始点前，基线命令继续分别作为独立工具调用；禁止 `;`、pipeline、PowerShell backtick、shell 重定向或嵌套 quoting。
+- 若工具调用仍发生纯解析/quoting 问题，可修正调用后继续，不产生 batch invalid；实际测试、配置或文件系统门槛失败才报告 `precondition_failed`。
+- 不得在正式 root 之外遗留新的 runner、qualification 或 scratch artifact。
 
 ### 离线准入
 

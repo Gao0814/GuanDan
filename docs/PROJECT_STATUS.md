@@ -1747,3 +1747,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 离线基线命令未通过解析，测试、目录、manifest、progress、preflight 和网络均未开始。
 - 判定 `botzone_verified_ui_paired_capacity_progress_recovery_invalid` 保留，`40001/40002` 封存。
 - 当前进入 L5-A4h5：使用 `41001/41002`，先在正式 root 之外完成可修正的编排资格；manifest 成功落盘后才进入批次不可重试边界。
+
+### L5-A4h5 编排资格已通过
+
+- 两次合成演练一致，module origin、8 对 schedule、manifest/progress 原子契约均通过。
+- qualification artifact 已清理，正式 root 未创建，外部请求为 0。
+- 当前进入 L5-A4h5a：继续使用 `41001/41002`，从正式离线准入与 artifact 创建开始，不重复资格演练。

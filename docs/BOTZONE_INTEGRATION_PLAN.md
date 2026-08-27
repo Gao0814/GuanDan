@@ -1021,3 +1021,10 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - L5-A4h5 在正式 root 之前设置 orchestration qualification：独立命令、脚本编译、module origin 和两次合成 dry-run。
 - 解析、quoting、临时 import path 或参数未进入目标函数时，允许修正调用并重新资格验证；这些动作没有 batch side effect。
 - 正式 manifest 成功原子落盘后，才启用失败即停止、seed/root 不复用的实验边界。
+
+### L5-A4h5：编排资格完成
+
+- 两次 qualification-only 结果一致，证明当前仓库 module origin、正式 8 对 schedule 和仓库外 manifest/progress 原子编排可用。
+- 资格运行未创建正式 root，也未调用任何 connector、Botzone 或 DeepSeek；临时内容已清理。
+- L5-A4h5a 继续使用 `41001/41002`，不重跑 qualification；按独立基线命令 → 正式 artifact → 双 preflight → 自动 16 局的顺序继续。
+- 正式 manifest 回读成功仍是批次不可重试边界的开始点。

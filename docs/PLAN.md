@@ -1712,3 +1712,10 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - `40001/40002` 仍封存；L5-A4h5 使用 `41001/41002`。
 - L5-A4h5 在正式 root/manifest 前增加可修正的 orchestration qualification：独立命令调用、临时脚本 py_compile、仓库 origin 校验和两次合成 dry-run。
 - 只有正式 manifest 原子落盘后才开始不可重试的批次边界；此前纯解析/调用错误必须修正后重新资格验证，不产生 batch invalid。
+
+### L5-A4h5 编排资格通过
+
+- qualification 两次运行结果一致；仓库 module origin、8 对 schedule、manifest/progress 原子演练全部通过。
+- 全过程零网络、零 connector/Agent/model，临时脚本与 scratch 已清理。
+- `41001/41002` 正式 root 未创建或访问，故批次尚未开始，seeds 继续有效。
+- 下一步 L5-A4h5a 不重复资格演练，直接执行独立基线命令、正式 manifest/progress、双模式 preflight和 16 局 live。

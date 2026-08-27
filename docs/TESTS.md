@@ -1809,3 +1809,10 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - qualification-only 两次运行使用合成输入，必须逐字段一致、临时目录清空、全部网络与 Agent 计数为 0。
 - 解析/quoting/import-path 资格错误允许修正并重跑；实际代码测试或文件操作失败才形成 precondition failure。
 - 正式 manifest 落盘后继续原 13/624、progress 全状态演练、双 preflight、16 局 evidence 与 8 对聚合验收。
+
+### L5-A4h5 qualification 结果与 L5-A4h5a
+
+- qualification 两次结果逐字段一致；module origin、8 对 schedule、manifest writer 和 progress 全状态演练通过。
+- 临时目录清空，network/connector/Agent/model 均为 0；正式 root 未创建。
+- L5-A4h5a 不重复 qualification，只运行尚未执行的 13/624、`git diff --check`、正式 artifact、双 preflight 和 live 验收。
+- 纯命令解析问题仍允许修正调用；实际门槛失败与正式 manifest 后的批次失败继续按既定边界处理。
