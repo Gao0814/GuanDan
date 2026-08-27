@@ -1,6 +1,6 @@
 # 下一任务提示词
 
-## Step L5-A4h2：原子 manifest 恢复后的 2 seed × 4 seat 自动成对容量批次
+## Step L5-A4h3：大厅桌归属加固后的 2 seed × 4 seat 自动成对容量批次
 
 ### 已封板前置
 
@@ -29,9 +29,17 @@ botzone_verified_ui_paired_capacity_invalid
 
 L5-A4h1 只创建了离线布局，但 manifest 写入没有取得可验证的 `flush/fsync` 原子写入证据；preflight、connector、网页桌、Botzone/DeepSeek 请求均为 0。`37001/37002` 与旧 root 永久封存，不得读取、清理、修复或复用。
 
+L5-A4h2 原判定永久保留：
+
+```text
+botzone_verified_ui_paired_capacity_recovery_invalid
+```
+
+L5-A4h2 的离线布局、原子 manifest 九阶段自检、16 个 state 探针及 rule/deepseek 零网络 preflight 全部通过；但执行器把大厅中其他玩家创建的仍在进行桌误当作当前账号的冲突旧桌，在第 1 局前停止。connector、网页建桌、Botzone/DeepSeek 请求均为 0。`38001/38002` 与该 root 永久封存，不读取、清理、修复或复用。
+
 ### 目标
 
-使用全新 seed `38001`、`38002`，在同一个任务内完成：
+使用全新 seed `39001`、`39002`，在同一个任务内完成：
 
 1. 仓库外 manifest、16 个隔离 state/audit 布局与双模式零网络准入；
 2. 通过已验证的 Botzone GuanDan UI，按正式 schedule 串行执行 8 对、16 局；
@@ -42,12 +50,12 @@ L5-A4h1 只创建了离线布局，但 manifest 写入没有取得可验证的 `
 
 ### 固定批次
 
-- seeds：`(38001, 38002)`
+- seeds：`(39001, 39002)`
 - local seats：`0,1,2,3`
 - pairs/games：`8 / 16`
 - profile：GuanDan、需要进贡=`否`、级牌=`2`、上轮头游/末游=`0/3`
 - opponents：16 局使用同一组三个既有 Bot，只在内存中核对相等，不输出或持久化 ID
-- schedule：必须直接调用 `build_paired_schedule((38001, 38002), conditions)`；不得手写、删减或重排
+- schedule：必须直接调用 `build_paired_schedule((39001, 39002), conditions)`；不得手写、删减或重排
 - 每对按 schedule 的 `first_strategy → second_strategy` 执行；预期 AB/BA=`4/4`
 - 每局唯一 32 位小写 hex run token；16 个 token 互异，不输出
 - 每局 local-AI GET 上限 `100`、poll timeout `120` 秒、wall `3600` 秒、finished target `1`
@@ -57,7 +65,7 @@ L5-A4h1 只创建了离线布局，但 manifest 写入没有取得可验证的 `
 ### 仓库外根目录
 
 ```text
-D:\VsCodeProject\BotzoneVerifiedUiCapacity-38001-38002
+D:\VsCodeProject\BotzoneVerifiedUiCapacity-39001-39002
 ```
 
 开始时该路径必须不存在或为全新空目录。若非空，立即判 invalid，不读取、删除或复用其中内容。
@@ -113,16 +121,31 @@ git diff --check
 任一离线门槛失败：
 
 ```text
-botzone_verified_ui_paired_capacity_recovery_invalid
+botzone_verified_ui_paired_capacity_lobby_recovery_invalid
 ```
 
 立即停止，不进入 live、不修改代码、不另建诊断载体。全部通过后在同一任务中直接进入 live，不另行询问项目授权。
+
+### 大厅桌归属门槛
+
+Botzone 主页面存在“仍在进行”的桌或对局条目，本身不是冲突证据。不得因列表非空、出现其他玩家名字或存在可进入的公开桌而停止批次。
+
+每局进入建桌前按以下顺序处理：
+
+1. 先确认本机没有残留 connector，当前 game state 为空且 completion audit 不存在。
+2. 只读检查页面中的桌归属、房主/本家标记和本地 AI 连接状态；不得点击或进入任何既有桌。
+3. 明确属于其他玩家的桌：记为 `other_player_table_ignored=true`，直接继续创建本批次新桌；不输出玩家或桌标识。
+4. 明确属于当前账号的旧活动桌：暂停并请项目所有者关闭该桌或确认已结束；等待期间不判 invalid、不启动 connector。收到确认后只读复核，再继续。
+5. 无法可靠确认归属：必须直接询问项目所有者“页面已有进行中的桌，但无法确认归属；是否继续创建本批次新桌？”。等待回复期间不判 invalid。项目所有者确认继续后，按“其他玩家桌/不构成冲突”处理并创建新桌。
+6. 不得自行把“存在桌”推导为“当前账号已有活动桌”，也不得为了确认归属关闭、加入或操作既有桌。
+
+同一批次中，已经由项目所有者确认且页面特征未变化的其他玩家桌不重复询问。只有出现新的、无法归属且可能属于当前账号的证据时才再次询问。
 
 ### 每局自动 UI 流程
 
 严格串行执行 manifest 的 game 1..16：
 
-1. 确认上一局 connector 已退出、网页桌已结束；首局确认没有旧活动桌。
+1. 确认上一局 connector 已退出且本批次网页桌已结束；首局及后续局均按“大厅桌归属门槛”处理，不以大厅列表非空作为失败条件。
 2. 从 Botzone 主页面按已验证契约进入：创建游戏桌 → 唯一可见游戏选择控件选 GuanDan → 唯一“创建”按钮 → GuanDan 表单。
 3. 若出现验证码，暂停并让项目所有者人工完成；不得识别、求解或绕过。验证码完成后从当前页面继续，不把等待视为实验失败。
 4. 点击唯一 `载入上次配置`，设置本局 seed、local seat 和固定无贡 profile；对手使用已锁定的同一组三槽。
@@ -160,7 +183,7 @@ botzone_verified_ui_paired_capacity_recovery_invalid
 - 终止当前唯一 connector（若仍运行）；
 - 原样保留 manifest、progress、已完成局和失败局 evidence；
 - 不重试、不补采、不继续后续局、不复用 seed/root；
-- 输出 `botzone_verified_ui_paired_capacity_recovery_invalid`。
+- 输出 `botzone_verified_ui_paired_capacity_lobby_recovery_invalid`。
 
 ### 最终聚合
 

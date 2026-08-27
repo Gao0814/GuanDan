@@ -997,3 +997,11 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - 没有进入 preflight 或 live，故该结果与 UI、connector、Botzone 和 DeepSeek 无关。
 - L5-A4h2 更换为 `38001/38002` 和全新 root；manifest writer 固定为 `O_EXCL` 临时文件、二进制写入、同句柄 flush/fsync、关闭、一次 replace、二进制回读与 canonical 校验。
 - 禁止弱化为直接写目标文件或忽略 fsync 错误；该门槛通过后继续原 8 对/16 局执行契约。
+
+### L5-A4h2：大厅其他玩家桌不构成冲突
+
+- 原子 manifest 与全部零网络准入已通过，说明 L5-A4h1 的文件门槛已解决。
+- 新阻塞来自 UI 归属判断：大厅中其他玩家创建的进行中桌被错误当成当前账号旧桌。
+- L5-A4h3 只把明确属于当前账号或已绑定本地 AI 的活动桌视为冲突；明确属于其他玩家的桌直接忽略。
+- 页面证据不足时必须询问项目所有者是否继续创建，并在等待期间保持任务可恢复；不得自行停止、加入或关闭既有桌。
+- 新批次使用 `39001/39002`，其余原子写入、preflight、双 readback、connector 与聚合边界保持不变。

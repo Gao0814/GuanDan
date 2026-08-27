@@ -1688,3 +1688,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - `37001/37002` 与原 root 永久封存，不修复或复用。
 - L5-A4h2 使用全新 `38001/38002`；仓库外标准库 writer 必须按独占临时文件、write、flush、fsync、close、replace、回读逐字节校验的顺序完成 manifest。
 - 原子门槛通过后在同一任务继续双模式 preflight 与 16 局 live，不再拆分新的准备步骤。
+
+### L5-A4h2 结果与 L5-A4h3
+
+- L5-A4h2 的布局、manifest 原子自检、16 个 state 探针及双模式 preflight 全部通过。
+- 执行器在第 1 局前把大厅中其他玩家的进行中桌误判为当前账号冲突桌，判定 `botzone_verified_ui_paired_capacity_recovery_invalid`；connector、建桌和网络请求均为 0。
+- `38001/38002` 与原 root 封存，不复用。
+- L5-A4h3 使用 `39001/39002`，新增大厅归属门槛：其他玩家桌直接忽略；明确的本账号旧桌暂停等待清理；归属不确定时询问项目所有者是否继续创建，不得自行停止。
+- 新离线准入通过后继续同一任务的 16 局容量执行。

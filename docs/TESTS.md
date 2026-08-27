@@ -1785,3 +1785,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - L5-A4h2 writer 自检必须逐项证明 `exclusive_create/write/flush/fsync/close/replace/readback/canonical/temp_absent`。
 - 正式 manifest 回读 bytes 必须与预计算 canonical payload 完全一致，临时文件必须不存在，bytes/SHA-256 固定后不可改写。
 - 原子门槛通过后沿用 13/624 回归、16 个 state 资格、双模式 preflight、逐局 v8/v4/token 和最终 8 对聚合验收。
+
+### L5-A4h2 结果与 L5-A4h3 UI 门槛
+
+- L5-A4h2 已证明 manifest 九阶段自检、16 个 state 探针和双模式 preflight 可通过；失败不是代码或网络测试失败。
+- L5-A4h3 的 UI 验收新增三类：其他玩家桌可忽略、当前账号旧桌暂停清理、归属未知时请求项目所有者确认。
+- 大厅列表非空不得直接产生 invalid；确认等待不计为 connector timeout 或批次失败。
+- 不得通过点击、加入或关闭既有桌来判断归属；只有本批次新桌允许写操作。
+- 其余 13/624 回归、原子 writer、16 局 evidence 和最终 8 对聚合门槛不变。
