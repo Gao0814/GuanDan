@@ -1797,3 +1797,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 正式批次在 game 1 / `ui_readback` 停止，completed=0；页面未提交、0 request/response/Header，connector 被中断且无残留。
 - semantic browser controller 失去响应后切换 Windows visual controller，但后者无法证明真实 URL，故不能继续点击；这不是协议、Agent 或 DeepSeek 失败。
 - `42001/42002` root 已按 invalid 封存。当前进入 L5-A4h8：先以 Chrome URL/DOM 控制做 root 外资格，通过后使用 `43001/43002` 创建并执行全新批次。
+
+### L5-A4h8a 改用项目所有者准备的 Edge
+
+- 项目所有者确认不需要 URL/DOM 语义验证：其会把已登录 Edge 准备在 Botzone 首页并关闭旧桌。
+- Codex 只负责可见 UI 固定动作、connector/evidence/progress 和循环回首页；验证码或窗口不可见时暂停等待，不自行切换浏览器或判 invalid。
+- 下一任务直接创建 `43001/43002` artifact、双 preflight，并按 Edge 视觉循环执行 16 局。

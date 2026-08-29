@@ -1,67 +1,42 @@
 # 下一步提示词
 
-执行 **Step L5-A4h8：恢复可验证的 Chrome UI 控制通道，并在同一任务创建和执行全新 `43001/43002` 配对容量批次**。
+执行 **Step L5-A4h8a：使用项目所有者已准备好的 Edge 页面，自动完成全新 `43001/43002` 配对容量批次**。
 
-不要重新解释历史失败，也不要拆成新的诊断/授权任务。项目所有者默认授权项目测试、仓库外 artifact、Botzone 页面必要点击、connector、DeepSeek 调用和本批次对局；不要重复询问项目级授权。验证码、登录失效或当前账号旧桌仍需要用户实际处理，但等待处理不构成失败。
+项目所有者使用 Microsoft Edge，并负责在任务开始前完成登录、关闭旧桌和打开 Botzone 首页。不要再要求 Chrome、真实 URL 读取、DOM 语义控制或额外 UI 资格。使用 `computer-use:computer-use` 控制当前前台 Edge，只依据最新屏幕画面和固定可见文字操作。
 
-## 1. 永久封存旧批次
+普通页面按钮点击、表单填写、connector、DeepSeek 调用和仓库外 evidence 写入均已默认授权，不要逐次询问。验证码、登录失效、遮挡或 Edge 未停在预期页面时，暂停并用一句话请项目所有者处理；等待不构成批次失败。
 
-旧 root：
+## 1. 项目所有者前置准备
+
+开始自动执行前，仅确认以下人工准备已经完成：
+
+- Edge 已登录 Botzone，并停在可见首页；
+- 所有历史/额外本地 AI 测试桌已结束；
+- 本地 AI 配置已提交，当前连接 URL/密钥有效；
+- Edge 保持前台且窗口不最小化；
+- 页面没有验证码、弹窗或其他遮挡。
+
+可见首页信号为左上角 `Botzone 2026` 品牌和“创建游戏桌”入口。无需读取或验证地址栏 URL，不使用 Chrome 插件，不切换到其他浏览器。
+
+若前置页面尚未准备好，只回复：
 
 ```text
-D:\VsCodeProject\BotzoneVerifiedUiCapacity-42001-42002
+请将 Edge 切到已登录的 Botzone 首页并保持前台，准备好后回复“已准备”。
 ```
 
-旧批次唯一判定永久保持：
+不得因此创建 root、启动 connector 或判批次 invalid。
+
+## 2. 封存旧批次
+
+旧 root `D:\VsCodeProject\BotzoneVerifiedUiCapacity-42001-42002` 永久只读。旧判定保持：
 
 ```text
 botzone_verified_ui_paired_policy_capacity_invalid
 ```
 
-固定旧证据：
+旧批次 completed=0，failure game 1 / `ui_readback`；不得清理、改写、重试或复用 `42001/42002`。
 
-- manifest：4661 bytes / `5989a6dc07441c94b02725a31b29706d9708311ce7eee597e82b96b47921b4ff`
-- preflight summary：2273 bytes / `32a9cf1adfdc881037aea6adb8f594a51876a958df88fc0a4432ddf55370cad9`
-- progress invalid：285 bytes / `d6396eb7f644c29045f1a3f4ff7ee6544e3a2cd2938a673e755bc75ee6d5eb68`
-- game 1 audit：695 bytes / `2bccc78a92ea7bf361c68b8860f51ff213e0d8220ce776a9ca0eb31b77a01d76`
-- completed prefix 0/16；failure game 1 / `ui_readback`；game 1 state 空，其余 15 局未触碰。
-
-旧 root 全程只读：不得删除、清理、重试、补采、改写 progress 或复用 `42001/42002`、token、路径和 audit。
-
-## 2. 根因边界与浏览器控制策略
-
-旧失败不是 connector/协议/DeepSeek 失败：页面未提交，connector 为 0/0/0、exit 130。失败来自语义浏览器控制失去响应，随后错误切换到无法可靠确认 URL 的 Windows 视觉控制。
-
-本任务只允许使用能直接返回真实 tab URL 和 DOM/可访问性状态的浏览器控制通道：优先 `chrome:control-chrome`。开始前读取该 skill 的 `SKILL.md` 并按其契约操作。
-
-- 禁止使用 OCR/截图文字猜测 URL。
-- 禁止在同一表单流程中切换到 Windows 视觉控制继续点击。
-- 若 Chrome 中没有已登录 Botzone 页面，只要求用户在 Chrome 打开并登录 `https://www.botzone.org.cn/game/GuanDan`，随后恢复同一任务；不要判 invalid。
-- 浏览器插件暂时失联时，可在没有正式 root、没有 connector、没有桌提交的资格阶段重连并重新执行 UI 资格；这不消耗 seed。
-- 所有普通页面按钮点击已默认授权，不再逐次询问；只有验证码由用户完成。
-
-## 3. 正式 root 创建前的 Chrome UI 资格
-
-此阶段不得创建新 root、manifest、progress、state/audit，不启动 connector，也不发送 DeepSeek 请求。
-
-1. 用 Chrome controller 枚举当前 tab，选择 URL origin 精确为 `https://www.botzone.org.cn` 的已登录页面，并记录不含 query/账号信息的页面类型。
-2. 连续三次读取同一 tab 的真实 URL 与关键 DOM，每次间隔至少 2 秒；tab ID、origin 和登录状态必须稳定。
-3. 从主页进入“创建游戏桌”→唯一 GuanDan 选择→唯一“创建”；如出现验证码，暂停等待用户完成，然后继续同一 tab。
-4. 到达 GuanDan 表单后点击一次“载入上次配置”，只读确认：需要进贡=否、级牌 2、上轮名次 profile 和三个非本家 Bot 槽已填充。
-5. 将未提交表单临时设置为 seed 43001、local seat 0；连续三次通过真实 DOM readback 精确确认 seed/seat/no-tribute/level/profile/Bot 槽。
-6. 不点击“开始游戏！”，不启动 connector；再次读取真实 URL，确认仍为同一建桌表单。
-
-资格期允许修正 locator、等待页面加载、重新连接 Chrome controller 或让用户完成验证码，直到上述门槛明确通过；不得因工具瞬时失败消耗正式 batch。无法获得可验证 URL/DOM 时输出 `precondition_failed: chrome_ui_control_unavailable`，且新 root 必须仍不存在。
-
-资格成功中间判定：
-
-```text
-botzone_chrome_ui_control_ready
-```
-
-通过后保留当前已准备的 game 1 表单，并在同一任务继续下一节。
-
-## 4. 创建全新正式批次
+## 3. 创建全新正式批次
 
 新 seeds/root：
 
@@ -71,11 +46,7 @@ botzone_chrome_ui_control_ready
 D:\VsCodeProject\BotzoneVerifiedUiCapacity-43001-43002
 ```
 
-开始前要求新 root 不存在。只有第 3 节 UI 资格通过后才生成完整 manifest payload；payload 在内存全部验证后才创建 root。
-
-### 固定 schedule
-
-使用现有 `build_paired_schedule((43001, 43002), ...)` 生成 8 对/16 局，agent 顺序必须为：
+确认新 root 不存在。使用现有 `build_paired_schedule((43001, 43002), ...)` 生成固定 8 对/16 局：
 
 | Game | Seed | Seat | Agent |
 |---:|---:|---:|---|
@@ -96,63 +67,108 @@ D:\VsCodeProject\BotzoneVerifiedUiCapacity-43001-43002
 | 15 | 43002 | 3 | rule |
 | 16 | 43002 | 3 | deepseek |
 
-为每局生成唯一 32 位小写 hex run token 和独立 `state/`、`audit/completion.json` 路径。profile/budget 锁定为无贡、级牌 2、同一上轮名次/对手 profile、poll timeout 120、max cycles 100、max wall 3600、finished target 1、DeepSeek 60/0。
+每局生成唯一 32 位小写 hex token，以及独立 state/audit 路径。profile 固定为：需要进贡=否、级牌 2、载入上次配置中的同一三个 Bot 和同一上轮名次配置。budget 固定为 poll timeout 120、max cycles 100、max wall 3600、finished target 1、DeepSeek timeout 60/retries 0。
 
-manifest schema 以旧 manifest 只读作为形状参考，但内容必须由新 schedule/token/path 重新生成；不得复制旧 token。验证 pair/game index、seed×seat、AB/BA 4/4、rule/deepseek 8/8、路径唯一、token 唯一和 canonical bytes/hash后，按 `O_EXCL temp → write → flush → fsync → close → replace → readback` 原子创建 manifest。
+完整 payload 在内存校验 8 对/16 局、AB/BA 4/4、rule/deepseek 8/8、seat、路径和 token 唯一后才创建 root。manifest 使用 `O_EXCL temp → write → flush → fsync → close → replace → readback` 原子落盘。
 
-创建 16 个 game/state/audit 目录并验证为空。通过已验证 helper：
+创建 16 个空 state/audit 目录，并使用已验证 helper：
 
 ```text
 C:\Users\86166\AppData\Local\Temp\botzone_progress_helper.py
 ```
 
-原子创建 initial ready progress。helper 当前锁定为 9156 bytes / `de67b2d0e78aab328c6ca862981f6a8fa28a986d5e63ca7128669f681c492cbe`；不得重跑 qualification或修改 helper。
+原子创建 initial ready progress。helper 必须保持 9156 bytes / `de67b2d0e78aab328c6ca862981f6a8fa28a986d5e63ca7128669f681c492cbe`，不得修改或重跑 qualification。
 
-## 5. 新批次双 preflight
+## 4. 双模式零网络 preflight
 
-分别执行恰好一次 rule/deepseek `--preflight-only`，使用新批次对应空 state，项目 `.venv`，并确保 `PYTHON_DOTENV_DISABLED=1` 在启动前生效。每次要求 30 秒内 exit 0、唯一 `preflight_ready`、stderr 空、state 仍空、无残留进程，DNS/socket/HTTP/Botzone/DeepSeek/connector/Agent/model 全为 0。
+在网页操作前分别执行一次 rule/deepseek `--preflight-only`。使用项目 `.venv`，进程启动前设置 `PYTHON_DOTENV_DISABLED=1`；每次要求 30 秒内 exit 0、唯一 `preflight_ready`、stderr 空、state 不变、无残留进程，全部 DNS/HTTP/Botzone/DeepSeek/connector/Agent/model 计数为 0。
 
-两项通过后原子写低敏 `preflight-summary.json`。任一失败则用 helper 原子标记 progress invalid / `offline_preflight`，停止且不 live。
+两项通过后原子写低敏 `preflight-summary.json`。失败则用 helper 标记 `offline_preflight` invalid 并停止。
 
-## 6. 每局 Chrome + connector 固定流程
+## 5. Edge 自动循环
 
-严格 game 1→16 串行，前局 evidence 和 progress 通过后才开始下一局。
+按 game 1→16 串行执行。每局固定使用以下简单循环，不读取 URL/DOM，不做额外浏览器诊断。
 
-1. 使用同一 Chrome controller 和真实 URL/DOM。game 1 复用第 3 节表单；后续每局重新进入 GuanDan 建桌表单并载入上次配置。
-2. 设置当前 seed/seat/no-tribute/level/profile；第一次 DOM readback全部匹配。
-3. 在 connector 启动前再次进行三次稳定 URL/DOM readback。资格不稳定时只重连浏览器，不启动 connector、不判 batch invalid。
-4. 启动当前 game 唯一前台 PTY connector，必须取得持续 session ID；参数从 manifest 读取：agent、state-dir、run-token、audit-file，timeout 120、cycles 100、wall 3600、finished 1。
-5. 轮询同一 connector；页面明确显示已连接后执行第二次完整 DOM readback。
-6. 只点击一次“开始游戏！”，随后 Browser 只读，不点击结束/返回/继续/关闭/桌内按钮。
-7. 等待同一 connector 自行退出并验收 evidence。
+### A. 从首页创建 GuanDan 桌
 
-connector 启动后语义控制若失联，禁止切换 Windows 视觉控制继续点击。若尚未提交桌，先尝试重连同一 Chrome tab；connector 仍运行且 URL/DOM 恢复后可继续。connector 已退出、tab 无法唯一归属或页面状态无法证明时整批停止，不启动第二 connector。
+1. 获取最新 Edge 屏幕画面，确认可见 `Botzone 2026` 和“创建游戏桌”。
+2. 点击“创建游戏桌”。
+3. 在游戏选择界面选择 `GuanDan`，点击唯一“创建”。
+4. 如出现验证码，暂停请项目所有者完成；完成后继续当前页面。
+5. 看到“载入上次配置”和“开始游戏！”即判定到达 GuanDan 表单。
 
-## 7. 单局 evidence 与 progress
+任何控件暂时未出现时先等待页面加载并刷新屏幕上下文，不盲点、不切换浏览器。只有用户明确关闭桌或页面出现固定错误提示才按失败处理。
 
-每局必须满足：exit 0 / `finished_target`；request=response=Header>0；qualified normal finished=1；非 timeout transport failure=0；仅允许守恒的 idle timeout diagnostic；其余 detail/profile 为空；v8 audit 与 v4 minimal tombstone 的 token/mode/路径匹配且无 active state。
+### B. 填写当前局配置
 
-- rule：全部 `rule_primary`，model/fallback=0。
-- deepseek：至少 1 次 model success，全部 model result 为 success，fallback=0。
+1. 点击一次“载入上次配置”。
+2. 设置当前 game 的随机种子和本家 seat。
+3. 确认“需要进贡=否”、级牌 2；三个 Bot 槽和上轮配置保持载入值，不复制或输出 Bot ID。
+4. 通过最新屏幕画面逐项确认可见值正确。
 
-通过后用 helper `atomic_progress_write()` 将 completed 精确 +1；game 1..15 为 running，game 16 为 completed。不得手写 progress、跳号或重复推进。
+配置值看不清或控件被遮挡时暂停，请项目所有者把 Edge 保持前台；不要因此判 invalid。
 
-任一真实失败立即停止，不重试该局、不启动下一局；保留 evidence，并以固定 stage 原子标记 invalid。唯一失败判定：
+### C. 启动 connector 后开始游戏
+
+配置确认后，使用 manifest 当前 game 的 agent/state/audit/token 启动唯一前台 PTY connector：
 
 ```text
-botzone_verified_ui_paired_policy_capacity_recovery_invalid
+python -m integrations.botzone
+--agent <agent_mode>
+--state-dir <state_dir>
+--run-token <run_token>
+--timeout-seconds 120
+--max-cycles 100
+--max-wall-seconds 3600
+--stop-after-finished 1
+--audit-file <audit_path>
 ```
 
-## 8. 最终聚合
+必须取得持续 session ID；connector 不能立即退出。启动后等待页面显示本地 AI 已连接；随后再次用最新屏幕确认 seed/seat/no-tribute/level 未改变，再点击一次“开始游戏！”。
 
-16 局通过后使用完整正式 schedule 调用 `aggregate_policy_audits()`：requested/valid=`8/8`，invalid/incomplete/duplicate=`0/0/0`，diagnostics 为空，每 seat=`2/2`，AB/BA=`4/4`。
+点击后不要再操作桌内按钮。保持 Edge 前台，等待 connector 自行完成。
 
-原子写不含 seed/token/path/Bot/match/player/逐局内容的 `paired-report.json`，回读 canonical JSON并做敏感扫描。
+### D. 对局结束并回首页
+
+connector exit 0 / `finished_target` 且 evidence 验收通过后，获取最新 Edge 画面。对局结果页面出现后，只点击页面左上角品牌文字：
+
+```text
+Botzone 2026
+```
+
+等待回到显示“创建游戏桌”的首页，再开始下一局。不要点击桌内“继续”“退出”“关闭”或其他结果按钮。
+
+## 6. 单局 evidence 与 progress
+
+每局要求：
+
+- connector exit 0 / `finished_target`；
+- request=response=Header>0；qualified normal finished=1；
+- 非 timeout transport failure=0，只允许守恒的 idle timeout diagnostic；其他 detail/profile 为空；
+- v8 audit 与 v4 minimal tombstone 的 token/mode/path 匹配，无 active state；
+- rule 局全部 `rule_primary`，model/fallback=0；
+- deepseek 局至少 1 次 model success，全部 model result 为 success，fallback=0。
+
+通过后用 helper `atomic_progress_write()` 将 completed 精确 +1；game 1..15 为 running，game 16 为 completed。不得手写 progress或跳号。
+
+任一真实 connector/protocol/evidence 失败立即停止，不重试、不启动下一局，并用固定 stage 标记 invalid。Edge 未前台、验证码或画面暂时不可读只暂停请求项目所有者处理，不属于失败。
+
+唯一失败判定：
+
+```text
+botzone_edge_ui_paired_policy_capacity_invalid
+```
+
+## 7. 最终聚合
+
+16 局通过后，使用完整 schedule 调用 `aggregate_policy_audits()`：requested/valid=`8/8`，invalid/incomplete/duplicate=`0/0/0`，diagnostics 为空，每 seat=`2/2`，AB/BA=`4/4`。
+
+原子写不含 seed/token/path/Bot/match/player/逐局内容的 `paired-report.json` 并做 canonical 回读与敏感扫描。
 
 唯一成功判定：
 
 ```text
-botzone_verified_ui_paired_policy_capacity_recovery_verified
+botzone_edge_ui_paired_policy_capacity_verified
 ```
 
-最终只报告低敏逐局门槛、evidence bytes/SHA-256、聚合整数/Fraction、策略结果和模型 exposure/success/fallback。该 8 对结果仅为描述统计，不构成显著性、因果效果、动作质量或胜率提升结论。
+最终只报告低敏逐局 evidence hash、聚合整数/Fraction、策略结果与模型 exposure/success/fallback。该 8 对结果仅为描述统计，不构成显著性、因果、动作质量或胜率提升结论。

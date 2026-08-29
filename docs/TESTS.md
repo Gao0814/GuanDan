@@ -1870,3 +1870,10 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 新 UI 资格必须由 Chrome controller 直接证明 tab origin、tab ID、登录态和 GuanDan 表单 DOM；三次稳定 readback 后仍不得点击开始或启动 connector。
 - Chrome controller/locator 可在新 root 创建前修复和重试；Windows visual/OCR URL 判断不属于合格 fallback。
 - 新批次创建后仍执行 manifest/progress 原子门槛、双零网络 preflight、逐局 v8/v4/token和 helper completed+1 验收。
+
+### L5-A4h8a Edge 视觉执行验收
+
+- 不再把 URL/DOM semantic readback 作为准入；项目所有者准备 Edge 首页，自动化按固定可见文字定位并在每个关键点击前刷新屏幕上下文。
+- UI 状态机锁定为首页 → GuanDan 表单 → connector connected → 对局/结果 → 点击 `Botzone 2026` → 首页。
+- 验证码、Edge 未前台或短暂无画面仅暂停；不得写 invalid progress。开始按钮只点击一次，对局期间写操作为 0。
+- 其余新 root 原子 artifact、双 preflight、逐局 v8/v4/token、progress +1 和最终 8/8 聚合门槛不变。

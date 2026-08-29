@@ -1079,3 +1079,10 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - 旧批次永久封存。新流程只允许可直接返回 tab URL 与 DOM 的 Chrome controller；禁止 OCR 推断 URL或跨控制器盲目续点。
 - UI 资格位于新 root 创建前，可重连、修正 locator 和等待验证码，不消耗 seed或生成 batch invalid。
 - 资格通过后同任务创建 `43001/43002` 正式 artifact、双 preflight 和 16 局；每局 connector 前增加三次稳定 URL/DOM readback，提交后 Browser 只读。
+
+### L5-A4h8a：Edge owner-prepared UI loop
+
+- 项目所有者负责把 Edge 登录并停在 Botzone 首页；自动化不再读取 URL/DOM，也不要求 Chrome。
+- 每局只依赖固定可见状态：`Botzone 2026`/创建游戏桌、GuanDan 创建、载入上次配置/开始游戏、结果页和左上角品牌返回首页。
+- 表单配置后才启动 connector；连接后再确认可见 seed/seat/profile并点击一次开始。对局中不操作，结束后只点击品牌回首页。
+- Edge 前台或验证码问题属于人工等待，不是实验失败；connector/protocol/evidence 失败才停止正式批次。

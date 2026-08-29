@@ -1769,3 +1769,10 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - game 1 audit 为 695 bytes / `2bccc78a...01d76`，progress 已原子 invalid 为 285 bytes / `d6396eb7...5eb68`；manifest/preflight summary 不变，其余 15 局未触碰。
 - 下一步 L5-A4h8 不复用旧 root/seeds。先在正式 root 创建前用单一 Chrome semantic controller 完成真实 URL/DOM 稳定资格，禁止回退 OCR/Windows 视觉。
 - UI 资格可在零副作用状态重连修复；通过后同一任务创建全新 `43001/43002` 批次、双 preflight 并执行 16 局。
+
+### L5-A4h8 Edge 流程澄清与 L5-A4h8a
+
+- 项目所有者实际使用 Edge，并会在任务前完成登录、旧桌清理和首页准备；不再要求 Chrome URL/DOM 资格。
+- L5-A4h8a 使用 Windows `computer-use` 对当前前台 Edge 做固定视觉循环：创建 GuanDan → 载入配置 → 设置 seed/seat → 启动 connector → 开始 → 等待结束 → 点击左上角 `Botzone 2026` 回首页。
+- Edge 未前台、验证码或画面暂不可读只暂停请项目所有者处理，不消耗 seed、不判 batch invalid；普通点击默认授权。
+- 旧 `42001/42002` 仍封存；新流程使用不存在的 `43001/43002` root，完成 artifact/preflight 后直接执行 16 局。
