@@ -1092,3 +1092,9 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - Edge 自动化固定使用 Computer Use 的 `node_repl + @oai/sky`，不再经过 Browser Use/Chrome control 或 URL 语义检查。
 - 目标窗口必须来自 `list_apps()` 的唯一实际返回；操作遵循最新 observation → 单动作 → 立即 refresh，旧坐标/元素索引不得复用。
 - accessibility 与截图坐标都是允许路径；URL 不是准入字段。窗口状态失败按标准 recovery 处理，只有明确 input deny 才停止。
+
+### L5-A4h8b：Edge 浏览器扩展控制纠正
+
+- 插件核对确认 `chrome:control-chrome` 的浏览器运行时原生支持 Edge family；使用 `agent.browsers.get("edge")` 绑定项目所有者当前 Edge，而不是把组件名称中的 Chrome 误解为浏览器限制。
+- L5-A4h8a 的通用 Windows Computer Use 路径不再作为正式方案。新路径使用 Edge tab 的 URL/DOM/可见状态与 Playwright locator，且禁止回退 OCR、屏幕坐标、内置 Browser 或 Chrome family。
+- Edge 扩展断开、验证码或登录门槛只暂停并由项目所有者恢复；只要尚未创建正式 root、启动 connector 或提交桌，就不消耗 seed、不写 invalid progress。

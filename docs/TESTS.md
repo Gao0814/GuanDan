@@ -1883,3 +1883,10 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 初始化必须证明 `list_apps()` 返回唯一 Edge 窗口，随后完成 get/activate/state；不得凭进程名构造窗口句柄。
 - 每个点击/输入都绑定最新 observation，并在动作后刷新；状态改变后复用旧 screenshot ID、坐标或 element index 视为失败。
 - Browser/Chrome tool call count 和 URL validation count 必须为 0；普通 state capture recovery 不得升级为 batch invalid。
+
+### L5-A4h8b Edge 浏览器扩展执行验收
+
+- 初始化必须通过浏览器控制组件精确取得 Edge family，并完整读取 Edge documentation；`computer-use`、内置 Browser、Chrome family 与 extension fallback 调用计数必须为 0。
+- root 创建前必须证明已绑定 tab 的 Botzone origin、登录首页和建桌入口；扩展未连接只产生人工恢复等待，不产生批次 artifact 或 invalid progress。
+- 每局通过 DOM/可见值完成表单 readback，开始按钮唯一点击一次；对局期间浏览器写操作为 0，结束后仅点击 `Botzone 2026` 返回首页。
+- 不读取 Cookie、local storage、密码、连接 URL 或密钥；connector、v8/v4/token、progress 和最终 8/8 聚合门槛保持不变。

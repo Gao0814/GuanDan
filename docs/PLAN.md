@@ -1777,8 +1777,8 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - Edge 未前台、验证码或画面暂不可读只暂停请项目所有者处理，不消耗 seed、不判 batch invalid；普通点击默认授权。
 - 旧 `42001/42002` 仍封存；新流程使用不存在的 `43001/43002` root，完成 artifact/preflight 后直接执行 16 局。
 
-### L5-A4h8a Computer Use 路径锁定
+### L5-A4h8b Edge 扩展控制路径纠正
 
-- 既往成功说明 Edge 窗口级点击本身可行；最新失败来自执行器额外引入 URL 校验，而不是 connector 或 Edge 控件缺失。
-- 下一执行必须直接使用持久 `node_repl + @oai/sky`，从 `list_apps()` 返回值选择唯一 Edge 窗口，按 observe → one action → refresh 循环操作。
-- 禁止调用 Browser/Chrome control、禁止猜测或校验 URL；只有实际 `sky` input deny 才属于平台阻塞，普通窗口绑定/截图失败按 Computer Use recovery 恢复。
+- 已安装的 `chrome:control-chrome` 组件契约明确支持 Microsoft Edge；正确绑定方式是 `agent.browsers.get("edge")`，插件目录名含 Chrome 不代表只能控制 Chrome。
+- L5-A4h8a 把 Edge 错误切换到通用 Windows `computer-use`。下一执行改为 Edge 浏览器扩展的 URL/DOM/Playwright 控制，禁止回退截图坐标、OCR、内置 Browser、Chrome family 或通用 Windows 控制。
+- Edge family 暂不可用时只暂停并检查 **Settings → Computer use** 与 Edge 扩展连接；在 root/connector/桌均未创建时不消耗 seed、不写 batch invalid。

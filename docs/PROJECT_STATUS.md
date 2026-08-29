@@ -1809,3 +1809,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - Computer Use 的 Windows 指南支持选择唯一 Edge 窗口、截图、点击和输入，不要求读取网页 URL。
 - 下一任务锁定直接 `@oai/sky` 路径，不调用 Browser/Chrome 工具，也不允许执行器自行增加 URL gate。
 - 每个动作后刷新窗口状态，窗口绑定失败按标准 recovery 重新枚举；验证码/前台问题继续只暂停。
+
+### L5-A4h8b Edge 插件路径纠正
+
+- 已核对本机插件与技能契约：已安装的 `chrome:control-chrome` 浏览器组件同时支持 Chrome 和 Edge，Edge 必须用稳定 family selector `agent.browsers.get("edge")`。
+- 先前锁定 `computer-use + @oai/sky` 是错误控制面；它是通用 Windows UI 控制，不是项目所有者安装的 Edge 浏览器扩展控制。
+- 下一任务改用 Edge tab 的 URL、DOM、可见状态和 Playwright locator 完成建桌循环；扩展未连接只暂停恢复，不回退视觉点击，也不创建正式批次或判 invalid。

@@ -1,10 +1,10 @@
 # 下一步提示词
 
-执行 **Step L5-A4h8a：使用项目所有者已准备好的 Edge 页面，自动完成全新 `43001/43002` 配对容量批次**。
+执行 **Step L5-A4h8b：使用已安装的 Edge 浏览器扩展控制，自动完成全新 `43001/43002` 配对容量批次**。
 
-项目所有者使用 Microsoft Edge，并负责在任务开始前完成登录、关闭旧桌和打开 Botzone 首页。不要再要求 Chrome、真实 URL 读取、DOM 语义控制或额外 UI 资格。必须直接使用 `computer-use:computer-use` 的 `node_repl + @oai/sky` Windows 控制当前 Edge，只依据最新窗口状态、屏幕画面和固定可见文字操作。
+项目所有者使用 Microsoft Edge，并负责在任务开始前完成登录、关闭旧桌和打开 Botzone 首页。必须使用当前已安装的 `chrome:control-chrome` 浏览器控制组件，并按其 Edge 专用选择器 `agent.browsers.get("edge")` 绑定 Microsoft Edge；该组件名称虽然包含 Chrome，但官方技能契约明确同时支持 Edge。不得改用通用 Windows `computer-use`、内置 Browser、Chrome family 或其他浏览器。
 
-本任务禁止调用 Browser Use、Chrome control 或其他网页语义工具，禁止自行增加“先验证 URL 才能点击”的门槛。当前 Computer Use 指南要求选择唯一返回的目标窗口并逐动作刷新，并不要求读取浏览器 URL。若 `@oai/sky` 的实际输入调用明确返回平台 deny，保留原始固定错误类别并停止；不得把普通 state capture/locator 失败改写成“URL 无法确认”。
+首次绑定 Edge 时完整阅读该浏览器组件的技能说明，初始化其浏览器运行时，精确调用 `agent.browsers.get("edge")`，随后完整读取 `edge.documentation()`。如果 Edge family 不可用，应报告浏览器扩展未连接并暂停，提示项目所有者检查 **Settings → Computer use** 与 Edge 中的 ChatGPT 浏览器扩展；不得回退到 `computer-use`、截图坐标、OCR 或另一浏览器。绑定成功后使用 Edge tab 的 URL、DOM、可见状态和 Playwright locator 做每一步 readback。
 
 普通页面按钮点击、表单填写、connector、DeepSeek 调用和仓库外 evidence 写入均已默认授权，不要逐次询问。验证码、登录失效、遮挡或 Edge 未停在预期页面时，暂停并用一句话请项目所有者处理；等待不构成批次失败。
 
@@ -18,7 +18,7 @@
 - Edge 保持前台且窗口不最小化；
 - 页面没有验证码、弹窗或其他遮挡。
 
-可见首页信号为左上角 `Botzone 2026` 品牌和“创建游戏桌”入口。无需读取或验证地址栏 URL，不使用 Chrome 插件，不切换到其他浏览器。
+首页资格必须同时满足：Edge tab 的 Botzone origin 合法、页面已登录、可见左上角 `Botzone 2026` 品牌和“创建游戏桌”入口。不得读取 Cookie、local storage、密码或连接密钥，不切换到其他浏览器。
 
 若前置页面尚未准备好，只回复：
 
@@ -87,41 +87,40 @@ C:\Users\86166\AppData\Local\Temp\botzone_progress_helper.py
 
 两项通过后原子写低敏 `preflight-summary.json`。失败则用 helper 标记 `offline_preflight` invalid 并停止。
 
-## 5. Edge 自动循环
+## 5. Edge 扩展自动循环
 
-按 game 1→16 串行执行。每局固定使用以下简单循环，不读取 URL/DOM，不做额外浏览器诊断。
+按 game 1→16 串行执行。每局固定使用以下循环；URL/DOM readback 仅用于证明仍在正确 Botzone 页面与确认表单值，不读取 Cookie、local storage、密码、连接 URL 或密钥。
 
-### Computer Use 初始化与恢复
+### Edge 浏览器扩展初始化与恢复
 
-首次控制 Edge 前完整阅读 Computer Use 的 `SKILL.md`、`guidance.md` 和 `confirmations.md`，然后在一个持久 `node_repl` 会话中：
+首次控制 Edge 前按浏览器技能契约完成：
 
-1. `import("@oai/sky")` 并保存 `sky`。
-2. 调用 `sky.list_apps()`，从工具实际返回值中选择 Microsoft Edge；不得猜 app/window 字段。
-3. 目标 Edge 窗口必须唯一；调用 `sky.get_window()`、`sky.activate_window()` 和 `sky.get_window_state()` 获取当前窗口句柄与截图。
-4. 每次只执行一个 `sky.click`、`sky.type_text` 或 `sky.press_key`，随后立即重新 `get_window_state()`；不得复用旧 screenshot ID、坐标或 accessibility index。
-5. accessibility 可用时优先按可见文字元素操作；不可用时使用最新 screenshot ID 的坐标操作。两者都不需要浏览器 URL。
-6. state capture/activation 失败时按指南重新枚举并绑定同一个 Edge 窗口，最多完成一次标准恢复；恢复期间没有 connector/桌提交时只暂停，不判 batch invalid。
+1. 初始化浏览器运行时并创建持久绑定 `edge = await agent.browsers.get("edge")`；禁止调用 `getDefault()`、`getForUrl()`、`get("chrome")` 或通用 extension fallback。
+2. 立即完整读取 `edge.documentation()`，之后按该文档获取或绑定当前 Botzone tab。
+3. 只在已绑定的 Edge tab 上执行 DOM/Playwright readback、点击和输入；每次页面转换后重新读取当前状态，不复用失效 locator。
+4. 每个破坏性页面动作前确认 tab origin、当前页面阶段和唯一目标控件；普通建桌点击已默认授权。
+5. Edge 扩展暂时断开时按浏览器技能的连接恢复流程处理；若仍不可用，暂停请项目所有者检查扩展，不创建 root、不启动 connector、不消耗 seed、不写 invalid progress。
 
-不得通过 Windows Terminal、PowerShell、地址栏脚本或 Edge 开发者工具做 UI 自动化；终端 connector 继续使用普通执行工具，与 Computer Use 会话分离。
+不得通过 Windows Terminal、PowerShell、地址栏脚本、截图坐标、OCR 或 Edge 开发者工具做 UI 自动化；终端 connector 继续使用普通执行工具，与 Edge 浏览器绑定分离。
 
 ### A. 从首页创建 GuanDan 桌
 
-1. 通过 `sky.get_window_state()` 获取最新 Edge 屏幕画面，确认可见 `Botzone 2026` 和“创建游戏桌”。
+1. 通过已绑定 Edge tab 的 URL、DOM 和可见状态确认处于 Botzone 首页，并确认可见 `Botzone 2026` 和“创建游戏桌”。
 2. 点击“创建游戏桌”。
 3. 在游戏选择界面选择 `GuanDan`，点击唯一“创建”。
 4. 如出现验证码，暂停请项目所有者完成；完成后继续当前页面。
 5. 看到“载入上次配置”和“开始游戏！”即判定到达 GuanDan 表单。
 
-任何控件暂时未出现时先等待页面加载并刷新屏幕上下文，不盲点、不切换浏览器。只有用户明确关闭桌或页面出现固定错误提示才按失败处理。
+任何控件暂时未出现时先等待页面加载并刷新 tab 状态，不盲点、不切换浏览器。只有用户明确关闭桌或页面出现固定错误提示才按失败处理。
 
 ### B. 填写当前局配置
 
 1. 点击一次“载入上次配置”。
 2. 设置当前 game 的随机种子和本家 seat。
 3. 确认“需要进贡=否”、级牌 2；三个 Bot 槽和上轮配置保持载入值，不复制或输出 Bot ID。
-4. 通过最新 `sky.get_window_state()` 屏幕画面逐项确认可见值正确。
+4. 通过当前 Edge tab 的 DOM 与可见表单值逐项确认配置正确。
 
-配置值看不清或控件被遮挡时暂停，请项目所有者把 Edge 保持前台；不要因此判 invalid。
+配置控件无法唯一定位或 readback 不一致时暂停并保留当前页面；不要盲点，也不要因此判 invalid。
 
 ### C. 启动 connector 后开始游戏
 
@@ -145,7 +144,7 @@ python -m integrations.botzone
 
 ### D. 对局结束并回首页
 
-connector exit 0 / `finished_target` 且 evidence 验收通过后，获取最新 Edge 画面。对局结果页面出现后，只点击页面左上角品牌文字：
+connector exit 0 / `finished_target` 且 evidence 验收通过后，读取最新 Edge tab 状态。对局结果页面出现后，只点击页面左上角品牌文字：
 
 ```text
 Botzone 2026
@@ -166,7 +165,7 @@ Botzone 2026
 
 通过后用 helper `atomic_progress_write()` 将 completed 精确 +1；game 1..15 为 running，game 16 为 completed。不得手写 progress或跳号。
 
-任一真实 connector/protocol/evidence 失败立即停止，不重试、不启动下一局，并用固定 stage 标记 invalid。Edge 未前台、验证码或画面暂时不可读只暂停请求项目所有者处理，不属于失败。
+任一真实 connector/protocol/evidence 失败立即停止，不重试、不启动下一局，并用固定 stage 标记 invalid。Edge 扩展暂时断开、验证码、登录失效或页面控件暂不可读时只暂停请求项目所有者处理，不属于失败。
 
 唯一失败判定：
 
