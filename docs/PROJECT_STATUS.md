@@ -1791,3 +1791,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - rule/deepseek 两次零网络 preflight 分别 419/307 ms、exit 0；state/audit/progress 守恒，所有外部与模型调用为 0。
 - preflight summary 为 2273 bytes / `32a9cf1a...cad9`，正式 progress 仍 ready。
 - 当前进入 L5-A4h7：按 manifest 固定 16 局自动 UI 执行和逐局原子进度推进，不再增加准备步骤或请求项目授权。
+
+### L5-A4h7 浏览器控制失败
+
+- 正式批次在 game 1 / `ui_readback` 停止，completed=0；页面未提交、0 request/response/Header，connector 被中断且无残留。
+- semantic browser controller 失去响应后切换 Windows visual controller，但后者无法证明真实 URL，故不能继续点击；这不是协议、Agent 或 DeepSeek 失败。
+- `42001/42002` root 已按 invalid 封存。当前进入 L5-A4h8：先以 Chrome URL/DOM 控制做 root 外资格，通过后使用 `43001/43002` 创建并执行全新批次。

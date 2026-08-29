@@ -1863,3 +1863,10 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - L5-A4h7 每局验收锁定 request/response/Header、qualified/normal finished、timeout 守恒、v8/v4/token、无 active state 和 agent/model 来源。
 - 每局通过后只允许 helper 执行 completed+1 的 progress 原子转换；跳号、重复或 evidence 未通过不得推进。
 - 最终完整 schedule 必须 requested/valid=`8/8`、失败计数为 0、每 seat=`2/2`、AB/BA=`4/4`，并生成无敏感字段的 canonical paired report。
+
+### L5-A4h7 失败与 L5-A4h8 UI 控制资格
+
+- 旧 game 1 的 evidence 锁定为 0/0/0、exit 130、空 state、v8 audit 存在；progress invalid 与 manifest/preflight hash 已只读复核。
+- 新 UI 资格必须由 Chrome controller 直接证明 tab origin、tab ID、登录态和 GuanDan 表单 DOM；三次稳定 readback 后仍不得点击开始或启动 connector。
+- Chrome controller/locator 可在新 root 创建前修复和重试；Windows visual/OCR URL 判断不属于合格 fallback。
+- 新批次创建后仍执行 manifest/progress 原子门槛、双零网络 preflight、逐局 v8/v4/token和 helper completed+1 验收。

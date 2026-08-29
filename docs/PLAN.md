@@ -1762,3 +1762,10 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - rule/deepseek preflight 各一次均 exit 0、唯一 ready、stderr 空，16 state 与 0 completion audit 不变，全部网络/connector/Agent/model 计数为 0。
 - `preflight-summary.json` 已原子生成：2273 bytes / `32a9cf1a...cad9`；manifest/progress hash 不变，progress 仍为 initial ready。
 - 下一步 L5-A4h7 直接按 manifest 串行执行 16 局；每局固定双 readback、持续 PTY connector、v8/v4/token 验收和 helper 原子 progress 推进，失败整批停止。
+
+### L5-A4h7 结果与 L5-A4h8
+
+- `42001/42002` 在 game 1 的 `ui_readback` 阶段永久 invalid：语义浏览器控制失联，Windows 视觉 fallback 无法可靠确认 URL；网页未提交，connector 0/0/0、exit 130，completed prefix=0。
+- game 1 audit 为 695 bytes / `2bccc78a...01d76`，progress 已原子 invalid 为 285 bytes / `d6396eb7...5eb68`；manifest/preflight summary 不变，其余 15 局未触碰。
+- 下一步 L5-A4h8 不复用旧 root/seeds。先在正式 root 创建前用单一 Chrome semantic controller 完成真实 URL/DOM 稳定资格，禁止回退 OCR/Windows 视觉。
+- UI 资格可在零副作用状态重连修复；通过后同一任务创建全新 `43001/43002` 批次、双 preflight 并执行 16 局。

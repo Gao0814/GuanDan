@@ -1072,3 +1072,10 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - 自动 UI 固定为表单首次 readback → 持续 PTY connector → 页面已连接 → 第二次 readback → 唯一开始点击 → Browser 只读。
 - 每局 v8/v4/token 与策略来源通过后才用已验证 helper 推进 progress；任一真实失败停止整批，验证码或桌归属确认只暂停。
 - 16 局完成后由正式四座位 benchmark 聚合 8/8 valid pairs，并只输出低敏描述统计。
+
+### L5-A4h8：浏览器控制通道恢复
+
+- L5-A4h7 的失败边界是 semantic controller 失联后使用了无法确认 URL 的视觉 fallback；网页和 Botzone 请求均未发生。
+- 旧批次永久封存。新流程只允许可直接返回 tab URL 与 DOM 的 Chrome controller；禁止 OCR 推断 URL或跨控制器盲目续点。
+- UI 资格位于新 root 创建前，可重连、修正 locator 和等待验证码，不消耗 seed或生成 batch invalid。
+- 资格通过后同任务创建 `43001/43002` 正式 artifact、双 preflight 和 16 局；每局 connector 前增加三次稳定 URL/DOM readback，提交后 Browser 只读。
