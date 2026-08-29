@@ -1064,3 +1064,11 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - 新执行对话不再依赖前一任务内存：正式 root、artifact hash、helper 路径/hash、九项 stage 和已知缺口均已写入下一提示词。
 - qualification 工具属于正式 root 外的可修正编排层；在未接触正式 progress 前，允许修正并重跑完整资格，不应把 driver 解析或覆盖缺口升级为新批次 invalid。
 - 正式批次不可重试边界仍只约束 manifest/progress/live evidence；helper qualification 通过后才进入一次性双 preflight。
+
+### L5-A4h7：正式 16 局执行
+
+- helper/driver qualification 与双模式 preflight 已全部通过；正式 manifest/preflight summary 只读，progress 从 ready 开始。
+- 赛程按 manifest 固定为两个 seed×四 seat 的 8 对/16 局，AB/BA 平衡；每局读取自身 mode/state/audit/token，不在日志中展开 token。
+- 自动 UI 固定为表单首次 readback → 持续 PTY connector → 页面已连接 → 第二次 readback → 唯一开始点击 → Browser 只读。
+- 每局 v8/v4/token 与策略来源通过后才用已验证 helper 推进 progress；任一真实失败停止整批，验证码或桌归属确认只暂停。
+- 16 局完成后由正式四座位 benchmark 聚合 8/8 valid pairs，并只输出低敏描述统计。

@@ -1855,3 +1855,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 已只读确认 helper 当前 source/hash 与实际缺口：只执行 initial+16 complete，不执行 144 个 invalid 转换或 malformed/I/O 反例。
 - 新 qualification driver 必须证明 registry expected=executed，并输出合法完成 16、合法 invalid 144、拒绝矩阵各分类原始计数和低敏 coverage hash。
 - 资格工具的解析/导入/覆盖问题允许在 root 外修正后重跑；正式 artifact drift、helper 契约无法满足或 preflight 失败才停止。
+
+### L5-A4h6b 结果与 L5-A4h7 live 验收
+
+- qualification 实际 expected/executed=`269/269`，合法写入 161、拒绝 108；coverage/结构 hash 固定，两个 scratch 逐字段一致并清理。
+- 双 preflight 均 exit 0、单行 ready、空 stderr；16 个 state file=0、completion audit=0，全部网络/Agent/model 计数为 0。
+- L5-A4h7 每局验收锁定 request/response/Header、qualified/normal finished、timeout 守恒、v8/v4/token、无 active state 和 agent/model 来源。
+- 每局通过后只允许 helper 执行 completed+1 的 progress 原子转换；跳号、重复或 evidence 未通过不得推进。
+- 最终完整 schedule 必须 requested/valid=`8/8`、失败计数为 0、每 seat=`2/2`、AB/BA=`4/4`，并生成无敏感字段的 canonical paired report。

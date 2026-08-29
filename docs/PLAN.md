@@ -1755,3 +1755,10 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 为避免新模型依赖隐含上下文，已锁定正式 manifest/progress 的 bytes/SHA-256、16 个空 state/0 audit inventory，以及 root 外 helper 的实际路径、基线 hash和九项 failure-stage allowlist。
 - 当前 helper 仅覆盖 17 个合法转换，缺少 144 个 invalid 转换和反例矩阵；新任务允许在正式 root 外原地修复 helper并新增唯一 qualification driver，资格期可迭代修正，不消耗正式批次。
 - 两次完整 qualification 通过后才执行 rule/deepseek 各一次零网络 preflight；成功保持 progress ready，只新增低敏 summary。
+
+### L5-A4h6b 已通过，进入 L5-A4h7 live
+
+- helper 已加固至 9156 bytes / `de67b2d0...92cbe`，driver 为 13390 bytes / `94c55ba9...fd5a5b`；两次 qualification 的 269/269 case、161 合法写入、108 拒绝路径全部通过。
+- rule/deepseek preflight 各一次均 exit 0、唯一 ready、stderr 空，16 state 与 0 completion audit 不变，全部网络/connector/Agent/model 计数为 0。
+- `preflight-summary.json` 已原子生成：2273 bytes / `32a9cf1a...cad9`；manifest/progress hash 不变，progress 仍为 initial ready。
+- 下一步 L5-A4h7 直接按 manifest 串行执行 16 局；每局固定双 readback、持续 PTY connector、v8/v4/token 验收和 helper 原子 progress 推进，失败整批停止。

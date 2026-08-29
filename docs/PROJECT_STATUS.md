@@ -1784,3 +1784,10 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 正式 manifest 为 4661 bytes / `5989a6dc...1b4ff`，progress 为 277 bytes / `0517765b...745e2`；16 个 state 空、completion audit 为 0。
 - 唯一 helper 已定位为系统临时目录中的 `botzone_progress_helper.py`，基线 2280 bytes / `9c5f207c...ad898`；其现有 qualification 只覆盖 17 个合法转换。
 - `NEXT_PROMPT.md` 已改为新对话可直接执行的自包含说明：允许 root 外迭代修复资格工具，禁止改写正式 manifest，并在完整矩阵通过后继续双 preflight。
+
+### L5-A4h6b preflight ready
+
+- qualification 恢复成功：269/269 case 全覆盖，包括 144 个 invalid 转换和 108 个拒绝用例；双 scratch 输出一致且清理完成。
+- rule/deepseek 两次零网络 preflight 分别 419/307 ms、exit 0；state/audit/progress 守恒，所有外部与模型调用为 0。
+- preflight summary 为 2273 bytes / `32a9cf1a...cad9`，正式 progress 仍 ready。
+- 当前进入 L5-A4h7：按 manifest 固定 16 局自动 UI 执行和逐局原子进度推进，不再增加准备步骤或请求项目授权。
