@@ -1840,3 +1840,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 同一已编译 helper 在两个全新 scratch 中覆盖 0..16 连续完成、固定 failure stage、跳号/回退/字段/hash/null/bool 等反例；两次结构 hash 和逐字段结果必须一致。
 - rule/deepseek preflight 各一次，顺序固定；每次要求 exit 0、单行 ready、空 stderr、state 不变及 DNS/HTTP/transport/connector/Agent/model 全零。
 - preflight summary 只保留固定低敏布尔值与 hash；成功不更新正式 progress、不启动 live，失败才以已验证 helper 原子写入 `offline_preflight` invalid。
+
+### L5-A4h6a 失败与 L5-A4h6b coverage recovery
+
+- 上一步未达到 qualification coverage 门槛，故没有 preflight 或正式 artifact 写入；历史失败判定保留。
+- 新 driver 必须由 registry 穷举并核对：9 个锁定 failure stage × game 1..16=`144` 个合法 invalid 转换，以及 0..16 连续完成。
+- malformed 矩阵覆盖字段缺失/新增、严格类型、hash/计数/null/status 组合、跳号/回退/终态再写、未知 stage 与 failed-index 不一致。
+- 原子故障矩阵覆盖 temp 冲突、write/flush/fsync/close/replace/readback；所有失败保持目标 bytes/hash 并清理 temp。
+- 两次 scratch 的 case counts、coverage bitmap/hash、结构 hash 和 cleanup 必须一致；通过后才运行 rule/deepseek 各一次零网络 preflight。

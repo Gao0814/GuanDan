@@ -1051,3 +1051,10 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - helper 的准入必须由两次独立 scratch 演练证明，且只能负责九字段 progress 的严格状态转换和原子写入，不能复制 manifest serializer。
 - 只有 qualification 逐字段一致后才允许 rule/deepseek 各一次零网络 preflight；preflight 只做本地组合验证，不携带 token、不写 completion audit。
 - 本阶段成功时正式 progress 保持 ready，只新增低敏 preflight summary；16 局 live 在后续独立执行步骤开始。
+
+### L5-A4h6b：资格覆盖恢复
+
+- 上一步失败属于 qualification evidence 不完整，而不是 helper 已证明错误或正式 artifact drift；同一正式 root 可以继续。
+- 恢复只允许加固 root 外唯一 qualification driver，并复用现有 helper。case registry 必须证明 expected/executed 集合相等，不能以代表样本替代穷举。
+- 最低完整矩阵为 16 个完成前缀、9×16 个合法 invalid 转换、状态字段反例、终态拒绝及原子 I/O 故障清理。
+- 只有两次独立 scratch 的 coverage/结构 hash 完全一致后，才允许 rule/deepseek 零网络 preflight；正式 manifest 始终只读。

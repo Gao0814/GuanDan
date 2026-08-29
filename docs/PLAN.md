@@ -1742,3 +1742,10 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - root 外唯一 continuation helper 已建立并通过编译；正式 root 尚未被 helper 写入，preflight、connector、网页桌和网络请求仍为 0。
 - 下一执行只复用该 helper 做两次全新 scratch 资格演练，要求合法状态转换、malformed 拒绝、原子写入和结构 hash 逐字段一致。
 - 资格通过后按 rule→deepseek 各运行一次零网络 preflight；成功只写低敏 preflight summary 并保持 progress 为 ready，live 16 局留到下一步。
+
+### L5-A4h6a qualification 失败与 L5-A4h6b
+
+- 两次 scratch 运行可重复，但现有演练未覆盖全部 invalid 转换和反例拒绝路径，判定 `precondition_failed: continuation_helper_qualification_failed`。
+- rule/deepseek preflight、summary、正式 progress 写入及全部网络调用均未发生；manifest/progress/16 局布局保持不变，因此 `42001/42002` 正式批次仍有效。
+- L5-A4h6b 只加固现有 qualification driver，不创建第二个 helper；必须覆盖 9 个 failure stage × 16 个 next game 的 144 个 invalid 转换和完整 malformed/终态/原子故障矩阵。
+- 两次全新 scratch 资格结果逐字段一致后，才恢复 rule/deepseek 各一次零网络 preflight。

@@ -1772,3 +1772,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 正式 layout 的只读锁定已完成：manifest/progress 存在，16 个 state 为空，16 个 completion audit 不存在，无临时或未知 artifact。
 - continuation helper 已在正式 root 外建立并编译，尚未对正式 progress 执行写入。
 - 当前剩余门槛是两次 scratch qualification 和 rule/deepseek 各一次零网络 preflight；本步骤成功后只形成 `preflight-summary.json` 与 ready 判定，不提前启动 live。
+
+### L5-A4h6a qualification 未通过
+
+- 现有 helper 的两次演练结果可重复，但 coverage registry 不完整，尚不能证明全部 invalid 转换与反例均 fail-closed。
+- 正式 manifest、initial progress、16 个空 state 和 16 个缺失 completion audit 均未改变；preflight/network/connector/Agent/model 为 0，正式批次未失效。
+- 当前进入 L5-A4h6b：补齐现有 qualification driver 的穷举覆盖并双运行；通过后再执行双模式零网络 preflight。
