@@ -1,111 +1,159 @@
 # 下一步提示词
 
-执行 **Step L5-A4h6b：continuation helper 资格覆盖恢复与双模式零网络 preflight**。
+执行 **Step L5-A4h6b：修复 root 外 progress helper 的资格覆盖，并完成 rule/deepseek 双模式零网络 preflight**。
 
-本任务已有项目级默认授权，不要再次询问测试、仓库外 qualification/scratch/state/audit 文件或零网络 preflight 的授权。系统自身要求的权限确认仍按平台机制处理。本步骤严格零网络，不启动 connector、不打开或操作 Botzone 网页、不调用 DeepSeek 动作接口。
+这是供新对话直接执行的完整交接。不要重新规划、不要再拆出诊断任务，也不要重复询问项目级授权。项目所有者已默认授权仓库外 qualification/scratch 文件、测试和零网络 preflight；系统权限弹窗仍按平台机制处理。本步骤不得启动 live connector、操作 Botzone 网页或发出任何网络请求。
 
-## 已确认状态
+## 1. 固定位置与只读基线
 
-- 正式 seeds：`42001`、`42002`。
-- 正式 root：`D:\VsCodeProject\BotzoneVerifiedUiCapacity-42001-42002`。
-- 正式 manifest、九字段初始 progress 与 16 局隔离布局已原子落盘并只读锁定。
-- 16 个 state 目录均为空，16 个 completion audit 均不存在；没有 `preflight-summary.json`、临时或未知 artifact。
-- manifest/progress/layout 在上一步前后完全不变；没有网络、connector、Agent 或模型调用。
-- root 外唯一 continuation helper 已建立并编译。上一步两次 scratch 结果虽可重复，但 qualification driver 没有覆盖全部要求的 invalid 转换与反例拒绝路径，因此判定 `precondition_failed: continuation_helper_qualification_failed`。
-- 该失败只属于 root 外资格证明不完整，不使正式批次、seed 或 root 失效；不得创建新 manifest、progress、helper、seed 或正式 root。
-- 不得修改仓库代码、测试、`README.md` 或无关文件；不得读取或输出 `.env`、URL、API key、Header、Cookie、token、绝对 evidence 路径、手牌、prompt 或模型响应。
-
-## 1. 再次只读锁定正式 evidence
-
-开始前记录正式 root 的低敏 inventory 与 manifest/progress bytes/SHA-256，并与上一步封存状态比较：
-
-- manifest canonical bytes/hash 不变；
-- progress 仍为精确九字段 initial ready：total=16、completed=0、next=1、两个 failure 字段为 null；
-- 16 个 state 为空，16 个 completion audit 不存在；
-- 无 preflight summary、临时文件、未知 artifact 或残留 connector/launcher。
-
-不一致时输出 `precondition_failed: formal_capacity_artifact_mismatch`，不得修复或继续。
-
-## 2. 只加固现有 qualification 覆盖
-
-复用现有 helper，不创建第二个 helper，不把任何 qualification 文件写入正式 root。先只读检查 helper：
-
-- 九字段 schema 与当前正式 progress 精确一致；
-- 固定 failure-stage allowlist 恰好 9 项、无重复；
-- helper 不包含 manifest serializer、正式 seed/token/path、网络、connector、Agent 或 DeepSeek 逻辑；
-- helper source bytes/SHA-256 在资格开始后锁定。
-
-允许在正式 root 外创建或修正唯一 qualification driver。driver 只调用现有 helper，并生成不含 stage 文本、路径、seed/token 的低敏 coverage bitmap/count/hash。不得靠手工声称覆盖，必须由 case registry 驱动并在运行结束时证明“预期 case 集合 = 实际执行集合”。
-
-### 必须覆盖的合法转换
-
-1. initial ready 状态精确校验。
-2. game 1..16 连续完成：每次 completed 只加 1，next 精确前移；第 16 局后进入 completed，next 与 failure 字段为 null。
-3. 对 helper 锁定的 9 个 failure stage，在每个 next game index 1..16 上分别执行一次 ready → invalid，共 `9 × 16 = 144` 个合法 invalid 转换；failed index 必须等于转换前 next，completed 保持原前缀。
-4. 合法转换均验证 canonical JSON、原子写入九阶段、binary readback、临时文件不存在及 source progress 被预期替换。
-
-### 必须覆盖的拒绝路径
-
-每个反例都必须在写入或 replace 前被拒绝，原合法 progress bytes/SHA-256 不变：
-
-- top-level 非 object；缺任一九字段；逐个增加未知字段；
-- schema/version/status 类型错误或未知值；
-- `bool` 冒充所有整数位置；字符串、float、负数和越界整数；
-- manifest hash 类型、格式或绑定值错误；total 不为 16；
-- ready/completed/invalid 三种状态下 completed、next、failed index、failure stage 的全部 null/非 null 组合矛盾；
-- 完成跳号、回退、重复提交、越过 16、从 completed 再写、从 invalid 再写；
-- failed index 不等于当前 next；未知 failure stage；failure stage 非字符串；
-- temp 已存在，以及 write/flush/fsync/close/replace/readback 任一注入失败时不得留下目标半写或临时文件。
-
-对可组合矩阵采用表驱动生成，输出每类 expected/executed/rejected/pass 原始整数及 coverage hash。禁止只抽取代表样本来代替上述穷举项。
-
-## 3. 两次独立 qualification
-
-qualification driver 先 `py_compile`，再使用两个全新的 root 外 scratch 目录运行两次。要求：
-
-- 两次 exit 0；case registry、分类计数、coverage bitmap/hash 与最终结构 hash逐字段一致；
-- 9 个 failure stage、16 个 game index 和 144 个合法 invalid 转换全部命中；
-- 所有拒绝 case 均命中且原 bytes/hash 不变；
-- 原子故障注入均完成清理；两个 scratch 最终为空并删除；
-- helper source hash 和正式 root inventory 前后不变；
-- network/transport/connector/Agent/model 计数均为 0。
-
-资格 driver 自身若在导入/解析/参数阶段失败且未执行 case，可在本任务内修正后重新开始两次全新 qualification。若 case 已执行但覆盖或 helper 行为不满足契约，停止并输出：
+仓库：
 
 ```text
-precondition_failed: continuation_helper_qualification_recovery_failed
+D:\VsCodeProject\GuanDan
 ```
 
-不得运行 preflight，不得写正式 progress 或 summary。
+正式批次 root：
 
-## 4. 双模式零网络 preflight
+```text
+D:\VsCodeProject\BotzoneVerifiedUiCapacity-42001-42002
+```
 
-两次 qualification 全部通过后，按顺序各执行恰好一次：
+正式 artifact 基线：
+
+| 文件 | bytes | SHA-256 |
+|---|---:|---|
+| `capacity-manifest.json` | 4661 | `5989a6dc07441c94b02725a31b29706d9708311ce7eee597e82b96b47921b4ff` |
+| `progress.json` | 277 | `0517765bcdd4241c01eaca29bbb9d29e900a0890649ea3c45e5e251cc59745e2` |
+
+`progress.json` 当前必须为：schema `botzone_verified_ui_capacity_progress`、version 1、status `ready`、total 16、completed 0、next 1、failed/failure 为 null，且 `manifest_sha256` 与上表 manifest hash 一致。
+
+正式 root 当前必须满足：
+
+- `games/game-01-*` 至 `game-16-*` 共 16 个预注册 game 目录；
+- 16 个 `state/` 均为空；
+- 16 个 `audit/` 均为空，completion audit 数为 0；
+- 没有 `preflight-summary.json`、临时文件或未知 artifact。
+
+正式 manifest 已是不可重写边界。不得修改、重建、格式化、迁移或补写 manifest，不得更换 seed `42001/42002`、game 顺序、mode、token 或路径。
+
+## 2. 现有 helper 的精确交接
+
+现有唯一 helper：
+
+```text
+C:\Users\86166\AppData\Local\Temp\botzone_progress_helper.py
+```
+
+当前基线：2280 bytes，SHA-256：
+
+```text
+9c5f207c7256aefff103e11147e353358b0f539e17e15d39bfef54a4650ad898
+```
+
+其固定 failure-stage allowlist 精确为：
+
+```text
+offline_preflight
+lobby_gate
+ui_readback
+connector_start
+table_submit
+connector_run
+evidence_validation
+progress_write
+final_aggregate
+```
+
+已确认的缺口：当前 `qualification()` 只执行 initial + 16 次完成转换，报告 `legal_transitions=17` 和 `failure_stages=9`；它没有实际执行 9×16 个 invalid 转换，也没有执行 malformed/终态/原子失败拒绝用例。因此上一步判定：
+
+```text
+precondition_failed: continuation_helper_qualification_failed
+```
+
+该失败没有接触正式 root，不使正式批次失效。
+
+## 3. 本任务允许的修复
+
+只允许原地修改上述 helper，并在同一临时目录新增一个明确命名的 qualification driver：
+
+```text
+C:\Users\86166\AppData\Local\Temp\botzone_progress_qualification.py
+```
+
+不得创建第二个 progress helper，不得把 helper/driver 写入仓库或正式 root。helper 可以增加严格校验、原子失败清理和 qualification-only 注入点，但运行时写 progress 的公开行为必须保持：精确九字段、固定 9-stage allowlist、canonical JSON、同目录 `O_EXCL` 临时文件、flush/fsync/replace/readback。
+
+允许在 qualification 阶段反复修正 helper/driver，直到资格矩阵完整通过；这些修正发生在正式 root 外，不视为正式批次重试。不得因为 driver 的解析、导入、断言或覆盖缺口再次停止并另开诊断任务。只有确认 helper 本身无法满足锁定契约时才停止。
+
+修改前后均记录 helper bytes/SHA-256；不得在 helper/driver 中写入正式 seed、token、URL、key 或正式路径。
+
+## 4. 必须实现的资格矩阵
+
+driver 必须由表驱动 registry 生成 expected case IDs，并在结束时断言 expected IDs 与 executed IDs 精确相等。case ID 只使用低敏类别和序号，不包含 stage 文本、路径、hash、seed 或 token。
+
+### 合法路径
+
+1. initial ready 校验 1 项。
+2. game 1..16 连续完成 16 项；每次只能 completed+1，next 同步前移，第 16 项进入 completed。
+3. 对 9 个锁定 failure stage × next game 1..16 执行 144 个 ready/running → invalid 转换；failed index 必须等于转换前 next，completed 保持当前前缀。
+4. 每个合法写入均验证 canonical bytes、目标 readback、临时文件消失和九字段守恒。
+
+### 拒绝路径
+
+至少覆盖并逐项证明原目标 bytes/SHA-256 不变：
+
+- top-level 非 object；九字段逐个缺失；未知字段；
+- schema/version/status 类型错误与未知值；
+- bool、字符串、float、负数、越界数冒充整数；
+- manifest hash 非字符串、非 64 位小写 hex 或与绑定 hash 不同；
+- total 不为 16；completed/next/failed/failure 的 null 与数值组合矛盾；
+- 完成跳号、回退、重复、越过 16；completed/invalid 终态再次转换；
+- unknown/non-string failure stage；failed index 不等于当前 next；
+- 临时文件预先存在；write、flush、fsync、close、replace、readback 任一步骤注入失败。
+
+所有原子失败路径都必须清理本次临时文件，不得覆盖既有合法目标，不得遗留半写文件。
+
+## 5. 双次 qualification 的执行门槛
+
+1. 对 helper 和 driver 运行 `py_compile`。
+2. 使用两个全新、正式 root 外的 scratch 目录分别运行一次完整 qualification。
+3. 两次必须 exit 0，expected/executed case count、分类计数、coverage bitmap/hash、最终结构 hash逐字段一致。
+4. 必须明确报告 9 个 stage、16 个 game index、144 个合法 invalid 转换全部执行；所有拒绝 case 全部通过。
+5. 两个 scratch 清空并删除；helper/driver 保留供后续正式 progress 更新。
+6. qualification 前后重新核对正式 manifest/progress bytes/SHA-256、16 个空 state 和 0 个 completion audit，必须与第 1 节完全一致。
+7. network、DNS、socket、HTTP、Botzone GET、DeepSeek request、transport、connector、Agent、model 调用均为 0。
+
+如果修复后的 helper 行为仍无法通过完整矩阵，输出 `precondition_failed: continuation_helper_qualification_recovery_failed` 并停止；不得运行 preflight或写正式 progress。
+
+## 6. 双模式零网络 preflight
+
+qualification 通过后，按顺序各执行恰好一次：
 
 1. `rule --preflight-only`
 2. `deepseek --preflight-only`
 
-使用 manifest 中各模式第一局对应的空 state 目录。每次必须使用项目 `.venv` 和当前进程显式配置、禁止读取 `.env`；仅验证配置 present/锁定元数据。要求：
+要求：
 
-- 30 秒内自行 exit 0；stdout 规范化为唯一 `preflight_ready`；stderr 空；
-- state 前后为空，其余 state/audit 不变；不携带 run token，不写 completion audit；
-- Botzone GET、DeepSeek request、DNS/socket/HTTP、transport、connector cycle、Agent action、`suggest_action_id()` 全部为 0；
-- 结束后无残留进程。
+- 使用项目 `.venv`；`PYTHON_DOTENV_DISABLED=1` 必须在进程启动前生效；不得读取 `.env`。
+- 只检查 Botzone URL/DeepSeek key 为 present，endpoint/model/timeout=60/retries=0 匹配，不输出值。
+- 使用 manifest 中各模式第一局对应的空 state 目录；不传 run token，不写 completion audit。
+- 每次 30 秒内自行 exit 0，stdout 规范化为唯一 `preflight_ready`，stderr 空。
+- preflight 前后 16 个 state 均为空、completion audit 仍为 0。
+- DNS/socket/HTTP、Botzone GET、DeepSeek request、connector cycle、Agent action、`suggest_action_id()` 全为 0；无残留进程。
 
-rule 失败时不执行 deepseek；任一 preflight 失败不重试、不 live。使用已资格验证的 helper 将正式 progress 原子转为 invalid，`failed_game_index=1`、`failure_stage=offline_preflight`、completed=0、next=1，并输出：
+rule 失败时不执行 deepseek；任一模式失败不得重试或 live。使用已通过资格的 helper 将正式 progress 原子更新为 invalid：completed 0、next 1、failed 1、failure `offline_preflight`，输出：
 
 ```text
 botzone_verified_ui_paired_capacity_preflight_invalid
 ```
 
-## 5. 成功证据
+## 7. 成功落盘与判定
 
-双 preflight 通过后，在正式 root 原子创建唯一低敏 `preflight-summary.json`，只保留固定 schema/version、manifest/helper/coverage hash、qualification 分类原始整数、两次 preflight 固定布尔值、inventory 守恒和零网络计数。不得包含 stage 名列表、seed、token、绝对路径、URL、key、命令行或异常正文。
+双 preflight 通过后，在正式 root 原子创建唯一 `preflight-summary.json`。只保留固定 schema/version、manifest/helper/driver/coverage hash、qualification 原始计数、双 preflight 固定布尔值、inventory 守恒和零网络计数。不得包含 stage 名列表、seed、token、绝对路径、URL、key、环境值、命令行或异常正文。
 
-成功时正式 progress 保持 initial ready，不运行 connector、网页桌或第 1 局。唯一判定：
+成功时正式 progress 保持 initial ready，不启动 connector、网页桌或第 1 局。唯一判定：
 
 ```text
 botzone_verified_ui_paired_capacity_preflight_ready
 ```
 
-报告 summary 的 bytes/SHA-256、qualification 完整覆盖计数、双 preflight 门槛及全部零网络计数。下一步再按 manifest 开始 16 局 live，不请求新的项目授权。
+最终报告必须给出：helper/driver 与 summary 的 bytes/SHA-256、资格矩阵实际计数、双 preflight 结果、正式 artifact 前后 hash 不变，以及所有网络/connector/Agent/model 计数为 0。不要请求新的项目授权；下一任务才按 manifest 串行执行 16 局 live。

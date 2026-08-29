@@ -1848,3 +1848,10 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - malformed 矩阵覆盖字段缺失/新增、严格类型、hash/计数/null/status 组合、跳号/回退/终态再写、未知 stage 与 failed-index 不一致。
 - 原子故障矩阵覆盖 temp 冲突、write/flush/fsync/close/replace/readback；所有失败保持目标 bytes/hash 并清理 temp。
 - 两次 scratch 的 case counts、coverage bitmap/hash、结构 hash 和 cleanup 必须一致；通过后才运行 rule/deepseek 各一次零网络 preflight。
+
+### L5-A4h6b 新模型执行基线
+
+- 已只读确认正式 manifest/progress 固定 bytes/hash、16 个 state file=0、audit file=0；这些值成为 qualification 前后的直接比较基线。
+- 已只读确认 helper 当前 source/hash 与实际缺口：只执行 initial+16 complete，不执行 144 个 invalid 转换或 malformed/I/O 反例。
+- 新 qualification driver 必须证明 registry expected=executed，并输出合法完成 16、合法 invalid 144、拒绝矩阵各分类原始计数和低敏 coverage hash。
+- 资格工具的解析/导入/覆盖问题允许在 root 外修正后重跑；正式 artifact drift、helper 契约无法满足或 preflight 失败才停止。

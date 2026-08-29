@@ -1778,3 +1778,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 现有 helper 的两次演练结果可重复，但 coverage registry 不完整，尚不能证明全部 invalid 转换与反例均 fail-closed。
 - 正式 manifest、initial progress、16 个空 state 和 16 个缺失 completion audit 均未改变；preflight/network/connector/Agent/model 为 0，正式批次未失效。
 - 当前进入 L5-A4h6b：补齐现有 qualification driver 的穷举覆盖并双运行；通过后再执行双模式零网络 preflight。
+
+### L5-A4h6b 可移交状态
+
+- 正式 manifest 为 4661 bytes / `5989a6dc...1b4ff`，progress 为 277 bytes / `0517765b...745e2`；16 个 state 空、completion audit 为 0。
+- 唯一 helper 已定位为系统临时目录中的 `botzone_progress_helper.py`，基线 2280 bytes / `9c5f207c...ad898`；其现有 qualification 只覆盖 17 个合法转换。
+- `NEXT_PROMPT.md` 已改为新对话可直接执行的自包含说明：允许 root 外迭代修复资格工具，禁止改写正式 manifest，并在完整矩阵通过后继续双 preflight。

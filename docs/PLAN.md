@@ -1749,3 +1749,9 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - rule/deepseek preflight、summary、正式 progress 写入及全部网络调用均未发生；manifest/progress/16 局布局保持不变，因此 `42001/42002` 正式批次仍有效。
 - L5-A4h6b 只加固现有 qualification driver，不创建第二个 helper；必须覆盖 9 个 failure stage × 16 个 next game 的 144 个 invalid 转换和完整 malformed/终态/原子故障矩阵。
 - 两次全新 scratch 资格结果逐字段一致后，才恢复 rule/deepseek 各一次零网络 preflight。
+
+### L5-A4h6b 新对话交接加固
+
+- 为避免新模型依赖隐含上下文，已锁定正式 manifest/progress 的 bytes/SHA-256、16 个空 state/0 audit inventory，以及 root 外 helper 的实际路径、基线 hash和九项 failure-stage allowlist。
+- 当前 helper 仅覆盖 17 个合法转换，缺少 144 个 invalid 转换和反例矩阵；新任务允许在正式 root 外原地修复 helper并新增唯一 qualification driver，资格期可迭代修正，不消耗正式批次。
+- 两次完整 qualification 通过后才执行 rule/deepseek 各一次零网络 preflight；成功保持 progress ready，只新增低敏 summary。

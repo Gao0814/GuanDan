@@ -1058,3 +1058,9 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - 恢复只允许加固 root 外唯一 qualification driver，并复用现有 helper。case registry 必须证明 expected/executed 集合相等，不能以代表样本替代穷举。
 - 最低完整矩阵为 16 个完成前缀、9×16 个合法 invalid 转换、状态字段反例、终态拒绝及原子 I/O 故障清理。
 - 只有两次独立 scratch 的 coverage/结构 hash 完全一致后，才允许 rule/deepseek 零网络 preflight；正式 manifest 始终只读。
+
+### L5-A4h6b：跨对话执行边界
+
+- 新执行对话不再依赖前一任务内存：正式 root、artifact hash、helper 路径/hash、九项 stage 和已知缺口均已写入下一提示词。
+- qualification 工具属于正式 root 外的可修正编排层；在未接触正式 progress 前，允许修正并重跑完整资格，不应把 driver 解析或覆盖缺口升级为新批次 invalid。
+- 正式批次不可重试边界仍只约束 manifest/progress/live evidence；helper qualification 通过后才进入一次性双 preflight。
