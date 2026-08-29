@@ -1086,3 +1086,9 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - 每局只依赖固定可见状态：`Botzone 2026`/创建游戏桌、GuanDan 创建、载入上次配置/开始游戏、结果页和左上角品牌返回首页。
 - 表单配置后才启动 connector；连接后再确认可见 seed/seat/profile并点击一次开始。对局中不操作，结束后只点击品牌回首页。
 - Edge 前台或验证码问题属于人工等待，不是实验失败；connector/protocol/evidence 失败才停止正式批次。
+
+### L5-A4h8a：直接 Sky Windows 控制
+
+- Edge 自动化固定使用 Computer Use 的 `node_repl + @oai/sky`，不再经过 Browser Use/Chrome control 或 URL 语义检查。
+- 目标窗口必须来自 `list_apps()` 的唯一实际返回；操作遵循最新 observation → 单动作 → 立即 refresh，旧坐标/元素索引不得复用。
+- accessibility 与截图坐标都是允许路径；URL 不是准入字段。窗口状态失败按标准 recovery 处理，只有明确 input deny 才停止。

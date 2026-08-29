@@ -1877,3 +1877,9 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - UI 状态机锁定为首页 → GuanDan 表单 → connector connected → 对局/结果 → 点击 `Botzone 2026` → 首页。
 - 验证码、Edge 未前台或短暂无画面仅暂停；不得写 invalid progress。开始按钮只点击一次，对局期间写操作为 0。
 - 其余新 root 原子 artifact、双 preflight、逐局 v8/v4/token、progress +1 和最终 8/8 聚合门槛不变。
+
+### L5-A4h8a Computer Use 执行验收
+
+- 初始化必须证明 `list_apps()` 返回唯一 Edge 窗口，随后完成 get/activate/state；不得凭进程名构造窗口句柄。
+- 每个点击/输入都绑定最新 observation，并在动作后刷新；状态改变后复用旧 screenshot ID、坐标或 element index 视为失败。
+- Browser/Chrome tool call count 和 URL validation count 必须为 0；普通 state capture recovery 不得升级为 batch invalid。

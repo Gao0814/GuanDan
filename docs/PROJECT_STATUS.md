@@ -1803,3 +1803,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 项目所有者确认不需要 URL/DOM 语义验证：其会把已登录 Edge 准备在 Botzone 首页并关闭旧桌。
 - Codex 只负责可见 UI 固定动作、connector/evidence/progress 和循环回首页；验证码或窗口不可见时暂停等待，不自行切换浏览器或判 invalid。
 - 下一任务直接创建 `43001/43002` artifact、双 preflight，并按 Edge 视觉循环执行 16 局。
+
+### L5-A4h8a 控制实现澄清
+
+- Computer Use 的 Windows 指南支持选择唯一 Edge 窗口、截图、点击和输入，不要求读取网页 URL。
+- 下一任务锁定直接 `@oai/sky` 路径，不调用 Browser/Chrome 工具，也不允许执行器自行增加 URL gate。
+- 每个动作后刷新窗口状态，窗口绑定失败按标准 recovery 重新枚举；验证码/前台问题继续只暂停。

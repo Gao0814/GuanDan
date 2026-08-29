@@ -1776,3 +1776,9 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - L5-A4h8a 使用 Windows `computer-use` 对当前前台 Edge 做固定视觉循环：创建 GuanDan → 载入配置 → 设置 seed/seat → 启动 connector → 开始 → 等待结束 → 点击左上角 `Botzone 2026` 回首页。
 - Edge 未前台、验证码或画面暂不可读只暂停请项目所有者处理，不消耗 seed、不判 batch invalid；普通点击默认授权。
 - 旧 `42001/42002` 仍封存；新流程使用不存在的 `43001/43002` root，完成 artifact/preflight 后直接执行 16 局。
+
+### L5-A4h8a Computer Use 路径锁定
+
+- 既往成功说明 Edge 窗口级点击本身可行；最新失败来自执行器额外引入 URL 校验，而不是 connector 或 Edge 控件缺失。
+- 下一执行必须直接使用持久 `node_repl + @oai/sky`，从 `list_apps()` 返回值选择唯一 Edge 窗口，按 observe → one action → refresh 循环操作。
+- 禁止调用 Browser/Chrome control、禁止猜测或校验 URL；只有实际 `sky` input deny 才属于平台阻塞，普通窗口绑定/截图失败按 Computer Use recovery 恢复。
