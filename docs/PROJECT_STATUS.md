@@ -1766,3 +1766,9 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 正式 root 已原子写入并回读 manifest、九字段初始 progress 和 16 局隔离布局；策略、座位、AB/BA 与数量守恒全部通过。
 - initial writer 已清理，尚无 preflight、connector、网页桌、Botzone 或 DeepSeek 请求。
 - 当前进入 L5-A4h6a：不得重建 manifest；只读锁定现有批次，资格验证后续 progress 更新器，再执行 rule/deepseek 各一次零网络 preflight。两项通过后同任务继续正式 16 局。
+
+### L5-A4h6a 当前进度
+
+- 正式 layout 的只读锁定已完成：manifest/progress 存在，16 个 state 为空，16 个 completion audit 不存在，无临时或未知 artifact。
+- continuation helper 已在正式 root 外建立并编译，尚未对正式 progress 执行写入。
+- 当前剩余门槛是两次 scratch qualification 和 rule/deepseek 各一次零网络 preflight；本步骤成功后只形成 `preflight-summary.json` 与 ready 判定，不提前启动 live。

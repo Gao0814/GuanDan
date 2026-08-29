@@ -1735,3 +1735,10 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 临时 initial writer 已清理；截至该边界 preflight、connector、网页桌和网络请求均为 0。manifest 现为不可重写的正式批次证据。
 - 下一步 L5-A4h6a 先只读锁定 manifest/progress/layout，在 scratch 中资格验证统一 progress continuation helper，再对 rule/deepseek 各运行一次零网络 preflight。
 - 双 preflight 通过后在同一任务直接按 manifest 串行执行 16 局；不再拆分准备任务或重复请求项目授权。
+
+### L5-A4h6a 正式布局锁定与 helper 编译完成
+
+- 正式 manifest/progress 已只读复核存在，16 个 state 目录均为空，16 个 completion audit 均不存在，且没有临时或未知 artifact。
+- root 外唯一 continuation helper 已建立并通过编译；正式 root 尚未被 helper 写入，preflight、connector、网页桌和网络请求仍为 0。
+- 下一执行只复用该 helper 做两次全新 scratch 资格演练，要求合法状态转换、malformed 拒绝、原子写入和结构 hash 逐字段一致。
+- 资格通过后按 rule→deepseek 各运行一次零网络 preflight；成功只写低敏 preflight summary 并保持 progress 为 ready，live 16 局留到下一步。

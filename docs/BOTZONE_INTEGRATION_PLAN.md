@@ -1044,3 +1044,10 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - 后续不得重建或规范化 manifest。L5-A4h6a 先只读复核正式 inventory，并在正式 root 外资格验证只负责 progress 状态转换的 continuation helper。
 - helper 不得实现第二套 manifest serializer；只允许严格九字段 progress 的 canonical 原子更新，并在 scratch 中覆盖连续完成、失败态和 malformed 反例。
 - rule/deepseek 各一次零网络 preflight 通过后，同一任务继续 16 局。大厅其他玩家桌不阻塞；当前账号旧桌或归属未知只暂停确认，不自行关闭或把等待判 invalid。
+
+### L5-A4h6a：continuation helper 进入资格阶段
+
+- 正式 inventory 已只读锁定且无 drift；helper 已在 root 外建立并编译，但尚未接触正式 progress。
+- helper 的准入必须由两次独立 scratch 演练证明，且只能负责九字段 progress 的严格状态转换和原子写入，不能复制 manifest serializer。
+- 只有 qualification 逐字段一致后才允许 rule/deepseek 各一次零网络 preflight；preflight 只做本地组合验证，不携带 token、不写 completion audit。
+- 本阶段成功时正式 progress 保持 ready，只新增低敏 preflight summary；16 局 live 在后续独立执行步骤开始。

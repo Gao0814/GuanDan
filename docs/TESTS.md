@@ -1833,3 +1833,10 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - rule/deepseek preflight 各恰好一次，要求 exit 0、单行 `preflight_ready`、stderr 空、state 不变及全部网络/Agent/model 计数为 0。
 - 双 preflight 通过后沿用逐局双 readback、持续 connector、唯一开始点击、v8/v4/token、idle timeout 守恒和策略来源门槛。
 - 最终聚合要求 requested/valid=`8/8`、其余失败计数为 0、每 seat=`2/2`、AB/BA=`4/4`，并输出不含 seed/token/path 的 canonical 聚合报告。
+
+### L5-A4h6a helper/preflight 当前验收范围
+
+- 正式 inventory read-only gate 已通过；后续资格前后都必须复核 manifest/progress bytes/hash、16 个空 state 与 16 个缺失 completion audit 不变。
+- 同一已编译 helper 在两个全新 scratch 中覆盖 0..16 连续完成、固定 failure stage、跳号/回退/字段/hash/null/bool 等反例；两次结构 hash 和逐字段结果必须一致。
+- rule/deepseek preflight 各一次，顺序固定；每次要求 exit 0、单行 ready、空 stderr、state 不变及 DNS/HTTP/transport/connector/Agent/model 全零。
+- preflight summary 只保留固定低敏布尔值与 hash；成功不更新正式 progress、不启动 live，失败才以已验证 helper 原子写入 `offline_preflight` invalid。
