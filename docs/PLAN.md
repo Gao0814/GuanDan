@@ -15,7 +15,8 @@
 9. seed `47002` 已按修正时序完成真实对局；非激活runtime路径闭环，但2次 `http_error`阻止严格smoke标签，真实条件化pass为0。下一任务不重打live，也不扩展跨级牌容量。
 10. 当前算法与Botzone profile固定级牌2、无需进贡。已取消13级牌、每级牌百对的错误规划；规则引擎保留级牌/逢人配接口不等于策略阶段必须做跨级牌泛化。
 11. 固定级牌2证据支持的条件化保牌逻辑已合入默认RuleBased；共享判定、冻结旧基线、DeepSeek fallback与evaluation语义均已验证，全量668项通过，实现检查点为 `150006a`。
-12. 下一步直接处理已有实战复盘中的同队炸弹互耗：队友领牌且只有炸弹类压制时，默认RuleBased应在非紧急场景选择原始pass。该任务只做窄策略和确定性测试，不新增容量或Botzone桌。
+12. 同队炸弹互耗已修复：队友领牌且只有炸弹类压制时，默认RuleBased在无立即出完和对手残局压力的场景选择原始pass；全量671项通过，实现检查点为 `5daf326`。
+13. 下一步处理已有实战复盘中的危险对手阻断：公开信息证明当前对手控桌且出牌后只剩不超过2张时，只要存在合法非pass压制，决策链不得无理由pass。先锁定真实路径和最小fixture，再做确定性策略守卫；不新增容量或Botzone桌。
 
 牌谱基础设施、`45001`真实smoke、两阶段候选评测、Botzone offline wiring、validator收口和首个默认RuleBased策略改进均已完成。`47002`证明新时序可以完成对局，但没有触发候选且包含两次HTTP错误。当前不继续消耗真实桌，也不再收集与项目范围无关的容量，沿已有复盘逐项修正明确的RuleBased策略缺陷。
 
@@ -1968,4 +1969,6 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 13级牌、每级牌100对的后续容量计划已取消：当前算法/Botzone profile固定级牌2，跨级牌泛化不是项目目标。
 - 默认RuleBased条件化保牌已完成：共享判定只读取公开payload并返回原始pass ID；冻结旧静态selector继续供DeepSeek fallback和历史evaluation使用；显式conditional模式保持兼容。
 - 规划Codex独立复跑全量668项通过，`git diff --check`通过；实现已提交为 `150006a`。未运行新容量、Botzone、connector、网络或模型。
-- 下一任务处理同队炸弹互耗：只在队友领牌、全部可出压制均为炸弹类、无立即出完或明确残局压力时选择原始pass。任务不运行Botzone、不做新容量、不触碰seed `47002` evidence。
+- 同队炸弹互耗规则已完成并提交为 `5daf326`：默认RuleBased复用同一严格schema/history/table校验，显式conditional模式仍只保留原有对手领牌语义，DeepSeek与历史evaluation的冻结基线未改。
+- 规划Codex独立复跑全量671项通过。固定级牌2、无贡属于项目既定范围，不记为剩余风险。
+- 下一任务处理危险对手剩余不超过2张时仍pass的高置信度缺陷；任务不运行Botzone、不做新容量、不触碰seed `47002` evidence。

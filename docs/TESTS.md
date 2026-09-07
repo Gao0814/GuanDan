@@ -2099,3 +2099,12 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - `git diff --cached --check`通过；仅有既有LF/CRLF提示。
 - 代码与测试检查点为 `150006a`，包含牌谱、条件化pass评测/接线及默认RuleBased合入的完整可运行阶段。
 - 未运行新容量、Botzone、connector、Edge、网络或模型，未触碰真实workspace。
+
+## 2026-09-07 队友控桌炸弹保留复核
+
+- 默认RuleBased在严格公开history/table一致、队友领牌、全部非pass均为炸弹类、不可立即出完且无对手残局压力时选择原始pass。
+- 显式 `conditional_pressure_pass` mode仍只执行原有对手领牌判定并回退冻结旧基线；DeepSeek fallback、历史evaluation与Botzone source语义未改变。
+- 规划Codex独立执行 `.\.venv\Scripts\python.exe -m unittest discover -q`：671项通过，用时41.237秒。
+- staged diff检查通过，代码与测试检查点为 `5daf326`，精确修改3个文件。
+- 未运行新容量、Botzone、connector、Edge、网络或模型，未触碰真实workspace。
+- 固定级牌2、无需进贡是既定验收范围，不构成剩余风险；当前范围内未发现该实现的已知剩余风险。

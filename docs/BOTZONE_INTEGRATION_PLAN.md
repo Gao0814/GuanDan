@@ -17,7 +17,7 @@ Botzone 请求允许 connector 累积四名玩家的公开 `HistoryEntry`、本�
 
 真实 smoke 同时确认：本地 AI connector 在本家出完后可能不再收到 play 请求，之后的 finished row 只证明平台对局已结束，不补发完整动作尾部。因此文件中的第N轮是 connector 基于已观察动作分组出的第N个牌权段，不等于裁判完整整局轮数。只有后续观测到下一段才能证明前一段边界；terminal tail 不完整时，最后一段不得标成已证明“轮结束”。
 
-真实 `45001` history 的策略诊断定位到RuleBased无条件排除pass的候选机制。原one-step与新整局对称trial均在固定级牌2下满足retain门槛；Botzone显式 `conditional_pressure_pass` mode及两类低敏source已离线接通，validator也已收口。该条件化保牌规则现已合入默认RuleBased，并以冻结旧selector保持DeepSeek fallback和历史evaluation语义；实现检查点为 `150006a`，规划复核全量668项通过。seed `47002`按先连接顺序完成17/17/17与qualified finish，但2次 `http_error`阻止严格smoke标签，16次决策均走 `conditional_rule_based`。当前不重打live追激活，也不做跨13级牌推广；下一步处理既有实战复盘中的同队炸弹互耗。Botzone profile继续固定级牌2、无需进贡，正式capacity仍延期。
+真实 `45001` history 的策略诊断定位到RuleBased无条件排除pass的候选机制。原one-step与新整局对称trial均在固定级牌2下满足retain门槛；Botzone显式 `conditional_pressure_pass` mode及两类低敏source已离线接通，validator也已收口。对手领牌条件化保牌已在 `150006a` 合入默认RuleBased；队友控桌时的炸弹保留已在 `5daf326` 完成，全量671项通过。冻结旧selector继续保持DeepSeek fallback和历史evaluation语义。seed `47002`按先连接顺序完成17/17/17与qualified finish，但2次 `http_error`阻止严格smoke标签，16次决策均走 `conditional_rule_based`。当前不重打live，也不做跨13级牌推广；下一步处理既有实战复盘中的危险对手阻断。Botzone profile继续固定级牌2、无需进贡；这是既定范围而非剩余风险，正式capacity仍延期。
 
 ## L5-A2b5：required-fields 安全画像
 

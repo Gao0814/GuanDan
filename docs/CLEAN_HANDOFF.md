@@ -19,12 +19,12 @@
 - connector 支持显式 `--agent rule|deepseek|conditional_pressure_pass`、仓库外 state 目录、`--run-token`、零网络 preflight、完成目标和 v7/v8 completion audit。新增条件 mode 只由精确 opt-in 启用，默认仍是 `rule`。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
-- 最新已提交实现检查点为 `150006a`：包含connector-observed牌谱、条件化pass Agent、one-step/整局evaluation、Botzone显式opt-in wiring、默认RuleBased合入及测试。规划Codex已在提交前独立复跑全量668项通过。
+- 最新已提交算法检查点为 `5daf326`：在 `150006a` 的connector-observed牌谱、条件化pass Agent/evaluation/Botzone wiring和默认RuleBased对手保牌基础上，新增队友控桌时的炸弹保留。规划Codex已在提交前独立复跑全量671项通过。
 
 上述实现检查点：
 
 ```text
-150006a
+5daf326
 ```
 
 当前分支：`cao`。该分支相对 `origin/cao` ahead 111、behind 0。
@@ -94,9 +94,9 @@ Botzone local-AI endpoint
 
 期望容量在现有文档中定义为两个 seed × 四个本家座位，每个条件各运行 RuleBased 和 DeepSeek，共 8 对/16 局，AB/BA 平衡。这个容量目标是计划，不是已经完成的结果。
 
-connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评测、Botzone显式 `conditional_pressure_pass` wiring、trial validator收口和默认RuleBased条件化保牌合入均已完成。DeepSeek fallback仍使用冻结旧静态基线。seed `47002`已完成真实对局但含2次HTTP error，真实条件化pass为0；当前继续固定级牌2、无需进贡的算法实现阶段。
+connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评测、Botzone显式 `conditional_pressure_pass` wiring、trial validator、默认RuleBased对手保牌与队友控桌保炸弹均已完成。DeepSeek fallback仍使用冻结旧静态基线。seed `47002`已完成真实对局但含2次HTTP error，真实条件化pass为0；当前继续固定级牌2、无需进贡的算法实现阶段。
 
-`docs/NEXT_PROMPT.md` 当前只包含修复同队炸弹互耗的Coding Codex Prompt；不运行Botzone、不做新容量、不触碰真实workspace，也不包含给项目所有者看的规划说明。
+`docs/NEXT_PROMPT.md` 当前只包含修复危险对手阻断的Coding Codex Prompt；不运行Botzone、不做新容量、不触碰真实workspace，也不包含给项目所有者看的规划说明。
 
 L5-A4h11a partial manifest、seed `45001` evidence与seed `47001` prestart evidence均已移入Windows回收站。seed `47002`当前evidence完整保留在固定workspace，等待后续清理；无残留connector。
 
@@ -254,14 +254,14 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测需要复现。connector可读牌谱、workspace清理、人工RuleBased smoke、候选两阶段评测、离线Botzone接线、validator与默认RuleBased条件化保牌合入均已完成。下一任务按 `docs/NEXT_PROMPT.md` 修复队友控桌时的炸弹互耗；只做代码与确定性回归，不运行live或新容量。
+当前没有失败的本地单测需要复现。connector可读牌谱、workspace清理、人工RuleBased smoke、候选两阶段评测、离线Botzone接线、validator、默认RuleBased对手保牌与队友保炸弹均已完成。下一任务按 `docs/NEXT_PROMPT.md` 修复危险对手剩余不超过2张时仍pass的问题；只做代码与确定性回归，不运行live或新容量。
 
 ## 12. Working Tree Status
 
 - 分支：`cao`。
-- 已验证实现检查点：`150006a feat: add observed history and pressure-pass strategy`。
-- 该检查点精确包含connector-observed牌谱、条件化pass策略/evaluation/Botzone接线、默认RuleBased合入和相关测试；不含规划文档。
-- 提交前由规划Codex独立运行全量668项通过，并完成staged diff检查。
+- 已验证基础实现检查点：`150006a feat: add observed history and pressure-pass strategy`。
+- 最新算法检查点：`5daf326 feat: preserve bombs behind teammate leads`。
+- 最新检查点只修改共享公开判定、默认RuleBased调用与对应测试；提交前由规划Codex独立运行全量671项通过，并完成staged diff检查。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex默认不提交；完成后由规划Codex独立复核并负责Git检查点。
 
@@ -276,6 +276,6 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按 `docs/NEXT_PROMPT.md` 执行默认RuleBased的第二项窄策略改进：当公开history证明当前领牌者是队友、且本家所有非pass压制都是炸弹类资源时，在非紧急场景选择原始pass，避免同队为转移牌权互耗炸弹。
+按 `docs/NEXT_PROMPT.md` 修复危险对手阻断：先从 `record.txt` / `docs/LIVE_GAME_REVIEW.md` 的第16轮样本和当前代码确认实际决策路径，再让公开信息证明对手控桌且剩余不超过2张时的合法非pass压制稳定优先于pass。
 
-当前算法和Botzone验证固定级牌2、无需进贡；不做13级牌泛化、多局升级或贡还。任务不运行网络/Botzone/connector/model，不读取或清理seed `47002` workspace evidence，也不新增大容量rollout。完成后由规划Codex复核代码、测试、Git状态并负责提交。
+当前算法和Botzone验证固定级牌2、无需进贡；这是验收范围，不得列为风险。任务不做13级牌泛化、多局升级或贡还，不运行网络/Botzone/connector/model，不读取或清理seed `47002` workspace evidence，也不新增大容量rollout。完成后由规划Codex复核代码、测试、Git状态并负责提交。
