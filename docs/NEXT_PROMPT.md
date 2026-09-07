@@ -16,19 +16,28 @@ Coding Codex 负责修改和验证，不创建 Git commit。完成后由项目�
 
 当前工作区有7个未提交实现/测试文件，增加窄守卫 `teammate_big_joker_pass_id()`：队友单张小王领牌、模型选择单张大王、pass合法、不能立即出完且无危险对手时改选原始pass。目标策略范围和三个成功动作守卫的优先级合理，全量688项测试也通过，但规划复核发现共享 `_pressure_pass_context()` 的fail-closed校验不足，因此当前实现尚未验收。
 
-独立最小复现已经确认以下畸形payload仍错误返回pass ID `1`：
+独立最小复现最初观察到以下输入都返回pass ID `1`：
 
 ```text
 constraint_none 1
 constraint_empty 1
-table_action_id_none 1
+table_action_id_none 1  # 经代码复核确认这是合法canonical sentinel，应保持1
 table_action_id_bool 1
 ```
 
 原因有两处：
 
 1. 当前只判断 `current_round.constraint != "free"`，导致缺失、`None`、空字符串、bool等非法值被当成跟牌；
-2. `_full_action_signature()` 对table action只检查存在 `action_id` 键，没有验证它是非bool严格整数。
+2. `_full_action_signature()` 对table action只检查存在 `action_id` 键，没有验证它必须精确为canonical sentinel `None`。
+
+后续代码复核已经确认公开契约：
+
+- `engine/game.py::observe()` 调用 `_action_to_public_dict(leading_action)`，默认 `action_id=None`；
+- `integrations/botzone/play_adapter.py` 调用 `_public_action(leading_action, None)`；
+- `tests/test_botzone_adapter_observation.py` 明确断言跟牌桌面动作的 `action_id is None`；
+- engine和Botzone投影都保证跟牌时 `current_round.constraint == table_action.display_text`。
+
+因此不得把table action ID改成严格整数，也不得修改公开schema或伪造历史action ID。规划决定是：`None` 为table action唯一合法canonical sentinel；缺键以及任何非 `None` 值（包括bool、字符串和整数）均应fail closed。原始 `legal_actions` 的action ID仍保持严格整数，两类schema必须区分。
 
 这两个问题位于既有共享校验器，也可能影响 `conditional_pressure_pass_id()`、`teammate_pressure_pass_id()` 和 `dangerous_opponent_pass_id()`；不要只在新helper外层打补丁。
 
@@ -39,8 +48,8 @@ table_action_id_bool 1
 先核对当前 `observe()`、Botzone projection及现有测试中的canonical跟牌契约，再实现最小修正。至少要求：
 
 - `constraint` 必须是项目实际支持的非空字符串跟牌值，不能是缺失、`None`、空字符串、bool或其他类型；
-- table action 的 `action_id` 必须是严格整数且不能是bool；
-- 如果当前公开契约保证 `constraint == table_action.display_text`，应增加该一致性检查；若实际契约并不保证，必须在报告中给出代码证据，不能臆造约束；
+- table action必须包含 `action_id` 键且值精确为 `None`；不得把合法桌面sentinel与原始legal action的严格整数ID混为一谈；
+- `constraint` 必须严格等于非空字符串 `table_action.display_text`，并且不能是 `"free"`；
 - 新旧四个公开策略helper在同类畸形输入上都应fail closed；
 - 合法“小王→大王”目标场景仍返回原始pass ID，DeepSeek成功路径和source守恒保持不变。
 
@@ -77,8 +86,8 @@ table_action_id_bool 1
 测试至少新增以下反例，并确认四个共享策略入口适用时均fail closed：
 
 1. `constraint` 缺失、`None`、空字符串、bool、列表；
-2. table action `action_id` 缺失、`None`、bool、字符串；
-3. 如果canonical契约要求constraint/display一致，加入不一致反例；
+2. table action `action_id` 缺失、bool、字符串、整数时拒绝；精确 `None` 时接受；
+3. constraint与table display不一致时拒绝；
 4. 合法跟牌payload继续通过；合法队友小王/模型大王仍返回原始pass；
 5. DeepSeek目标fixture仍输出 `teammate_control_block`，模型调用一次；
 6. `danger_opponent_block`、`short_endgame_plan`、RuleBased两项pass和Botzone observability守恒继续通过。
@@ -92,11 +101,11 @@ $env:PYTHON_DOTENV_DISABLED='1'
 git diff --check
 ```
 
-另外用最小只读脚本重新运行上述四个反例，预期结果都必须从 `1` 变为 `None`。
+另外用最小只读脚本重新运行上述输入：`constraint=None`、`constraint=""`、table `action_id=True` 必须从 `1` 变为 `None`；合法table `action_id=None` 必须继续返回 `1`。再增加table ID缺失、字符串、整数及constraint/display不一致反例。
 
 ## 【完成标准】
 
-- 四个已确认反例均返回 `None`；
+- 三个真实畸形反例返回 `None`，合法table `action_id=None` sentinel继续返回 `1`；
 - 共享校验器对constraint和table action身份严格fail closed；
 - 合法目标守卫、三个成功动作source优先级和原始action ID不回归；
 - 定向、主回归、全量测试和补丁检查通过；
@@ -108,8 +117,8 @@ git diff --check
 
 1. 两个共享校验缺口的根因；
 2. 实际修正的不变量；
-3. constraint与table display是否存在canonical相等契约及代码依据；
-4. 四个独立反例修正前后的结果；
+3. constraint与table display的canonical相等契约及代码依据；
+4. 三个畸形反例和一个合法sentinel修正前后的结果；
 5. 修改文件；
 6. 新增/调整测试；
 7. 实际验证命令、测试数量与结果；

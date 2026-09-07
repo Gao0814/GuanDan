@@ -2131,5 +2131,5 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 ## 2026-09-07 队友控桌守卫首次复核未通过
 
 - 当前未提交实现的既有定向43项、主规则39项和全量688项均通过，但这些测试未覆盖共享跟牌validator的畸形constraint/table身份。
-- 规划Codex最小只读复现确认：`constraint=None`、`constraint=""`、table `action_id=None`、table `action_id=True` 四种输入都会使 `teammate_big_joker_pass_id()` 错误返回pass ID `1`。
-- 根因是 `_pressure_pass_context()` 只排除字面值 `"free"`，而 `_full_action_signature()` 只检查table action存在 `action_id`键。当前实现不提交；下一测试任务必须锁定这些反例并回归所有共享pressure-pass入口。
+- 规划Codex最小只读复现确认：`constraint=None`、`constraint=""`、table `action_id=True` 会错误返回pass ID `1`。最初列入的table `action_id=None` 经代码复核确认是engine/Botzone共同的合法canonical sentinel，不是反例。
+- 根因是 `_pressure_pass_context()` 只排除字面值 `"free"`，而table action校验只检查存在 `action_id`键。当前实现不提交；下一测试任务必须保留精确None、拒绝缺键/任何非None值、锁定constraint/display一致，并回归所有共享pressure-pass入口。
