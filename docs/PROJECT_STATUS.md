@@ -18,7 +18,9 @@
 - DeepSeek队友小王后保留大王的窄守卫已完成：只在队友单张小王领牌、模型选择单张大王、pass合法、不能立即出完且无危险对手时改为原始pass。新增 `teammate_control_block` 计为模型成功，不计fallback。
 - table-action契约已正确恢复并加固：engine/state零差异，engine与Botzone继续输出 `action_id=None`；共享validator区分legal action严格整数ID与table action精确None sentinel，同时要求constraint为非空跟牌字符串且等于table display。
 - 规划Codex独立复跑六个最小契约案例、相关65项、主规则39项和全量689项通过，实现检查点为 `295b9b5`；当前范围内无已知剩余风险。
-- 现有单局复盘中的高置信度问题已经逐项处理。下一步只读审计保留的seed `47002` 牌谱以寻找新的可复现策略缺陷；不打新桌、不跑容量、不直接修改算法。
+- seed `47002` 的只读策略审计已经完成：16次本家决策中14次可按公开语义重建，9个pass点均为仅pass合法；两个可精确比较的自由出牌点，冻结基线的残余最少分组数与全体合法动作最优值相同。第1、6次决策因牌谱未保存完整canonical声明/载体细节，不能唯一还原原始动作。
+- 当前结论为：**现有evidence不足以支持下一项算法修改。** 不把静态排序、单局输赢或不可唯一还原的动作强行定性为新缺陷。
+- 下一步不是新规则、容量或重复live，而是离线增加一个默认关闭的connector决策证据文件：只在Header ack后记录本家当时的完整公开observation、原始canonical legal actions、最终原始action ID及低基数source。它用于让下一次单局牌谱具备可复现诊断条件，不改变动作选择、协议、audit或默认运行。
 
 ### Connector-observed 牌谱实现与加固复审
 
@@ -27,7 +29,7 @@
 - 四个 live-ready 缺口已经加固：ack 后 carrier/claim 进入 `confirmed_history` 并与 replay 去重；history 状态以 `disabled/ok/failed` 进入 RunnerSummary 和最终 CLI 行但不进入 v8 audit；单文件绑定唯一 match；牌型显示复用 adapter/engine 识别语义。
 - 规划 Codex 独立运行相关集合 57 项和全量 641 项，均通过；`git diff --check` 无错误。报告中的“定向62项”未提供精确命令，因此不宣称逐字复现该数字。
 - 对真正发生牌面替换的逢人配同花顺，规划 Codex 另以 carrier=`H2,H3,H4,H5,H7`、claim=`H3,H4,H5,H6,H7` 调用现有识别路径，结果为“同花顺”。当前没有已知代码层 live 阻塞。
-- seed `47002` 已证明修正后的连接/建桌时序可进入并完成真实对局。两次HTTP错误单列为传输可靠性观察，不阻塞算法主线；危险对手阻断与自由出牌小手牌短序列守卫已分别在 `fb3d791`、`dc9638c` 完成。下一步按更新后的 `NEXT_PROMPT.md` 处理DeepSeek压队友的高价值资源绕过，不触碰当前live evidence。
+- seed `47002` 已证明修正后的连接/建桌时序可进入并完成真实对局。两次HTTP错误单列为传输可靠性观察，不阻塞算法主线；该局复盘未找到可公开证明的新策略缺陷。下一步按更新后的 `NEXT_PROMPT.md` 离线补齐ack后canonical决策证据，不触碰当前live evidence。
 
 ### 2026-09-05 partial workspace 清理命令被策略拦截
 

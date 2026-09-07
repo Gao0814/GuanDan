@@ -2148,3 +2148,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 队友小王→大王守卫只在不能立即出完、无已结束或余1/2张对手时生效；新增 `teammate_control_block` 计为模型成功，不计fallback。
 - 规划Codex独立运行相关策略/DeepSeek/Botzone observation/observability/game-flow 65项通过，主规则39项通过，全量689项通过，用时39.932秒；`git diff --check`通过，仅有既有LF/CRLF提示。
 - 代码与测试检查点为 `295b9b5`，精确包含9个文件；未运行Botzone、connector、Edge、网络、真实模型或新容量，未读取`.env`、未触碰真实workspace。当前范围内无已知剩余风险。
+
+## 2026-09-07 seed 47002 只读策略审计
+
+- 审计前后五份evidence的bytes、SHA-256与mtime保持一致；规划复核确认完整SHA-256仍为audit `068ff687ce7d7a1d02114637ba0d4bbe1875493f35dd46799b8ad0bc5a27b708`、history `7d786b1640bfa8d0d747a74fb01eafdee19ff6e0516ee60167757e00ea5b94d0`、state `5313a2007ae344139770c86ca978e4c9b6aabd27c2f3c8dea3b750ec3f5df309`、stdout `e990db21b8510eb12cecb343c57155c4fa68cbb4ac07c42143ee226a5a2c96e6`与空stderr标准hash。
+- 16次本家决策低敏分类完成；14次可按公开语义重建，第1、6次无法唯一恢复当时canonical声明/载体。9个pass点均只有pass合法。
+- 两个可精确运行残余分组比较的自由出牌点，冻结选择与最优值分别同为5组、同为2组；没有构造出诚实的严格更优替代fixture。
+- 本轮没有修改代码，也没有运行测试、live、Botzone、connector、preflight、网络、模型或容量。当前判定为“现有evidence不足以支持下一项算法修改”。
+- 后续决策证据实现测试必须覆盖：pending未ack不落盘；Header ack后恰好一次；transport失败/timeout、重发、进程重启和公开replay不重复；ack与finished同poll仍保留最后决策；第二match拒绝覆盖；写失败不影响响应交付；默认关闭与现有history/audit保持不变。

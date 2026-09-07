@@ -16,7 +16,7 @@
 - `GuanDanGame` 暴露 `reset()`、`observe()`、`legal_actions()` 和 `step(action_id)`；公开动作使用稳定的原始 `action_id`。
 - `agents/` 包含 `RuleBasedAIAgent`、`DeepSeekAIAgent`、开局公式、手牌评分、记牌、RAG、confidence shadow/prompt 和 strategy intent shadow/prompt。
 - `integrations/botzone/` 包含 Botzone 108 实体牌 ID 映射、deal/play 协议、Bot JSON envelope 与 direct-stage 两种 wire mode、HTTP 长轮询、会话持久化、pending/ack 事务、无贡 play adapter、RuleBased/DeepSeek 组合、运行 provenance、聚合审计和前台 runner。
-- connector 支持显式 `--agent rule|deepseek|conditional_pressure_pass`、仓库外 state 目录、`--run-token`、零网络 preflight、完成目标和 v7/v8 completion audit。新增条件 mode 只由精确 opt-in 启用，默认仍是 `rule`。
+- connector 支持显式 `--agent rule|deepseek|conditional_pressure_pass`、仓库外 state 目录、`--run-token`、零网络 preflight、完成目标和 v7/v8 completion audit。新增条件 mode 只由精确 opt-in 启用，默认仍是 `rule`。现有可读history不保存每次本家决策的完整canonical legal actions。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
 - 最新已提交算法检查点为 `295b9b5`：在 `dc9638c` 的自由出牌小手牌短序列守卫之后，新增DeepSeek队友小王后保留大王的窄守卫，并加固共享constraint/table sentinel校验。规划Codex已在显式禁用dotenv环境中独立复跑全量689项通过。
@@ -94,9 +94,9 @@ Botzone local-AI endpoint
 
 期望容量在现有文档中定义为两个 seed × 四个本家座位，每个条件各运行 RuleBased 和 DeepSeek，共 8 对/16 局，AB/BA 平衡。这个容量目标是计划，不是已经完成的结果。
 
-connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评测、Botzone显式 `conditional_pressure_pass` wiring、trial validator、默认RuleBased两类保牌、DeepSeek危险对手pass阻断以及自由出牌小手牌短序列守卫均已完成。DeepSeek失败fallback仍使用冻结旧静态基线。seed `47002`已完成真实对局但含2次HTTP error，真实条件化pass为0；当前继续固定级牌2、无需进贡的算法实现阶段。
+connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评测、Botzone显式 `conditional_pressure_pass` wiring、trial validator、默认RuleBased两类保牌、DeepSeek危险对手pass阻断、自由出牌小手牌短序列守卫和队友小王后大王保留均已完成。DeepSeek失败fallback仍使用冻结旧静态基线。seed `47002`已完成真实对局但含2次HTTP error，真实条件化pass为0；其后只读策略审计没有得到新的高置信度缺陷。
 
-`docs/NEXT_PROMPT.md` 当前只包含seed `47002` 牌谱的只读策略诊断Prompt。它不修改代码或文档，不运行Botzone/网络/模型/容量，也不清理真实workspace；目标是找到一个可由原始合法动作和当前代码fixture双重证明的新缺陷，或明确证据不足。
+`docs/NEXT_PROMPT.md` 当前只包含一个离线实现Prompt：增加显式opt-in、仓库外、Header ack后确认的本家决策证据文件。它不运行Botzone/网络/模型/容量，也不清理真实workspace；目标是让未来一局即可保存完整公开observation、原始canonical legal actions、selected action和source。
 
 L5-A4h11a partial manifest、seed `45001` evidence与seed `47001` prestart evidence均已移入Windows回收站。seed `47002`当前evidence完整保留在固定workspace，等待后续清理；无残留connector。
 
@@ -107,6 +107,8 @@ seed `45001` 的普通人工 RuleBased history smoke 已完成并通过独立复
 seed `47001` 已使用且不得复用。项目所有者确认页面一直显示“未连接”，所以游戏从未开始；audit的2次timeout与0 request只说明调用以timeout结束，不能证明页面已连接。该次没有Agent决策、state或history，不能评价条件化策略。其evidence现已回收。后续普通人工live的顺序已经固化进 `AGENTS.md`：先启动唯一connector并确认页面已连接，再分配seed、创建/配置桌。
 
 seed `47002`也已使用且不得复用。页面连接门槛先通过，对局随后exit 0 / `finished_target`并形成17/17/17、qualified finish、v4/v8归属和可读history；但2次 `http_error`使严格零故障smoke标签不成立。16次决策均为 `conditional_rule_based`，真实候选pass未激活。这是非激活runtime兼容性证据，不是候选胜率或激活证据。
+
+seed `47002` 后续只读策略审计确认：16次决策中14次可按公开语义重建，9次pass均只有pass合法；两个可精确比较的自由出牌点不存在严格更优的残余分组。第1、6次缺少足以唯一恢复canonical动作的声明/载体细节。结论是现有evidence不足以支持下一项算法修改，不得据此猜测新规则。
 
 ## 6. Confirmed Symptoms
 

@@ -19,9 +19,10 @@
 13. 危险对手阻断已完成：真实绕过路径是DeepSeek模型成功返回合法pass；现在严格公开条件命中时改选冻结selector给出的原始非pass，并以 `danger_opponent_block` 记录为成功模型尝试。全量674项通过，实现检查点为 `fb3d791`。
 14. 自由出牌小手牌短序列守卫已完成：对1–4张公开手牌按carrier多重集计算最少分组，只覆盖严格更差的模型首手；并列和证据不足保持原动作。全量684项通过，实现检查点为 `dc9638c`。
 15. DeepSeek队友小王后保留大王的窄守卫已完成：资源范围不扩展到普通牌，立即出完与危险对手场景保持模型动作；table action继续使用canonical `action_id=None`。相关65项、主规则39项和全量689项通过，实现检查点为 `295b9b5`。
-16. 现有 `record.txt` 高置信度缺陷已全部处理。下一步只读审计seed `47002` 的16次 `conditional_rule_based` 决策，只有能恢复原始合法动作并用当前代码fixture复现的新机制才进入下一实现；证据不足时明确停止，不运行新live或容量。
+16. 现有 `record.txt` 高置信度缺陷已全部处理。seed `47002` 的16次 `conditional_rule_based` 决策只读审计也已完成：14次可按公开语义重建，9个pass点均只有pass合法；两个可精确比较的自由出牌点没有严格更优替代。第1、6次缺少足以唯一还原canonical动作的细节，因此不支持新增策略规则。
+17. 下一步只离线实现显式opt-in的connector决策证据文件，记录Header ack已确认的本家公开observation、原始canonical legal actions、selected action ID/action与低基数source。默认关闭，不进入audit/普通日志，不改变Agent选择、协议或现有history；完成复审后才规划一局新的人工live。
 
-牌谱基础设施、`45001`真实smoke、两阶段候选评测、Botzone offline wiring、validator收口、两项默认RuleBased保牌、危险对手阻断和小手牌短序列守卫均已完成。`47002`证明新时序可以完成对局，但没有触发候选且包含两次HTTP错误。当前不继续消耗真实桌，也不再收集与项目范围无关的容量，沿已有复盘逐项修正可公开复现的策略缺陷。
+牌谱基础设施、`45001`真实smoke、两阶段候选评测、Botzone offline wiring、validator收口、两项默认RuleBased保牌、危险对手阻断和小手牌短序列守卫均已完成。`47002`证明新时序可以完成对局，但没有触发候选且包含两次HTTP错误；其现有牌谱不足以证明新的策略缺陷。当前先补齐单局决策证据的canonical输入/输出，不继续消耗真实桌，也不收集与项目范围无关的容量。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
@@ -1979,3 +1980,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 自由出牌小手牌短序列守卫已修复并提交为 `dc9638c`：仅在1–4张公开手牌、carrier多重集可精确覆盖且模型首手严格增加最少分组数时覆盖，新增source仍按模型成功计数。
 - 规划Codex独立复跑相关31项、主规则39项和全量684项通过；当前范围内无已知剩余风险。
 - 下一任务处理DeepSeek成功动作压住已控桌队友的高价值资源绕过，先覆盖队友小王后模型用大王压制；不运行Botzone、不做新容量、不触碰seed `47002` evidence。
+
+### seed 47002 策略审计结束，转入最小决策证据补强
+
+- 五份workspace evidence的bytes、SHA-256和时间在只读审计前后保持不变；Git HEAD为 `2c773fe`，工作树为空。
+- 16次本家决策中14次可按公开语义重建；第1、6次缺少完整声明花色、实体副本或wildcard claim细节，无法唯一匹配当时的canonical action。
+- 9个pass点均重建为仅pass合法。两个可精确比较残余分组的自由出牌点，冻结基线分别为5组与2组，均等于所有合法首手的最优值。
+- 当前没有“当前机制稳定选错且某个原始合法ID公开可证明严格更优”的新fixture，因此不新增策略规则，也不打新桌追样本。
+- connector在handler决策点已经同时拥有公开observation、原始canonical legal actions、最终selected ID与source；现有ack持久化只保留carrier/claim。下一任务为这组数据增加默认关闭、仓库外、ack后确认的结构化证据文件，并用重发/重启/finished合成测试证明不重复、不提前记录。
