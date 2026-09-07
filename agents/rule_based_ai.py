@@ -1,7 +1,7 @@
 """Rule-based selectors that only choose supplied legal action ids."""
 
 from agents.base import BaseAgent
-from agents.conditional_pressure_pass_policy import conditional_pressure_pass_id
+from agents.conditional_pressure_pass_policy import conditional_pressure_pass_id, teammate_pressure_pass_id
 
 
 class FrozenRuleBasedAIAgent(BaseAgent):
@@ -39,6 +39,8 @@ class RuleBasedAIAgent(FrozenRuleBasedAIAgent):
         legal_actions: list[dict[str, object]],
     ) -> int:
         pass_id = conditional_pressure_pass_id(observation, legal_actions, self.player_id)
+        if pass_id is None:
+            pass_id = teammate_pressure_pass_id(observation, legal_actions, self.player_id)
         if pass_id is not None:
             return pass_id
         return super().select_action(observation, legal_actions)

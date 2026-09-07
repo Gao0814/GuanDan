@@ -53,6 +53,27 @@ def _observation(*, leader: int = 1, my_hand_count: int = 10, opponent_count: in
     }
 
 
+def _review_teammate_observation(
+    *,
+    my_hand_count: int = 10,
+    opponent_count: int = 8,
+    opponent_finished: bool = False,
+) -> dict[str, object]:
+    """Minimal public equivalent of the reviewed teammate steel-plate lead."""
+
+    table = _action(99, "steel_plate", 6)
+    return {
+        "my_info": {"player_id": 1, "team": "team_13", "hand_count": my_hand_count},
+        "other_players": [
+            {"player_id": 2, "team": "team_24", "hand_count": 0 if opponent_finished else opponent_count, "finished": opponent_finished},
+            {"player_id": 3, "team": "team_13", "hand_count": 8, "finished": False},
+            {"player_id": 4, "team": "team_24", "hand_count": opponent_count, "finished": False},
+        ],
+        "current_round": {"step_no": 7, "round_no": 2, "current_player_id": 1, "constraint": "steel_plate", "table_action": table},
+        "history": {"actions": [_history_row(table, player_id=3)]},
+    }
+
+
 def _legal(*patterns: tuple[str, int]) -> list[dict[str, object]]:
     return [_action(1, "pass")] + [_action(index + 2, pattern, count) for index, (pattern, count) in enumerate(patterns)]
 
@@ -77,6 +98,50 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
         self.assertEqual(RuleBasedAIAgent(player_id=2).select_action(_observation(), actions), 1)
         self.assertEqual(self._select(_observation(), actions), 1)
 
+    def test_teammate_steel_plate_lead_preserves_special_actions_with_original_pass(self) -> None:
+        observation = _review_teammate_observation()
+        for patterns in (
+            (("bomb", 4),),
+            (("straight_flush", 5),),
+            (("joker_bomb", 4),),
+            (("bomb", 4), ("straight_flush", 5)),
+        ):
+            with self.subTest(patterns=patterns):
+                actions = _legal(*patterns)
+                expected = FrozenRuleBasedAIAgent(player_id=1).select_action(observation, actions)
+                self.assertEqual(RuleBasedAIAgent(player_id=1).select_action(observation, actions), 1)
+                self.assertEqual(ConditionalPressurePassAIAgent(player_id=1).select_action(observation, actions), expected)
+
+    def test_teammate_pressure_pass_keeps_finish_and_endgame_exceptions(self) -> None:
+        cases = (
+            (_review_teammate_observation(my_hand_count=4), _legal(("bomb", 4))),
+            (_review_teammate_observation(opponent_count=2), _legal(("bomb", 4))),
+            (_review_teammate_observation(opponent_finished=True), _legal(("bomb", 4))),
+            (_review_teammate_observation(), _legal(("bomb", 4), ("steel_plate", 6))),
+        )
+        for observation, actions in cases:
+            with self.subTest(observation=observation):
+                expected = FrozenRuleBasedAIAgent(player_id=1).select_action(observation, actions)
+                self.assertEqual(RuleBasedAIAgent(player_id=1).select_action(observation, actions), expected)
+
+    def test_teammate_pressure_pass_fails_closed_for_incomplete_or_non_team_context(self) -> None:
+        mismatch = _review_teammate_observation()
+        mismatch["history"]["actions"][0]["declared_cards"] = ["Q"] * 6  # type: ignore[index]
+        free = _review_teammate_observation()
+        free["current_round"] = {"step_no": 7, "round_no": 2, "current_player_id": 1, "constraint": "free", "table_action": None}
+        free["history"] = {"actions": []}
+        no_pass = [_action(2, "bomb", 4)]
+        cases = (
+            (mismatch, _legal(("bomb", 4))),
+            (free, _legal(("bomb", 4))),
+            (_review_teammate_observation(), no_pass),
+            (_review_teammate_observation(), [_action(1, "pass")]),
+        )
+        for observation, actions in cases:
+            with self.subTest(observation=observation):
+                expected = FrozenRuleBasedAIAgent(player_id=1).select_action(observation, actions)
+                self.assertEqual(RuleBasedAIAgent(player_id=1).select_action(observation, actions), expected)
+
     def test_normal_play_finish_and_pressure_all_fall_back_exactly(self) -> None:
         cases = (
             (_observation(), _legal(("bomb", 4), ("triple", 3))),
@@ -92,9 +157,6 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
 
     def test_non_opportunity_context_and_malformed_public_inputs_fall_back(self) -> None:
         cases: list[tuple[dict[str, object], list[dict[str, object]]]] = []
-        teammate = _observation(leader=4)
-        teammate["history"] = {"actions": [_history_row(_action(99, "triple", 3), player_id=4)]}
-        cases.append((teammate, _legal(("bomb", 4))))
         free = _observation(); free["current_round"] = {"step_no": 7, "round_no": 2, "current_player_id": 2, "constraint": "free", "table_action": None}; free["history"] = {"actions": []}
         cases.append((free, _legal(("bomb", 4))))
         mismatch = _observation(); mismatch["my_info"] = {"player_id": 1, "team": "team_13", "hand_count": 10}
@@ -188,6 +250,7 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
         self.assertIn("from agents.conditional_pressure_pass_policy import conditional_pressure_pass_id", candidate_source)
         self.assertIn("from agents.conditional_pressure_pass_policy import conditional_pressure_pass_id", rule_source)
         self.assertEqual(policy_source.count("def conditional_pressure_pass_id("), 1)
+        self.assertEqual(policy_source.count("def teammate_pressure_pass_id("), 1)
         self.assertIn("class FrozenRuleBasedAIAgent", rule_source)
         evaluation_source = Path("evaluation/conditional_pressure_pass.py").read_text(encoding="utf-8")
         self.assertIn("from agents.conditional_pressure_pass_ai import ConditionalPressurePassAIAgent", evaluation_source)

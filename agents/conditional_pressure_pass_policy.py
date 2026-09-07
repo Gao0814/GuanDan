@@ -82,12 +82,14 @@ def _valid_actions(actions: object) -> tuple[int, tuple[Mapping[str, object], ..
     return pass_ids[0], tuple(non_pass)
 
 
-def conditional_pressure_pass_id(
+def _pressure_pass_id(
     observation: object,
     legal_actions: object,
     expected_player_id: int,
+    *,
+    teammate_leader: bool,
 ) -> int | None:
-    """Return the supplied pass id only when the public opportunity is proved."""
+    """Return pass only when a specified leader relationship is publicly proved."""
 
     if not _is_int(expected_player_id) or expected_player_id not in _TEAM:
         return None
@@ -153,7 +155,9 @@ def conditional_pressure_pass_id(
         if item_round == round_no and item.get("declared_pattern") != "pass":
             leader = item_player
             leader_signature = item_signature
-    if leader is None or leader == expected_player_id or _TEAM[leader] == _TEAM[expected_player_id]:
+    if leader is None or leader == expected_player_id:
+        return None
+    if (_TEAM[leader] == _TEAM[expected_player_id]) != teammate_leader:
         return None
     if leader_signature != table_signature:
         return None
@@ -165,3 +169,33 @@ def conditional_pressure_pass_id(
     if any(len(action["carrier_cards"]) == hand_count for action in non_pass):
         return None
     return pass_id
+
+
+def conditional_pressure_pass_id(
+    observation: object,
+    legal_actions: object,
+    expected_player_id: int,
+) -> int | None:
+    """Return pass only for the existing opponent-led pressure opportunity."""
+
+    return _pressure_pass_id(
+        observation,
+        legal_actions,
+        expected_player_id,
+        teammate_leader=False,
+    )
+
+
+def teammate_pressure_pass_id(
+    observation: object,
+    legal_actions: object,
+    expected_player_id: int,
+) -> int | None:
+    """Return pass only when a teammate's lead is safely protected from special-only pressure."""
+
+    return _pressure_pass_id(
+        observation,
+        legal_actions,
+        expected_player_id,
+        teammate_leader=True,
+    )
