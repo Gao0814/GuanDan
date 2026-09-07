@@ -2108,3 +2108,12 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - staged diff检查通过，代码与测试检查点为 `5daf326`，精确修改3个文件。
 - 未运行新容量、Botzone、connector、Edge、网络或模型，未触碰真实workspace。
 - 固定级牌2、无需进贡是既定验收范围，不构成剩余风险；当前范围内未发现该实现的已知剩余风险。
+
+## 2026-09-07 危险对手模型 pass 阻断复核
+
+- 实际绕过路径确认在DeepSeek成功动作返回点：模型给出合法pass后直接返回，adapter此前只校验合法性与provenance。
+- 新守卫复用严格公开history/table校验；领牌对手未结束且剩余1/2张、存在原始非pass且模型选择pass时，使用冻结静态selector确定性选择原始非pass。
+- 新source `danger_opponent_block`计为一次成功模型尝试，不计rule fallback；Botzone model/decision/fallback守恒和audit版本保持不变。
+- 规划Codex显式设置 `PYTHON_DOTENV_DISABLED=1` 后独立运行 `.\.venv\Scripts\python.exe -m unittest discover -q`：674项通过，用时41.238秒。
+- staged diff检查通过，代码与测试检查点为 `fb3d791`，精确修改7个文件。
+- 未运行新容量、Botzone、connector、Edge、网络或模型，未读取`.env`、未触碰真实workspace；当前范围内无已知剩余风险。

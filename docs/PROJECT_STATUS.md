@@ -11,7 +11,9 @@
 - 当前算法/Botzone profile 固定级牌2、无需进贡。此前规划的13级牌、每级牌百对容量属于无依据的范围扩张，现已取消；它不是当前项目目标，也不会执行。
 - 默认RuleBased的两项保牌规则均已完成：先处理对手领牌时的非紧急炸弹保留，再处理队友已经控桌时的炸弹保留；二者共用严格公开payload校验，冻结旧基线、显式conditional模式与DeepSeek fallback未漂移。
 - 规划Codex独立复跑全量671项通过，并建立队友保炸弹实现检查点 `5daf326`。固定级牌2、无贡是验收范围，不是剩余风险。
-- 下一项高置信度算法缺陷来自既有 `record.txt` 第16轮：危险对手出牌后只剩2张，本家有合法普通压制却pass。下一步只修复公开可证明的危险对手阻断，不做新容量或live。
+- 危险对手阻断已完成：DeepSeek模型成功返回合法pass时，若公开history/table严格证明领牌对手未结束且只剩1/2张，并存在合法非pass，决策改用冻结静态selector选择原始非pass。新增低基数source `danger_opponent_block`，仍计为模型成功而非fallback。
+- 规划Codex在显式禁用dotenv的环境中独立复跑全量674项通过，实现检查点为 `fb3d791`；当前范围内无已知剩余风险。
+- 下一项算法结构缺口来自 `record.txt` 第20–22轮：小手牌残局仍按单步选牌，不能比较拆对后的2–3手残余结构。下一步只为公开可证明、自由出牌的小手牌建立确定性短序列规划，不做新容量或live。
 
 ### Connector-observed 牌谱实现与加固复审
 
@@ -20,7 +22,7 @@
 - 四个 live-ready 缺口已经加固：ack 后 carrier/claim 进入 `confirmed_history` 并与 replay 去重；history 状态以 `disabled/ok/failed` 进入 RunnerSummary 和最终 CLI 行但不进入 v8 audit；单文件绑定唯一 match；牌型显示复用 adapter/engine 识别语义。
 - 规划 Codex 独立运行相关集合 57 项和全量 641 项，均通过；`git diff --check` 无错误。报告中的“定向62项”未提供精确命令，因此不宣称逐字复现该数字。
 - 对真正发生牌面替换的逢人配同花顺，规划 Codex 另以 carrier=`H2,H3,H4,H5,H7`、claim=`H3,H4,H5,H6,H7` 调用现有识别路径，结果为“同花顺”。当前没有已知代码层 live 阻塞。
-- seed `47002` 已证明修正后的连接/建桌时序可进入并完成真实对局。两次HTTP错误单列为传输可靠性观察，不阻塞算法主线；队友控桌保炸弹已在 `5daf326` 完成。下一步按更新后的 `NEXT_PROMPT.md` 修复危险对手阻断，不触碰当前live evidence。
+- seed `47002` 已证明修正后的连接/建桌时序可进入并完成真实对局。两次HTTP错误单列为传输可靠性观察，不阻塞算法主线；危险对手阻断已在 `fb3d791` 完成。下一步按更新后的 `NEXT_PROMPT.md` 实现小手牌残局短序列规划，不触碰当前live evidence。
 
 ### 2026-09-05 partial workspace 清理命令被策略拦截
 
