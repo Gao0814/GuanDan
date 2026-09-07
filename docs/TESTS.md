@@ -1890,3 +1890,212 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - root 创建前必须证明已绑定 tab 的 Botzone origin、登录首页和建桌入口；扩展未连接只产生人工恢复等待，不产生批次 artifact 或 invalid progress。
 - 每局通过 DOM/可见值完成表单 readback，开始按钮唯一点击一次；对局期间浏览器写操作为 0，结束后仅点击 `Botzone 2026` 返回首页。
 - 不读取 Cookie、local storage、密码、连接 URL 或密钥；connector、v8/v4/token、progress 和最终 8/8 聚合门槛保持不变。
+
+### L5-A4h8b 结果与 L5-A4h9 UI 诊断验收
+
+- `43001/43002` 的 artifact/hash、completed=0、`lobby_gate`、state/audit=`0/0` 与 connector/model=0 已只读核对；本结果不是代码测试失败。
+- L5-A4h9 不运行 connector、preflight 或 unittest。验收证据是 Edge family 的低敏逐动作时间线：阶段、URL 分类、关键 DOM 标记、动作名称和 destroyed 是否自发或仅紧邻某动作。
+- 表单无操作门槛要求约 5 秒间隔的三次新鲜 readback；通过后一次只执行载入配置、seed、seat 中的一个动作，并立即 readback。
+- destroyed 发生即停止，之后页面写入=0、第二桌=0；若没有 destroyed，则必须停在未点击开始的表单。两种结果都不等于容量或策略验证。
+
+### L5-A4h9 结果与 L5-A4h9a locator 资格验收
+
+- L5-A4h9 新诊断桌=0、页面写动作=0；初始 destroyed 不能满足“本次观察到 destroyed”的完成条件，当前结果按前置 locator 不可用处理。
+- 本机只读诊断要求 Edge running、扩展 installed/enabled、native-host manifest/registry/origin 全部通过；标签枚举成功证明扩展通信并非整体不可用。
+- L5-A4h9a 必须使用任务自身新建并持有的唯一 Edge 标签。先验收 URL/title/DOM、`body` locator 和首页关键入口；首次超时后只允许同标签重试一次。
+- locator 资格失败时桌数=0、connector/model/root=0；通过后才进入原单桌时间线。旧 destroyed 标签的任何状态均不得计入新诊断结果。
+
+### L5-A4h10 workspace 清理验收
+
+- L5-A4h9a 已由项目所有者取消，不再要求 Edge/locator 测试；后续建桌改为人工步骤。
+- 删除前必须证明 `D:\VsCodeProject` 的直属 `Botzone*` 集合精确等于 21 项 allowlist，每项是普通直属目录且固定目标尚不存在。inventory drift 必须在任何删除前 fail-closed。
+- 删除只能在一个 PowerShell 环境中逐项使用精确 `-LiteralPath`；禁止通配符、跨 shell 或递归删除计算后未验证的目标。
+- 删除后 21 项必须全部不存在；`D:\VsCodeProject\BotzoneWorkspace` 必须存在、非 reparse、包括隐藏项在内计数为 0，且是唯一直属 `Botzone*` 目录。
+- GuanDan Git status 删除前后必须一致且只有 Markdown 规划变化；浏览器、connector、preflight、Agent/model 和项目测试均为 0。
+
+### L5-A4h10 结果与 L5-A4h10a 回收站验收
+
+- L5-A4h10 删除前 inventory 门槛全部通过，但永久删除被策略拦截；实际删除=0、workspace 创建=0，不能使用成功判定。
+- L5-A4h10a 沿用相同 21 项 allowlist，但验收动作改为 Windows 回收站式可恢复清理；禁止永久删除替代 API。
+- 每项移动后原路径必须不存在；任一失败立即停止且不创建 workspace。全部通过后固定 workspace 必须是唯一 `Botzone*` 顶层目录并完全为空。
+- Git 允许的既存变化现在包括根 `AGENTS.md` 与 docs Markdown；仍禁止任何非 Markdown 变化，浏览器/connector/model/test 计数保持 0。
+
+### L5-A4h10a 结果与 L5-A4h11 单局验收
+
+- 已只读复核最终 `Botzone*` 集合精确为 `BotzoneWorkspace`，它是空的普通非链接目录；旧 21 项原路径均不再存在。
+- L5-A4h11 起点要求 workspace 仍为空且无残留 connector；只允许创建固定 manifest/state/audit/preflight summary，不新增顶层目录。
+- rule preflight 恰好一次，要求 exit 0、唯一 `preflight_ready`、stderr/state/audit/网络/Agent/model 守恒；通过后才请求人工配置桌。
+- live 以项目所有者“桌已配置”为 connector 启动门槛，以持续 session 为“可以点击开始”门槛；Codex 浏览器动作数固定为 0。
+- 单局通过要求 exit 0 / finished target、request=response=Header>0、qualified/normal finished=1、无真实 transport failure、RuleBased 来源守恒、model/fallback=0、v8/v4/token 一致且无 active state。
+
+### L5-A4h11 结果与 L5-A4h11a qualification 验收
+
+- 首次尝试首个 artifact 前失败，workspace/preflight/connector/table=0；这不是单局测试结果，`44001` 仍可使用。
+- L5-A4h11a 先在全新系统临时 scratch 使用正式同路径演练 state/audit 目录、16 字节随机 token 的 32-hex 格式、JSON 临时写入/flush/fsync/replace/readback 和完整清理。
+- qualification 必须报告 PowerShell/PSEdition/Python 版本，并验证实际命令参数；允许在 scratch 内修正重跑，不允许修改仓库或依赖。
+- 正式 workspace 只有 qualification 通过后才能写入；artifact/preflight 通过并发出人工 seed 配置提示后，才进入不可重试的 pilot 验收边界。
+
+### L5-A4h11a 结果与 L5-A4h11b preflight 验收
+
+- manifest 348 bytes/hash 与 public fields 已锁定，state/audit=`0/0`、summary/completion 不存在；不得重写或清理。
+- `tests.test_botzone_preflight_output` 当前 5 项通过；二进制契约允许 `b"preflight_ready\n"` 或 `b"preflight_ready\r\n"`，stderr 必须空，splitlines 后唯一 ready。
+- L5-A4h11b 的 scratch diagnostic 必须捕获独立 stdout/stderr bytes，并报告 return code、长度、允许值匹配、归一化结果和具体失败断言；失败时 formal recovery 调用数为 0。
+- scratch 通过后 formal recovery 恰好一次，要求 manifest/hash、空 state/audit、零网络/Agent/model 守恒；成功才写 summary 并继续人工建桌。
+# 2026-09-04 connector-observed 牌谱复审
+
+- 执行 Codex 新增 `tests.test_botzone_history` 并扩展 launcher 参数测试。
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest tests.test_botzone_history tests.test_botzone_live_launcher tests.test_botzone_connector tests.test_botzone_runner -q`：34 项通过。
+- 规划 Codex独立运行 `.\.venv\Scripts\python.exe -m unittest discover -q`：633 项通过。
+- `git diff --check` 通过，仅输出工作区既存 LF/CRLF 提示。
+- 现有通过项尚未覆盖真实顺序中的“本家 pending action 被 Header ack 后同一 poll 只返回 finished row”；合成 complete fixture 直接构造 `SessionRecord.history`，不能替代该端到端契约。
+- 当前实现还没有把 recorder `failed` 状态带到 runner/CLI 的低敏可观察结果，也没有锁定单 history 文件的唯一 match 归属；这些属于下一次 live 前的定向测试范围。
+
+## 2026-09-04 牌谱 live-ready 加固复审
+
+- confirmed carrier/claim、ack 后立即 finished、replay 去重、history 三态、第二 match 冲突、路径冲突、原子临时清理和准确牌型测试已经进入当前工作区。
+- 规划 Codex 独立运行 history、launcher、connector、runner、session、play adapter 相关集合：57 项通过。执行报告称62项但未提供精确命令，因此该数字只保留为执行方报告，不作为独立复现事实。
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest discover -q`：641 项通过。
+- 规划 Codex 另用真正发生替换的逢人配同花顺 carrier/claim 调用 `_pattern_label()`，结果为“同花顺”；该检查没有联网或写入仓库/workspace。
+- `git diff --check` 通过；真实 workspace inventory/hash 未变化，state/audit 仍为空。
+
+## 2026-09-05 workspace 清理与下一次 history smoke 验收
+
+- `pilot-manifest.json` 已通过 Windows 回收站式 API 移出 fixed workspace；规划 Codex 独立复核根目录只含空 `audit/`、空 `state/`，没有残留 connector。该清理没有运行项目测试，也不改变641项全量基线。
+- 下一次 smoke 是普通运行而非代码测试或 formal capacity：seed `45001`、玩家1/seat 0、无贡、级牌2、RuleBased，一桌且一个 connector。
+- live 验收要求 completion audit 中 request/response/Header 正数守恒、qualified finished=1、RuleBased 来源与零 model/fallback；launcher 预期 exit 0、`history=ok`。
+- `history.txt` 必须包含本家手牌、公开逐步出牌、终局和完整性标记，且本家 ack/replay 不重复；`terminal_tail_may_be_unobserved` 是允许的保守结果。完整手牌不得复制到聊天、audit 或普通日志。
+- readiness 的参数、路径或换行错误允许在开始游戏前原地修正；若 live 后失败则保留 history/audit/state/streams，不自动清理或创建第二桌。
+
+## 2026-09-05 seed 45001 history smoke 与下一测试缺口
+
+- 真实运行已独立复核：exit 0、15/15/15 request/response/Header、qualified finished=1、14 次 rule primary、零 model/fallback、`history=ok`、stderr 空。该结果是 live smoke，不新增 unittest 运行。
+- 脱敏结构审计显示53个已观察步骤被分为6段；本家观察出牌计数为27，其他三家分别只观察到13、7、15张，因此终局尾部确实不满足三家完整出完和108张守恒推导条件。
+- 下一测试必须锁定：当 finished row 到达但 `_terminal_inference()` 为 false 时，最后一个观测段不得输出“第N轮结束后的手牌”；应明确它只是最后一次观测后的手牌，并保留 `terminal_tail_may_be_unobserved`。
+- 非最后观测段仍可因下一段已出现而输出“第N轮结束后的手牌”；完整终局 fixture 仍输出可证明的终局手牌/排名和 `terminal_history_complete`。
+- 修改只影响 history 文本与对应测试，不改变 session history merge、confirmed ack、牌型识别、audit schema、connector 停止条件或真实 workspace evidence。
+
+## 2026-09-05 history 尾部语义修复结果
+
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest tests.test_botzone_history tests.test_botzone_session tests.test_botzone_connector tests.test_botzone_runner tests.test_botzone_live_launcher -q`：54项通过。
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest discover -q`：643项通过。
+- `git diff --check` 通过；只有既有 LF/CRLF 提示。真实 workspace evidence 未被测试读取、改写或清理。
+- 实现满足 incomplete terminal、已证明中间边界、本家出完后尾部说明和 complete terminal 标题要求。剩余仅是 incomplete terminal 新标题右侧 `====` 前缺一个空格，后续作为机械文本/断言修正。
+
+## 2026-09-05 history 标题与首个策略诊断结果
+
+- 标题及对应断言已统一为 `==== 最后一次观测后的手牌（该牌权段可能尚未结束） ====`。
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest tests.test_botzone_history -q`：16项通过。
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest tests.test_botzone_history tests.test_botzone_session tests.test_botzone_connector tests.test_botzone_runner tests.test_botzone_live_launcher -q`：54项通过。
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest discover -q`：643项通过；`git diff --check` 通过，仅有既有换行提示。
+- 真实 workspace 文件集合、大小、hash 和修改时间与前次审计一致；诊断未写 evidence。
+- `RuleBasedAIAgent` 的 `pass+bomb` 与 `pass+straight_flush` 合成跟随场景稳定选择非 pass，证明“存在非 pass 就排除 pass”的机制；真实牌谱缺少逐步完整 legal actions，不能把这项机制直接等同于两手实战必错。
+
+## 下一 evaluation-only 条件化保牌评测
+
+- 候选机会固定为：对手领牌、pass 与非 pass 共存、全部非 pass 都是 `bomb/straight_flush/joker_bomb`、本家不能立即出完、没有已出完或剩余不超过2张的公开对手；任何字段不完整均回退当前 RuleBased。
+- 行为测试必须覆盖触发、普通压制 fallback、一次出完、紧急对手、队友领牌、自由出牌、only-pass/no-pass、畸形 observation/action 和原始 action ID。
+- 质量评测使用同一快照的 baseline 非 pass 与 candidate pass 双分支，后续统一由当前 RuleBased 续局；团队结果优先、两人名次和次之，报告只保留聚合。
+- 固定本地 seed `46000..46199`、每局最多4个机会、每分支最多5000步，完整双运行并比较 canonical 聚合结果；不得事后改条件或换 seed。
+- 预注册结论为 invalid / evidence insufficient / retain for runtime trial / reject candidate。该阶段不得修改生产 RuleBased 或联网运行 Botzone。
+
+## 2026-09-06 条件化保牌首次 benchmark 复审
+
+- 新增 `evaluation/conditional_pressure_pass.py` 与 `tests/test_conditional_pressure_pass.py`；生产 RuleBased、engine、Botzone/runtime 均未接线。
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest tests.test_conditional_pressure_pass tests.test_pass_policy_benchmark -q`：16项通过。
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest tests.test_game_flow tests.test_rules tests.test_patterns tests.test_cli_debug_output -q`：39项通过。
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest discover -q`：649项通过；`git diff --check` 通过，仅有既有换行提示。
+- 当前合成 fixture 给 history 行附带了完整 action 字段，但真实 `GuanDanGame.observe()["history"]["actions"]` 只有 step/round/player 与 declared/carrier 六类字段。`_action_signature()` 因要求 wildcard/display 等字段而拒绝所有真实 history，测试未覆盖该差异。
+- 规划 Codex 直接沿 seed `46000` 的真实 public API 轨迹复现 step 8 / round 2 / player 1 的 `pass+bomb`；按正确 history 共同语义做只读扫描时，固定 `46000..46199` 的200局全部完成并出现686次候选机会。
+- 因正式 benchmark 的 candidate 从未实际触发，报告的 `conditional_pressure_pass_evidence_insufficient` 改判 `conditional_pressure_pass_benchmark_invalid`。该改判不评价候选质量。
+
+## 下一 schema 修复与原参数恢复测试
+
+- 分开校验 legal/table 的完整 action schema 与 history 的最小公开 schema；两者只在 `declared_pattern`、`declared_cards`、`carrier_cards` 共同语义上比较。
+- 增加真实 engine public API 集成测试，固定 seed `46000` 证明 baseline 选 bomb、candidate 选原始 pass ID；不得只使用手工扩展的合成 history。
+- history/table 共同字段不一致、history 自身字段缺失/错误、legal/table 完整字段缺失时都必须回退 baseline。
+- 使用原 `46000..46199`、每局最多4机会、game/branch 5000步完整双运行，沿用原判定门槛；不得改候选条件、换 seed 或修改 runtime。
+
+## 2026-09-06 schema 修复与 one-step benchmark 恢复复审
+
+- 规划 Codex 独立运行 `./.venv/Scripts/python.exe -m unittest tests.test_conditional_pressure_pass tests.test_pass_policy_benchmark -q`：19项通过。
+- 规划 Codex 独立运行 `./.venv/Scripts/python.exe -m unittest tests.test_game_flow tests.test_rules tests.test_patterns tests.test_cli_debug_output -q`：39项通过。
+- 规划 Codex 独立运行 `./.venv/Scripts/python.exe -m unittest discover -q`：652项通过；测试过程中预期的固定错误类别输出不影响 exit 0。
+- `git diff --check` 通过，仅输出工作区既有 LF/CRLF 提示。
+- 真实 seed `46000` public API 集成回归已进入测试：history 行精确为六字段，baseline 选择原始 bomb ID，candidate 选择原始 pass ID。
+- 原固定 benchmark 两次独立复跑耗时64.896秒与65.508秒；200/200局完成，机会686，changed pairs 617，1234/1234分支完成，零失败和 diagnostics。
+- 两次 report、`to_dict()` 和 canonical JSON bytes 完全一致；canonical SHA-256 为 `b42fad72103574c8f4e6fc1a70af5c16eccec74cb0dc376bba09aba2e5446b81`，paired aggregate SHA-256 为 `b0b07279d0276cec2bd9e23e1e5324502c6d3557ee225b8451bb59a19a317929`。
+- candidate better/baseline better/tie 为191/172/254，team-outcome score 为635/619，名次和为3053/3079；按原固定规则判定 `retain_conditional_pressure_pass_for_runtime_trial`。
+
+## 下一 opt-in 整局 runtime trial 测试
+
+- 将候选单一实现真值放入 `agents/` 的显式 opt-in Agent，evaluation 复用它；默认 RuleBased 和现有 CLI/Botzone/DeepSeek 工厂不接线。
+- 原 `46000..46199` one-step benchmark 必须保持上述完整聚合和两个 SHA-256 不变，防止提取过程产生语义漂移。
+- 新固定 seeds `46200..46399`，每 seed 两局并交换候选所在 team 13/team 24；候选 Agent 在整局内每次机会都生效，单局 step limit 5000。
+- 新报告必须覆盖赛程/终局/动作/计数守恒、candidate better/baseline better/tie、双方 outcome score/名次和、实际 conditional-pass seed-pair 数和 aggregate-only 边界。
+- 完整运行两次并比较 report、canonical JSON 与 digest；invalid/insufficient/retain/reject 判定按 `docs/NEXT_PROMPT.md` 预先固定，不得看结果后调参。
+
+## 2026-09-06 opt-in 整局 runtime trial 复审
+
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest tests.test_conditional_pressure_pass tests.test_conditional_pressure_pass_runtime_trial tests.test_pass_policy_benchmark -q`：24项通过。
+- 规划 Codex 独立运行 engine 主回归：39项通过。
+- 规划 Codex 独立运行 `.\.venv\Scripts\python.exe -m unittest discover -q`：657项通过；`git diff --check` 通过，仅有既有 LF/CRLF 提示。
+- source 检查确认唯一实现位于 `agents/conditional_pressure_pass_ai.py`；one-step 和整局 evaluation 导入它，CLI/rag/integrations 尚未接线。
+- 原 `46000..46199` one-step 双运行的完整聚合与 `b42fad...46b81` / `b0b072...317929` 不变。
+- 新 `46200..46399` 整局双运行完全一致：200 seed pairs、400/400局、197 active pairs、1433次 pass、W/D/L 138/146/116 对116/146/138、score 422/378、名次和1966/2034、pair 73/53/74、零 diagnostics。
+- 新 canonical/trial SHA-256 为 `9ea636f44104ecb436569679431c4aea7d95d045fcafc047c18f3bb00d958129` / `3d4ce5ff86320cd4f5d0ec28c1ac40c589b4df86670dec80c8f95594ceb71d10`，判定 `retain_conditional_pressure_pass_for_botzone_opt_in_smoke`。
+- validator 反例复现：requested pairs=21、completed/incomplete pairs=20/1、42/42 games complete、比较计数20且 `trial_sha256="not-a-digest"` 的报告仍错误返回 retain。真实 runner 结果不受影响，但测试契约尚未覆盖该交叉守恒。
+
+## 下一 Botzone opt-in 离线 wiring 测试
+
+- 先补 pair/game 可实现交叉范围、双方 W/D/L 互补、非负严格整数和64位小写十六进制 digest 校验；真实两套 fixed report/hash 不得改变。
+- Botzone 新 mode 固定为 `conditional_pressure_pass`，默认仍为 rule；factory/preflight/CLI/launcher/runner/adapter/audit 只在显式 mode 下接入。
+- observability 必须区分“实际条件化 pass”和“正常 RuleBased 路径”，两者和等于 decision count，model/fallback 为0；rule/deepseek 既有守恒不变。
+- 至少一条 adapter 测试消费真实 `project_decision()` 公开 projection 和 provenance；pending 重发/ack/finished release 不重复决策。
+- 本阶段只运行 mock/temporary-directory 的离线 preflight 测试，不运行真实 preflight、connector、网络或 workspace 操作。
+
+## 2026-09-06 Botzone opt-in offline wiring 复审
+
+- 规划 Codex 独立运行候选/trial/旧 pass：25项通过；Botzone runtime/observability/adapter/runner/launcher：47项通过；主回归：39项通过；全量：665项通过。
+- `git diff --check` 通过，仅有既有 LF/CRLF 提示。
+- one-step固定报告再次得到 `b42fad...46b81` / `b0b072...317929`；runtime trial再次得到 `9ea636...58129` / `3d4ce5...71d10`，聚合与retain判定不变。
+- 新mode、两种source、adapter public projection、pending/ack/release和audit测试均已进入当前工作区；默认rule/deepseek相关测试通过。
+- validator现已拒绝原21-pair/42-game/非法digest反例，但仍接受非互补W/D/L：candidate 20/20/0、baseline 1/18/21在边际总数和score自洽时仍错误retain。
+- 还需同次覆盖非法level rank、未知diagnostic key、0 requested pairs、active/pass不一致和单方名次和超出每局3..7；这些是合成report validator边界，不改变真实固定结果。
+
+## 下一 validator 最小补漏测试
+
+- 修改范围仅 `evaluation/conditional_pressure_pass_runtime_trial.py` 与 `tests/test_conditional_pressure_pass_runtime_trial.py`。
+- 分别锁定W/D/L互补、13个有效级牌、固定diagnostic allowlist、非空容量、active/pass关系和每方名次范围。
+- 运行单文件、25项相关和全量；两套固定报告各运行一次确认四个hash不变。
+- 不修改或重测真实Botzone现场，不清workspace；修复后下一个独立任务直接做旧evidence清理。
+
+## 2026-09-06 validator 最小补漏复审
+
+- 规划Codex独立运行 `.\.venv\Scripts\python.exe -m unittest tests.test_conditional_pressure_pass_runtime_trial -q`：8项通过。
+- 规划Codex独立运行条件化相关集合：28项通过。
+- 规划Codex独立运行全量：668项通过；`git diff --check`通过，仅有既有LF/CRLF提示。
+- source复核确认W/D/L互补、有效rank、六类diagnostic allowlist、非空requested pairs、active/pass关系和每方名次范围均已实现；原21-pair/42-game/digest反例继续覆盖。
+- one-step和runtime trial各运行一次，完整聚合、decision与四个SHA-256不变；无需再增加评测门槛。
+
+## 下一 workspace 清理验收
+
+- 不运行项目测试、preflight、connector或网络；只读验证固定workspace的3目录+5文件inventory、bytes/hash、非链接属性、无connector和Git基线。
+- 五个已审计文件逐项移入Windows回收站；不永久删除、不清空回收站、不删除目录。
+- 完成后workspace必须精确只剩空 `audit/`、`state/`、`streams/`，Git状态前后一致。
+- 本任务不分配新seed、不提示建桌；下一live另行规划。
+## 2026-09-06 seed 47002 conditional opt-in live 复核
+
+- 唯一运行exit 0 / `finished_target`，cycles=20、successful cycles=17，request/response/Header=`17/17/17`，finished/qualified/normal=`1/1/1`，timeout=0。
+- 有2次真实transport failure，固定类别均为 `http_error`；因此不满足严格smoke要求的零transport failure，唯一执行判定为 `completed_with_transport_failure:http_error`。
+- audit v8 mode为 `conditional_pressure_pass`；16次决策全部为 `conditional_rule_based`，候选激活0，model/fallback均0。
+- v4 tombstone与v8 audit运行归属一致；history为UTF-8/LF、58个公开步骤、11个已观测牌权段，终局完整性为 `terminal_tail_may_be_unobserved`；无active state或残留connector。
+- 规划Codex独立复核五份evidence的bytes/hash与Git基线。该局提供非激活runtime兼容性证据，但不是严格零故障smoke、候选激活或策略质量证据。
+
+## 2026-09-07 默认 RuleBased 条件化保牌合入复核
+
+- 默认 `RuleBasedAIAgent` 命中共享公开条件时返回原始pass ID，否则回退冻结的修改前静态selector；显式conditional Agent复用同一判定。
+- DeepSeek内部和Botzone adapter的DeepSeek fallback继续使用冻结静态selector，历史evaluation也显式以该selector作为baseline，避免默认策略变化污染既有对照语义。
+- 规划Codex独立执行 `.\.venv\Scripts\python.exe -m unittest discover -q`：668项通过，用时39.553秒。
+- `git diff --cached --check`通过；仅有既有LF/CRLF提示。
+- 代码与测试检查点为 `150006a`，包含牌谱、条件化pass评测/接线及默认RuleBased合入的完整可运行阶段。
+- 未运行新容量、Botzone、connector、Edge、网络或模型，未触碰真实workspace。

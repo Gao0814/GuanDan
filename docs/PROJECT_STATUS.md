@@ -1,5 +1,161 @@
 # 项目状态看板
 
+## 当前阶段：算法优化与可读决策轨迹（2026-09-07）
+
+- 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
+- connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
+- 已确认此前 h 系列的共同流程问题：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败。** 这些失败保留为未来正式实验的设计输入，不再继续消耗当前算法阶段。
+- connector 可读牌谱及 live-ready 加固已经实现并通过复审：显式文本文件可记录本家完整手牌、每轮结束后的手牌区块、connector 实际观察到的四家公开出牌、本家动作、中文牌面、名次和低敏终局结果。未来 live 目标路径为 `D:\VsCodeProject\BotzoneWorkspace\history.txt`。
+- 该记录在进行中不是上帝视角：对手暗牌未知。赛后仅在动作尾部完整且 108 张实体牌守恒可唯一证明时，才能反推出已出完玩家初始手牌和末游剩余手牌并标注为推导；否则保持未知。Botzone 的 finished row 不携带最终历史，因此必须在文件中标明完整性状态。
+- seed `47002` 已按“先确认页面已连接，再提示seed和建桌”完成真实对局：17/17/17闭环、qualified finish与16次 `conditional_rule_based`，但有2次 `http_error`，故严格零故障smoke标签不成立；真实条件化pass激活为0。该局已足以证明非激活路径可以完成，不再为追求严格标签或候选激活而重复建桌。
+- 当前算法/Botzone profile 固定级牌2、无需进贡。此前规划的13级牌、每级牌百对容量属于无依据的范围扩张，现已取消；它不是当前项目目标，也不会执行。
+- 已完成默认RuleBased的条件化保牌合入：共享公开判定、冻结旧静态基线、显式conditional模式与evaluation对照均已收口；规划Codex独立复跑全量668项通过，并建立实现检查点 `150006a`。
+- 下一项算法缺陷来自既有 `record.txt` 复盘：队友已经控桌时，旧静态排序仍可能用炸弹压队友，随后队友再用更大炸弹压回，造成同队资源互耗。下一步只实现“队友领牌且所有可出压制均为炸弹类时的保守pass”窄规则；保留立即出完和明确残局压力例外，不做新容量或live。
+
+### Connector-observed 牌谱实现与加固复审
+
+- 实现已落在 `integrations/botzone/history.py`，并由 CLI、runner、connector 和 live launcher 以显式 `--history-file` 接入；默认关闭，目标路径不硬编码。
+- 规划 Codex 独立复跑定向 34 项和全量 633 项，均通过；`git diff --check` 无错误。真实 workspace 未被触碰，manifest 仍为 348 bytes / `fd40f1a...f6`，state/audit 为空。
+- 四个 live-ready 缺口已经加固：ack 后 carrier/claim 进入 `confirmed_history` 并与 replay 去重；history 状态以 `disabled/ok/failed` 进入 RunnerSummary 和最终 CLI 行但不进入 v8 audit；单文件绑定唯一 match；牌型显示复用 adapter/engine 识别语义。
+- 规划 Codex 独立运行相关集合 57 项和全量 641 项，均通过；`git diff --check` 无错误。报告中的“定向62项”未提供精确命令，因此不宣称逐字复现该数字。
+- 对真正发生牌面替换的逢人配同花顺，规划 Codex 另以 carrier=`H2,H3,H4,H5,H7`、claim=`H3,H4,H5,H6,H7` 调用现有识别路径，结果为“同花顺”。当前没有已知代码层 live 阻塞。
+- seed `47002` 已证明修正后的连接/建桌时序可进入并完成真实对局。两次HTTP错误单列为传输可靠性观察，不阻塞算法主线；默认RuleBased条件化保牌已在 `150006a` 完成。下一步按更新后的 `NEXT_PROMPT.md` 修复同队炸弹互耗，不触碰当前live evidence。
+
+### 2026-09-05 partial workspace 清理命令被策略拦截
+
+- 清理任务已经具备项目所有者明确授权，且执行前只读基线完全匹配；授权没有失效。
+- 执行环境在实际文件操作前拦截删除命令，因此实际删除为 0；workspace 仍只包含空 `audit/`、空 `state/` 和 348-byte manifest，Git 状态未变化。
+- 该失败属于命令级破坏性操作安全策略，不是 C/D 盘访问权限不足，也不是缺少项目所有者授权。此前 Prompt 把逐次授权写成硬门槛，现已删除这一重复门槛。
+- 精确 `Remove-Item -LiteralPath ... -Force` 已在 PowerShell `CreateProcess` 前再次被 `blocked by policy` 拦截，证明继续调整永久删除参数没有价值。下一执行任务改用 Windows 回收站式可恢复清理，不再尝试永久删除。
+- 回收完成的验收是 manifest 原路径不存在、workspace 只剩空 `audit/` 与 `state/`；不清空回收站，因此误清理时仍可恢复。若回收 API 的参数/程序集在零副作用状态出错，应在同一任务原地修正，不得再次请求授权或判 live/pilot invalid。
+
+### 2026-09-05 fixed workspace 可恢复清理完成
+
+- 规划 Codex 已独立复核：`D:\VsCodeProject` 下唯一直属 `Botzone*` 目录为普通非链接的 `BotzoneWorkspace`；其根精确只含空 `audit/` 与空 `state/`，旧 manifest 原路径不存在。
+- 执行方使用 Windows `SendToRecycleBin` 移动唯一 `pilot-manifest.json`，没有永久删除或清空回收站；Git 状态前后一致，connector/浏览器/网络/Botzone/Agent/model/preflight/test 均为 0。
+- workspace 清理任务完成。下一步是一次普通、非 formal 的人工建桌 RuleBased history smoke：新 seed `45001`、玩家1/seat 0、无需进贡、级牌2，启用 `history.txt`。
+- 本 smoke 的准备错误允许在网页开始前原地修正；不建立 manifest/progress，不恢复 Edge 自动化、DeepSeek 对比或 8 对/16 局 capacity。项目所有者配置桌，connector 持续运行后由执行 Codex 明确提示项目所有者只点击一次开始。
+
+### 2026-09-05 seed 45001 RuleBased history smoke 通过
+
+- 规划 Codex 已独立复核 completion audit、stdout/stderr、state 和脱敏后的 history 结构：connector exit 0 / `finished_target`，15/15/15 request/response/Header，qualified finished=1，14 次 `rule_primary`，model/fallback=0，`history=ok`，stderr 为空。
+- `history.txt` 为 6285 bytes、UTF-8/LF，共记录53个公开步骤并分为6个已观测牌权段；本家已观察出完27张牌，本队结果为胜。文件保守标记 `terminal_tail_may_be_unobserved`，头游至四游未知。
+- “第6轮后结束”不表示裁判整局只进行了6轮。本家在最后已观察段出完后不再收到 play 请求，而 finished row 不携带终局完整历史；本家出完到平台终局之间的其他玩家动作可能全部缺失。
+- 当前 renderer 在收到 finished row 时会把最后一个不完整观测段也写成“第6轮结束后的手牌”，容易误读为已证明该轮/整局在此结束。这是牌谱展示语义缺口，不影响 connector、动作合法性或本次 smoke 成功判定。
+- 下一步先做一个最小离线修复：明确“轮”为 connector 已观测牌权段；最后尾部不完整时不得写成已证明轮结束，并增加相应合成测试。修复复审后直接用现有 `45001` history 做策略分析，不要求为此重打一局。
+
+### 人工建桌监督交互修正
+
+- 连续主动监督不是 connector 正常运行的必要条件；稳定 connector 会独立收取请求并原子更新 history，Codex 可以等进程结束后集中分析。但仅凭 `history.txt` 文件存在不够，至少还要确认最终 `history=ok`、finished/audit 状态和文件可读。
+- 后续启动后不再要求项目所有者回复“已开始”：Codex 提示点击后立即持续等待，首个 connector 请求或 history 变化即可自动确认对局已开始。
+- 页面只读监督用于减少项目所有者输入，并在可用时核对 seed/seat/贡牌/级牌；监督失败时等待项目所有者明确“准备好了”，不判任务失败。若页面明确显示 seed 错误，则必须拒绝接受目标对局已开始。
+- Botzone connector payload 没有 seed 字段；它只能在运行后独立核对 seat、level 与 no-tribute profile。因此 seed 的独立验证必须发生在开始前的页面只读监督，或者退化为项目所有者明确确认。
+
+### 2026-09-05 history 尾部语义修复复审
+
+- 实现与报告一致：文本新增 connector 已观测牌权段说明；已由下一段证明的中间边界继续显示轮末手牌；不完整终局最后段改为“最后一次观测后的手牌（该牌权段可能尚未结束）”；完整终局改为“对局结束时的手牌”。
+- 规划 Codex 独立复跑 history/session/connector/runner/launcher 集合54项通过；全量643项通过；`git diff --check` 通过。真实 `45001` workspace evidence 的 bytes/hash/时间未因本任务改变。
+- 语义修复完成且没有发现 connector、协议、session、audit 或规则回归。另发现新标题右侧分隔符前少一个空格：当前为 `……可能尚未结束）====`，应机械统一为 `……可能尚未结束） ====`；这不影响语义或当前通过判定。
+- 下一任务在开始策略诊断前先修正这一处可见空格及对应测试，然后只读分析现有 `45001` history 与 `RuleBasedAIAgent` 选择规则，提出一个可用合成场景复现的优先策略缺陷；本任务不直接修改算法。
+
+### 2026-09-05 标题格式与首个 RuleBased 策略诊断通过
+
+- 标题已修正为 `==== 最后一次观测后的手牌（该牌权段可能尚未结束） ====`；实现范围仅为 `integrations/botzone/history.py` 及对应测试字符串。
+- 规划 Codex 独立复跑 `tests.test_botzone_history` 16项、history/session/connector/runner/launcher 54项及全量643项，均通过；`git diff --check` 通过，仅有既有换行提示。
+- 真实 `45001` evidence 的文件集合、大小、SHA-256 和修改时间与前次审计一致；本轮未改写牌谱或 audit。
+- 14次本家决策低敏分类为自由出牌4、跟随队友0、跟随对手10；pass 4、普通牌型8、炸弹类2。真实线索是两次跟随对手时分别使用炸弹和同花顺，但牌谱缺少当时完整 legal actions，不能直接判定这两手必错。
+- 当前 RuleBased 的确定性机制已复核：完全忽略 observation，先取 `non_pass_actions or legal_actions`，所以只要炸弹类非 pass 合法，策略性 pass 就不可能被选择。`pass+bomb` 和 `pass+straight_flush` 的合成复现成立。
+- J-C3c2 正式拒绝的是基于敌方 single/pass 的无条件牌面推断信号，不是主动 pass 的游戏质量结论；它既不授权也不否定 runtime pass。下一步用团队结果/名次和单独评估窄候选：对手领牌、全部非 pass 都是炸弹类、不能立即出完且无公开紧急对手时主动 pass，其余场景精确回退 baseline。
+- 当前阶段判定：`conditional_pressure_pass_candidate_ready_for_evaluation`。这只表示候选机制和评测问题已定义，不表示策略已经提升。
+
+### 2026-09-06 条件化保牌首次 benchmark 因 schema 错配无效
+
+- 执行任务新增 `evaluation/conditional_pressure_pass.py` 与 `tests/test_conditional_pressure_pass.py`；生产 RuleBased、engine 和 Botzone/runtime 未接线。
+- 规划 Codex 独立复跑新增/旧 pass 测试16项、主回归39项和全量649项，均通过；`git diff --check` 通过，仅有既有换行提示。真实 Botzone workspace 文件大小、hash、时间保持不变，且无残留 connector。
+- 报告中的 `opportunity=0` 不是有效的样本不足。`_action_signature()` 要求 legal/table action 的完整字段，却也用于校验真实 `history.actions`；真实 history 行没有 `action_id`、`wildcard_count`、`wildcard_info` 和 `display_text`，因此每个真实跟牌 history 都被静默拒绝。
+- 合成测试未发现问题，是因为 fixture 用完整 `_action()` 字典扩展 history，人为加入了 engine history 从不提供的字段。当前测试证明合成 payload 可触发，但没有证明真实 `GuanDanGame.observe()` 可触发。
+- 规划 Codex 通过 engine 公共 API 独立复现：seed `46000` 的 step 8 / round 2 / player 1 存在 `pass+bomb`；以正确的 history 最小 schema 做只读计数时，原 `46000..46199` 共200局全部完成并出现686次固定候选机会。
+- 因正式代码实际上评估了零个候选，上一执行报告的 `conditional_pressure_pass_evidence_insufficient` 改判为 `conditional_pressure_pass_benchmark_invalid`。686只是定位影响面的计数，不是修复后 rollout 质量结果。
+- 下一步只修复 evaluation schema 与真实 public API 集成测试，然后按完全相同参数双运行；不放宽候选条件、不换 seed、不据此接入 runtime。
+
+### 2026-09-06 schema 修复与 one-step benchmark 恢复通过
+
+- 当前实现已把校验拆为完整 legal/table action、六字段 engine history row 与二者共同语义；真实 `GuanDanGame(seed=46000)` 回归稳定证明 step 8 / round 2 / player 1 上 baseline 选择原始 bomb ID、candidate 选择原始 pass ID。
+- 规划 Codex 独立复跑新增/旧 pass 测试19项、engine 主回归39项、全量652项，均通过；`git diff --check` 通过，仅有既有 LF/CRLF 提示。
+- 规划 Codex 用原固定参数独立运行两次，耗时64.896秒与65.508秒；两个 report、`to_dict()` 和 canonical JSON bytes 完全一致。200/200局完成，机会686，changed pairs 617，1234个分支全部完成，零 diagnostics。
+- 质量聚合为 candidate better 191、baseline better 172、tie 254；candidate/baseline team-outcome score 为635/619，名次和为3053/3079。
+- canonical SHA-256 为 `b42fad72103574c8f4e6fc1a70af5c16eccec74cb0dc376bba09aba2e5446b81`；paired aggregate SHA-256 为 `b0b07279d0276cec2bd9e23e1e5324502c6d3557ee225b8451bb59a19a317929`。
+- 唯一判定为 `retain_conditional_pressure_pass_for_runtime_trial`。该判定推翻的是先前无效的“样本不足”，不是证明真实胜率；现有 rollout 每次只改变一手，后续全部使用 baseline。
+- 下一步先把相同条件提取到 `agents/` 的 opt-in Agent，并在新 seeds `46200..46399` 上让候选整局反复生效、与 baseline 队伍交换对局。默认 RuleBased、CLI、Botzone 与 DeepSeek 本阶段保持不变。
+
+### 2026-09-06 opt-in 整局 runtime trial 通过
+
+- 新增 `agents/conditional_pressure_pass_ai.py` 作为唯一候选实现；one-step evaluation 直接导入该 Agent。当前 source 扫描确认 CLI、rag、integrations 没有引用候选，默认 RuleBased、DeepSeek、Botzone 与 agent factory 未改变。
+- 规划 Codex 独立复跑候选/trial/旧 pass 24项、engine 主回归39项、全量657项，均通过；`git diff --check` 通过，仅有既有 LF/CRLF 提示。
+- 原 one-step 双运行在提取后保持200/200局、686机会、617 changed pairs与原全部聚合；canonical/pair SHA-256 仍为 `b42fad72103574c8f4e6fc1a70af5c16eccec74cb0dc376bba09aba2e5446b81` / `b0b07279d0276cec2bd9e23e1e5324502c6d3557ee225b8451bb59a19a317929`。
+- 新整局 trial 独立双运行保持200/200 seed pairs、400/400局、team 13/team 24各200局、197 active pairs、1433/1433 opportunities/pass、零 diagnostics。
+- candidate/baseline W/D/L 为138/146/116与116/146/138；score 422/378；名次和1966/2034；pair better/baseline better/tie 为73/53/74；总名次和4000守恒。
+- canonical/trial SHA-256 为 `9ea636f44104ecb436569679431c4aea7d95d045fcafc047c18f3bb00d958129` / `3d4ce5ff86320cd4f5d0ec28c1ac40c589b4df86670dec80c8f95594ceb71d10`。唯一实证判定确认为 `retain_conditional_pressure_pass_for_botzone_opt_in_smoke`。
+- 发现的剩余实现缺口只在 report validator：它尚未交叉约束 pair/game 完成状态，也不校验 digest 形状。一个21-pair、42/42 games但20/1 completed/incomplete pairs且 digest 非法的合成报告会错误得到 retain。真实 runner 报告是200/0 pairs、400/0 games并有合法 digest，故当前策略实证不改判。
+- 下一步先做纯离线 validator 加固和 Botzone 显式 mode/observability wiring；不得在同一任务清理 workspace、运行真实 preflight 或建桌。
+
+### 2026-09-06 Botzone offline wiring 复审
+
+- 新 mode `conditional_pressure_pass` 已显式贯通，近似拼写拒绝；factory不加载DeepSeek配置，runner缓存match/player Agent并关闭adapter异常fallback。
+- adapter测试覆盖真实 `project_decision()` projection、特殊压力pass、正常RuleBased路径、provenance、pending/replay/ack与finished释放；audit不升级schema/version，并用两种固定source守恒。
+- 规划 Codex 独立通过25/47/39项定向和665项全量；one-step与runtime trial各再跑一次，完整聚合和四个SHA-256不变。
+- validator中的原pair/game与digest反例已经修复，但报告所称W/D/L对阵互补没有实现。规划反例 candidate 20/20/0、baseline 1/18/21 在各自总数/score合法时仍返回retain。
+- 有效rank集合、diagnostic allowlist、requested pairs非零、active/pass关系及单方名次范围也只做了部分或未做。真实runner报告满足这些关系，故 `retain_conditional_pressure_pass_for_botzone_opt_in_smoke` 保留。
+- 当前只安排一个最小validator修正，不把offline wiring判invalid，也不重新设计benchmark。修正复审后下一步是旧workspace evidence清理。
+
+### 2026-09-06 validator 最小补漏通过
+
+- 实现范围精确为runtime-trial evaluator及其测试；Botzone wiring、Agent、engine、默认入口均未改变。
+- 规划Codex独立确认六类遗留不变量已实现，并通过单文件8项、条件化相关28项、全量668项与diff check。
+- one-step canonical/paired SHA-256仍为 `b42fad72103574c8f4e6fc1a70af5c16eccec74cb0dc376bba09aba2e5446b81` / `b0b07279d0276cec2bd9e23e1e5324502c6d3557ee225b8451bb59a19a317929`。
+- runtime canonical/trial SHA-256仍为 `9ea636f44104ecb436569679431c4aea7d95d045fcafc047c18f3bb00d958129` / `3d4ce5ff86320cd4f5d0ec28c1ac40c589b4df86670dec80c8f95594ceb71d10`。
+- 当前唯一策略判定继续为 `retain_conditional_pressure_pass_for_botzone_opt_in_smoke`；离线阶段完成。
+- workspace只读inventory已重新锁定为3目录+5文件且无connector。下一任务只做可恢复清理，不运行preflight/live或分配seed。
+
+### 2026-09-06 seed 45001 evidence 清理完成，进入 opt-in smoke
+
+- 执行方将 completion audit、history、唯一 state、stdout 和 stderr 五个已审计文件逐项移入 Windows 回收站；未永久删除、未清空回收站、未触碰仓库。
+- 规划 Codex 已独立只读确认：`D:\VsCodeProject` 下唯一直属 `Botzone*` 目录仍为普通非链接的 `BotzoneWorkspace`；其递归内容精确只有空的普通非链接目录 `audit/`、`state/`、`streams/`；没有项目 connector 进程。
+- Git HEAD 仍为 `08962800af7c47779b1435dcac97c8de17471e0f`，既有脏工作区保留；清理没有引入新的源码、测试或配置变化。
+- 清理阶段完成。下一步为一次普通、单桌、非 formal 的人工 smoke：seed `47001`、玩家1/seat 0、无需进贡、级牌2，显式 `--agent conditional_pressure_pass` 并启用 history。
+- 本局的页面只读监督仍是 best-effort；明确页面配置错误时必须等待修正，页面不可读时接受项目所有者“准备好了/配置完成”。connector 就绪并提示点击后立即持续监测，不要求额外“已开始”回复。
+- 若本局条件化 pass 触发数为0但其他门槛全部通过，仍判 opt-in connector smoke 成功，不为追求激活重开第二桌；真实触发与否分别使用 `verified_with_activation` / `verified_without_activation` 判定。
+
+### 2026-09-06 seed 47001 未开始：页面本地 AI 未连接
+
+- 起点workspace、Git、无connector和项目虚拟环境preflight均通过；seed `47001` 已由执行Codex发出，故永久视为已使用。
+- connector启动1次、最大并发1；两次poll均以受控 `transport_timeout` 结束，request/response/Header均为0，qualified finished=0，Agent/model/fallback均为0，最终由执行Codex中断。
+- 项目所有者确认页面一直显示“未连接”，所以目标游戏从未开始。页面随后显示桌已关闭只是下游结果；不能将其归因为桌生命周期、connector协议或条件化策略失败。
+- 规划Codex独立复核audit与streams：v8 audit为716 bytes / `43cb728e35047c3bbe6b450c1ffcdb06224900babfae06dd70af966299309c70`；stdout为59 bytes / `091966a7b9733ee2d4e5df1b935b9b0da88d2ebd22f0fe21502a9109ce7bfeb8`；stderr为空。没有state/history或残留connector，Git状态未变。
+- 当前transport把连接、TLS之后等待响应等阶段的socket timeout统一分类为timeout；因此两次timeout只能证明两次调用以超时结束，不能证明Botzone页面已经把当前URL/密钥识别为“已连接”。
+- stdout中的 `history=ok` 只表示已启用的recorder尚未发生写入错误；由于0 request且文件不存在，它不是“牌谱已生成”或“对局已开始”的证据。
+- 本次暴露的是流程顺序错误：在页面连接得到证据前已提示seed并准备目标桌，使seed和桌生命周期承担了连接资格风险。以后普通人工live必须先启动connector并确认页面“已连接”，然后才发送seed、创建/配置桌；页面仍未连接时不消耗seed。
+- 下一步先把本次audit/stdout/stderr三份已审计evidence移入Windows回收站。清理完成后的下一live可在同一任务中先做无seed连接等待；若连接成功则无缝继续建桌，若失败则停止但不消耗新seed。
+
+### 2026-09-06 seed 47001 prestart evidence 清理完成
+
+- 执行方已将716-byte completion audit、59-byte stdout和空stderr逐项移入Windows回收站；删除前七项门槛全部通过，未永久删除、未清空回收站、未运行网络/preflight/Botzone/浏览器/模型/测试。
+- 规划Codex独立只读确认：`D:\VsCodeProject`下唯一直属 `Botzone*` 仍为普通非链接的 `BotzoneWorkspace`；递归精确只剩空的普通非链接目录 `audit/`、`state/`、`streams/`；没有项目connector。
+- Git HEAD仍为 `08962800af7c47779b1435dcac97c8de17471e0f`，完整脏工作区集合与既有代码/测试改动保持不变。
+- seed `47001`永久禁用。下一固定seed仅在下一执行Codex确认页面“已连接”并首次向项目所有者发出配置提示时才消耗；若连接资格失败，不建桌且seed保持未使用。
+- 下一步为单一连续执行任务：零网络preflight → 人工确认连接配置已提交/同步 → 启动唯一connector → 页面确认已连接 → 才提示seed并建唯一桌 → 监测至终局。pre-seed连接修正可在同一任务原地完成，避免再次浪费桌与seed。
+
+### 2026-09-06 seed 47002 完成，但含两次 HTTP error
+
+- 修正时序得到验证：workspace/preflight通过后，项目所有者先确认连接配置已同步；connector启动且页面人工确认“已连接”后，执行Codex才提示seed `47002`并建唯一桌。此前0桌、0seed提示，connector仅启动1次。
+- 对局本身完整结束：exit 0 / `finished_target`，20 cycles、17 successful cycles，request/response/Header=`17/17/17`，finished/qualified/normal=`1/1/1`，timeout=0。
+- 严格smoke成功标签不成立，因为另有2次真实transport failure，类别均为 `http_error`。当前聚合不保留发生次序或HTTP状态码，不能判断是4xx/5xx、发生在局前/局中/局后，也不能进一步归因平台、凭据或connector。
+- 规划Codex独立复核：v8 audit为818 bytes / `068ff687ce7d7a1d02114637ba0d4bbe1875493f35dd46799b8ad0bc5a27b708`；history为8146 bytes / `7d786b1640bfa8d0d747a74fb01eafdee19ff6e0516ee60167757e00ea5b94d0`；v4 tombstone为115 bytes / `5313a2007ae344139770c86ca978e4c9b6aabd27c2f3c8dea3b750ec3f5df309`；stdout为58 bytes / `e990db21b8510eb12cecb343c57155c4fa68cbb4ac07c42143ee226a5a2c96e6`；stderr为空。audit/tombstone token一致，无active session或残留connector，Git未变。
+- history为UTF-8/LF，58个公开步骤、11个connector已观测牌权段，终局与 `terminal_tail_may_be_unobserved`存在；本队结果为负。单局胜负和尾部不完整都不能用于评价候选质量。
+- audit的16次决策全部为 `conditional_rule_based`，`conditional_pressure_pass=0`，model/fallback=0。因此真实正常fallback路径已完成全局，真实激活路径仍未观察到；本地adapter合成测试和整局trial仍是激活行为的主要证据。
+- 这局应分层记账：唯一执行判定保留 `completed_with_transport_failure:http_error`；它不能获得严格零故障smoke标签，但也不是无效对局或算法失败。17/17/17、qualified finish、v4/v8归属和history可作为非激活runtime兼容性证据。
+- 不再为追求一次live激活而重打桌，也不立即扩建HTTP诊断。跨13种级牌的大容量计划已取消，固定级牌2证据支持的条件化保牌策略已于 `150006a` 合入默认RuleBased；真实workspace保持只读。
+
 ## 2026-08-14：Botzone required-fields profile 已验证，待实现检查点
 
 - 判定：`botzone_required_fields_shape_profile_verified`。
@@ -190,7 +346,7 @@ K-A3d2 已建立同状态 RuleBased 分支续局质量代理。seed `500..509` �
 | rank 排序 | Step J-C3d1/J-C3d2 完成 | hard-only neutral；四策略 12 桶 baseline/soft 完全相同 | 暂无经过验收的新软证据 |
 | rank 排序评测 | Step J-C2b2 完成 | 真值隔离、并列安全 Top-K、零软分基线和单样本 delta | 尚未支持策略分布分层结论 |
 | rank 离线基准 | Step J-C3a/J-C3b 完成 | 固定种子采集、微聚合、阶段桶、可重复正式验收 | RuleBasedAI 不覆盖有牌可压时的战略性 pass |
-| pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 信号；不代表其他软信号无效 |
+| pass 策略分布基准 | Step J-C3c1/J-C3c2 完成 | 0/25/50/100% 确定性主动 pass、独立 seed 双运行验收 | 已拒绝无条件 pass 的牌面推断信号；未评估 pass 策略 outcome |
 | RAG | Step H 完成 | 标签化规则库/经验库，场景检索 | 标签维度粗，未接策略意图 |
 | 中期策略 | K-A3d2 完成 | 默认关闭接线、正式覆盖、动作配对和 RuleBased 质量代理载体已封板 | 尚未运行真实模型质量试验，不代表策略收益 |
 | Botzone connector 接入 | 暂停 | 协议、adapter、mock connector 与 finished provenance 已实现 | 历史 live smoke 均不作为当前上传 Bot 前置 |
@@ -1815,3 +1971,69 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 已核对本机插件与技能契约：已安装的 `chrome:control-chrome` 浏览器组件同时支持 Chrome 和 Edge，Edge 必须用稳定 family selector `agent.browsers.get("edge")`。
 - 先前锁定 `computer-use + @oai/sky` 是错误控制面；它是通用 Windows UI 控制，不是项目所有者安装的 Edge 浏览器扩展控制。
 - 下一任务改用 Edge tab 的 URL、DOM、可见状态和 Playwright locator 完成建桌循环；扩展未连接只暂停恢复，不回退视觉点击，也不创建正式批次或判 invalid。
+
+### 2026-09-01 独立规划复核
+
+- 旧 `42001/42002` 批次已只读复核：game 1 在 `ui_readback` 失败，0 request/response/Header、4 次 idle timeout、16 个 state 目录为空；证据不能归因到 connector、Agent、DeepSeek 或 benchmark。
+- 当前 Edge 扩展已实际绑定，已登录 Botzone 首页能够返回合法 URL、DOM、`Botzone 2026` 和“创建游戏桌”；尚未验证 GuanDan 表单 readback 或连续 16 局。
+- rule/deepseek 使用合成配置的零网络组合预检均 exit 0、唯一 `preflight_ready`、临时 state 为空；全量 624 项、benchmark 13 项、engine 主回归 39 项通过。
+- 项目 `.venv` 的 `python-dotenv 1.2.2` 已确认在读取 `.env` 前处理 `PYTHON_DOTENV_DISABLED`；系统 Python 的 1.1.1 不支持。因此无需修改 `config.py`，但 live/preflight 必须显式使用项目 `.venv\Scripts\python.exe`。
+- 下一步是在全新 Codex 综合任务对话中按更新后的 `NEXT_PROMPT.md` 运行 L5-A4h8b；该对话同时具备必要代码修改和现场执行职责，但当前没有已知的前置代码修复。代码只能在正式 root/live 前修改并交回项目规划 Codex 复审；正式 evidence 开始后仓库冻结，若暴露代码缺陷则停止批次，不能现场修补后继续复用同一批次。
+
+### 2026-09-03 L5-A4h8b 执行环境暂停与复核
+
+- 执行对话报告 Edge 控制组件初始化时缺少配套 Browser 运行依赖，并在任何正式副作用前暂停。
+- 仓库外状态已独立复核：`D:\VsCodeProject\BotzoneVerifiedUiCapacity-43001-43002` 不存在；未运行正式 preflight、未启动 connector，旧 `42001/42002` 仍保持 `invalid`、completed=0、failure stage=`ui_readback`。因此该次暂停没有消耗新 seed/root，也不构成正式批次失败。
+- 随后的规划对话只读复核已成功加载同一 `browser-client.mjs`、取得 Edge family 绑定并列出 Edge 标签页，故“运行依赖当前持续缺失”未复现，应归类为可恢复的瞬时初始化失败，而不是仓库代码缺陷。
+- 当前 Botzone 标签位于游戏桌创建页面，不满足 `NEXT_PROMPT.md` 要求的已登录首页前置状态。项目所有者将 Edge 返回 Botzone 首页并确认准备完成后，执行对话应从 Edge 初始化和首页 readback 重新开始；在此之前仍不得创建 `43001/43002` root。
+
+### 2026-09-03 L5-A4h8b 正式结果与新诊断边界
+
+- `43001/43002` 正式批次已实际创建并在 game 1 / `lobby_gate` 永久 invalid：completed=0，页面在配置写入和 connector 启动前进入 `?msg=destroyed`，可见“游戏桌被房主关闭了”。依照契约没有重试或创建第二桌。
+- manifest 为 4661 bytes / `e98e6042...dea6`，preflight summary 为 2273 bytes / `207b6408...0f42`，invalid progress 为 284 bytes / `2a4dc014...0abc`；16 个 game 目录的 state/audit 文件均为 0，残留 connector 为 0。
+- 双模式零网络 preflight 已通过，但 connector、Agent、DeepSeek/model 均未进入。因此该批次只证明 Botzone 建桌/大厅生命周期失败，不构成 connector、策略或模型缺陷证据。
+- 历史 `33001` 也曾在提交前出现房主关闭。重复症状足以停止“换 seed 直接重跑正式容量”，但仍不足以确认是误点、扩展、平台关闭或超时。
+- 当前进入 L5-A4h9：不创建正式 root、不启动 connector，至多创建一个一次性桌，以三次无操作稳定 readback 和逐个页面动作收窄 destroyed 的最早边界。完成诊断后再决定单局 pilot 或专门修复任务。
+
+### 2026-09-03 L5-A4h9 未进入新桌诊断
+
+- 执行对话成功精确绑定 Edge family 并读取浏览器文档，但只读到任务开始前已经存在的 `?msg=destroyed` 标签；没有返回首页、创建新标签或新桌，也没有观察到本任务导致的页面转换。
+- 该标签的 Playwright locator 在 30 秒和 60 秒回读中超时。因此执行报告使用的 `botzone_guandan_table_lifecycle_diagnostic_destroyed` 不满足 L5-A4h9 的实质完成条件；规划状态改记为 `precondition_failed: edge_locator_readback_unavailable_before_new_table`。
+- 规划 Codex 独立复核发现 Edge 标签枚举正常、浏览器运行、扩展安装且启用、native-host manifest/注册路径/origin 全部正确；旧 Botzone 标签在重新绑定时显示已属于另一个浏览器控制会话。当前证据不支持优先重装扩展，也不能把旧标签占用断言为上一轮 locator 超时的唯一根因。
+- 当前进入 L5-A4h9a：新执行任务必须创建并持有一个全新 Edge 标签，先用最小只读 locator 资格验证首页；资格失败时桌数必须为 0，资格通过后才允许至多创建一个诊断桌。旧 destroyed 标签保持不操作。
+
+### 2026-09-03 执行边界改为人工建桌与固定 workspace
+
+- 项目所有者决定停止让 Codex 自动操作 Edge 建桌；以后由项目所有者手工创建 Botzone 桌并完成页面配置。此前计划的 L5-A4h9a 浏览器 locator 资格不再执行，状态改为已废弃/不再采用。
+- 项目所有者明确授权统一删除 `D:\VsCodeProject` 下本任务形成的 21 个 `Botzone*` 顶层目录，包括历史 pilot、state/audit 与 formal evidence；原始本地 evidence 删除后不可恢复，文档中的结果与 hash 继续作为历史摘要。
+- 规划 Codex 只读确认这 21 项都是 `D:\VsCodeProject` 直属普通目录，候选固定目录 `D:\VsCodeProject\BotzoneWorkspace` 尚不存在。由于规划 Codex 仅允许修改 Markdown，实际删除交给执行 Codex。
+- 当前进入 L5-A4h10：按精确绝对路径 allowlist 做一次性永久清理，再创建唯一空的 `D:\VsCodeProject\BotzoneWorkspace`。清理任务不包含建桌、preflight、connector 或 live。
+- 后续不再创建按 seed/pilot/pair/capacity 命名的 Botzone 顶层目录；固定 workspace 的清空准备与 live 运行必须分开，且清空前先由规划 Codex记录上一轮结果。
+
+### 2026-09-03 L5-A4h10 永久清理被环境策略拦截
+
+- 删除前五项只读安全门槛全部通过：21 项 allowlist 与实际直属目录集合一致，均为普通非链接目录；固定 workspace 不存在；Git 只有既存 Markdown 变化。
+- 执行环境在启动前拦截 `Remove-Item -Recurse -Force`。永久删除=0、目录创建=0、inventory drift=0；21 个旧目录仍在原位，`D:\VsCodeProject\BotzoneWorkspace` 仍不存在。
+- 不允许通过 .NET、`cmd` 或其他低层永久递归删除方式规避安全策略。当前进入 L5-A4h10a：只尝试执行环境明确支持的 Windows 回收站式可恢复清理；若仍不可用，则由项目所有者使用资源管理器完成。
+- 项目所有者进一步授权规划 Codex直接维护 `AGENTS.md`。固定 workspace、人工建桌、结果先记录后清空、清理与 live 分离等规则已经写入根目录 `AGENTS.md`。
+
+### 2026-09-03 L5-A4h10a 固定 workspace 已建立
+
+- 21 个精确旧目录已全部移入 Windows 回收站；清理前五项安全门槛通过，无 inventory drift。没有执行永久删除，旧目录在回收站清空前仍可由项目所有者恢复。
+- `D:\VsCodeProject\BotzoneWorkspace` 已创建并独立只读复核：它是 `D:\VsCodeProject` 的普通直属非链接目录，子项计数为 0；最终直属 `Botzone*` 集合仅为 `BotzoneWorkspace`。
+- 清理前后 Git 状态一致，当前只有根 `AGENTS.md`、五份已跟踪 docs 文档和未跟踪 `docs/CLEAN_HANDOFF.md` 共 7 项 Markdown 变化；浏览器、connector、Agent/model、preflight 和测试均未运行。
+- 当前进入 L5-A4h11：项目所有者手工创建 seed `44001`、seat 0、无需进贡、级牌 2 的 RuleBased 单局桌；执行 Codex 先做固定 workspace artifact/零网络 preflight，收到“桌已配置”后启动唯一 connector，确认持续运行后才明确提示项目所有者点击“开始游戏！”。
+
+### 2026-09-04 L5-A4h11 准备命令资格失败
+
+- 起点检查通过，但准备脚本在创建首个规定 artifact 前因 PowerShell 参数不兼容中止；报告没有给出失败的精确命令、参数或原始错误类别。
+- 独立复核确认 workspace 仍为空且正常，唯一顶层目录规则保持；preflight、connector、网页桌、Agent/model、外部请求和仓库变化均为 0。
+- 因为尚未写 manifest、未告知项目所有者配置桌且没有 live 副作用，执行报告中的 `botzone_owner_prepared_rule_connector_pilot_invalid` 不作为 pilot 结果。规划重分类为 `precondition_failed: workspace_preparation_command_incompatible`，seed `44001` 继续有效。
+- 当前进入 L5-A4h11a：正式 workspace 前先在系统临时 scratch 以相同命令/API 演练目录、token 和原子 JSON；资格期允许修正兼容问题，失败必须报告精确版本/命令/错误。通过后在同一任务继续原人工建桌 RuleBased pilot。
+
+### 2026-09-04 L5-A4h11a formal preflight 验证失败
+
+- workspace 外 qualification 已通过，正式 manifest 已原子写入并回读：348 bytes / `fd40f1a...a26f6`。随后唯一一次 rule preflight 的严格验证未通过，但执行报告仍未包含 exit、stdout/stderr bytes 或具体失败断言。
+- 独立只读复核确认 manifest 公开字段与 `44001`/seat 0/rule/profile/budget/HEAD 一致且含一个未输出 token 字段；workspace 仅有 `audit/`、`state/`、manifest，state/audit 文件为 0/0，summary/completion 均不存在。
+- 未请求人工建桌或启动 connector，故当前为 `precondition_failed: formal_preflight_validation_failed`，不是 pilot invalid；`44001` 继续有效，manifest 不得重写。
+- `tests/test_botzone_preflight_output.py` 明确允许 ready stdout 使用 LF 或 CRLF；规划复跑该文件 5 项通过。当前进入 L5-A4h11b：先用相同二进制捕获契约做 workspace 外诊断，通过后才允许一次 formal recovery preflight，并在成功后继续人工建桌流程。

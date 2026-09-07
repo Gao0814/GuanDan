@@ -6,7 +6,7 @@
 2. `agents/`：只能从引擎公开的 observation 和合法动作中选择 `action_id` 的 AI 决策层。
 3. `integrations/botzone/`：把 Botzone 本地 AI 长轮询协议适配到本项目，供真实平台测试使用。
 
-当前推荐先用本地 CLI 验证规则与策略，再通过 Botzone 本地 AI connector 做无贡对局测试。
+当前推荐先用本地 CLI 验证规则与策略，再通过 Botzone 本地 AI connector 做固定级牌 2、无需进贡的单局测试。引擎保留级牌/逢人配规则接口，但当前算法主线不做 13 级牌泛化、多局升级或贡还流程。
 
 ## 1. 快速开始
 

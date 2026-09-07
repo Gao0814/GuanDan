@@ -1,5 +1,24 @@
 # Botzone 接入计划：本地 connector 与直接上传 Bot
 
+## 当前路线（2026-09-06）：connector 已可用，正式 capacity 延期
+
+真实 RuleBased 与 DeepSeek 对局已经分别证明 connector 可以完成请求、合法动作响应、Header ack、终局识别和审计闭环。当前不再把 L5-A4h11b formal preflight 恢复或 8 对/16 局 capacity 作为算法开发前置。
+
+保留的核心失败经验是：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败。** 未来正式实验必须把 shell/参数/路径/preflight/辅助 writer 等 qualification 与实际实验边界分开；在没有外部建桌提交、live 请求或正式 evidence 变更时允许原地修正。manifest、progress、hash 和成对 schedule 只在明确要求正式、可审计结论时启用。
+
+当前 Botzone 用途降为两类：
+
+1. 人工建桌、connector 持续运行的少量真实环境 smoke；
+2. 为算法诊断保存 connector 实际观察到的公开出牌轨迹。
+
+Botzone 请求允许 connector 累积四名玩家的公开 `HistoryEntry`、本家完整手牌、级牌、pass 与已观察完成顺序，但在进行中不暴露其他玩家暗牌。若终局动作尾部完整，可根据每名玩家的全部实体出牌和 108 张牌守恒严格反推已出完玩家的初始手牌及末游剩余手牌；推导结果必须明确标记。终局 `FinishedRow` 只含座位与比分；如果最后一次 play 后没有新的本地请求，connector 可能看不到其他玩家结束对局前的末尾动作，此时不得用不完整补集推导暗牌。因此新牌谱必须标为“connector-observed history”，并显式表示完整性边界，不能称为完整裁判日志。
+
+首版牌谱及一次最小加固已经完成：已由 Header ack 确认、随后直接收到 finished row 的本家终局动作会以 carrier/claim 证据记录；history 写失败产生固定低敏状态；单一文件绑定唯一 match；牌型显示复用 adapter/engine 真值并区分同花顺。seed `45001` 的单局人工 RuleBased smoke 已验证 `history=ok`。
+
+真实 smoke 同时确认：本地 AI connector 在本家出完后可能不再收到 play 请求，之后的 finished row 只证明平台对局已结束，不补发完整动作尾部。因此文件中的第N轮是 connector 基于已观察动作分组出的第N个牌权段，不等于裁判完整整局轮数。只有后续观测到下一段才能证明前一段边界；terminal tail 不完整时，最后一段不得标成已证明“轮结束”。
+
+真实 `45001` history 的策略诊断定位到RuleBased无条件排除pass的候选机制。原one-step与新整局对称trial均在固定级牌2下满足retain门槛；Botzone显式 `conditional_pressure_pass` mode及两类低敏source已离线接通，validator也已收口。该条件化保牌规则现已合入默认RuleBased，并以冻结旧selector保持DeepSeek fallback和历史evaluation语义；实现检查点为 `150006a`，规划复核全量668项通过。seed `47002`按先连接顺序完成17/17/17与qualified finish，但2次 `http_error`阻止严格smoke标签，16次决策均走 `conditional_rule_based`。当前不重打live追激活，也不做跨13级牌推广；下一步处理既有实战复盘中的同队炸弹互耗。Botzone profile继续固定级牌2、无需进贡，正式capacity仍延期。
+
 ## L5-A2b5：required-fields 安全画像
 
 状态：实现与离线回归已验证，独立实现检查点待建立。
@@ -1098,3 +1117,68 @@ L5-A4f8 使用全新 `36001` 和相同 seat/opponents/profile，固定 rule→de
 - 插件核对确认 `chrome:control-chrome` 的浏览器运行时原生支持 Edge family；使用 `agent.browsers.get("edge")` 绑定项目所有者当前 Edge，而不是把组件名称中的 Chrome 误解为浏览器限制。
 - L5-A4h8a 的通用 Windows Computer Use 路径不再作为正式方案。新路径使用 Edge tab 的 URL/DOM/可见状态与 Playwright locator，且禁止回退 OCR、屏幕坐标、内置 Browser 或 Chrome family。
 - Edge 扩展断开、验证码或登录门槛只暂停并由项目所有者恢复；只要尚未创建正式 root、启动 connector 或提交桌，就不消耗 seed、不写 invalid progress。
+
+### L5-A4h9：预连接建桌生命周期诊断
+
+- `43001/43002` 在 game 1 / `lobby_gate` 进入 `?msg=destroyed`，配置、connector、Agent/model 均未开始；该正式 root 与 seeds 永久封存。
+- 由于 `33001` 也出现过预提交房主关闭，下一步不再用新 seeds 直接启动完整容量，而是把网页桌生命周期从正式 evidence 链路中隔离出来。
+- 诊断至多创建一个一次性 GuanDan 桌：每个页面动作前后都用 Edge URL/DOM 新鲜 readback；表单到达后先做三次无操作稳定读取，再逐一执行载入配置、诊断 seed 和 seat 写入。
+- 诊断禁止 connector、preflight、模型、正式 root 和开始游戏。destroyed 后立即停止且不创建第二桌；若表单稳定，也停在开始前，由规划复审决定单局 pilot。
+
+### L5-A4h9a：浏览器会话与诊断标签隔离
+
+- L5-A4h9 只观察到遗留 destroyed 标签，未创建新桌；locator 超时使生命周期问题仍未复现，不能使用 destroyed 判定冒充新结果。
+- Edge 扩展通信与本机桥检查均通过，但旧标签已被另一浏览器控制会话占用。下一诊断不再尝试接管旧标签，而由当前任务新建并持有唯一 Edge 标签。
+- 新标签先通过普通元数据、`body` 和首页关键入口的 locator 资格；失败仅允许短等待后重试一次，随后以浏览器资格失败停止，网页桌数必须为 0。
+- 资格通过后才继续一个诊断桌；旧状态不计，只有新桌建立后产生的 destroyed 才能收窄生命周期边界。
+
+### L5-A4h10：人工建桌与固定仓库外 workspace
+
+- L5-A4h9a 的自动 Edge locator/建桌路线由项目所有者主动终止，后续网页桌及表单配置改由项目所有者手工完成。
+- 现存 21 个 Botzone 顶层运行目录将按显式 allowlist 永久删除，历史原始 evidence 不再保留；文档中的低敏结果和 hash 作为历史摘要继续存在。
+- 清理后只保留 `D:\VsCodeProject\BotzoneWorkspace` 一个空的仓库外根目录。未来 state、audit、manifest 和 progress 都必须位于该固定根内，禁止再创建按实验名或 seed 命名的顶层目录。
+- workspace 清空准备不得与 live 混在同一步。上一轮结果先由规划 Codex审计并记录，再由明确授权的执行任务清空，随后才开始新运行。
+- 完成人工桌准备后，执行 Codex 只负责启动唯一 connector、等待完成和验收 evidence；初始恢复先做单局 pilot，不直接跳回 16 局容量。
+
+### L5-A4h10a：回收站清理恢复
+
+- L5-A4h10 永久删除命令被执行环境策略在启动前拦截；所有只读门槛通过，但实际目录与 workspace 均无变化。
+- 恢复路线只允许把精确 21 项移入 Windows 回收站，不允许利用其他 shell、.NET 或低层文件 API绕过永久删除拦截。
+- 21 项全部离开原路径后才创建唯一空的 `D:\VsCodeProject\BotzoneWorkspace`；部分移动或能力缺失时停止，不启动后续 live。
+- 固定 workspace 与人工建桌规则已提升到根目录 `AGENTS.md`，后续任务直接遵守，不再仅依赖一次性 Prompt。
+
+### L5-A4h11：人工建桌 RuleBased connector 交接
+
+- 固定 workspace 清理与建立已完成；下一 live 只使用其内部固定 state/audit/manifest，不再创建新 Botzone 顶层目录。
+- 项目所有者手工填写 `44001`、seat 0、无需进贡、级牌 2，并停在开始前。执行 Codex 不读取或控制 Edge，只依据项目所有者的“桌已配置”确认进入 connector 阶段。
+- connector 使用 rule、120 秒 poll、100 cycles、3600 秒 wall、finished target 1 与唯一 32-hex provenance token；启动为持续 PTY 后才提示项目所有者最后核对字段和本地 AI 已连接并点击开始。
+- 成功只证明人工建桌到 RuleBased connector 的单局交接恢复；不证明 DeepSeek、配对容量或策略收益。失败保留 workspace 且不复用 seed。
+
+### L5-A4h11a：workspace 准备命令资格
+
+- 首次 L5-A4h11 未进入 artifact/preflight/live，因 PowerShell 参数兼容问题在 workspace 外停止；`44001` 未消耗。
+- 新流程在系统临时 scratch 中先运行与正式准备相同的目录、token 与原子 JSON 路径，并显式记录 shell/Python 版本和可用参数。
+- qualification 属于可修正编排层，失败不写 workspace、不判 pilot invalid；正式 pilot 边界从向项目所有者发出 seed/profile 配置提示开始。
+- 同一任务 qualification 通过后继续固定 workspace、rule preflight、人工建桌与持续 connector，不增加新顶层目录或浏览器自动化。
+
+### L5-A4h11b：formal preflight 捕获契约恢复
+
+- 既有 manifest 已锁定，不能重建或换 token；当前 partial workspace 无 state/audit 文件，尚未进入网页桌或 live。
+- preflight stdout 校验直接复用 `tests/test_botzone_preflight_output.py` 的 bytes 契约，兼容 LF/CRLF；必须分离子进程 stdout/stderr，不能混入工具元数据。
+- 先在系统 scratch 诊断实际配置/CLI，再对正式 state 运行唯一一次 recovery；只有二者均通过才写低敏 summary 并进入人工建桌。
+- 人工配置提示发出前的 preflight 失败不消耗 `44001`；提示发出后才进入不可重试的单局 pilot 边界。
+
+### 2026-09-05：旧 formal recovery 退役与 history smoke 完成
+
+- 旧 partial manifest 已通过 Windows 回收站式操作移出 fixed workspace；不恢复 L5-A4h11b，也不继续 8 对/16 局 capacity。
+- fixed workspace 只复用 `D:\VsCodeProject\BotzoneWorkspace`。seed `45001` 的普通人工 RuleBased smoke 已完成：15/15/15 请求闭环、qualified finished 1、14次 rule primary、零 model/fallback、exit 0、`history=ok`。
+- connector-observed `history.txt` 保留本家牌与公开动作，并正确标注 `terminal_tail_may_be_unobserved`；最后观测段不再被误写为已证明结束，标题格式也已统一。
+- 最新规划复跑为 history 16项、connector 相关54项、全量643项通过；真实 workspace evidence 未被后续语义修复或策略诊断改写。
+- Botzone integration 当前状态为可用且暂停扩展。下一阶段只做本地 evaluation-only 策略评测，不清理现有 evidence、不新建桌、不启动 connector。
+
+### 后续 live 的交互契约
+
+- 项目所有者手工建桌；Codex 的页面只读监督用于减轻输入负担，不是额外准入门槛。监督不可用时保持等待并接受“准备好了/配置完成”信号，不得提前结束任务。
+- 页面可读时核对 seed、seat、无贡和级牌；明确不匹配时拒绝把该局计为目标运行。connector payload 不含 seed，只能在运行后核对 seat、level 和 no-tribute profile。
+- connector 就绪并提示点击一次“开始游戏！”后，Codex 立即监测首请求、history/audit 与进程。观察到开始证据后不再要求项目所有者额外回复；尚未开始则继续等待。
+- 新的 Botzone 验证只在候选算法先通过本地固定 seed 评测后安排。普通 smoke 不继承 formal manifest/progress/seed 作废边界，准备阶段零副作用错误允许原地修正。
