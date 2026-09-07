@@ -68,6 +68,31 @@ class BotzoneLiveLauncherTests(unittest.TestCase):
             (root / "streams" / "stdout.txt").rename(root / "streams" / "stdout-closed.txt")
             (root / "streams" / "stderr.txt").rename(root / "streams" / "stderr-closed.txt")
 
+    def test_optional_history_file_is_forwarded_without_changing_default_arguments(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            arguments = _argv(root) + ("--history-file", str(root / "history.txt"))
+            config = parse_launcher_args(arguments)
+            self.assertEqual(config.history_file, root / "history.txt")
+            self.assertIn("--history-file", connector_argv(config))
+            default_root = root / "default"
+            default_root.mkdir()
+            default = parse_launcher_args(_argv(default_root))
+            self.assertIsNone(default.history_file)
+            self.assertNotIn("--history-file", connector_argv(default))
+
+    def test_history_file_cannot_share_state_or_stream_artifact_directories(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_args = _argv(root) + ("--history-file", str(root / "state" / "history.txt"))
+            with self.assertRaises(LauncherError):
+                parse_launcher_args(state_args)
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stream_args = _argv(root) + ("--history-file", str(root / "streams" / "history.txt"))
+            with self.assertRaises(LauncherError):
+                parse_launcher_args(stream_args)
+
     def test_entrypoint_failure_is_normalized_and_both_streams_close(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -98,12 +123,16 @@ class BotzoneLiveLauncherTests(unittest.TestCase):
     def test_token_agent_and_state_are_strict_and_streams_never_contain_token(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for agent in ("rule", "deepseek"):
+            for agent in ("rule", "deepseek", "conditional_pressure_pass"):
                 with self.subTest(agent=agent):
                     case_root = root / agent
                     case_root.mkdir()
                     config = parse_launcher_args(_argv(case_root, agent=agent))
                     self.assertEqual(config.agent, agent)
+            invalid_agent_root = root / "invalid-agent"
+            invalid_agent_root.mkdir()
+            with self.assertRaises(LauncherError):
+                parse_launcher_args(_argv(invalid_agent_root, agent="conditional-pressure-pass"))
             for token in (TOKEN.upper(), TOKEN[:-1], TOKEN[:-1] + "g", True, 1):
                 with self.subTest(token_type=type(token).__name__):
                     case_root = root / ("token-" + str(len(list(root.iterdir()))))

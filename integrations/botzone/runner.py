@@ -18,6 +18,7 @@ from .connector import (
     MockConnector,
     Transport,
 )
+from .history import ConnectorObservedHistory
 from .agent_observability import AgentObservabilityRecorder, AgentObservabilitySnapshot
 from .agent_runtime import build_agent_factory
 from .play_adapter import NoTributeRuleBasedHandler
@@ -56,6 +57,7 @@ class RunnerSummary:
     normal_result_count: int = 0
     local_team_score_counts: tuple[tuple[str, int], ...] = ()
     result_observability_valid: bool = True
+    history_status: str = "disabled"
 
 
 class ForegroundRunner:
@@ -234,7 +236,12 @@ class ForegroundRunner:
             result_snapshot.normal_result_count,
             result_snapshot.local_team_score_counts,
             result_observability_valid,
+            self._history_status(),
         )
+
+    def _history_status(self) -> str:
+        status = getattr(self._connector, "history_status", "disabled")
+        return status if status in {"disabled", "ok", "failed"} else "failed"
 
 
 def _has_transport_failure(cycle: ConnectorCycle) -> bool:
@@ -255,6 +262,7 @@ def build_foreground_runner(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
     run_token: str | None = None,
+    history_file: Path | str | None = None,
 ) -> ForegroundRunner:
     observability = AgentObservabilityRecorder()
     if agent_mode == "rule":
@@ -267,9 +275,23 @@ def build_foreground_runner(
             agent_mode="deepseek",
             observability=observability,
         )
+    elif agent_mode == "conditional_pressure_pass":
+        handler = NoTributeRuleBasedHandler(
+            prepared_agent_factory or agent_factory_builder(agent_mode),
+            fallback_to_rule=False,
+            cache_agents=True,
+            agent_mode="conditional_pressure_pass",
+            observability=observability,
+        )
     else:
         raise ValueError("invalid_agent_mode")
-    connector = MockConnector(SessionStore(config.state_directory, run_token=run_token), transport, handler)
+    recorder = ConnectorObservedHistory(history_file) if history_file is not None else None
+    connector = MockConnector(
+        SessionStore(config.state_directory, run_token=run_token),
+        transport,
+        handler,
+        history_recorder=recorder,
+    )
     return ForegroundRunner(
         connector,
         max_consecutive_failures=config.max_consecutive_failures,

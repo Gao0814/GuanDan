@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from integrations.botzone.models import DealRequest, PlayRequest
+from integrations.botzone.models import ActionClaim, DealRequest, PlayRequest
 from integrations.botzone.protocol import parse_stage_request
 from integrations.botzone.poll import FinishedRow
 from integrations.botzone.session import HandlerResult, PlayEffect, SessionStorageError, SessionStore, merge_history
@@ -118,7 +118,7 @@ class BotzoneSessionTests(unittest.TestCase):
             play, _ = store.prepare("unit-a", b"play", _play())
             play = store.complete_handler(
                 store.reserve_handler(play),
-                HandlerResult(b"play", PlayEffect((before.own_hand[0],))),
+                HandlerResult(b"play", PlayEffect((before.own_hand[0],), (before.own_hand[0],))),
             )
             self.assertEqual(store.load("unit-a").own_hand, before.own_hand)
             restarted = SessionStore(root)
@@ -130,6 +130,7 @@ class BotzoneSessionTests(unittest.TestCase):
             after = restarted.load("unit-a")
             assert after is not None
             self.assertEqual(after.own_hand, before.own_hand[1:])
+            self.assertEqual(after.confirmed_history[0].entry.response, ActionClaim((before.own_hand[0],), (before.own_hand[0],)))
             restarted.acknowledge(deliveries)
             self.assertEqual(restarted.load("unit-a").own_hand, before.own_hand[1:])
 

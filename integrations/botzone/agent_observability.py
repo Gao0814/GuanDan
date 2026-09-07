@@ -13,10 +13,12 @@ DECISION_SOURCES = frozenset(
         "model",
         "deepseek_rule_fallback",
         "adapter_rule_fallback",
+        "conditional_pressure_pass",
+        "conditional_rule_based",
     }
 )
 MODEL_OUTCOMES = frozenset({"success", "timeout", "exception", "invalid_suggestion"})
-AGENT_MODES = frozenset({"rule", "deepseek"})
+AGENT_MODES = frozenset({"rule", "deepseek", "conditional_pressure_pass"})
 
 
 class AgentObservabilityError(ValueError):
@@ -86,8 +88,16 @@ class AgentObservabilitySnapshot:
         if self.agent_mode == "rule":
             if self.model_attempt_count or outcomes or any(name != "rule_primary" for name, _ in decisions):
                 raise AgentObservabilityError("rule_mode_model_activity")
-        elif self.model_attempt_count != sources.get("model", 0) + sources.get("deepseek_rule_fallback", 0):
-            raise AgentObservabilityError("deepseek_model_conservation_failed")
+        elif self.agent_mode == "deepseek":
+            if self.model_attempt_count != sources.get("model", 0) + sources.get("deepseek_rule_fallback", 0):
+                raise AgentObservabilityError("deepseek_model_conservation_failed")
+        elif (
+            self.model_attempt_count
+            or outcomes
+            or fallback_count
+            or any(name not in {"conditional_pressure_pass", "conditional_rule_based"} for name, _ in decisions)
+        ):
+            raise AgentObservabilityError("conditional_pressure_pass_mode_activity")
 
     def to_json(self) -> dict[str, object]:
         return {

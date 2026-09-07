@@ -61,6 +61,10 @@ def build_agent_factory(
         from agents.rule_based_ai import RuleBasedAIAgent
 
         return lambda player_id: RuleBasedAIAgent(player_id=player_id)
+    if mode == "conditional_pressure_pass":
+        from agents.conditional_pressure_pass_ai import ConditionalPressurePassAIAgent
+
+        return lambda player_id: ConditionalPressurePassAIAgent(player_id=player_id)
     if mode != "deepseek":
         raise AgentRuntimeError("invalid_agent_mode")
 
@@ -119,7 +123,7 @@ def prepare_agent_factory(
 
     if mode == "rule":
         return None
-    if mode != "deepseek":
+    if mode not in {"deepseek", "conditional_pressure_pass"}:
         raise AgentRuntimeError("invalid_agent_mode")
     try:
         factory = agent_factory_builder(mode)
@@ -127,5 +131,6 @@ def prepare_agent_factory(
         # A disposable instance proves that path without selecting an action.
         factory(1)
     except Exception as exc:
-        raise AgentRuntimeError("deepseek_configuration_unavailable") from exc
+        category = "deepseek_configuration_unavailable" if mode == "deepseek" else "conditional_pressure_pass_composition_unavailable"
+        raise AgentRuntimeError(category) from exc
     return factory

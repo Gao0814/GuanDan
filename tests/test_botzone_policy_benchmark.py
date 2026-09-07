@@ -106,6 +106,19 @@ def _tokenized_audit(audit: dict[str, object], run_token: str) -> dict[str, obje
 
 
 class BotzonePolicyBenchmarkTests(unittest.TestCase):
+    def test_opt_in_conditional_audit_is_not_admitted_to_rule_deepseek_formal_comparison(self) -> None:
+        audit = _audit("deepseek", "win", "score_2")
+        audit["agent_mode"] = "conditional_pressure_pass"
+        audit["decision_source_counts"] = [["conditional_pressure_pass", 1]]
+        audit["model_attempt_count"] = 0
+        audit["model_outcome_counts"] = []
+        report = aggregate_policy_audits(
+            build_selected_paired_schedule((1,), (0,), _conditions()),
+            (_submission(1, 0, "conditional_pressure_pass", audit),),
+            _conditions(),
+        )
+        self.assertEqual((report.valid_pair_count, report.invalid_pair_count), (0, 1))
+
     def test_conditions_and_seed_inputs_are_strict(self) -> None:
         with self.assertRaises(PolicyBenchmarkError):
             build_paired_schedule((1,), _conditions(confirmed=False))

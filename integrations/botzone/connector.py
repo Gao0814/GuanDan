@@ -11,13 +11,13 @@ from typing import Protocol
 from .bot_io import BotEnvelopeError, REQUIRED_FIELDS_PROFILES, encode_bot_response, encode_direct_response
 from .http_transport import TRANSPORT_CATEGORIES, TransportError
 from .models import DealRequest, PlayRequest, UnsupportedStage
-from .poll import ENVELOPE_SHAPE_DETAILS, PollFormatError, PollRequest, WIRE_MODES, parse_poll
+from .poll import ENVELOPE_SHAPE_DETAILS, FinishedRow, PollFormatError, PollRequest, WIRE_MODES, parse_poll
 from .result_observability import (
     ResultObservabilityError,
     ResultObservabilityRecorder,
     ResultObservabilitySnapshot,
 )
-from .session import HandlerContext, HandlerResult, PendingDelivery, SessionStorageError, SessionStore
+from .session import HandlerContext, HandlerResult, PendingDelivery, SessionRecord, SessionStorageError, SessionStore
 
 
 class Transport(Protocol):
@@ -25,6 +25,19 @@ class Transport(Protocol):
 
 
 RequestHandler = Callable[[HandlerContext], HandlerResult]
+
+
+class HistoryRecorder(Protocol):
+    """Optional diagnostic artifact boundary; it cannot affect delivery."""
+
+    failed: bool
+
+    @property
+    def status(self) -> str: ...
+
+    def update(self, record: SessionRecord) -> None: ...
+
+    def finish(self, record: SessionRecord, row: FinishedRow) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +71,7 @@ class MockConnector:
         transport: Transport,
         handler: RequestHandler,
         result_observability: ResultObservabilityRecorder | None = None,
+        history_recorder: HistoryRecorder | None = None,
     ) -> None:
         self._store = store
         self._transport = transport
@@ -66,6 +80,7 @@ class MockConnector:
             result_observability if result_observability is not None else ResultObservabilityRecorder()
         )
         self._result_observability_failed = False
+        self._history_recorder = history_recorder
         self._play_pending: set[str] = set()
         self._play_acknowledged: set[str] = set()
         self._finished_qualified: set[str] = set()
@@ -117,6 +132,16 @@ class MockConnector:
         except SessionStorageError:
             return _cycle(True, len(headers), 0, 0, 0, 0, {"session_error": 1})
         self._play_acknowledged.update(match_id for match_id in acknowledged if match_id in self._play_pending)
+        for match_id in acknowledged:
+            try:
+                record = self._store.load(match_id)
+                if record is not None:
+                    self._record_history(record)
+            except SessionStorageError:
+                # The acknowledgement has already committed; diagnostic output
+                # must not alter its transaction result.
+                if self._history_recorder is not None:
+                    self._history_recorder.failed = True
 
         try:
             batch = parse_poll(raw_poll)
@@ -134,6 +159,7 @@ class MockConnector:
         finished_categories: Counter[str] = Counter()
         for row in batch.finished:
             category = _finished_category(row.player_count)
+            self._record_finished_history(row)
             try:
                 cleaned = self._store.finish(row)
             except SessionStorageError:
@@ -236,7 +262,33 @@ class MockConnector:
             return 0, diagnostics, details, profiles
         if isinstance(request.stage, PlayRequest) and completed.pending_response:
             self._play_pending.add(request.match_id)
+        self._record_history(completed)
         return int(completed.pending_response is not None), diagnostics, details, profiles
+
+    def _record_history(self, record: SessionRecord) -> None:
+        """Best-effort diagnostic rendering after normal handler validation."""
+
+        if self._history_recorder is None:
+            return
+        try:
+            self._history_recorder.update(record)
+        except Exception:
+            # History is intentionally outside pending/ack and audit contracts.
+            self._history_recorder.failed = True
+
+    def _record_finished_history(self, row: FinishedRow) -> None:
+        if self._history_recorder is None:
+            return
+        try:
+            record = self._store.load(row.match_id)
+            if record is not None:
+                self._history_recorder.finish(record, row)
+        except Exception:
+            self._history_recorder.failed = True
+
+    @property
+    def history_status(self) -> str:
+        return "disabled" if self._history_recorder is None else self._history_recorder.status
 
 
 def _normalized_session_error(error: SessionStorageError) -> str:

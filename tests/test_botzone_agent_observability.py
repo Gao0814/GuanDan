@@ -9,15 +9,16 @@ import unittest
 from unittest.mock import patch
 
 from agents.deepseek_client import DeepSeekSuggestion
+from agents.conditional_pressure_pass_ai import ConditionalPressurePassAIAgent
 from integrations.botzone.agent_observability import (
     AgentObservabilityError,
     AgentObservabilityRecorder,
     AgentObservabilitySnapshot,
 )
 from integrations.botzone.agent_runtime import _StrictDeepSeekClient
-from integrations.botzone.cards import card_id_for
+from integrations.botzone.cards import ALL_CARDS, card_id_for
 from integrations.botzone.connector import MockConnector
-from integrations.botzone.models import GlobalState, PlayRequest
+from integrations.botzone.models import ActionClaim, GlobalState, HistoryEntry, PlayRequest
 from integrations.botzone.play_adapter import AdapterError, NoTributeRuleBasedHandler, project_decision
 from integrations.botzone.runner import ForegroundRunner, RunnerSummary, write_audit
 from integrations.botzone.session import HandlerContext, SessionStore
@@ -35,6 +36,24 @@ def _context() -> HandlerContext:
         own_hand=hand,
         history=(),
         latest_window=(),
+        global_state=state,
+        finished=False,
+    )
+
+
+def _conditional_pass_context() -> HandlerContext:
+    leader_card = card_id_for("BJ", None)
+    leader = HistoryEntry(1, ActionClaim((leader_card,), (leader_card,)))
+    own_hand = tuple(card.card_id for card in ALL_CARDS if card.rank not in {"SJ", "BJ"})[:27]
+    state = GlobalState("2", 0, None, None, False)
+    return HandlerContext(
+        match_key="conditional-source",
+        request_digest="synthetic",
+        request=PlayRequest((leader,), (), -1, state),
+        local_player_id=0,
+        own_hand=own_hand,
+        history=(leader,),
+        latest_window=(leader,),
         global_state=state,
         finished=False,
     )
@@ -119,6 +138,20 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
         with self.assertRaises(AgentObservabilityError):
             AgentObservabilitySnapshot("deepseek", True, (("model", 1),), 1, (("success", 1),), 0)
 
+    def test_conditional_mode_sources_are_low_cardinality_and_model_free(self) -> None:
+        recorder = AgentObservabilityRecorder()
+        recorder.record_decision_source("conditional_pressure_pass")
+        recorder.record_decision_source("conditional_rule_based")
+        snapshot = recorder.snapshot("conditional_pressure_pass")
+        self.assertEqual(snapshot.agent_decision_count, 2)
+        self.assertEqual(
+            snapshot.decision_source_counts,
+            (("conditional_pressure_pass", 1), ("conditional_rule_based", 1)),
+        )
+        self.assertEqual((snapshot.model_attempt_count, snapshot.model_outcome_counts, snapshot.rule_fallback_count), (0, (), 0))
+        with self.assertRaises(AgentObservabilityError):
+            AgentObservabilitySnapshot("conditional_pressure_pass", 1, (("rule_primary", 1),), 0, (), 0)
+
     def test_strict_client_classifies_only_fixed_outcomes(self) -> None:
         cases = (
             (1, "success"),
@@ -185,6 +218,28 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 self.assertEqual(snapshot.model_outcome_counts, outcomes)
                 self.assertEqual(snapshot.rule_fallback_count, len(fallbacks))
 
+    def test_conditional_agent_uses_public_projection_and_distinguishes_both_sources(self) -> None:
+        recorder = AgentObservabilityRecorder()
+        handler = NoTributeRuleBasedHandler(
+            lambda player_id: ConditionalPressurePassAIAgent(player_id=player_id),
+            fallback_to_rule=False,
+            cache_agents=True,
+            agent_mode="conditional_pressure_pass",
+            observability=recorder,
+        )
+        regular = handler(_context())
+        pressure = handler(_conditional_pass_context())
+        self.assertNotEqual(json.loads(regular.response)[0], [])
+        self.assertEqual(json.loads(pressure.response)[0], [])
+        self.assertEqual(pressure.effect.action, ())
+        snapshot = handler.observability_snapshot()
+        self.assertEqual(snapshot.agent_decision_count, 2)
+        self.assertEqual(
+            snapshot.decision_source_counts,
+            (("conditional_pressure_pass", 1), ("conditional_rule_based", 1)),
+        )
+        self.assertEqual((snapshot.model_attempt_count, snapshot.rule_fallback_count), (0, 0))
+
     def test_failed_fallback_or_missing_provenance_never_records_a_completed_decision(self) -> None:
         recorder = AgentObservabilityRecorder()
 
@@ -195,7 +250,7 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
             def select_action(self, _: dict[str, object], __: list[dict[str, object]]) -> object:
                 raise RuntimeError("synthetic")
 
-        with patch("integrations.botzone.play_adapter.RuleBasedAIAgent", _RuleFallbackFailure):
+        with patch("integrations.botzone.play_adapter.FrozenRuleBasedAIAgent", _RuleFallbackFailure):
             with self.assertRaisesRegex(AdapterError, "^rule_fallback_failure$"):
                 NoTributeRuleBasedHandler(
                     lambda _: _ExplodingAgent(),
@@ -255,6 +310,40 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 )(context)
         self.assertEqual(recorder.snapshot("deepseek").agent_decision_count, 0)
 
+    def test_conditional_mode_pending_replay_ack_and_release_do_not_duplicate_decisions(self) -> None:
+        recorder = AgentObservabilityRecorder()
+        handler = NoTributeRuleBasedHandler(
+            lambda player_id: ConditionalPressurePassAIAgent(player_id=player_id),
+            fallback_to_rule=False,
+            cache_agents=True,
+            agent_mode="conditional_pressure_pass",
+            observability=recorder,
+        )
+        state = {"level": "2", "tribute": 0, "first": None, "last": None}
+        deal = json.dumps({"stage": "deal", "deliver": list(range(27)), "your_id": 0, "global": state})
+        play = json.dumps(
+            {
+                "stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1,
+                "global": dict(state, resist=False, tribute_cards={}, return_cards={}),
+            }
+        )
+        transport = _Transport(
+            [
+                ("1 0\nsynthetic\n" + deal).encode("utf-8"),
+                ("1 0\nsynthetic\n" + play).encode("utf-8"),
+                RuntimeError("synthetic"), b"0 0\n", b"0 1\nsynthetic 0 4 0 0 0 0\n",
+            ]
+        )
+        with TemporaryDirectory() as root:
+            connector = MockConnector(SessionStore(root), transport, handler)
+            for _ in range(5):
+                connector.cycle()
+        snapshot = handler.observability_snapshot()
+        self.assertEqual(snapshot.agent_decision_count, 1)
+        self.assertEqual(snapshot.decision_source_counts, (("conditional_rule_based", 1),))
+        self.assertEqual((snapshot.model_attempt_count, snapshot.rule_fallback_count), (0, 0))
+        self.assertEqual(handler._agents, {})
+
     def test_v7_audit_preserves_agent_aggregates_and_rejects_inconsistent_snapshot(self) -> None:
         summary = RunnerSummary(
             1,
@@ -286,6 +375,28 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 self.assertNotIn(marker, json.dumps(payload).lower())
             with self.assertRaises(ValueError):
                 write_audit(target, replace(summary, model_attempt_count=0), 6)
+
+    def test_v7_audit_accepts_conditional_mode_without_schema_or_version_change(self) -> None:
+        summary = RunnerSummary(
+            1, 1, 0, 0, 1, 1, 0, 0, "cycle_limit_unfinished", (),
+            agent_mode="conditional_pressure_pass",
+            agent_decision_count=2,
+            decision_source_counts=(("conditional_pressure_pass", 1), ("conditional_rule_based", 1)),
+            model_attempt_count=0,
+            model_outcome_counts=(),
+            rule_fallback_count=0,
+        )
+        with TemporaryDirectory() as root:
+            target = Path(root).parent / "conditional-agent-observability-audit.json"
+            write_audit(target, summary, 6)
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        self.assertEqual(payload["version"], 7)
+        self.assertEqual(payload["agent_mode"], "conditional_pressure_pass")
+        self.assertEqual(
+            payload["decision_source_counts"],
+            [["conditional_pressure_pass", 1], ["conditional_rule_based", 1]],
+        )
+        self.assertEqual((payload["model_attempt_count"], payload["rule_fallback_count"]), (0, 0))
 
     def test_unavailable_snapshot_fails_closed_without_changing_connector_summary(self) -> None:
         class _EmptyConnector:

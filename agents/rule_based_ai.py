@@ -1,9 +1,12 @@
-"""Minimal rule-based AI that only selects an action_id from legal actions."""
+"""Rule-based selectors that only choose supplied legal action ids."""
 
 from agents.base import BaseAgent
+from agents.conditional_pressure_pass_policy import conditional_pressure_pass_id
 
 
-class RuleBasedAIAgent(BaseAgent):
+class FrozenRuleBasedAIAgent(BaseAgent):
+    """Frozen pre-pressure-pass static selector used by historical evaluation."""
+
     def select_action(
         self,
         observation: dict[str, object],
@@ -25,3 +28,17 @@ class RuleBasedAIAgent(BaseAgent):
             ),
         )[0]
         return int(chosen["action_id"])
+
+
+class RuleBasedAIAgent(FrozenRuleBasedAIAgent):
+    """Default RuleBased selector with the strictly proven pressure-pass rule."""
+
+    def select_action(
+        self,
+        observation: dict[str, object],
+        legal_actions: list[dict[str, object]],
+    ) -> int:
+        pass_id = conditional_pressure_pass_id(observation, legal_actions, self.player_id)
+        if pass_id is not None:
+            return pass_id
+        return super().select_action(observation, legal_actions)

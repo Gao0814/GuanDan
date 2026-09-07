@@ -36,6 +36,7 @@ class LauncherConfig:
     audit_file: Path
     stdout_file: Path
     stderr_file: Path
+    history_file: Path | None
 
     def __repr__(self) -> str:
         return "LauncherConfig(redacted)"
@@ -74,7 +75,7 @@ def _external_directory(value: object) -> Path:
 
 
 def _agent(value: object) -> str:
-    if type(value) is not str or value not in {"rule", "deepseek"}:
+    if type(value) is not str or value not in {"rule", "deepseek", "conditional_pressure_pass"}:
         raise LauncherError("invalid_argument")
     return value
 
@@ -101,8 +102,10 @@ def parse_launcher_args(argv: Sequence[object]) -> LauncherConfig:
         "--audit-file",
         "--stdout-file",
         "--stderr-file",
+        "--history-file",
     }
-    if len(items) != len(expected) * 2:
+    required = expected - {"--history-file"}
+    if len(items) not in {len(required) * 2, len(expected) * 2}:
         raise LauncherError("invalid_argument")
     values: dict[str, object] = {}
     for index in range(0, len(items), 2):
@@ -110,7 +113,7 @@ def parse_launcher_args(argv: Sequence[object]) -> LauncherConfig:
         if not isinstance(name, str) or name not in expected or name in values:
             raise LauncherError("invalid_argument")
         values[name] = value
-    if set(values) != expected:
+    if not required.issubset(values) or set(values) - expected:
         raise LauncherError("invalid_argument")
     config = LauncherConfig(
         agent=_agent(values["--agent"]),
@@ -123,13 +126,19 @@ def parse_launcher_args(argv: Sequence[object]) -> LauncherConfig:
         audit_file=_external_file(values["--audit-file"]),
         stdout_file=_external_file(values["--stdout-file"]),
         stderr_file=_external_file(values["--stderr-file"]),
+        history_file=_external_file(values["--history-file"]) if "--history-file" in values else None,
     )
-    paths = (config.audit_file, config.stdout_file, config.stderr_file)
+    paths = (config.audit_file, config.stdout_file, config.stderr_file) + ((config.history_file,) if config.history_file is not None else ())
     if len(set(paths)) != len(paths) or config.stdout_file.parent != config.stderr_file.parent:
         raise LauncherError("invalid_path")
     stream_directory = config.stdout_file.parent
     if not stream_directory.is_dir() or any(stream_directory.iterdir()):
         raise LauncherError("invalid_stream_directory")
+    if config.history_file is not None and (
+        config.history_file.is_relative_to(config.state_directory)
+        or config.history_file.is_relative_to(stream_directory)
+    ):
+        raise LauncherError("invalid_path")
     if any(path.exists() for path in paths):
         raise LauncherError("output_exists")
     return config
@@ -145,6 +154,7 @@ def connector_argv(config: LauncherConfig) -> tuple[str, ...]:
         "--max-wall-seconds", str(config.max_wall_seconds),
         "--stop-after-finished", str(config.stop_after_finished),
         "--audit-file", str(config.audit_file),
+        *( ("--history-file", str(config.history_file)) if config.history_file is not None else () ),
     )
 
 

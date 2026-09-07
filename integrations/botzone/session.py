@@ -33,9 +33,24 @@ class PlayEffect:
     """The exact physical cards to deduct only after acknowledgement."""
 
     action: tuple[int, ...]
+    claim: tuple[int, ...] | None = None
 
     def to_json(self) -> dict[str, list[int]]:
-        return {"action": list(self.action)}
+        payload = {"action": list(self.action)}
+        if self.claim is not None:
+            payload["claim"] = list(self.claim)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmedPlay:
+    """A locally acknowledged action, retained until public replay confirms it."""
+
+    entry: HistoryEntry
+    public_history_length: int
+
+    def to_json(self) -> dict[str, object]:
+        return {"entry": self.entry.to_json(), "public_history_length": self.public_history_length}
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +104,7 @@ class SessionRecord:
     handler_completed: bool
     cached_response: bytes | None
     cached_response_digest: str | None
+    confirmed_history: tuple[ConfirmedPlay, ...] = ()
     finished: FinishedRow | None = None
     run_token: str | None = None
 
@@ -112,6 +128,8 @@ class SessionRecord:
             "cached_response_digest": self.cached_response_digest,
             "finished": _finished_to_json(self.finished),
         }
+        if self.confirmed_history:
+            payload["confirmed_history"] = [item.to_json() for item in self.confirmed_history]
         if self.run_token is not None:
             payload["run_token"] = validate_run_token(self.run_token)
         return payload
@@ -178,7 +196,7 @@ def _effect_to_json(value: PlayEffect | None) -> dict[str, list[int]] | None:
 def _parse_effect(value: object, own_hand: tuple[int, ...]) -> PlayEffect | None:
     if value is None:
         return None
-    if not isinstance(value, dict) or set(value) != {"action"} or not isinstance(value["action"], list):
+    if not isinstance(value, dict) or set(value) not in ({"action"}, {"action", "claim"}) or not isinstance(value["action"], list):
         raise SessionStorageError("invalid_pending_effect")
     action = value["action"]
     if (
@@ -187,7 +205,33 @@ def _parse_effect(value: object, own_hand: tuple[int, ...]) -> PlayEffect | None
         or not set(action).issubset(own_hand)
     ):
         raise SessionStorageError("invalid_pending_effect")
-    return PlayEffect(tuple(action))
+    claim = value.get("claim")
+    if claim is not None and not isinstance(claim, list):
+        raise SessionStorageError("invalid_pending_effect")
+    return PlayEffect(tuple(action), None if claim is None else tuple(claim))
+
+
+def _parse_confirmed_history(value: object, level: str, history_length: int) -> tuple[ConfirmedPlay, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise SessionStorageError("invalid_confirmed_history")
+    parsed: list[ConfirmedPlay] = []
+    try:
+        for item in value:
+            if not isinstance(item, dict) or set(item) != {"entry", "public_history_length"}:
+                raise SessionStorageError("invalid_confirmed_history")
+            raw_entry = item["entry"]
+            length = item["public_history_length"]
+            if not isinstance(raw_entry, dict) or set(raw_entry) != {"player", "response"} or type(length) is not int or not 0 <= length <= history_length:
+                raise SessionStorageError("invalid_confirmed_history")
+            player = raw_entry["player"]
+            if type(player) is not int or not 0 <= player <= 3:
+                raise SessionStorageError("invalid_confirmed_history")
+            parsed.append(ConfirmedPlay(HistoryEntry(player, parse_action_claim(raw_entry["response"], level=level)), length))
+    except ProtocolValidationError as exc:
+        raise SessionStorageError("invalid_confirmed_history") from exc
+    return tuple(parsed)
 
 
 def _parse_global(value: object, stage: str) -> GlobalState:
@@ -262,9 +306,12 @@ def _record_from_json(value: object) -> SessionRecord:
     version = value.get("version")
     if value.get("schema") != SESSION_SCHEMA or type(version) is not int:
         raise SessionStorageError("incompatible_session")
-    if version == SESSION_VERSION and set(value) == expected:
+    fields = set(value)
+    if version == SESSION_VERSION and (fields == expected or fields == expected | {"confirmed_history"}):
         run_token = None
-    elif version == TOKEN_SESSION_VERSION and set(value) == expected | {"run_token"}:
+    elif version == TOKEN_SESSION_VERSION and (
+        fields == expected | {"run_token"} or fields == expected | {"run_token", "confirmed_history"}
+    ):
         try:
             run_token = validate_run_token(value["run_token"])
         except RunProvenanceError as exc:
@@ -307,6 +354,11 @@ def _record_from_json(value: object) -> SessionRecord:
     if cached is None and cached_digest is not None:
         raise SessionStorageError("invalid_session")
     parsed_global = _parse_global(value["global"], stage)
+    if effect is not None and effect.claim is not None:
+        try:
+            parse_action_claim([list(effect.action), list(effect.claim)], level=parsed_global.level, known_hand_ids=typed_hand)
+        except ProtocolValidationError as exc:
+            raise SessionStorageError("invalid_pending_effect") from exc
     parsed_history = _parse_history(value["history"], parsed_global.level, maximum_entries=None)
     parsed_window = _parse_history(value["latest_window"], parsed_global.level)
     if (
@@ -315,6 +367,7 @@ def _record_from_json(value: object) -> SessionRecord:
         or (parsed_window and parsed_history[-len(parsed_window):] != parsed_window)
     ):
         raise SessionStorageError("history_alignment_failed")
+    confirmed_history = _parse_confirmed_history(value.get("confirmed_history"), parsed_global.level, len(parsed_history))
     finished = _parse_finished(value["finished"])
     if finished is not None and finished.match_id != match_id:
         raise SessionStorageError("session_key_mismatch")
@@ -333,6 +386,7 @@ def _record_from_json(value: object) -> SessionRecord:
         handler_completed=completed,
         cached_response=cached,
         cached_response_digest=cached_digest,
+        confirmed_history=confirmed_history,
         finished=finished,
         run_token=run_token,
     )
@@ -435,18 +489,19 @@ class SessionStore:
         if isinstance(stage, DealRequest):
             own_hand = stage.deliver
             local_player_id = stage.your_id
-            latest_window, history = (), ()
+            latest_window, history, confirmed_history = (), (), ()
         elif record is None:
             assert replay is not None
             own_hand = replay.own_hand
             local_player_id = replay.local_player_id
-            latest_window, history = replay.latest_window, replay.history
+            latest_window, history, confirmed_history = replay.latest_window, replay.history, ()
         else:
             if replay is not None and (replay.local_player_id != record.local_player_id or replay.own_hand != record.own_hand):
                 raise SessionStorageError("envelope_replay_conflict")
             own_hand = record.own_hand
             local_player_id = record.local_player_id
             latest_window, history = merge_history(record.latest_window, record.history, stage.history)
+            confirmed_history = record.confirmed_history
         global_state = stage.global_state
         prepared = SessionRecord(
             match_id=match_id,
@@ -463,6 +518,7 @@ class SessionStore:
             handler_completed=False,
             cached_response=None,
             cached_response_digest=None,
+            confirmed_history=confirmed_history,
             run_token=self._run_token,
         )
         self.save(prepared)
@@ -492,6 +548,11 @@ class SessionStore:
                 or not set(effect.action).issubset(record.own_hand)
             ):
                 raise SessionStorageError("invalid_play_effect")
+            if effect.claim is not None:
+                try:
+                    parse_action_claim([list(effect.action), list(effect.claim)], level=record.global_state.level, known_hand_ids=record.own_hand)
+                except ProtocolValidationError as exc:
+                    raise SessionStorageError("invalid_play_effect") from exc
         next_record = replace(
             record,
             pending_response=response,
@@ -575,7 +636,21 @@ class SessionStore:
                     if not deductions.issubset(own_hand):
                         raise SessionStorageError("invalid_play_effect")
                     own_hand = tuple(card_id for card_id in own_hand if card_id not in deductions)
-                self.save(replace(record, own_hand=own_hand, pending_response=None, pending_effect=None, delivery_state="idle"))
+                confirmed_history = record.confirmed_history
+                if record.pending_effect is not None and record.pending_effect.claim is not None:
+                    confirmed = ConfirmedPlay(
+                        HistoryEntry(record.local_player_id, ActionClaim(record.pending_effect.action, record.pending_effect.claim)),
+                        len(record.history),
+                    )
+                    confirmed_history = confirmed_history + (confirmed,)
+                self.save(replace(
+                    record,
+                    own_hand=own_hand,
+                    pending_response=None,
+                    pending_effect=None,
+                    delivery_state="idle",
+                    confirmed_history=confirmed_history,
+                ))
                 acknowledged.append(delivery.match_id)
         return tuple(acknowledged)
 

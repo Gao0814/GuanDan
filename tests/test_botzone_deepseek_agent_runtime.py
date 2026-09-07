@@ -7,10 +7,11 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekSuggestion
+from agents.conditional_pressure_pass_ai import ConditionalPressurePassAIAgent
 from agents.rule_based_ai import RuleBasedAIAgent
 from integrations.botzone.agent_runtime import AgentRuntimeError, _StrictDeepSeekClient, build_agent_factory, prepare_agent_factory
 from integrations.botzone.cards import card_id_for
@@ -116,7 +117,7 @@ def _deepseek_handler(raw: _RawClient) -> NoTributeRuleBasedHandler:
         deepseek_agent_factory=_ClientDrivenAgent,
         rag_factory=lambda: None,
     )
-    return NoTributeRuleBasedHandler(factory, fallback_to_rule=True, cache_agents=True)
+    return NoTributeRuleBasedHandler(factory, fallback_to_rule=True, cache_agents=True, agent_mode="deepseek")
 
 
 class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
@@ -152,6 +153,34 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
             )
         self.assertEqual(client_calls, [])
 
+    def test_conditional_mode_composes_without_deepseek_configuration_and_is_cached_by_runner(self) -> None:
+        calls: list[str] = []
+
+        def unavailable() -> object:
+            calls.append("config")
+            raise AssertionError("must not load configuration")
+
+        factory = build_agent_factory("conditional_pressure_pass", config_loader=unavailable)
+        self.assertIsInstance(factory(1), ConditionalPressurePassAIAgent)
+        self.assertEqual(calls, [])
+        prepared = prepare_agent_factory("conditional_pressure_pass")
+        self.assertIsNotNone(prepared)
+        assert prepared is not None
+        self.assertIsInstance(prepared(1), ConditionalPressurePassAIAgent)
+        with TemporaryDirectory() as root:
+            config = RuntimeConfig("https://example.invalid", state_directory=Path(root))
+            runner = build_foreground_runner(
+                config,
+                _Transport([b"0 0\n"]),
+                agent_mode="conditional_pressure_pass",
+                prepared_agent_factory=factory,
+                sleep=lambda _: None,
+            )
+            handler = runner._connector._handler
+            self.assertFalse(handler._fallback_to_rule)
+            self.assertTrue(handler._cache_agents)
+            self.assertEqual(handler._agent_mode, "conditional_pressure_pass")
+
     def test_deepseek_fallback_has_distinct_failure_categories_and_single_attempts(self) -> None:
         class _Fallback:
             calls = 0
@@ -178,7 +207,7 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
                 raw = _RawClient(primary)
                 _Fallback.calls = 0
                 _Fallback.answer = fallback
-                with patch("integrations.botzone.play_adapter.RuleBasedAIAgent", _Fallback):
+                with patch("integrations.botzone.play_adapter.FrozenRuleBasedAIAgent", _Fallback):
                     if expected_error is None:
                         result = _deepseek_handler(raw)(_context())
                         self.assertEqual(result.effect.action, tuple(json.loads(result.response)[0]))
@@ -260,10 +289,31 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
             self.assertEqual(transport.call_count, 0)
             self.assertEqual(runner.call_count, 0)
 
+    def test_conditional_preflight_composition_precedes_transport_without_configuration(self) -> None:
+        from integrations.botzone import __main__ as botzone_main
+
+        with TemporaryDirectory() as root:
+            config = RuntimeConfig("https://example.invalid", state_directory=Path(root))
+            output = io.StringIO()
+            with (
+                patch.object(botzone_main, "load_runtime_config", return_value=config),
+                patch.object(botzone_main, "preflight_state_directory"),
+                patch.object(botzone_main, "LocalAIHttpTransport") as transport,
+                patch.object(botzone_main, "build_foreground_runner") as runner,
+                redirect_stdout(output),
+            ):
+                self.assertEqual(botzone_main.main(["--agent", "conditional_pressure_pass", "--preflight-only"]), 0)
+            self.assertEqual(output.getvalue(), "preflight_ready\n")
+            self.assertEqual(transport.call_count, 0)
+            self.assertEqual(runner.call_count, 0)
+
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            botzone_main.main(["--agent", "conditional-pressure-pass", "--preflight-only"])
+
     def test_cli_passes_only_explicit_agent_mode_to_composition_root(self) -> None:
         from integrations.botzone import __main__ as botzone_main
 
-        for mode in ("rule", "deepseek"):
+        for mode in ("rule", "deepseek", "conditional_pressure_pass"):
             with self.subTest(mode=mode), TemporaryDirectory() as root:
                 config = RuntimeConfig("https://example.invalid", state_directory=Path(root))
                 runner = SimpleNamespace(run=lambda **_: SimpleNamespace(cycles=1, finished_seen=0))

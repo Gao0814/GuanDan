@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping
+from pathlib import Path
 
 from .agent_runtime import prepare_agent_factory
 from .http_transport import LocalAIHttpTransport
@@ -20,6 +21,19 @@ _RUNTIME_PREFLIGHT_OUTPUTS = {
     "invalid_failure_limit": "preflight_runtime_config_failure_limit_invalid",
     "invalid_backoff": "preflight_runtime_config_backoff_invalid",
 }
+
+
+def _history_path(value: str | None, *, state_directory: Path, audit_file: str | None) -> Path | None:
+    """Keep the opt-in private-hand artifact outside the source checkout."""
+
+    if value is None:
+        return None
+    target = Path(value).resolve()
+    project_root = Path(__file__).resolve().parents[2]
+    audit_target = Path(audit_file).resolve() if audit_file is not None else None
+    if target.is_relative_to(project_root) or target.is_relative_to(state_directory.resolve()) or target == audit_target:
+        raise ValueError("invalid_history_path")
+    return target
 
 
 def _configuration_output(*, preflight_only: bool, stage: str, error: BaseException) -> str:
@@ -47,11 +61,12 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     parser.add_argument("--url")
     parser.add_argument("--state-dir")
     parser.add_argument("--timeout-seconds", default=30)
-    parser.add_argument("--agent", choices=("rule", "deepseek"), default="rule")
+    parser.add_argument("--agent", choices=("rule", "deepseek", "conditional_pressure_pass"), default="rule")
     parser.add_argument("--max-cycles", type=int, default=100)
     parser.add_argument("--max-wall-seconds", type=int, default=600)
     parser.add_argument("--stop-after-finished", type=int, default=1)
     parser.add_argument("--audit-file")
+    parser.add_argument("--history-file", help="optional UTF-8 connector-observed history artifact")
     parser.add_argument("--run-token")
     parser.add_argument("--preflight-only", action="store_true", help="validate configuration and storage without polling")
     arguments = parser.parse_args(argv)
@@ -76,6 +91,11 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
         if arguments.preflight_only:
             print("preflight_ready")
             return 0
+        history_file = _history_path(
+            arguments.history_file,
+            state_directory=config.state_directory,
+            audit_file=arguments.audit_file,
+        )
         runner = build_foreground_runner(
             config,
             LocalAIHttpTransport(
@@ -86,6 +106,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             agent_mode=arguments.agent,
             prepared_agent_factory=prepared_agent_factory,
             run_token=run_token,
+            history_file=history_file,
         )
         summary = runner.run(
             max_cycles=arguments.max_cycles,
@@ -100,7 +121,10 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     except (RuntimeConfigError, ValueError) as error:
         print(_configuration_output(preflight_only=arguments.preflight_only, stage=stage, error=error))
         return 2
-    print(f"connector_finished cycles={summary.cycles} finished={summary.finished_seen} exit={exit_code}")
+    print(
+        f"connector_finished cycles={summary.cycles} finished={summary.finished_seen} "
+        f"history={getattr(summary, 'history_status', 'disabled')} exit={exit_code}"
+    )
     return exit_code
 
 

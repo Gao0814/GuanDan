@@ -20,7 +20,7 @@ from agents.game_phase import classify_game_phase
 from agents.hand_evaluator import evaluate_hand
 from agents.opening_strategy import OpeningFormulaStrategy
 from agents.rag_advisor import RAGAdvisor, RAGEvidence
-from agents.rule_based_ai import RuleBasedAIAgent
+from agents.rule_based_ai import FrozenRuleBasedAIAgent
 
 if TYPE_CHECKING:
     from agents.card_confidence import CardConfidenceState
@@ -783,7 +783,7 @@ class DeepSeekAIAgent(BaseAgent):
         if failure_reason is None:
             failure_reason = "未返回有效 action_id"
 
-        fallback = RuleBasedAIAgent(player_id=self.player_id)
+        fallback = FrozenRuleBasedAIAgent(player_id=self.player_id)
         chosen = fallback.select_action(observation, legal_actions)
         chosen = require_legal_action_id(chosen, legal_actions)
 

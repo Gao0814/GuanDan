@@ -96,6 +96,24 @@ class BotzoneRunnerTests(unittest.TestCase):
             runner = build_foreground_runner(config, _Transport([b"0 0\n"]), sleep=lambda _: None)
             self.assertEqual(runner.run(max_cycles=1).cycles, 1)
 
+    def test_history_status_distinguishes_disabled_ok_and_write_failure(self) -> None:
+        with TemporaryDirectory() as root:
+            base = __import__("pathlib").Path(root)
+            disabled = build_foreground_runner(RuntimeConfig("https://private.invalid/secret", state_directory=base / "disabled"), _Transport([_deal()]), sleep=lambda _: None).run(max_cycles=1)
+            ok = build_foreground_runner(
+                RuntimeConfig("https://private.invalid/secret", state_directory=base / "ok"),
+                _Transport([_deal()]),
+                sleep=lambda _: None,
+                history_file=base / "history.txt",
+            ).run(max_cycles=1)
+            failed = build_foreground_runner(
+                RuntimeConfig("https://private.invalid/secret", state_directory=base / "failed"),
+                _Transport([_deal()]),
+                sleep=lambda _: None,
+                history_file=base / "missing" / "history.txt",
+            ).run(max_cycles=1)
+        self.assertEqual((disabled.history_status, ok.history_status, failed.history_status), ("disabled", "ok", "failed"))
+
     def test_long_poll_timeouts_are_idle_and_do_not_trigger_failure_limit(self) -> None:
         with TemporaryDirectory() as root:
             transport = _Transport([TransportError("timeout"), TransportError("timeout"), TransportError("timeout")])

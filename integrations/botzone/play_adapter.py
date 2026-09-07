@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from agents.base import require_legal_action_id
-from agents.rule_based_ai import RuleBasedAIAgent
+from agents.rule_based_ai import FrozenRuleBasedAIAgent, RuleBasedAIAgent
 from engine.actions import Action, ActionType, public_action_id
 from engine.cards import Card, card_to_token, sort_cards
 from engine.patterns import PatternType, detect_pattern
@@ -179,6 +179,7 @@ class NoTributeRuleBasedHandler:
                 agent_observation,
                 agent_actions,
                 projection.legal_actions,
+                frozen_static=self._agent_mode == "deepseek",
             )
         else:
             if type(selected) is not int:
@@ -191,6 +192,7 @@ class NoTributeRuleBasedHandler:
                     agent_observation,
                     agent_actions,
                     projection.legal_actions,
+                    frozen_static=self._agent_mode == "deepseek",
                 )
             else:
                 try:
@@ -205,6 +207,7 @@ class NoTributeRuleBasedHandler:
                         agent_observation,
                         agent_actions,
                         projection.legal_actions,
+                        frozen_static=self._agent_mode == "deepseek",
                     )
         action = projection.provenance.get(selected_id)
         if action is None:
@@ -212,7 +215,7 @@ class NoTributeRuleBasedHandler:
         action_claim = encode_action_claim(action, context.own_hand, context.global_state.level)
         response = json.dumps(action_claim.to_json(), separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         self._record_decision_source(self._decision_source(agent, adapter_fallback))
-        return HandlerResult(response, PlayEffect(action_claim.action))
+        return HandlerResult(response, PlayEffect(action_claim.action, action_claim.claim))
 
     def _record_model_outcome(self, agent: object | None) -> str | None:
         client = getattr(agent, "client", getattr(agent, "_client", None))
@@ -232,6 +235,11 @@ class NoTributeRuleBasedHandler:
         if adapter_fallback:
             return "adapter_rule_fallback"
         source = getattr(agent, "last_decision_source", None)
+        if self._agent_mode == "conditional_pressure_pass":
+            if source in {"conditional_pressure_pass", "conditional_rule_based"}:
+                return source
+            self._observability_failed = True
+            return "adapter_rule_fallback"
         if source in {"local", "local_opening_formula"}:
             return "local_shortcut"
         outcome = self._record_model_outcome(agent)
@@ -256,11 +264,14 @@ def _fallback_action_id(
     observation: dict[str, object],
     agent_actions: list[dict[str, object]],
     canonical_actions: Sequence[Mapping[str, object]],
+    *,
+    frozen_static: bool = False,
 ) -> int:
     """Select exactly once with the local rule agent after a model-path failure."""
 
     try:
-        selected = RuleBasedAIAgent(player_id=engine_player).select_action(observation, agent_actions)
+        selector = FrozenRuleBasedAIAgent if frozen_static else RuleBasedAIAgent
+        selected = selector(player_id=engine_player).select_action(observation, agent_actions)
     except Exception as exc:
         raise AdapterError("rule_fallback_failure") from exc
     if type(selected) is not int:
