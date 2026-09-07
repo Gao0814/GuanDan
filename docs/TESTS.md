@@ -2127,3 +2127,9 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 规划Codex独立运行 `tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output`：39项通过。
 - 规划Codex设置 `PYTHON_DOTENV_DISABLED=1` 后独立运行全量：684项通过，用时40.008秒；`git diff --check`通过，仅有既有LF/CRLF提示。
 - 代码与测试检查点为 `dc9638c`，精确包含7个实现/测试文件；未运行Botzone、connector、Edge、网络、真实模型或新容量，未触碰真实workspace。当前范围内无已知剩余风险。
+
+## 2026-09-07 队友控桌守卫首次复核未通过
+
+- 当前未提交实现的既有定向43项、主规则39项和全量688项均通过，但这些测试未覆盖共享跟牌validator的畸形constraint/table身份。
+- 规划Codex最小只读复现确认：`constraint=None`、`constraint=""`、table `action_id=None`、table `action_id=True` 四种输入都会使 `teammate_big_joker_pass_id()` 错误返回pass ID `1`。
+- 根因是 `_pressure_pass_context()` 只排除字面值 `"free"`，而 `_full_action_signature()` 只检查table action存在 `action_id`键。当前实现不提交；下一测试任务必须锁定这些反例并回归所有共享pressure-pass入口。

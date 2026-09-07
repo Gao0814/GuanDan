@@ -96,7 +96,7 @@ Botzone local-AI endpoint
 
 connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评测、Botzone显式 `conditional_pressure_pass` wiring、trial validator、默认RuleBased两类保牌、DeepSeek危险对手pass阻断以及自由出牌小手牌短序列守卫均已完成。DeepSeek失败fallback仍使用冻结旧静态基线。seed `47002`已完成真实对局但含2次HTTP error，真实条件化pass为0；当前继续固定级牌2、无需进贡的算法实现阶段。
 
-`docs/NEXT_PROMPT.md` 当前只包含DeepSeek队友控桌高价值资源保留的Coding Codex Prompt；先覆盖队友小王后模型用大王压制的窄场景，不运行Botzone、不做新容量、不触碰真实workspace，也不包含给项目所有者看的规划说明。
+`docs/NEXT_PROMPT.md` 当前只包含队友控桌守卫的共享validator修正Prompt。未提交实现已通过688项测试，但规划复核确认 `constraint=None/""` 与table `action_id=None/True` 四个畸形反例会错误触发pass；修正任务不运行Botzone、不做新容量、不触碰真实workspace，也不包含给项目所有者看的规划说明。
 
 L5-A4h11a partial manifest、seed `45001` evidence与seed `47001` prestart evidence均已移入Windows回收站。seed `47002`当前evidence完整保留在固定workspace，等待后续清理；无残留connector。
 
@@ -254,7 +254,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测需要复现。connector可读牌谱、workspace清理、人工RuleBased smoke、候选两阶段评测、离线Botzone接线、validator、默认RuleBased两类保牌、危险对手pass阻断与自由出牌小手牌短序列守卫均已完成。下一任务按 `docs/NEXT_PROMPT.md` 处理DeepSeek成功动作压住已控桌队友的高价值资源绕过；只做代码与确定性回归，不运行live或新容量。
+当前没有失败的既有本地单测，但存在规划Codex独立复现的共享validator反例：`constraint=None/""` 与table `action_id=None/True` 均使 `teammate_big_joker_pass_id()` 错误返回pass ID `1`。队友控桌守卫代码尚未提交；下一任务按 `docs/NEXT_PROMPT.md` 修正共享fail-closed边界并补回归，不运行live或新容量。
 
 ## 12. Working Tree Status
 
@@ -264,6 +264,7 @@ git diff --check
 - 危险对手阻断检查点：`fb3d791 feat: block passes against near-finish opponents`。
 - 最新算法检查点：`dc9638c feat: guard short free-lead endgames`。
 - 最新检查点新增公开小手牌多重集分组helper、DeepSeek成功动作守卫、Botzone低基数source与对应测试；提交前由规划Codex在禁用dotenv环境中独立运行全量684项通过，并完成staged diff检查。
+- 当前工作区另有7个未提交的队友控桌守卫实现/测试文件；现有688项测试通过，但共享validator的四个独立畸形反例尚未修正，因此不得提交这些代码。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex默认不提交；完成后由规划Codex独立复核并负责Git检查点。
 
@@ -278,6 +279,6 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按 `docs/NEXT_PROMPT.md` 处理DeepSeek成功动作压队友的高价值资源绕过：先从 `record.txt` / `docs/LIVE_GAME_REVIEW.md` 第6轮建立队友小王领牌、模型用大王压制的脱敏fixture，再实现窄、fail-closed守卫；不得扩展为“队友领牌一律pass”。
+按 `docs/NEXT_PROMPT.md` 修正当前未提交守卫复用的共享 `_pressure_pass_context()`：严格拒绝缺失/非字符串/空的constraint和非严格整数的table action ID，并根据实际公开契约决定是否锁定constraint/display一致性。四个已确认反例必须从pass ID `1` 变为 `None`。
 
 当前算法和Botzone验证固定级牌2、无需进贡；这是验收范围，不得列为风险。任务不做13级牌泛化、多局升级或贡还，不运行网络/Botzone/connector/model，不读取或清理seed `47002` workspace evidence，也不新增大容量rollout。完成后由规划Codex复核代码、测试、Git状态并负责提交。

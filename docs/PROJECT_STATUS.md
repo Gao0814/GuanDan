@@ -15,7 +15,8 @@
 - 规划Codex在显式禁用dotenv的环境中独立复跑全量674项通过，实现检查点为 `fb3d791`。
 - 自由出牌小手牌短序列守卫已完成：当本家只剩1–4张、公开canonical动作可按实体牌多重集精确覆盖，且模型首手严格增加最少出牌分组数时，改选原始最优action ID；并列或证据不足保持模型动作。`short_endgame_plan`计为成功模型尝试。
 - 规划Codex独立复跑相关31项、主规则39项及全量684项通过，实现检查点为 `dc9638c`；当前范围内无已知剩余风险。
-- 下一项算法任务处理DeepSeek成功动作压住已控桌队友的高价值资源绕过路径，先覆盖队友小王后模型用大王压制的脱敏fixture；不实施“队友领牌一律pass”，不做新容量或live。
+- DeepSeek队友小王后使用大王的窄守卫已出现在未提交工作区，目标行为、source顺序和688项全量测试均正常，但规划审计发现共享跟牌validator会把 `constraint=None/""` 及table `action_id=None/True` 当作有效证据，四个反例均错误返回pass ID `1`。因此该批实现暂未验收、未提交。
+- 下一步只在共享公开payload校验层补齐constraint与table action身份的fail-closed契约，并回归所有pressure-pass入口；不扩大策略范围，不做新容量或live。
 
 ### Connector-observed 牌谱实现与加固复审
 
