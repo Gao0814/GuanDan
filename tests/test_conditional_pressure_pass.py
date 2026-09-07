@@ -7,7 +7,12 @@ from pathlib import Path
 import unittest
 
 from agents.conditional_pressure_pass_ai import ConditionalPressurePassAIAgent as RuntimeConditionalPressurePassAIAgent
-from agents.conditional_pressure_pass_policy import dangerous_opponent_pass_id
+from agents.conditional_pressure_pass_policy import (
+    conditional_pressure_pass_id,
+    dangerous_opponent_pass_id,
+    teammate_big_joker_pass_id,
+    teammate_pressure_pass_id,
+)
 from agents.rule_based_ai import FrozenRuleBasedAIAgent, RuleBasedAIAgent
 from engine.game import GuanDanGame
 from evaluation.conditional_pressure_pass import (
@@ -42,6 +47,7 @@ def _history_row(action: dict[str, object], *, step_no: int = 7, round_no: int =
 
 def _observation(*, leader: int = 1, my_hand_count: int = 10, opponent_count: int = 8, finished: bool = False) -> dict[str, object]:
     table = _action(99, "triple", 3)
+    table["action_id"] = None
     return {
         "my_info": {"player_id": 2, "team": "team_24", "hand_count": my_hand_count},
         "other_players": [
@@ -63,6 +69,7 @@ def _review_teammate_observation(
     """Minimal public equivalent of the reviewed teammate steel-plate lead."""
 
     table = _action(99, "steel_plate", 6)
+    table["action_id"] = None
     return {
         "my_info": {"player_id": 1, "team": "team_13", "hand_count": my_hand_count},
         "other_players": [
@@ -77,6 +84,34 @@ def _review_teammate_observation(
 
 def _legal(*patterns: tuple[str, int]) -> list[dict[str, object]]:
     return [_action(1, "pass")] + [_action(index + 2, pattern, count) for index, (pattern, count) in enumerate(patterns)]
+
+
+def _joker_teammate_observation(*, opponent_count: int = 5, opponent_finished: bool = False, my_hand_count: int = 2) -> dict[str, object]:
+    table = {
+        "action_id": None, "declared_pattern": "single", "declared_cards": ["SJ"], "carrier_cards": ["SJ"],
+        "wildcard_count": 0, "wildcard_info": [], "display_text": "single:SJ",
+    }
+    return {
+        "my_info": {"player_id": 4, "team": "team_24", "hand_count": my_hand_count},
+        "other_players": [
+            {"player_id": 1, "team": "team_13", "hand_count": 0 if opponent_finished else opponent_count, "finished": opponent_finished},
+            {"player_id": 2, "team": "team_24", "hand_count": 8, "finished": False},
+            {"player_id": 3, "team": "team_13", "hand_count": opponent_count, "finished": False},
+        ],
+        "current_round": {"step_no": 12, "round_no": 4, "current_player_id": 4, "constraint": "single:SJ", "table_action": table},
+        "history": {"actions": [{"step_no": 12, "round_no": 4, "player_id": 2, "declared_pattern": "single", "declared_cards": ["SJ"], "carrier_cards": ["SJ"]}]},
+    }
+
+
+def _joker_teammate_actions(*, include_pass: bool = True) -> list[dict[str, object]]:
+    actions: list[dict[str, object]] = []
+    if include_pass:
+        actions.append({"action_id": 1, "declared_pattern": "pass", "declared_cards": [], "carrier_cards": [], "wildcard_count": 0, "wildcard_info": [], "display_text": "pass"})
+    actions.extend([
+        {"action_id": 2, "declared_pattern": "single", "declared_cards": ["BJ"], "carrier_cards": ["BJ"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:BJ"},
+        {"action_id": 3, "declared_pattern": "single", "declared_cards": ["9"], "carrier_cards": ["9S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:9"},
+    ])
+    return actions
 
 
 class ConditionalPressurePassAgentTests(unittest.TestCase):
@@ -163,6 +198,99 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
         ):
             with self.subTest(observation=observation):
                 self.assertIsNone(dangerous_opponent_pass_id(observation, legal_actions, 2))
+
+    def test_teammate_big_joker_guard_is_narrow_and_fail_closed(self) -> None:
+        actions = _joker_teammate_actions()
+        self.assertEqual(teammate_big_joker_pass_id(_joker_teammate_observation(), actions, 4, 2), 1)
+        cases: list[tuple[dict[str, object], list[dict[str, object]], int]] = []
+        cases.append((_joker_teammate_observation(), actions, 1))
+        cases.append((_joker_teammate_observation(), actions, 3))
+        cases.append((_joker_teammate_observation(my_hand_count=1), actions, 2))
+        cases.append((_joker_teammate_observation(opponent_count=2), actions, 2))
+        cases.append((_joker_teammate_observation(opponent_finished=True), actions, 2))
+        cases.append((_joker_teammate_observation(), _joker_teammate_actions(include_pass=False), 2))
+
+        free = _joker_teammate_observation()
+        free["current_round"] = {"step_no": 12, "round_no": 4, "current_player_id": 4, "constraint": "free", "table_action": None}
+        free["history"] = {"actions": []}
+        cases.append((free, actions, 2))
+
+        enemy_lead = _joker_teammate_observation()
+        enemy_lead["history"]["actions"][0]["player_id"] = 1  # type: ignore[index]
+        cases.append((enemy_lead, actions, 2))
+
+        mismatch = _joker_teammate_observation()
+        mismatch["history"]["actions"][0]["carrier_cards"] = ["BJ"]  # type: ignore[index]
+        cases.append((mismatch, actions, 2))
+
+        bad_team = _joker_teammate_observation()
+        bad_team["other_players"][1]["team"] = "wrong"  # type: ignore[index]
+        cases.append((bad_team, actions, 2))
+
+        for observation, legal_actions, selected in cases:
+            with self.subTest(selected=selected, constraint=observation["current_round"]["constraint"]):
+                self.assertIsNone(teammate_big_joker_pass_id(observation, legal_actions, 4, selected))
+
+    def test_shared_follow_context_rejects_malformed_constraint_and_table_identity_for_all_helpers(self) -> None:
+        def assert_all_fail(mutator) -> None:
+            enemy_actions = _legal(("bomb", 4))
+            enemy = _observation()
+            mutator(enemy)
+            self.assertIsNone(conditional_pressure_pass_id(enemy, enemy_actions, 2))
+
+            danger = _observation(opponent_count=2)
+            mutator(danger)
+            self.assertIsNone(dangerous_opponent_pass_id(danger, enemy_actions, 2))
+
+            teammate = _review_teammate_observation()
+            mutator(teammate)
+            self.assertIsNone(teammate_pressure_pass_id(teammate, _legal(("bomb", 4)), 1))
+
+            joker = _joker_teammate_observation()
+            mutator(joker)
+            self.assertIsNone(teammate_big_joker_pass_id(joker, _joker_teammate_actions(), 4, 2))
+
+        constraint_cases = {
+            "missing": lambda observation: observation["current_round"].pop("constraint"),
+            "none": lambda observation: observation["current_round"].__setitem__("constraint", None),
+            "empty": lambda observation: observation["current_round"].__setitem__("constraint", ""),
+            "bool": lambda observation: observation["current_round"].__setitem__("constraint", True),
+            "list": lambda observation: observation["current_round"].__setitem__("constraint", []),
+            "display_mismatch": lambda observation: observation["current_round"].__setitem__("constraint", "different"),
+        }
+        for name, mutator in constraint_cases.items():
+            with self.subTest(category="constraint", value=name):
+                assert_all_fail(mutator)
+
+        def mutate_table_identity(value: object, *, remove: bool = False):
+            def apply(observation: dict[str, object]) -> None:
+                table = observation["current_round"]["table_action"]
+                assert isinstance(table, dict)
+                if remove:
+                    table.pop("action_id")
+                else:
+                    table["action_id"] = value
+            return apply
+
+        valid_sentinel_cases = (
+            (_observation(), _legal(("bomb", 4)), 2, conditional_pressure_pass_id),
+            (_observation(opponent_count=2), _legal(("bomb", 4)), 2, dangerous_opponent_pass_id),
+            (_review_teammate_observation(), _legal(("bomb", 4)), 1, teammate_pressure_pass_id),
+            (_joker_teammate_observation(), _joker_teammate_actions(), 4, lambda observation, actions, player: teammate_big_joker_pass_id(observation, actions, player, 2)),
+        )
+        for observation, actions, player_id, helper in valid_sentinel_cases:
+            with self.subTest(category="table_action_id", value="none"):
+                self.assertEqual(helper(observation, actions, player_id), 1)
+
+        identity_cases = {
+            "missing": mutate_table_identity(None, remove=True),
+            "bool": mutate_table_identity(True),
+            "string": mutate_table_identity("90"),
+            "integer": mutate_table_identity(90),
+        }
+        for name, mutator in identity_cases.items():
+            with self.subTest(category="table_action_id", value=name):
+                assert_all_fail(mutator)
 
     def test_normal_play_finish_and_pressure_all_fall_back_exactly(self) -> None:
         cases = (

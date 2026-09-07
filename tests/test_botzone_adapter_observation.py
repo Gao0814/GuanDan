@@ -51,6 +51,7 @@ class BotzoneAdapterObservationTests(unittest.TestCase):
         self.assertEqual(current["round_no"], 1)
         self.assertEqual([action["round_no"] for action in actions], [1, 1])
         self.assertIsNone(current["table_action"]["action_id"])
+        self.assertEqual(current["constraint"], current["table_action"]["display_text"])
         self.assertEqual(
             set(actions[0]),
             {"step_no", "round_no", "player_id", "declared_pattern", "declared_cards", "carrier_cards"},

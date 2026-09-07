@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from config import AppConfig
 from agents.base import BaseAgent, require_legal_action_id
-from agents.conditional_pressure_pass_policy import dangerous_opponent_pass_id
+from agents.conditional_pressure_pass_policy import dangerous_opponent_pass_id, teammate_big_joker_pass_id
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from agents.game_phase import classify_game_phase
 from agents.hand_evaluator import evaluate_hand
@@ -334,6 +334,20 @@ def _plan_short_free_lead(
         return selected_action_id, False
     chosen = FrozenRuleBasedAIAgent(player_id=player_id).select_action(observation, best_actions)
     return require_legal_action_id(chosen, legal_actions), True
+
+
+def _preserve_teammate_big_joker(
+    observation: dict[str, object],
+    legal_actions: list[dict[str, object]],
+    player_id: int,
+    selected_action_id: int,
+) -> tuple[int, bool]:
+    """Pass only for the proved teammate-SJ/model-BJ resource-preservation case."""
+
+    pass_id = teammate_big_joker_pass_id(observation, legal_actions, player_id, selected_action_id)
+    if pass_id is None:
+        return selected_action_id, False
+    return require_legal_action_id(pass_id, legal_actions), True
 
 
 def _build_rag_context(
@@ -817,14 +831,23 @@ class DeepSeekAIAgent(BaseAgent):
                 if blocked:
                     self.last_decision_source = "danger_opponent_block"
                 else:
-                    chosen, planned = _plan_short_free_lead(
+                    chosen, preserved = _preserve_teammate_big_joker(
                         observation,
                         legal_actions,
                         self.player_id,
                         chosen,
                     )
-                    if planned:
-                        self.last_decision_source = "short_endgame_plan"
+                    if preserved:
+                        self.last_decision_source = "teammate_control_block"
+                    else:
+                        chosen, planned = _plan_short_free_lead(
+                            observation,
+                            legal_actions,
+                            self.player_id,
+                            chosen,
+                        )
+                        if planned:
+                            self.last_decision_source = "short_endgame_plan"
                 if verbose:
                     action = _action_by_id(legal_actions, chosen)
                     display = _action_display_cn(action) if action is not None else "(unknown)"

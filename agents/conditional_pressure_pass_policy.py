@@ -33,6 +33,28 @@ def _common_action_signature(action: Mapping[str, object]) -> tuple[str, tuple[s
 
 
 def _full_action_signature(action: Mapping[str, object]) -> tuple[str, tuple[str, ...], tuple[str, ...]] | None:
+    """Validate an original member of the current legal-action collection."""
+
+    signature = _common_action_signature(action)
+    action_id = action.get("action_id")
+    wildcard_count = action.get("wildcard_count")
+    wildcard_info = action.get("wildcard_info")
+    display = action.get("display_text")
+    if (
+        signature is None
+        or not _is_int(action_id)
+        or not _is_int(wildcard_count)
+        or wildcard_count < 0
+        or not isinstance(wildcard_info, list)
+        or not isinstance(display, str)
+    ):
+        return None
+    return signature
+
+
+def _table_action_signature(action: Mapping[str, object]) -> tuple[str, tuple[str, ...], tuple[str, ...]] | None:
+    """Validate the public table-action schema, whose ID is an explicit sentinel."""
+
     signature = _common_action_signature(action)
     wildcard_count = action.get("wildcard_count")
     wildcard_info = action.get("wildcard_info")
@@ -40,6 +62,7 @@ def _full_action_signature(action: Mapping[str, object]) -> tuple[str, tuple[str
     if (
         signature is None
         or "action_id" not in action
+        or action.get("action_id") is not None
         or not _is_int(wildcard_count)
         or wildcard_count < 0
         or not isinstance(wildcard_info, list)
@@ -105,7 +128,13 @@ def _pressure_pass_context(
     hand_count = my_info.get("hand_count")
     if player != expected_player_id or my_info.get("team") != _TEAM[expected_player_id] or not _is_int(hand_count) or not 1 <= hand_count <= 27:
         return None
-    if current.get("current_player_id") != expected_player_id or current.get("constraint") == "free":
+    constraint = current.get("constraint")
+    if (
+        current.get("current_player_id") != expected_player_id
+        or not isinstance(constraint, str)
+        or not constraint
+        or constraint == "free"
+    ):
         return None
     round_no = current.get("round_no")
     step_no = current.get("step_no")
@@ -113,8 +142,13 @@ def _pressure_pass_context(
     actions = history.get("actions")
     if not _is_int(round_no) or round_no <= 0 or not _is_int(step_no) or step_no < 0 or not isinstance(table_action, Mapping):
         return None
-    table_signature = _full_action_signature(table_action)
-    if table_signature is None or table_signature[0] == "pass" or not isinstance(actions, list):
+    table_signature = _table_action_signature(table_action)
+    if (
+        table_signature is None
+        or table_signature[0] == "pass"
+        or constraint != table_action.get("display_text")
+        or not isinstance(actions, list)
+    ):
         return None
 
     players: dict[int, Mapping[str, object]] = {}
@@ -228,5 +262,50 @@ def dangerous_opponent_pass_id(
         return None
     leader_public = players[leader]
     if leader_public["finished"] or leader_public["hand_count"] > 2:
+        return None
+    return pass_id
+
+
+def teammate_big_joker_pass_id(
+    observation: object,
+    legal_actions: object,
+    expected_player_id: int,
+    selected_action_id: int,
+) -> int | None:
+    """Return pass for the narrow proved case of a model spending big joker on a teammate.
+
+    The initial resource scope is intentionally only the public singleton
+    ``BJ`` response to a teammate's singleton ``SJ`` lead.  Other pressure
+    patterns remain untouched until independently justified.
+    """
+
+    if not _is_int(selected_action_id):
+        return None
+    context = _pressure_pass_context(observation, legal_actions, expected_player_id)
+    if context is None:
+        return None
+    pass_id, non_pass, leader, players, hand_count = context
+    if leader == expected_player_id or _TEAM[leader] != _TEAM[expected_player_id]:
+        return None
+    if any(
+        item["finished"] or item["hand_count"] <= 2
+        for player_id, item in players.items()
+        if _TEAM[player_id] != _TEAM[expected_player_id]
+    ):
+        return None
+    selected = next((action for action in non_pass if action.get("action_id") == selected_action_id), None)
+    if selected is None or len(selected["carrier_cards"]) >= hand_count:
+        return None
+    if not isinstance(observation, Mapping):
+        return None
+    current_round = observation.get("current_round")
+    if not isinstance(current_round, Mapping):
+        return None
+    table_action = current_round.get("table_action")
+    if not isinstance(table_action, Mapping):
+        return None
+    leader_signature = _common_action_signature(table_action)
+    selected_signature = _common_action_signature(selected)
+    if leader_signature != ("single", ("SJ",), ("SJ",)) or selected_signature != ("single", ("BJ",), ("BJ",)):
         return None
     return pass_id

@@ -57,7 +57,7 @@ def _legal_actions() -> list[dict[str, object]]:
 
 def _danger_observation(*, opponent_count: int) -> dict[str, object]:
     table = {
-        "action_id": 99,
+        "action_id": None,
         "declared_pattern": "single",
         "declared_cards": ["8"],
         "carrier_cards": ["8S"],
@@ -120,6 +120,28 @@ def _short_endgame_legal_actions() -> list[dict[str, object]]:
     ]
 
 
+def _teammate_joker_observation(*, opponent_count: int = 5, opponent_finished: bool = False, own_count: int = 2) -> dict[str, object]:
+    table = {"action_id": None, "declared_pattern": "single", "declared_cards": ["SJ"], "carrier_cards": ["SJ"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:SJ"}
+    return {
+        "my_info": {"player_id": 4, "team": "team_24", "hand_cards": ["BJ", "9S"] if own_count == 2 else ["BJ"], "hand_count": own_count},
+        "current_round": {"step_no": 12, "round_no": 4, "current_player_id": 4, "current_level_rank": "2", "constraint": "single:SJ", "table_action": table},
+        "other_players": [
+            {"player_id": 1, "team": "team_13", "hand_count": 0 if opponent_finished else opponent_count, "finished": opponent_finished, "finish_rank": None},
+            {"player_id": 2, "team": "team_24", "hand_count": 8, "finished": False, "finish_rank": None},
+            {"player_id": 3, "team": "team_13", "hand_count": opponent_count, "finished": False, "finish_rank": None},
+        ],
+        "history": {"actions": [{"step_no": 12, "round_no": 4, "player_id": 2, "declared_pattern": "single", "declared_cards": ["SJ"], "carrier_cards": ["SJ"]}], "finish_order": []},
+    }
+
+
+def _teammate_joker_legal_actions() -> list[dict[str, object]]:
+    return [
+        {"action_id": 1, "declared_pattern": "pass", "declared_cards": [], "carrier_cards": [], "wildcard_count": 0, "wildcard_info": [], "display_text": "pass"},
+        {"action_id": 2, "declared_pattern": "single", "declared_cards": ["BJ"], "carrier_cards": ["BJ"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:BJ"},
+        {"action_id": 3, "declared_pattern": "single", "declared_cards": ["9"], "carrier_cards": ["9S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:9"},
+    ]
+
+
 class CountingClient:
     def __init__(self) -> None:
         self.calls = 0
@@ -157,6 +179,56 @@ def _agent_with_counting_dependencies() -> tuple[DeepSeekAIAgent, CountingClient
 
 
 class TestDeepSeekStepE(unittest.TestCase):
+    def test_successful_model_big_joker_over_teammate_small_joker_is_preserved_as_pass(self) -> None:
+        class BigJokerClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
+                self.calls += 1
+                return DeepSeekSuggestion(action_id=2, reasoning="ignored")
+
+        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
+        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+            client = BigJokerClient()
+            actions = _teammate_joker_legal_actions()
+            agent = DeepSeekAIAgent(4, client, rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+            chosen = agent.select_action(_teammate_joker_observation(), actions)
+        self.assertEqual(chosen, 1)
+        self.assertIn(chosen, {action["action_id"] for action in actions})
+        self.assertEqual(agent.last_decision_source, "teammate_control_block")
+        self.assertEqual(client.calls, 1)
+
+    def test_teammate_joker_guard_preserves_model_action_for_finish_and_enemy_pressure(self) -> None:
+        class BigJokerClient:
+            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
+                return DeepSeekSuggestion(action_id=2, reasoning="ignored")
+
+        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
+        for observation, expected_source in (
+            (_teammate_joker_observation(own_count=1), "local"),
+            (_teammate_joker_observation(opponent_count=2), "model"),
+            (_teammate_joker_observation(opponent_finished=True), "model"),
+        ):
+            with self.subTest(own_count=observation["my_info"]["hand_count"]), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+                agent = DeepSeekAIAgent(4, BigJokerClient(), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+                self.assertEqual(agent.select_action(observation, _teammate_joker_legal_actions()), 2)
+                self.assertEqual(agent.last_decision_source, expected_source)
+
+    def test_teammate_joker_guard_does_not_block_model_pass_or_low_value_action(self) -> None:
+        class FixedClient:
+            def __init__(self, action_id: int) -> None:
+                self.action_id = action_id
+
+            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
+                return DeepSeekSuggestion(action_id=self.action_id, reasoning="ignored")
+
+        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
+        for action_id in (1, 3):
+            with self.subTest(action_id=action_id), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+                agent = DeepSeekAIAgent(4, FixedClient(action_id), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+                self.assertEqual(agent.select_action(_teammate_joker_observation(), _teammate_joker_legal_actions()), action_id)
+                self.assertEqual(agent.last_decision_source, "model")
     def test_successful_model_single_jack_is_replaced_by_shorter_free_lead_plan(self) -> None:
         class SingleJackClient:
             def __init__(self) -> None:
@@ -222,7 +294,7 @@ class TestDeepSeekStepE(unittest.TestCase):
         oversized = _short_endgame_observation()
         oversized["my_info"] = dict(oversized["my_info"], hand_cards=["3S", "4S", "5S", "6S", "7S"], hand_count=5)
         follow = _short_endgame_observation()
-        follow["current_round"] = dict(follow["current_round"], constraint="single:5", table_action={"action_id": 99, "declared_pattern": "single", "declared_cards": ["5"], "carrier_cards": ["5S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:5"})
+        follow["current_round"] = dict(follow["current_round"], constraint="single:5", table_action={"action_id": None, "declared_pattern": "single", "declared_cards": ["5"], "carrier_cards": ["5S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:5"})
         config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
         for observation, candidates in ((oversized, actions), (follow, actions), (base, [actions[2]])):
             with self.subTest(constraint=observation["current_round"]["constraint"], action_count=len(candidates)), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):

@@ -13,6 +13,7 @@ DECISION_SOURCES = frozenset(
         "model",
         "danger_opponent_block",
         "short_endgame_plan",
+        "teammate_control_block",
         "deepseek_rule_fallback",
         "adapter_rule_fallback",
         "conditional_pressure_pass",
@@ -95,6 +96,7 @@ class AgentObservabilitySnapshot:
                 sources.get("model", 0)
                 + sources.get("danger_opponent_block", 0)
                 + sources.get("short_endgame_plan", 0)
+                + sources.get("teammate_control_block", 0)
                 + sources.get("deepseek_rule_fallback", 0)
             ):
                 raise AgentObservabilityError("deepseek_model_conservation_failed")

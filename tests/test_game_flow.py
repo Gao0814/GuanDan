@@ -106,6 +106,13 @@ class TestGameFlow(unittest.TestCase):
         self.assertIn("game_over", result)
         self.assertIn("winner", result)
 
+        follow_observation = game.observe()
+        table_action = follow_observation["current_round"]["table_action"]
+        self.assertIsInstance(table_action, dict)
+        assert isinstance(table_action, dict)
+        self.assertIsNone(table_action["action_id"])
+        self.assertEqual(follow_observation["current_round"]["constraint"], table_action["display_text"])
+
         with self.assertRaises(ValueError):
             game.step(99999)
 
