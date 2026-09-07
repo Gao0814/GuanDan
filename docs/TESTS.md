@@ -2117,3 +2117,13 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 规划Codex显式设置 `PYTHON_DOTENV_DISABLED=1` 后独立运行 `.\.venv\Scripts\python.exe -m unittest discover -q`：674项通过，用时41.238秒。
 - staged diff检查通过，代码与测试检查点为 `fb3d791`，精确修改7个文件。
 - 未运行新容量、Botzone、connector、Edge、网络或模型，未读取`.env`、未触碰真实workspace；当前范围内无已知剩余风险。
+
+## 2026-09-07 自由出牌小手牌短序列守卫复核
+
+- 新增 `agents/short_endgame_planner.py`：只读取公开本家手牌和原始自由出牌canonical actions，对1–4张手牌按 `Counter` 多重集做精确覆盖，比较每个首手的“1 + 最少残余分组数”。
+- 仅当模型首手严格劣于最佳分组数时覆盖；并列、payload畸形、pass混入自由出牌、carrier不守恒、动作ID异常或任一残余无法覆盖时保持模型动作。
+- DeepSeek成功路径在危险对手pass阻断之后调用该守卫；新增 `short_endgame_plan` source计为一次成功模型尝试，不计fallback，audit版本不变。
+- 规划Codex独立运行 `tests.test_short_endgame_planner tests.test_deepseek_step_e tests.test_botzone_agent_observability`：31项通过。
+- 规划Codex独立运行 `tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output`：39项通过。
+- 规划Codex设置 `PYTHON_DOTENV_DISABLED=1` 后独立运行全量：684项通过，用时40.008秒；`git diff --check`通过，仅有既有LF/CRLF提示。
+- 代码与测试检查点为 `dc9638c`，精确包含7个实现/测试文件；未运行Botzone、connector、Edge、网络、真实模型或新容量，未触碰真实workspace。当前范围内无已知剩余风险。

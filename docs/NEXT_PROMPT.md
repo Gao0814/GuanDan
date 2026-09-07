@@ -1,97 +1,97 @@
 # 给 Coding Codex 的下一任务 Prompt
 
-你负责本次代码实现、测试与结果报告。本任务为自由出牌的小手牌残局增加一个严格、确定性的短序列规划守卫，避免模型选择可证明会增加本家出完所需手数的拆组动作。不运行 Botzone，不建立或运行新的容量评测。
+你负责本次代码实现、测试与结果报告。本任务处理 DeepSeek 成功动作绕过队友控桌资源保留的问题：先复现模型用高价值控制牌压住队友的路径，再实现严格、保守、可证明的成功动作守卫。不运行 Botzone，不建立或运行容量评测。
 
 ## 【项目长期约束】
 
 开始前完整读取并遵守仓库根目录及适用范围内的 `AGENTS.md`，并阅读 `docs/CLEAN_HANDOFF.md`、`docs/SPEC.md`、`docs/INVARIANTS.md`、`docs/LIVE_GAME_REVIEW.md` 与相关代码和测试。
 
-保持engine/AI边界：Agent只能读取公开 `observation` 与原始 `legal_actions`，并返回其中已有的合法 `action_id`；不得访问engine私有状态、克隆游戏真值、读取其他玩家暗牌或自行构造动作。
+保持 engine/AI 边界：Agent 只能读取公开 `observation` 与原始 `legal_actions`，并返回其中已有的合法 `action_id`；不得访问 engine 私有状态、读取其他玩家暗牌、自行构造动作或复制规则引擎的合法性判断。
 
-当前算法优化和Botzone profile固定级牌 `2`、四人、无需进贡的单局。这是项目既定验收范围，不是风险或未完成项；不得扩展为跨级牌、贡还或多局升级任务。
+当前算法优化和 Botzone profile 固定级牌 `2`、四人、无需进贡的单局。这是项目既定验收范围，不是风险或未完成项；不得扩展为跨级牌、贡还或多局升级任务。
 
-Coding Codex负责修改和验证，不创建Git commit。完成后保留工作区并报告，由项目规划Codex独立复核和提交。
+Coding Codex 负责修改和验证，不创建 Git commit。完成后保留工作区并报告，由项目规划 Codex 独立复核和提交。
 
 ## 【当前项目状态】
 
-最新算法检查点为 `fb3d791`：
+最新算法检查点为 `dc9638c`：
 
-- 默认RuleBased已具备对手非紧急保炸弹和队友控桌保炸弹两项规则；
-- DeepSeek成功返回合法pass时，危险对手1/2张阻断守卫会确定性改选原始非pass；
-- `danger_opponent_block`计为成功模型尝试，不计fallback；
-- `FrozenRuleBasedAIAgent`、DeepSeek失败fallback、显式conditional mode和历史evaluation语义保持稳定；
-- 显式禁用dotenv的全量674项测试通过。
+- 默认 RuleBased 已具备对手非紧急保炸弹和队友控桌保炸弹两项规则；
+- DeepSeek 成功返回危险 pass 时，`danger_opponent_block` 会在领牌对手只剩 1/2 张时改选原始非 pass；
+- DeepSeek 自由出牌且本家只剩 1–4 张时，`short_endgame_plan` 会阻止严格增加本家最少出牌分组数的模型动作；
+- 上述两个 source 都计为成功模型尝试，不计 fallback；冻结旧 RuleBased、DeepSeek 失败 fallback、显式 conditional mode 和 audit 版本保持稳定；
+- 规划 Codex 已在显式禁用 dotenv 的环境中独立复跑全量 684 项通过。
 
-`record.txt` / `docs/LIVE_GAME_REVIEW.md` 第20–22轮暴露了下一项结构缺口：玩家2只剩 `6,7,J,J` 时按单步连续选择单J，最后留下6、7并失去控制。复盘没有断言“首出单J必错”，但明确确认当前决策不比较完整小手牌的2–3手残余结构。
+`record.txt` / `docs/LIVE_GAME_REVIEW.md` 第 6 轮还有一条未处理的公开线索：玩家 2（玩家 4 的队友）以小王领牌并已控桌，玩家 4 随后用大王压队友。现有默认 RuleBased 的队友保牌只覆盖“全部非 pass 都是炸弹类”的规则路径；DeepSeek 成功返回的合法非 pass 仍会直接采用，因此高价值资源压队友的模型动作仍可能绕过保留策略。
 
-本任务不对这一局硬编码动作。要解决的是可独立证明的窄问题：自由出牌、手牌很少时，如果模型所选首手比另一合法首手需要更多的最少剩余出牌组数，则模型选择缺少短序列一致性。
+这条单局记录只能作为 fixture 线索，不能证明所有压队友动作都错误。本任务不得实现“队友领牌一律 pass”的宽泛规则。
 
 ## 【本次任务目标】
 
-先确认当前DeepSeek成功动作路径会接受上述“严格更差的残余分组”动作，然后实现以下规则：
+先用注入假 client 的脱敏测试确认：当公开 history/table 严格证明队友以小王领牌、pass 合法、本家有大王压制且模型成功返回大王 action ID 时，当前 DeepSeek 路径会接受该动作。
 
-> 当本家自由出牌、公开本家手牌不超过4张、原始legal actions足以按实体牌多重集精确覆盖手牌时，计算每个合法非pass首手之后的最少残余合法分组数。仅当模型所选动作的“当前1手 + 最少残余分组数”严格大于最佳合法首手时，改选一个最佳原始action ID；相等时保留模型选择。
+然后实现一个窄、fail-closed 的 DeepSeek 成功动作守卫：
 
-计算必须基于当前公开手牌与当前自由出牌的原始canonical legal actions。两副牌中相同token可能重复，必须按多重集而非普通set处理。只允许使用合法动作的 `carrier_cards` 做实体扣除；`declared_cards` 只用于语义/展示，不能代替实体牌。
+> 仅在公开 history/table 严格一致地证明由队友领牌、模型选择用明确的高价值控制资源继续压制、原始 pass 合法、本家不能借该动作立即出完、且没有已结束或只剩 1/2 张的对手压力时，才把模型动作改为原始 pass ID。
 
-如果公开字段、手牌守恒、动作覆盖或最小分组结果不完整/不唯一可信，应fail closed并保留原模型选择。不得猜测未来对手动作或把“最少分组”声称为完整博弈最优。
+最低必须覆盖“小王由队友领牌、模型用大王压制”的可证明场景。是否安全复用现有 teammate-pressure 公共校验、以及是否把同一守卫扩展到已有明确分类的炸弹/同花顺/天王炸，由你在检查当前代码后决定；不得凭直觉把所有普通非 pass 都纳入。
+
+如果无法从现有公开字段严格证明队友关系、最后有效领牌、table/history 一致、pass 身份、资源类型、立即出完或对手压力，必须保留模型原动作。
 
 ## 【需要检查的范围】
 
 优先检查：
 
-- `record.txt`
-- `docs/LIVE_GAME_REVIEW.md`
+- `record.txt` 第 6 轮及 `docs/LIVE_GAME_REVIEW.md`
+- `agents/conditional_pressure_pass_policy.py`
 - `agents/deepseek_ai.py`
 - `agents/rule_based_ai.py`
-- `agents/opening_strategy.py` 中已有残余结构思想，确认能否安全复用但不要强行耦合开局规则
-- `agents/hand_evaluator.py`
+- `agents/short_endgame_planner.py`
 - `integrations/botzone/play_adapter.py`
 - `integrations/botzone/agent_observability.py`
-- 对应DeepSeek、RuleBased、adapter与observability测试
+- 对应 conditional、DeepSeek、adapter 与 observability 测试
 
-先用注入假client的脱敏fixture证明当前成功模型路径会接受“单J”类严格更差动作，再决定最小实现位置。优先建立独立、纯公开数据的短序列helper，由DeepSeek成功动作返回点调用；不要把搜索逻辑塞入adapter或engine。
+先定位真实绕过点和现有共享校验能力，再选择最小实现位置。优先复用或小幅扩展现有严格公开 payload 校验；不要在 adapter 或 engine 中另建策略逻辑。
 
-不要强制只修改上述文件。允许在 `agents/` 新增一个职责单一的小模块，并修改必要的低基数observability和测试；不得修改engine、session、transport、history文件格式、audit schema版本或真实workspace。
+不要强制只修改上述文件。允许在 `agents/` 内新增职责单一的纯公开数据 helper，并修改必要的低基数 observability 和测试；不得修改 engine、session、transport、history 文件格式、audit schema/version 或真实 workspace。
 
 ## 【本次任务约束】
 
-- 只处理 `constraint == "free"` 或项目当前等价的严格自由出牌语义。
-- 只处理本家公开 `hand_count <= 4` 且手牌实体多重集完整可验证的场景；其他场景保持现状。
-- pass不得参与自由出牌规划；若payload异常出现pass，fail closed。
-- 最少分组只能由当前原始自由出牌legal actions的carrier多重集精确覆盖计算；不能调用engine私有接口生成未来动作。
-- 只有模型动作严格劣于最佳分组数时才覆盖；并列不得覆盖模型。
-- 最佳动作不唯一时使用已有确定性合法选择方式打破平局，不发明新的大规模评分体系。
-- 新动作必须是原始legal actions中的action ID。
-- 若新增低基数source，建议使用清楚表达语义的固定值并继续计为一次成功模型尝试；不计rule fallback，不改变audit版本或保存逐步牌面。
-- 不改变危险对手阻断优先级、两项RuleBased保牌、冻结旧selector、DeepSeek失败fallback或显式conditional mode。
-- 不新增依赖，不建立evaluation模块，不运行200/400局报告或任何百局/千局容量。
-- 不运行Botzone、Edge、connector、网络或真实模型；显式禁用dotenv运行测试，不读取 `.env`，不触碰 `D:\VsCodeProject\BotzoneWorkspace`。
-- 不创建Git commit。
+- 只处理跟牌场景；自由出牌不得触发。
+- 必须严格证明当前桌面动作来自本家队友，且 history 最后有效非 pass 与 table action 的共同语义一致。
+- 必须从原始 legal actions 取得 pass ID；最终返回值仍须是原始合法 action ID。
+- 模型动作能立即出完时不得覆盖。
+- 任一对手已结束或公开剩余 1/2 张时，保守地不触发本守卫，避免削弱已有危险对手处理。
+- 不得把所有“压队友”的普通动作一律改成 pass；资源范围必须由现有牌型/声明语义严格识别并有测试锁定。
+- `danger_opponent_block` 优先级不得降低；自由出牌的 `short_endgame_plan` 不应与本守卫同时命中。
+- 若新增低基数 source，应计为一次成功模型尝试，不计 rule fallback；不改变 audit 版本，不保存逐步牌面。
+- 不改变默认 RuleBased 的两项保牌规则、冻结旧 selector、DeepSeek 失败 fallback、显式 `conditional_pressure_pass` mode 或历史 evaluation 语义。
+- 不新增依赖，不建立 evaluation 模块，不运行 200/400 局报告或任何百局/千局容量。
+- 不运行 Botzone、Edge、connector、网络或真实模型；显式禁用 dotenv 运行测试，不读取 `.env`，不触碰 `D:\VsCodeProject\BotzoneWorkspace`。
+- 不创建 Git commit。
 
 ## 【重要不变量】
 
-- 所有返回值始终来自当前原始legal actions。
-- 牌实体守恒按多重集验证，不能因两副牌重复token误删或误计。
-- helper异常或证据不足必须保留合法模型动作，不能转成失败fallback。
-- `6,7,J,J` 只作为脱敏回归fixture，不得在业务代码中硬编码牌点或action ID。
-- 最少自有分组是局部确定性指标，不得在代码、测试或报告中称为全局最优或胜率证明。
-- 固定级牌2、无贡、单局以及不做跨级牌/贡还/升级赛属于完成范围，不得列为剩余风险。
+- 规则只消费公开 observation 和调用时原始 legal actions。
+- 不自行制造 pass、牌型或 Botzone carrier/claim。
+- payload 畸形、证据不足或语义不一致时保留合法模型动作，不能转成失败 fallback。
+- 玩家编号、轮次和“小王/大王” action ID 不得硬编码；测试可使用脱敏 fixture，业务逻辑只能依据公开团队关系与动作语义。
+- 固定级牌 2、无贡、单局以及不做跨级牌/贡还/升级赛属于完成范围，不得列为剩余风险。
 
 ## 【验证要求】
 
 新增或调整确定性测试，至少覆盖：
 
-1. 自由出牌、手牌 `6,7,J,J` 的脱敏fixture中，模型选择单J需要4个总分组，而对子J路线需要3个；最终选择原始对子action ID；
-2. 模型已经选择最少分组动作时不覆盖；两个首手总分组数并列时保留模型；
-3. 多个最佳动作时选择确定且属于原始legal actions；
-4. 重复实体token按多重集正确处理；不完整手牌、carrier不守恒、重复/非法action ID、缺字段或无法覆盖时fail closed；
-5. hand count大于4、跟牌场景、仅一个非pass动作等非目标场景保持模型选择；
-6. 危险对手1/2张阻断及 `danger_opponent_block` source继续通过；
-7. DeepSeek success/timeout/exception/invalid action、冻结fallback、两项RuleBased保牌、显式conditional mode继续通过；
-8. 若新增source，Botzone decision/model/outcome/fallback守恒与audit版本保持不变。
+1. 队友小王领牌、模型成功选择大王、pass 合法、不能立即出完、无危险对手时，改选原始 pass ID；
+2. 相同场景在真实 `DeepSeekAIAgent.select_action()` 成功路径生效，模型调用仍只计一次；
+3. 自由出牌、对手领牌、history/table 不一致、队伍字段畸形、没有 pass、模型本来选 pass 时均不触发；
+4. 模型动作可立即出完时不触发；任一对手已结束或余 1/2 张时不触发；
+5. 普通低价值非 pass 不因“队友领牌”被宽泛拦截；若扩展到炸弹类，逐类覆盖允许范围和非允许反例；
+6. `danger_opponent_block` 与 `short_endgame_plan` 的既有优先级、source 和行为不回归；
+7. DeepSeek success/timeout/exception/invalid action、冻结 fallback、默认 RuleBased 两项保牌、显式 conditional mode继续通过；
+8. 若新增 source，Botzone decision/model/outcome/fallback 守恒与 audit 版本保持不变。
 
-先运行直接相关测试，再显式禁用dotenv运行：
+先运行直接相关测试，再显式禁用 dotenv 运行：
 
 ```powershell
 $env:PYTHON_DOTENV_DISABLED='1'
@@ -102,22 +102,22 @@ git diff --check
 
 ## 【完成标准】
 
-- 已用最小公开fixture复现当前成功模型路径接受严格更差残余分组动作；
-- 自由出牌且手牌不超过4张时，严格可证明的更少分组首手能够覆盖模型的较差选择；
-- 并列、证据不足和非目标场景保持原模型动作；
-- 实体多重集、原始action ID、observability守恒和现有策略均无回归；
+- 当前 DeepSeek 成功动作接受队友控桌高价值压制的路径已被 fixture 复现；
+- 窄守卫能修正队友小王后用大王压制的目标场景，同时不扩大为普遍禁止压队友；
+- 立即出完、危险对手、证据不足和非目标动作保持原模型选择；
+- 原始 action ID、现有三项策略守卫、observability 守恒与 fallback 语义无回归；
 - 定向、主回归、全量测试和补丁检查通过；
-- 未运行live、网络、模型或新容量，未读取`.env`或触碰真实workspace，未创建Git commit。
+- 未运行 live、网络、模型或新容量，未读取 `.env` 或触碰真实 workspace，未创建 Git commit。
 
 ## 【执行后的报告要求】
 
 最终报告必须包含：
 
-1. 当前单步路径如何接受严格更差动作；
-2. 最少残余分组的精确定义、边界和fail-closed条件；
-3. 覆盖模型动作的严格条件与确定性tie-break；
+1. 当前绕过路径与复现结果；
+2. 新守卫的精确触发条件、资源范围与 fail-closed 边界；
+3. 为什么没有实现“队友领牌一律 pass”；
 4. 修改文件列表；
-5. observability/source是否变化及守恒方式；
+5. observability/source 是否变化及守恒方式；
 6. 新增/调整的关键测试；
 7. 实际执行的全部验证命令、测试数量和结果；
 8. 是否运行新容量、live、网络或模型（预期均为否）；
