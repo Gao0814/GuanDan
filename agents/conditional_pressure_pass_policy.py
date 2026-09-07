@@ -82,14 +82,12 @@ def _valid_actions(actions: object) -> tuple[int, tuple[Mapping[str, object], ..
     return pass_ids[0], tuple(non_pass)
 
 
-def _pressure_pass_id(
+def _pressure_pass_context(
     observation: object,
     legal_actions: object,
     expected_player_id: int,
-    *,
-    teammate_leader: bool,
-) -> int | None:
-    """Return pass only when a specified leader relationship is publicly proved."""
+) -> tuple[int, tuple[Mapping[str, object], ...], int, dict[int, Mapping[str, object]], int] | None:
+    """Strictly validate the public follow-play payload and identify its leader."""
 
     if not _is_int(expected_player_id) or expected_player_id not in _TEAM:
         return None
@@ -155,11 +153,25 @@ def _pressure_pass_id(
         if item_round == round_no and item.get("declared_pattern") != "pass":
             leader = item_player
             leader_signature = item_signature
-    if leader is None or leader == expected_player_id:
+    if leader is None or leader_signature != table_signature:
         return None
-    if (_TEAM[leader] == _TEAM[expected_player_id]) != teammate_leader:
+    return pass_id, non_pass, leader, players, hand_count
+
+
+def _pressure_pass_id(
+    observation: object,
+    legal_actions: object,
+    expected_player_id: int,
+    *,
+    teammate_leader: bool,
+) -> int | None:
+    """Return pass only when a specified leader relationship is publicly proved."""
+
+    context = _pressure_pass_context(observation, legal_actions, expected_player_id)
+    if context is None:
         return None
-    if leader_signature != table_signature:
+    pass_id, non_pass, leader, players, hand_count = context
+    if leader == expected_player_id or (_TEAM[leader] == _TEAM[expected_player_id]) != teammate_leader:
         return None
     opponents = [item for player_id, item in players.items() if _TEAM[player_id] != _TEAM[expected_player_id]]
     if any(item["finished"] or item["hand_count"] <= 2 for item in opponents):
@@ -199,3 +211,22 @@ def teammate_pressure_pass_id(
         expected_player_id,
         teammate_leader=True,
     )
+
+
+def dangerous_opponent_pass_id(
+    observation: object,
+    legal_actions: object,
+    expected_player_id: int,
+) -> int | None:
+    """Return the original pass id only for a proved opponent near-finish lead."""
+
+    context = _pressure_pass_context(observation, legal_actions, expected_player_id)
+    if context is None:
+        return None
+    pass_id, _non_pass, leader, players, _hand_count = context
+    if leader == expected_player_id or _TEAM[leader] == _TEAM[expected_player_id]:
+        return None
+    leader_public = players[leader]
+    if leader_public["finished"] or leader_public["hand_count"] > 2:
+        return None
+    return pass_id

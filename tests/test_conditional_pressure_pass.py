@@ -7,6 +7,7 @@ from pathlib import Path
 import unittest
 
 from agents.conditional_pressure_pass_ai import ConditionalPressurePassAIAgent as RuntimeConditionalPressurePassAIAgent
+from agents.conditional_pressure_pass_policy import dangerous_opponent_pass_id
 from agents.rule_based_ai import FrozenRuleBasedAIAgent, RuleBasedAIAgent
 from engine.game import GuanDanGame
 from evaluation.conditional_pressure_pass import (
@@ -141,6 +142,27 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
             with self.subTest(observation=observation):
                 expected = FrozenRuleBasedAIAgent(player_id=1).select_action(observation, actions)
                 self.assertEqual(RuleBasedAIAgent(player_id=1).select_action(observation, actions), expected)
+
+    def test_dangerous_opponent_guard_requires_a_proved_near_finish_enemy_lead(self) -> None:
+        actions = _legal(("triple", 3))
+        self.assertEqual(dangerous_opponent_pass_id(_observation(opponent_count=2), actions, 2), 1)
+        self.assertEqual(dangerous_opponent_pass_id(_observation(opponent_count=1), actions, 2), 1)
+        mismatch = _observation(opponent_count=2)
+        mismatch["history"]["actions"][0]["declared_cards"] = ["8", "8", "8"]  # type: ignore[index]
+        free = _observation(opponent_count=2)
+        free["current_round"] = {"step_no": 7, "round_no": 2, "current_player_id": 2, "constraint": "free", "table_action": None}
+        free["history"] = {"actions": []}
+        for observation, legal_actions in (
+            (_observation(opponent_count=3), actions),
+            (_observation(opponent_count=2, finished=True), actions),
+            (_observation(leader=4, opponent_count=2), actions),
+            (mismatch, actions),
+            (free, actions),
+            (_observation(opponent_count=2), [_action(1, "pass")]),
+            (_observation(opponent_count=2), [_action(2, "triple", 3)]),
+        ):
+            with self.subTest(observation=observation):
+                self.assertIsNone(dangerous_opponent_pass_id(observation, legal_actions, 2))
 
     def test_normal_play_finish_and_pressure_all_fall_back_exactly(self) -> None:
         cases = (

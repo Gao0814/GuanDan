@@ -1,5 +1,7 @@
 import json
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
@@ -53,6 +55,45 @@ def _legal_actions() -> list[dict[str, object]]:
     ]
 
 
+def _danger_observation(*, opponent_count: int) -> dict[str, object]:
+    table = {
+        "action_id": 99,
+        "declared_pattern": "single",
+        "declared_cards": ["8"],
+        "carrier_cards": ["8S"],
+        "wildcard_count": 0,
+        "wildcard_info": [],
+        "display_text": "single:8",
+    }
+    return {
+        "my_info": {"player_id": 1, "team": "team_13", "hand_cards": ["9S", "JH"], "hand_count": 2},
+        "current_round": {
+            "step_no": 7, "round_no": 2, "current_player_id": 1,
+            "current_level_rank": "2", "constraint": "single:8", "table_action": table,
+        },
+        "other_players": [
+            {"player_id": 2, "team": "team_24", "hand_count": opponent_count, "finished": False, "finish_rank": None},
+            {"player_id": 3, "team": "team_13", "hand_count": 8, "finished": False, "finish_rank": None},
+            {"player_id": 4, "team": "team_24", "hand_count": 8, "finished": False, "finish_rank": None},
+        ],
+        "history": {
+            "actions": [{
+                "step_no": 7, "round_no": 2, "player_id": 2,
+                "declared_pattern": "single", "declared_cards": ["8"], "carrier_cards": ["8S"],
+            }],
+            "finish_order": [],
+        },
+    }
+
+
+def _danger_legal_actions() -> list[dict[str, object]]:
+    return [
+        {"action_id": 1, "declared_pattern": "pass", "declared_cards": [], "carrier_cards": [], "wildcard_count": 0, "wildcard_info": [], "display_text": "pass"},
+        {"action_id": 2, "declared_pattern": "single", "declared_cards": ["9"], "carrier_cards": ["9S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:9"},
+        {"action_id": 3, "declared_pattern": "single", "declared_cards": ["J"], "carrier_cards": ["JH"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:J"},
+    ]
+
+
 class CountingClient:
     def __init__(self) -> None:
         self.calls = 0
@@ -90,6 +131,38 @@ def _agent_with_counting_dependencies() -> tuple[DeepSeekAIAgent, CountingClient
 
 
 class TestDeepSeekStepE(unittest.TestCase):
+    def test_successful_model_pass_is_blocked_for_proved_one_or_two_card_opponent(self) -> None:
+        class PassClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
+                self.calls += 1
+                return DeepSeekSuggestion(action_id=1, reasoning="ignored")
+
+        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
+        for opponent_count in (1, 2):
+            with self.subTest(opponent_count=opponent_count), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+                client = PassClient()
+                agent = DeepSeekAIAgent(1, client, rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+                actions = _danger_legal_actions()
+                chosen = agent.select_action(_danger_observation(opponent_count=opponent_count), actions)
+                self.assertEqual(chosen, 2)
+                self.assertIn(chosen, {action["action_id"] for action in actions})
+                self.assertEqual(agent.last_decision_source, "danger_opponent_block")
+                self.assertEqual(client.calls, 1)
+
+    def test_successful_model_pass_remains_unchanged_when_opponent_has_three_cards(self) -> None:
+        class PassClient:
+            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
+                return DeepSeekSuggestion(action_id=1, reasoning="ignored")
+
+        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
+        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+            agent = DeepSeekAIAgent(1, PassClient(), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+            self.assertEqual(agent.select_action(_danger_observation(opponent_count=3), _danger_legal_actions()), 1)
+        self.assertEqual(agent.last_decision_source, "model")
+
     def test_client_uses_injected_transport_and_parses_action_id(self) -> None:
         captured: dict[str, object] = {}
 

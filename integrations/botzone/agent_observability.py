@@ -11,6 +11,7 @@ DECISION_SOURCES = frozenset(
         "rule_primary",
         "local_shortcut",
         "model",
+        "danger_opponent_block",
         "deepseek_rule_fallback",
         "adapter_rule_fallback",
         "conditional_pressure_pass",
@@ -89,7 +90,11 @@ class AgentObservabilitySnapshot:
             if self.model_attempt_count or outcomes or any(name != "rule_primary" for name, _ in decisions):
                 raise AgentObservabilityError("rule_mode_model_activity")
         elif self.agent_mode == "deepseek":
-            if self.model_attempt_count != sources.get("model", 0) + sources.get("deepseek_rule_fallback", 0):
+            if self.model_attempt_count != (
+                sources.get("model", 0)
+                + sources.get("danger_opponent_block", 0)
+                + sources.get("deepseek_rule_fallback", 0)
+            ):
                 raise AgentObservabilityError("deepseek_model_conservation_failed")
         elif (
             self.model_attempt_count

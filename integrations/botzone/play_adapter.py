@@ -240,6 +240,12 @@ class NoTributeRuleBasedHandler:
                 return source
             self._observability_failed = True
             return "adapter_rule_fallback"
+        if source == "danger_opponent_block":
+            outcome = self._record_model_outcome(agent)
+            if outcome == "success":
+                return source
+            self._observability_failed = True
+            return "adapter_rule_fallback"
         if source in {"local", "local_opening_formula"}:
             return "local_shortcut"
         outcome = self._record_model_outcome(agent)
