@@ -2139,3 +2139,12 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 执行方报告相关65项、主规则39项、全量689项通过，但实现通过修改生产者和既有测试，把table `action_id=None` 改成整数，未遵守已确认的canonical sentinel契约。
 - engine保存的是上一玩家当时的legal action ID，preset填人为0；Botzone生成的是公开history step。三者来源和语义不同，均不属于当前玩家原始legal action空间，不能统一称为table action ID。
 - 下一回归必须恢复engine/Botzone的None断言，搜索确认 `leading_action_id`、`_table_history_action_id`、`missing_table_action_identity` 全部移除；合法None通过，缺键和任何非None值fail closed。
+
+## 2026-09-07 队友控桌大王保留与table sentinel最终复核
+
+- engine/state恢复为零差异；`leading_action_id`、`_table_history_action_id`、`missing_table_action_identity` 在agents/engine/integrations/tests中均不存在。
+- 共享validator明确分离两套schema：原始legal action ID必须为非bool整数；公开table action必须包含 `action_id` 且值精确为None。constraint必须为非空跟牌字符串并等于table display。
+- 六个最小案例独立结果：constraint None/空、table ID bool/整数、constraint/display不一致均返回None；合法table ID None继续返回目标pass ID 1。
+- 队友小王→大王守卫只在不能立即出完、无已结束或余1/2张对手时生效；新增 `teammate_control_block` 计为模型成功，不计fallback。
+- 规划Codex独立运行相关策略/DeepSeek/Botzone observation/observability/game-flow 65项通过，主规则39项通过，全量689项通过，用时39.932秒；`git diff --check`通过，仅有既有LF/CRLF提示。
+- 代码与测试检查点为 `295b9b5`，精确包含9个文件；未运行Botzone、connector、Edge、网络、真实模型或新容量，未读取`.env`、未触碰真实workspace。当前范围内无已知剩余风险。

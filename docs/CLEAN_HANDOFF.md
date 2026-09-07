@@ -19,12 +19,12 @@
 - connector 支持显式 `--agent rule|deepseek|conditional_pressure_pass`、仓库外 state 目录、`--run-token`、零网络 preflight、完成目标和 v7/v8 completion audit。新增条件 mode 只由精确 opt-in 启用，默认仍是 `rule`。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
-- 最新已提交算法检查点为 `dc9638c`：在 `150006a` 的connector-observed牌谱/条件化pass基础、`5daf326` 的队友控桌炸弹保留和 `fb3d791` 的危险对手pass阻断之后，新增自由出牌1–4张小手牌的确定性短序列守卫。规划Codex已在显式禁用dotenv环境中独立复跑全量684项通过。
+- 最新已提交算法检查点为 `295b9b5`：在 `dc9638c` 的自由出牌小手牌短序列守卫之后，新增DeepSeek队友小王后保留大王的窄守卫，并加固共享constraint/table sentinel校验。规划Codex已在显式禁用dotenv环境中独立复跑全量689项通过。
 
 上述实现检查点：
 
 ```text
-dc9638c
+295b9b5
 ```
 
 当前分支：`cao`。提交数量会随规划检查点继续变化；读取者应以实际 `git rev-list --left-right --count origin/cao...HEAD` 为准，不使用本文中的历史 ahead 数字。
@@ -96,7 +96,7 @@ Botzone local-AI endpoint
 
 connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评测、Botzone显式 `conditional_pressure_pass` wiring、trial validator、默认RuleBased两类保牌、DeepSeek危险对手pass阻断以及自由出牌小手牌短序列守卫均已完成。DeepSeek失败fallback仍使用冻结旧静态基线。seed `47002`已完成真实对局但含2次HTTP error，真实条件化pass为0；当前继续固定级牌2、无需进贡的算法实现阶段。
 
-`docs/NEXT_PROMPT.md` 当前只包含table-action契约恢复Prompt。未提交第二次修正错误新增engine `leading_action_id`、preset 0和Botzone history-step ID，并改写了原本锁定 `action_id=None` 的测试；这些改动必须撤销。修正任务保留队友守卫，恢复None sentinel并锁定constraint/display一致，不运行Botzone、不做新容量、不触碰真实workspace。
+`docs/NEXT_PROMPT.md` 当前只包含seed `47002` 牌谱的只读策略诊断Prompt。它不修改代码或文档，不运行Botzone/网络/模型/容量，也不清理真实workspace；目标是找到一个可由原始合法动作和当前代码fixture双重证明的新缺陷，或明确证据不足。
 
 L5-A4h11a partial manifest、seed `45001` evidence与seed `47001` prestart evidence均已移入Windows回收站。seed `47002`当前evidence完整保留在固定workspace，等待后续清理；无残留connector。
 
@@ -254,7 +254,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前未提交工作区的689项测试虽通过，但测试本身把已确认的table `action_id=None` 契约改成了整数。engine值来自上一玩家当时legal空间，Botzone值是history step，preset值为人为0，三者不能作为统一公开action ID。下一任务按 `docs/NEXT_PROMPT.md` 撤销该schema扩张，再修正共享fail-closed边界。
+当前没有失败的本地单测。队友小王→大王守卫与table sentinel恢复已经独立复核并提交；下一任务按 `docs/NEXT_PROMPT.md` 只读分析seed `47002` evidence，不修改实现。
 
 ## 12. Working Tree Status
 
@@ -262,9 +262,9 @@ git diff --check
 - 已验证基础实现检查点：`150006a feat: add observed history and pressure-pass strategy`。
 - 队友保炸弹检查点：`5daf326 feat: preserve bombs behind teammate leads`。
 - 危险对手阻断检查点：`fb3d791 feat: block passes against near-finish opponents`。
-- 最新算法检查点：`dc9638c feat: guard short free-lead endgames`。
-- 最新检查点新增公开小手牌多重集分组helper、DeepSeek成功动作守卫、Botzone低基数source与对应测试；提交前由规划Codex在禁用dotenv环境中独立运行全量684项通过，并完成staged diff检查。
-- 当前工作区有11个未提交实现/测试文件；其中队友守卫本身保留，但engine/state/Botzone table-ID扩张及相应测试改写必须撤销。当前689项测试通过不构成验收，因此不得提交这些代码。
+- 小手牌短序列检查点：`dc9638c feat: guard short free-lead endgames`。
+- 最新算法检查点：`295b9b5 feat: preserve big joker behind teammate`。
+- 最新检查点新增队友小王→大王守卫、`teammate_control_block`、双action-ID schema校验与对应测试；提交前由规划Codex独立运行相关65项、主规则39项和全量689项通过，并完成staged diff检查。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex默认不提交；完成后由规划Codex独立复核并负责Git检查点。
 
@@ -279,6 +279,6 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按 `docs/NEXT_PROMPT.md` 先精确撤销 `TableConstraint.leading_action_id`、engine传递/preset 0、Botzone `_table_history_action_id()` 和相应整数断言，恢复table action ID精确为None。之后在共享validator区分legal-action严格整数ID与table-action None sentinel，并锁定constraint/display一致。
+按 `docs/NEXT_PROMPT.md` 只读审计固定workspace的seed `47002` history/audit/state/streams。逐项低敏分类16次本家决策；最多提出一个能恢复完整legal actions并由当前代码最小fixture复现的新缺陷，否则明确现有evidence不足。不得修改或清理workspace，不运行live/网络/模型/容量。
 
 当前算法和Botzone验证固定级牌2、无需进贡；这是验收范围，不得列为风险。任务不做13级牌泛化、多局升级或贡还，不运行网络/Botzone/connector/model，不读取或清理seed `47002` workspace evidence，也不新增大容量rollout。完成后由规划Codex复核代码、测试、Git状态并负责提交。

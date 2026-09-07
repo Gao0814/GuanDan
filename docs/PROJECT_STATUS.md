@@ -15,8 +15,10 @@
 - 规划Codex在显式禁用dotenv的环境中独立复跑全量674项通过，实现检查点为 `fb3d791`。
 - 自由出牌小手牌短序列守卫已完成：当本家只剩1–4张、公开canonical动作可按实体牌多重集精确覆盖，且模型首手严格增加最少出牌分组数时，改选原始最优action ID；并列或证据不足保持模型动作。`short_endgame_plan`计为成功模型尝试。
 - 规划Codex独立复跑相关31项、主规则39项及全量684项通过，实现检查点为 `dc9638c`；当前范围内无已知剩余风险。
-- DeepSeek队友小王后使用大王的窄守卫仍在未提交工作区。第二次修正没有遵守已确认契约：它给engine状态新增上一动作legal ID、给preset填0，并让Botzone把history step当table action ID，进而把原canonical `None` 改成三种语义不一致的整数。689项测试通过不能抵消公开schema回归，该批仍未验收。
-- 下一步必须撤销所有 `leading_action_id` / history-step-as-action-ID改动，恢复engine与Botzone table `action_id=None`；共享validator只接受精确None sentinel，同时锁定constraint为非空跟牌字符串且等于table display。保留队友守卫本身，不扩大策略范围，不做新容量或live。
+- DeepSeek队友小王后保留大王的窄守卫已完成：只在队友单张小王领牌、模型选择单张大王、pass合法、不能立即出完且无危险对手时改为原始pass。新增 `teammate_control_block` 计为模型成功，不计fallback。
+- table-action契约已正确恢复并加固：engine/state零差异，engine与Botzone继续输出 `action_id=None`；共享validator区分legal action严格整数ID与table action精确None sentinel，同时要求constraint为非空跟牌字符串且等于table display。
+- 规划Codex独立复跑六个最小契约案例、相关65项、主规则39项和全量689项通过，实现检查点为 `295b9b5`；当前范围内无已知剩余风险。
+- 现有单局复盘中的高置信度问题已经逐项处理。下一步只读审计保留的seed `47002` 牌谱以寻找新的可复现策略缺陷；不打新桌、不跑容量、不直接修改算法。
 
 ### Connector-observed 牌谱实现与加固复审
 
