@@ -18,7 +18,7 @@
 12. 同队炸弹互耗已修复：队友领牌且只有炸弹类压制时，默认RuleBased在无立即出完和对手残局压力的场景选择原始pass；全量671项通过，实现检查点为 `5daf326`。
 13. 危险对手阻断已完成：真实绕过路径是DeepSeek模型成功返回合法pass；现在严格公开条件命中时改选冻结selector给出的原始非pass，并以 `danger_opponent_block` 记录为成功模型尝试。全量674项通过，实现检查点为 `fb3d791`。
 14. 自由出牌小手牌短序列守卫已完成：对1–4张公开手牌按carrier多重集计算最少分组，只覆盖严格更差的模型首手；并列和证据不足保持原动作。全量684项通过，实现检查点为 `dc9638c`。
-15. DeepSeek队友小王后模型用大王压制的窄守卫已实现到未提交工作区。共享validator仍需拒绝 `constraint=None/""`、constraint/display不一致及table ID缺失/非None；table `action_id=None` 已确认是engine/Botzone共同canonical sentinel，必须保留。当前先完成该fail-closed修正并复核688项以上全量测试；修正前不提交，不改公开schema，也不运行新容量或Botzone桌。
+15. DeepSeek队友小王后模型用大王压制的窄守卫已实现到未提交工作区，但第二次修正错误改变table-action schema：engine上一动作legal ID、preset 0和Botzone history step被混为action ID。当前先撤销这些state/schema改动，恢复唯一canonical `action_id=None`，再补constraint/display与sentinel校验并复核全量测试；修正前不提交，不运行新容量或Botzone桌。
 
 牌谱基础设施、`45001`真实smoke、两阶段候选评测、Botzone offline wiring、validator收口、两项默认RuleBased保牌、危险对手阻断和小手牌短序列守卫均已完成。`47002`证明新时序可以完成对局，但没有触发候选且包含两次HTTP错误。当前不继续消耗真实桌，也不再收集与项目范围无关的容量，沿已有复盘逐项修正可公开复现的策略缺陷。
 

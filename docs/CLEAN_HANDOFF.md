@@ -96,7 +96,7 @@ Botzone local-AI endpoint
 
 connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评测、Botzone显式 `conditional_pressure_pass` wiring、trial validator、默认RuleBased两类保牌、DeepSeek危险对手pass阻断以及自由出牌小手牌短序列守卫均已完成。DeepSeek失败fallback仍使用冻结旧静态基线。seed `47002`已完成真实对局但含2次HTTP error，真实条件化pass为0；当前继续固定级牌2、无需进贡的算法实现阶段。
 
-`docs/NEXT_PROMPT.md` 当前只包含队友控桌守卫的共享validator修正Prompt。未提交实现已通过688项测试；`constraint=None/""`、table `action_id=True` 会错误触发pass，但table `action_id=None` 已由engine/Botzone代码和测试确认是合法canonical sentinel。修正任务保留None、拒绝缺键/其他值并锁定constraint/display一致，不运行Botzone、不做新容量、不触碰真实workspace。
+`docs/NEXT_PROMPT.md` 当前只包含table-action契约恢复Prompt。未提交第二次修正错误新增engine `leading_action_id`、preset 0和Botzone history-step ID，并改写了原本锁定 `action_id=None` 的测试；这些改动必须撤销。修正任务保留队友守卫，恢复None sentinel并锁定constraint/display一致，不运行Botzone、不做新容量、不触碰真实workspace。
 
 L5-A4h11a partial manifest、seed `45001` evidence与seed `47001` prestart evidence均已移入Windows回收站。seed `47002`当前evidence完整保留在固定workspace，等待后续清理；无残留connector。
 
@@ -254,7 +254,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的既有本地单测，但存在规划Codex独立复现的共享validator反例：`constraint=None/""` 与table `action_id=True` 会使 `teammate_big_joker_pass_id()` 错误返回pass ID `1`。table `action_id=None` 是合法sentinel，应继续返回1。队友控桌守卫代码尚未提交；下一任务按 `docs/NEXT_PROMPT.md` 修正共享fail-closed边界并补回归，不运行live或新容量。
+当前未提交工作区的689项测试虽通过，但测试本身把已确认的table `action_id=None` 契约改成了整数。engine值来自上一玩家当时legal空间，Botzone值是history step，preset值为人为0，三者不能作为统一公开action ID。下一任务按 `docs/NEXT_PROMPT.md` 撤销该schema扩张，再修正共享fail-closed边界。
 
 ## 12. Working Tree Status
 
@@ -264,7 +264,7 @@ git diff --check
 - 危险对手阻断检查点：`fb3d791 feat: block passes against near-finish opponents`。
 - 最新算法检查点：`dc9638c feat: guard short free-lead endgames`。
 - 最新检查点新增公开小手牌多重集分组helper、DeepSeek成功动作守卫、Botzone低基数source与对应测试；提交前由规划Codex在禁用dotenv环境中独立运行全量684项通过，并完成staged diff检查。
-- 当前工作区另有7个未提交的队友控桌守卫实现/测试文件；现有688项测试通过，但共享validator的三个已确认畸形反例及新增schema反例尚未修正，因此不得提交这些代码。
+- 当前工作区有11个未提交实现/测试文件；其中队友守卫本身保留，但engine/state/Botzone table-ID扩张及相应测试改写必须撤销。当前689项测试通过不构成验收，因此不得提交这些代码。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex默认不提交；完成后由规划Codex独立复核并负责Git检查点。
 
@@ -279,6 +279,6 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按 `docs/NEXT_PROMPT.md` 修正当前未提交守卫复用的共享 `_pressure_pass_context()`：严格拒绝缺失/非字符串/空的constraint，要求constraint等于table display；table action ID必须存在且精确为canonical `None`，缺键或任何非None值拒绝。不得修改engine/Botzone公开schema。
+按 `docs/NEXT_PROMPT.md` 先精确撤销 `TableConstraint.leading_action_id`、engine传递/preset 0、Botzone `_table_history_action_id()` 和相应整数断言，恢复table action ID精确为None。之后在共享validator区分legal-action严格整数ID与table-action None sentinel，并锁定constraint/display一致。
 
 当前算法和Botzone验证固定级牌2、无需进贡；这是验收范围，不得列为风险。任务不做13级牌泛化、多局升级或贡还，不运行网络/Botzone/connector/model，不读取或清理seed `47002` workspace evidence，也不新增大容量rollout。完成后由规划Codex复核代码、测试、Git状态并负责提交。

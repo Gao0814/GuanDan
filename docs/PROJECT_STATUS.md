@@ -15,8 +15,8 @@
 - 规划Codex在显式禁用dotenv的环境中独立复跑全量674项通过，实现检查点为 `fb3d791`。
 - 自由出牌小手牌短序列守卫已完成：当本家只剩1–4张、公开canonical动作可按实体牌多重集精确覆盖，且模型首手严格增加最少出牌分组数时，改选原始最优action ID；并列或证据不足保持模型动作。`short_endgame_plan`计为成功模型尝试。
 - 规划Codex独立复跑相关31项、主规则39项及全量684项通过，实现检查点为 `dc9638c`；当前范围内无已知剩余风险。
-- DeepSeek队友小王后使用大王的窄守卫已出现在未提交工作区，目标行为、source顺序和688项全量测试均正常。规划首次审计发现constraint畸形与table身份未严格校验，但把table `action_id=None`误判为畸形；代码与既有测试确认它是engine/Botzone共同的canonical sentinel。
-- 下一步只在共享公开payload校验层补齐fail-closed契约：constraint必须是非空跟牌字符串并等于table display，table `action_id`必须存在且精确为 `None`；缺键或任何其他值拒绝。不得修改公开schema，不扩大策略范围，不做新容量或live。
+- DeepSeek队友小王后使用大王的窄守卫仍在未提交工作区。第二次修正没有遵守已确认契约：它给engine状态新增上一动作legal ID、给preset填0，并让Botzone把history step当table action ID，进而把原canonical `None` 改成三种语义不一致的整数。689项测试通过不能抵消公开schema回归，该批仍未验收。
+- 下一步必须撤销所有 `leading_action_id` / history-step-as-action-ID改动，恢复engine与Botzone table `action_id=None`；共享validator只接受精确None sentinel，同时锁定constraint为非空跟牌字符串且等于table display。保留队友守卫本身，不扩大策略范围，不做新容量或live。
 
 ### Connector-observed 牌谱实现与加固复审
 
