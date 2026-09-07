@@ -94,6 +94,32 @@ def _danger_legal_actions() -> list[dict[str, object]]:
     ]
 
 
+def _short_endgame_observation() -> dict[str, object]:
+    return {
+        "my_info": {"player_id": 1, "team": "team_13", "hand_cards": ["6S", "7S", "JH", "JD"], "hand_count": 4},
+        "current_round": {
+            "step_no": 20, "round_no": 8, "current_player_id": 1,
+            "current_level_rank": "2", "constraint": "free", "table_action": None,
+        },
+        "other_players": [
+            {"player_id": 2, "team": "team_24", "hand_count": 5, "finished": False, "finish_rank": None},
+            {"player_id": 3, "team": "team_13", "hand_count": 6, "finished": False, "finish_rank": None},
+            {"player_id": 4, "team": "team_24", "hand_count": 4, "finished": False, "finish_rank": None},
+        ],
+        "history": {"actions": [], "finish_order": []},
+    }
+
+
+def _short_endgame_legal_actions() -> list[dict[str, object]]:
+    return [
+        {"action_id": 1, "declared_pattern": "single", "declared_cards": ["6"], "carrier_cards": ["6S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:6"},
+        {"action_id": 2, "declared_pattern": "single", "declared_cards": ["7"], "carrier_cards": ["7S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:7"},
+        {"action_id": 3, "declared_pattern": "single", "declared_cards": ["J"], "carrier_cards": ["JH"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:J"},
+        {"action_id": 4, "declared_pattern": "single", "declared_cards": ["J"], "carrier_cards": ["JD"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:J"},
+        {"action_id": 5, "declared_pattern": "pair", "declared_cards": ["J", "J"], "carrier_cards": ["JH", "JD"], "wildcard_count": 0, "wildcard_info": [], "display_text": "pair:J,J"},
+    ]
+
+
 class CountingClient:
     def __init__(self) -> None:
         self.calls = 0
@@ -131,6 +157,79 @@ def _agent_with_counting_dependencies() -> tuple[DeepSeekAIAgent, CountingClient
 
 
 class TestDeepSeekStepE(unittest.TestCase):
+    def test_successful_model_single_jack_is_replaced_by_shorter_free_lead_plan(self) -> None:
+        class SingleJackClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
+                self.calls += 1
+                return DeepSeekSuggestion(action_id=3, reasoning="ignored")
+
+        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
+        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+            client = SingleJackClient()
+            actions = _short_endgame_legal_actions()
+            agent = DeepSeekAIAgent(1, client, rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+            chosen = agent.select_action(_short_endgame_observation(), actions)
+        self.assertEqual(chosen, 5)
+        self.assertIn(chosen, {action["action_id"] for action in actions})
+        self.assertEqual(agent.last_decision_source, "short_endgame_plan")
+        self.assertEqual(client.calls, 1)
+
+    def test_successful_model_best_or_tied_free_lead_is_not_overridden(self) -> None:
+        class FixedClient:
+            def __init__(self, action_id: int) -> None:
+                self.action_id = action_id
+
+            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
+                return DeepSeekSuggestion(action_id=self.action_id, reasoning="ignored")
+
+        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
+        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+            agent = DeepSeekAIAgent(1, FixedClient(5), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+            self.assertEqual(agent.select_action(_short_endgame_observation(), _short_endgame_legal_actions()), 5)
+        self.assertEqual(agent.last_decision_source, "model")
+
+    def test_short_endgame_plan_uses_frozen_tie_break_only_after_strict_improvement(self) -> None:
+        class FixedClient:
+            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
+                return DeepSeekSuggestion(action_id=1, reasoning="ignored")
+
+        observation = _short_endgame_observation()
+        observation["my_info"] = dict(observation["my_info"], hand_cards=["6S", "6H", "7S"], hand_count=3)
+        actions = [
+            {"action_id": 1, "declared_pattern": "single", "declared_cards": ["6"], "carrier_cards": ["6S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:6"},
+            {"action_id": 2, "declared_pattern": "single", "declared_cards": ["6"], "carrier_cards": ["6H"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:6"},
+            {"action_id": 3, "declared_pattern": "pair", "declared_cards": ["6", "6"], "carrier_cards": ["6S", "6H"], "wildcard_count": 0, "wildcard_info": [], "display_text": "pair:6,6"},
+            {"action_id": 4, "declared_pattern": "single", "declared_cards": ["7"], "carrier_cards": ["7S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:7"},
+        ]
+        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
+        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+            agent = DeepSeekAIAgent(1, FixedClient(), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+            chosen = agent.select_action(observation, actions)
+        self.assertEqual(chosen, 3)
+        self.assertIn(chosen, {action["action_id"] for action in actions})
+        self.assertEqual(agent.last_decision_source, "short_endgame_plan")
+
+    def test_short_endgame_plan_preserves_model_selection_outside_verified_scope(self) -> None:
+        class FixedClient:
+            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
+                return DeepSeekSuggestion(action_id=3, reasoning="ignored")
+
+        base = _short_endgame_observation()
+        actions = _short_endgame_legal_actions()
+        oversized = _short_endgame_observation()
+        oversized["my_info"] = dict(oversized["my_info"], hand_cards=["3S", "4S", "5S", "6S", "7S"], hand_count=5)
+        follow = _short_endgame_observation()
+        follow["current_round"] = dict(follow["current_round"], constraint="single:5", table_action={"action_id": 99, "declared_pattern": "single", "declared_cards": ["5"], "carrier_cards": ["5S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:5"})
+        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
+        for observation, candidates in ((oversized, actions), (follow, actions), (base, [actions[2]])):
+            with self.subTest(constraint=observation["current_round"]["constraint"], action_count=len(candidates)), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+                agent = DeepSeekAIAgent(1, FixedClient(), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+                self.assertEqual(agent.select_action(observation, candidates), 3)
+                self.assertEqual(agent.last_decision_source, "model")
+
     def test_successful_model_pass_is_blocked_for_proved_one_or_two_card_opponent(self) -> None:
         class PassClient:
             def __init__(self) -> None:

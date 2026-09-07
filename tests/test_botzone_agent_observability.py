@@ -95,6 +95,17 @@ class _DangerBlockAgent:
         return legal_actions[0]["action_id"]
 
 
+class _ShortEndgamePlanAgent:
+    last_decision_source = "short_endgame_plan"
+
+    def __init__(self) -> None:
+        self.client = _StrictDeepSeekClient(_Delegate(1))
+
+    def select_action(self, _: dict[str, object], legal_actions: list[dict[str, object]]) -> object:
+        self.client.suggest_action_id(observation={}, legal_actions=legal_actions)
+        return legal_actions[0]["action_id"]
+
+
 class _ShortcutAgent:
     last_decision_source = "local"
 
@@ -211,6 +222,7 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 ("deepseek_rule_fallback",),
             ),
             ("deepseek", _DangerBlockAgent, False, "danger_opponent_block", (("success", 1),), ()),
+            ("deepseek", _ShortEndgamePlanAgent, False, "short_endgame_plan", (("success", 1),), ()),
             ("deepseek", lambda: _ExplodingAgent(), True, "adapter_rule_fallback", (), ("adapter_rule_fallback",)),
         )
         for mode, factory, outer_fallback, expected, outcomes, fallbacks in cases:
