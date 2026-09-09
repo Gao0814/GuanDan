@@ -20,7 +20,8 @@
 14. 自由出牌小手牌短序列守卫已完成：对1–4张公开手牌按carrier多重集计算最少分组，只覆盖严格更差的模型首手；并列和证据不足保持原动作。全量684项通过，实现检查点为 `dc9638c`。
 15. DeepSeek队友小王后保留大王的窄守卫已完成：资源范围不扩展到普通牌，立即出完与危险对手场景保持模型动作；table action继续使用canonical `action_id=None`。相关65项、主规则39项和全量689项通过，实现检查点为 `295b9b5`。
 16. 现有 `record.txt` 高置信度缺陷已全部处理。seed `47002` 的16次 `conditional_rule_based` 决策只读审计也已完成：14次可按公开语义重建，9个pass点均只有pass合法；两个可精确比较的自由出牌点没有严格更优替代。第1、6次缺少足以唯一还原canonical动作的细节，因此不支持新增策略规则。
-17. 下一步只离线实现显式opt-in的connector决策证据文件，记录Header ack已确认的本家公开observation、原始canonical legal actions、selected action ID/action与低基数source。默认关闭，不进入audit/普通日志，不改变Agent选择、协议或现有history；完成复审后才规划一局新的人工live。
+17. 显式opt-in的connector决策证据主体已实现，ack持久化、原子JSON、runner/CLI/launcher接线及现有测试成立；但尚未通过规划复审，不能提交或进入live。
+18. 下一步只修复三个实证缺口：fresh CLI必须在runner前拒绝既有trace；跨recorder重启时用持久、非match派生的低敏绑定ID区分同match恢复与第二match；trace必须保存Agent调用前深拷贝的canonical输入，不能被Agent修改共享嵌套对象污染。补齐三种mode source、pass/wildcard精确保留回归后重跑定向与全量。
 
 牌谱基础设施、`45001`真实smoke、两阶段候选评测、Botzone offline wiring、validator收口、两项默认RuleBased保牌、危险对手阻断和小手牌短序列守卫均已完成。`47002`证明新时序可以完成对局，但没有触发候选且包含两次HTTP错误；其现有牌谱不足以证明新的策略缺陷。当前先补齐单局决策证据的canonical输入/输出，不继续消耗真实桌，也不收集与项目范围无关的容量。
 
@@ -1988,3 +1989,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 9个pass点均重建为仅pass合法。两个可精确比较残余分组的自由出牌点，冻结基线分别为5组与2组，均等于所有合法首手的最优值。
 - 当前没有“当前机制稳定选错且某个原始合法ID公开可证明严格更优”的新fixture，因此不新增策略规则，也不打新桌追样本。
 - connector在handler决策点已经同时拥有公开observation、原始canonical legal actions、最终selected ID与source；现有ack持久化只保留carrier/claim。下一任务为这组数据增加默认关闭、仓库外、ack后确认的结构化证据文件，并用重发/重启/finished合成测试证明不重复、不提前记录。
+
+### 决策证据首次实现复核未通过
+
+- 执行方报告的78项定向与697项全量由规划Codex独立复跑通过，`git diff --check`也通过；这证明现有覆盖成立，但不覆盖以下反例。
+- fresh direct CLI面对已存在的trace文件仍调用 `build_foreground_runner`，只因后续合成异常才返回configuration error；不满足“预存在输出在runner前拒绝”。
+- recorder写完match A后重建实例，再传入决策前缀完全相同的match B，状态仍为 `ok`。当前文件不含持久绑定身份，内容前缀不能证明同一match恢复。
+- handler只对action字典做浅复制。合成Agent修改一个非选中action的嵌套 `wildcard_info` 后，trace与调用前 `project_decision()` canonical actions不同，且 `decision_trace_failed=False`。
+- 当前代码保持未提交。下一任务不得推倒ack主体，只做输出前置门槛、持久低敏trace绑定及pre-call深拷贝隔离，并补最小回归。

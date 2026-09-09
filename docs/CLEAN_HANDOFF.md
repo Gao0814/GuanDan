@@ -96,7 +96,7 @@ Botzone local-AI endpoint
 
 connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评测、Botzone显式 `conditional_pressure_pass` wiring、trial validator、默认RuleBased两类保牌、DeepSeek危险对手pass阻断、自由出牌小手牌短序列守卫和队友小王后大王保留均已完成。DeepSeek失败fallback仍使用冻结旧静态基线。seed `47002`已完成真实对局但含2次HTTP error，真实条件化pass为0；其后只读策略审计没有得到新的高置信度缺陷。
 
-`docs/NEXT_PROMPT.md` 当前只包含一个离线实现Prompt：增加显式opt-in、仓库外、Header ack后确认的本家决策证据文件。它不运行Botzone/网络/模型/容量，也不清理真实workspace；目标是让未来一局即可保存完整公开observation、原始canonical legal actions、selected action和source。
+`docs/NEXT_PROMPT.md` 当前只包含决策证据首次实现的离线纠错Prompt。主体ack设计保留，但必须修复fresh CLI既有输出门槛、跨recorder单match身份和Agent输入深拷贝隔离；不运行Botzone/网络/模型/容量，也不清理真实workspace。
 
 L5-A4h11a partial manifest、seed `45001` evidence与seed `47001` prestart evidence均已移入Windows回收站。seed `47002`当前evidence完整保留在固定workspace，等待后续清理；无残留connector。
 
@@ -109,6 +109,8 @@ seed `47001` 已使用且不得复用。项目所有者确认页面一直显示�
 seed `47002`也已使用且不得复用。页面连接门槛先通过，对局随后exit 0 / `finished_target`并形成17/17/17、qualified finish、v4/v8归属和可读history；但2次 `http_error`使严格零故障smoke标签不成立。16次决策均为 `conditional_rule_based`，真实候选pass未激活。这是非激活runtime兼容性证据，不是候选胜率或激活证据。
 
 seed `47002` 后续只读策略审计确认：16次决策中14次可按公开语义重建，9次pass均只有pass合法；两个可精确比较的自由出牌点不存在严格更优的残余分组。第1、6次缺少足以唯一恢复canonical动作的声明/载体细节。结论是现有evidence不足以支持下一项算法修改，不得据此猜测新规则。
+
+决策证据首次实现当前未提交。规划复跑78项定向和697项全量均通过，但三个额外合成反例成立：fresh CLI仍进入runner、第二match可在recorder重启后凭相同内容前缀被接受、Agent可修改共享嵌套action污染pre-call canonical快照。测试通过不抵消这些未覆盖契约，完成纠错前不得进入workspace清理或live。
 
 ## 6. Confirmed Symptoms
 

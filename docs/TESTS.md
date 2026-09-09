@@ -2156,3 +2156,12 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 两个可精确运行残余分组比较的自由出牌点，冻结选择与最优值分别同为5组、同为2组；没有构造出诚实的严格更优替代fixture。
 - 本轮没有修改代码，也没有运行测试、live、Botzone、connector、preflight、网络、模型或容量。当前判定为“现有evidence不足以支持下一项算法修改”。
 - 后续决策证据实现测试必须覆盖：pending未ack不落盘；Header ack后恰好一次；transport失败/timeout、重发、进程重启和公开replay不重复；ack与finished同poll仍保留最后决策；第二match拒绝覆盖；写失败不影响响应交付；默认关闭与现有history/audit保持不变。
+
+## 2026-09-09 决策证据首次实现复核
+
+- 独立定向命令：`.\.venv\Scripts\python.exe -m unittest tests.test_botzone_decision_trace tests.test_botzone_session tests.test_botzone_connector tests.test_botzone_runner tests.test_botzone_live_launcher tests.test_botzone_history tests.test_botzone_adapter_observation tests.test_botzone_agent_observability -q`，78项通过。
+- 独立全量命令：`.\.venv\Scripts\python.exe -m unittest discover -q`，697项通过，用时67.378秒；显式设置 `PYTHON_DOTENV_DISABLED=1`。`git diff --check`通过，仅有既有LF/CRLF提示。
+- 额外反例1：预创建合法绝对trace路径后调用direct CLI，`build_foreground_runner`仍被调用，证明预存在输出没有在runner构造前拒绝。
+- 额外反例2：match A写入后重建 `ConnectorDecisionTrace`，再用内容相同的match B更新，recorder仍为 `ok`；当前仅比较decision前缀，无法持久证明single-match身份。
+- 额外反例3：合成Agent修改传入legal action的嵌套 `wildcard_info`，最终trace不再等于调用前的canonical actions，且未标记失败；根因是handler的浅复制共享嵌套列表。
+- 因三项均违反预先验收，本次实现不提交。纠错测试必须先让三个反例转绿，再补三种agent mode source及pass/wildcard逐字段保留，并复跑同一78项集合（加新增测试）与全量。
