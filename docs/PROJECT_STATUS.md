@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：算法优化与可读决策轨迹（2026-09-07）
+## 当前阶段：算法优化与可读决策轨迹（2026-09-09）
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
@@ -21,7 +21,8 @@
 - seed `47002` 的只读策略审计已经完成：16次本家决策中14次可按公开语义重建，9个pass点均为仅pass合法；两个可精确比较的自由出牌点，冻结基线的残余最少分组数与全体合法动作最优值相同。第1、6次决策因牌谱未保存完整canonical声明/载体细节，不能唯一还原原始动作。
 - 当前结论为：**现有evidence不足以支持下一项算法修改。** 不把静态排序、单局输赢或不可唯一还原的动作强行定性为新缺陷。
 - 下一步不是新规则、容量或重复live，而是离线增加一个默认关闭的connector决策证据文件：只在Header ack后记录本家当时的完整公开observation、原始canonical legal actions、最终原始action ID及低基数source。它用于让下一次单局牌谱具备可复现诊断条件，不改变动作选择、协议、audit或默认运行。
-- 首次离线实现主体已经出现且现有78项定向、697项全量均通过，但规划复核发现三个未覆盖的契约缺口：直接CLI未在runner构造前拒绝既有trace输出；新recorder面对内容前缀相同的第二match会错误接受；传给Agent的动作仅做浅复制，恶意或有状态Agent可修改嵌套字段并污染待记录的“原始canonical”快照。该实现暂不提交，下一任务只修复这三项并补对应回归。
+- 决策证据的首轮三个缺口已经在当前未提交工作树中修正：direct CLI前置拒绝已有trace、随机持久binding区分match、Agent输入与pre-call canonical证据递归隔离。规划Codex独立复跑定向85项、主规则39项、全量704项均通过。
+- 该实现仍未验收提交：最小脚本证明 `decision_trace_payload()` 仍接受observation内legal actions与顶层legal actions不一致；同时共用 `_diagnostic_path()` 意外改变了原有direct CLI history路径兼容语义，禁止了从仓库外cwd解析到仓库外目标的相对history路径。下一任务只补这两项与回归，不改ACK主体、不清理workspace、不运行live。
 
 ### Connector-observed 牌谱实现与加固复审
 

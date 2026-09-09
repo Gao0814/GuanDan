@@ -1,105 +1,75 @@
 # 给 Coding Codex 的下一任务 Prompt
 
-你负责修正当前工作树中尚未提交的 Botzone decision-trace 实现、补测试并报告结果。保留已经成立的ack持久化与旁路写入主体，不要回退整个实现，也不要创建Git commit。不要运行真实Botzone、connector进程、Edge、网络、DeepSeek模型或容量评测，不要读取、写入或清理 `D:\VsCodeProject\BotzoneWorkspace`。
+你负责修正当前工作树中尚未提交的 Botzone decision-trace 实现剩余两项验收缺口，补测试并报告结果。保留现有ACK持久化、fresh输出门槛、随机持久binding和pre-call递归隔离主体；不要回退整个实现，也不要创建Git commit。不要运行真实Botzone、connector进程、Edge、网络、DeepSeek模型或容量评测，不要读取、写入或清理 `D:\VsCodeProject\BotzoneWorkspace`。
 
 ## 【项目长期约束】
 
 开始前完整读取并遵守仓库根目录及适用范围内的 `AGENTS.md`，并阅读 `docs/CLEAN_HANDOFF.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md` 与相关测试。
 
-保持engine/Agent/integration边界。Agent只消费公开observation与原始canonical legal actions，并返回原始合法整数action ID；Botzone实体action/claim仍只由adapter provenance产生。本任务只修诊断证据，不修改策略、规则、协议、fallback或audit。
+保持engine/Agent/integration边界。Agent只消费公开observation与原始canonical legal actions，并返回原始合法整数action ID；本任务只修诊断证据及CLI兼容性，不修改策略、规则、协议、fallback、audit或history格式。
 
 固定级牌2、四人、无需进贡、单局是既定范围，不是风险。
 
 ## 【当前项目状态】
 
-任务开始时，代码工作树中已有未提交的decision-trace实现，主要包括：
+当前未提交工作树已有完整decision-trace主体：`--decision-trace-file`默认关闭；pending决策只在Header ack后进入confirmed并原子写JSON；重发、重启、replay、重复ack及ack+finished已有测试；trace保存公开observation、canonical legal actions、selected ID/action与低基数source；runner/CLI暴露 `disabled|ok|failed`；v7/v8 audit不变。
 
-- 新 `integrations/botzone/decision_trace.py` 与对应测试；
-- session中的pending/confirmed decision payload；
-- handler、connector、runner、CLI、launcher接线；
-- `--decision-trace-file`、原子JSON与 `disabled|ok|failed` 状态。
+上一轮三个反例已经修正：
 
-执行方报告的78项定向与697项全量测试，规划Codex均已独立复跑通过；`git diff --check`也通过。但以下三个额外反例实际成立，因此当前实现尚未通过验收、尚未提交：
+1. fresh direct CLI会在runner/transport构造前拒绝已有trace文件；
+2. session与trace顶层保存独立随机32位binding，同binding及精确前缀才能跨recorder恢复，不同match fail closed；
+3. handler在Agent调用前递归隔离证据与Agent输入，selected action从pre-call canonical集合取得。
 
-1. **fresh direct CLI没有前置拒绝既有trace文件。** 在临时目录预创建绝对 `trace.json`，patch `build_foreground_runner` 后调用带 `--decision-trace-file` 的CLI，builder仍被调用；返回2只是后续合成异常造成的。
-2. **single-match绑定不能跨recorder实例证明。** match A写入后重建 `ConnectorDecisionTrace`，再用决策内容完全相同的match B更新，状态仍为 `ok`，文件未被判冲突。当前仅比较decision前缀，不能证明同一match恢复。
-3. **所谓原始canonical快照可被Agent污染。** handler只浅复制action字典；合成Agent在 `select_action()` 中修改非选中action的嵌套 `wildcard_info` 后，trace不再等于调用前 `project_decision()` 结果，且未标记failed。
+规划Codex已独立复跑decision-trace/Botzone定向85项、主规则39项、全量704项，均通过；`git diff --check`无whitespace error。但以下两个反例仍成立，所以代码尚未验收、尚未提交：
+
+1. `decision_trace_payload()` 接受observation内 `legal_actions=[{"action_id":999}]`、顶层legal actions为另一份合法pass动作的矛盾输入，返回payload且两份证据不相等。现有handler测试只证明正常构造路径相等，没有把一致性变成持久化校验不变量。
+2. direct CLI原 `_history_path()` 会先把相对路径解析为绝对路径，再拒绝仓库内、state内或与audit相同的目标；当前共用 `_diagnostic_path()` 先要求输入本身为absolute。因此从仓库外cwd传入、最终仍解析到仓库外的相对history路径由可用变成configuration error，违反“不改变history兼容语义”。decision trace自身的绝对外部路径要求是新契约，必须继续保留。
 
 ## 【本次任务目标】
 
-只修复以上三个实证缺口，并补齐上一任务遗漏的两类验收测试：三种agent mode的source进入trace且不改变observability；pass和含逢人配声明动作的canonical字段逐字段保留。
+只修复上述两个缺口：
 
-修正后必须满足：
-
-- fresh CLI/launcher使用已存在的decision-trace输出时，在runner/transport构造前固定失败，且旧文件逐字节不变；不要顺带改变现有history文件兼容语义；
-- recorder实例重建后，只有可持久证明为同一trace会话的已有文件才能作为前缀恢复；不同match即使decision内容完全相同也必须failed并保留原文件；
-- trace中的observation/legal actions是Agent调用前的深隔离快照，Agent对传入observation、legal actions及任意嵌套list/dict的修改都不能影响证据；selected action也必须从该份调用前canonical集合按最终合法ID取得。
-
-## 【实现边界】
-
-允许为single-match恢复增加一个独立、低敏、随机且持久的trace绑定ID，例如固定32位小写十六进制值，但必须满足：
-
-- 不由match ID、run token、URL、Header或牌面派生；
-- 与active session一起持久化，并进入trace顶层用于恢复一致性；
-- 不替代现有run provenance，不进入audit、stdout、stderr或网络；
-- 老v3/v4 active session/tombstone兼容读取不破坏；
-- 第二match获得不同绑定，不能只凭相同decision前缀冒充恢复。
-
-如果选择其他设计，也必须用测试证明同match恢复与不同match拒绝，不得把match ID、run token或其可逆形式写入trace。
-
-CLI的fresh输出门槛与内部recorder恢复要区分：普通新CLI/launcher调用继续拒绝预存在输出；内部合成恢复只有在持久绑定一致且已有decisions为当前confirmed decisions精确前缀时才允许。不要为了恢复而普遍允许任意既有文件。
+- decision trace的observation内 `legal_actions` 必须存在、为list，并与顶层 `legal_actions` 在JSON规范化后逐字段、逐顺序完全相等；构建payload和读取持久session都必须fail closed；
+- 恢复decision-trace接线前direct CLI的history-only路径语义，同时保持decision trace必须传绝对仓库外路径、已有trace前置拒绝、history/trace冲突拒绝和launcher现有绝对路径门槛。
 
 ## 【需要检查的范围】
 
-优先检查当前未提交差异及：
+优先检查：
 
-- `integrations/botzone/play_adapter.py`
 - `integrations/botzone/session.py`
-- `integrations/botzone/decision_trace.py`
-- `integrations/botzone/connector.py`
-- `integrations/botzone/runner.py`
 - `integrations/botzone/__main__.py`
-- `integrations/botzone/live_launcher.py`
-- `integrations/botzone/agent_observability.py`
-- 新增及现有session/connector/runner/launcher/history/adapter/observability测试
+- `tests/test_botzone_decision_trace.py`
+- `tests/test_botzone_history.py`
+- 现有launcher/connector/runner/session回归
 
-不要修改engine、默认Agent策略、evaluation或真实workspace。不要覆盖工作树中当前decision-trace主体。
+不要修改engine、Agent策略、evaluation、audit schema、history renderer或真实workspace。不要覆盖当前未提交decision-trace主体。
 
 ## 【本次任务约束】
 
-- 对Agent输入和trace保留值使用真正的递归隔离；仅复制外层dict不够。
-- trace保留的observation中 `legal_actions` 必须与顶层保存的原始legal actions逐字段一致。
-- Agent即使删除字段、追加wildcard_info、修改display text或改写observation历史，也不能污染trace或adapter provenance。
-- final selected ID仍必须经过现有合法性检查；trace selected action必须来自隔离前的原始canonical集合。
-- pending未ack不落盘；timeout/failure、重发、重启、replay、重复ack不重复；ack与finished同poll仍保留最后决策。
-- recorder失败不影响response、ack、扣牌、session、finished、history或audit。
-- JSON仍不得含match ID、run token、URL、Header、Cookie、key、prompt、模型response/reasoning、notes或异常正文。
-- table action继续为canonical `action_id=None`；不得重引入整数table identity。
-- v7/v8 audit schema、现有history格式、三种agent mode动作与source守恒不得改变。
+- 一致性校验必须在共享payload/parser边界执行，不能只在handler临时断言；observation缺少 `legal_actions`、值为None/非list或与顶层有任一嵌套字段差异时都拒绝。
+- 合法payload继续保留pass、逢人配 `declared_cards/carrier_cards/wildcard_count/wildcard_info/display_text` 与table `action_id=None`。
+- 可以恢复独立 `_history_path()` 并为decision trace保留专用validator，或采用等价设计；但仅启用history时的既有解析与边界必须保持。
+- 从仓库外临时cwd传入相对 `history.txt`、解析结果也在仓库外且不与state/audit冲突时应继续进入runner构造；相对decision trace必须固定拒绝。
+- fresh trace已存在时仍必须在runner/transport构造前失败且旧bytes不变。
+- pending/ack、binding、重启、finished、旁路失败、三种agent mode source、observability、audit与默认关闭语义不得改变。
 - 不新增依赖、不修改`.env`、不创建Git commit。
 
 ## 【必须新增的回归测试】
 
 至少覆盖：
 
-1. direct CLI预存在decision-trace时，runner builder未调用、固定configuration失败、旧bytes不变；
-2. launcher预存在decision-trace继续前置拒绝；
-3. match A写入后重建recorder，同一持久trace绑定和精确前缀可恢复且不重复；
-4. 重建recorder后match B即使所有decision内容与A相同，也因绑定不同failed，A文件不变；
-5. 缺失、畸形、bool或不匹配的trace绑定fail closed；
-6. 合成Agent同时修改传入observation、legal actions及嵌套 `wildcard_info`，输出仍精确等于调用前公开projection；
-7. trace observation内的legal actions与trace顶层legal actions相等；
-8. 选中pass时selected ID/action精确来自原始集合；
-9. 选中含逢人配声明动作时declared/carrier/wildcard_info/display字段逐项保持；
-10. `rule`、`deepseek`、`conditional_pressure_pass` 至少各有一个trace source断言，并同时验证现有observability计数不漂移；
-11. 既有pending/ack、restart、finished同poll、第二match、atomic failure和隐私测试继续通过；
-12. 旧session/tombstone兼容回归继续通过。
+1. `decision_trace_payload()` 拒绝observation缺少/None/非list的legal actions；
+2. observation与顶层legal actions在action ID、顺序或嵌套 `wildcard_info` 任一处不一致时拒绝；
+3. 合法的两份逐字段相等副本继续通过；
+4. 将已持久化active session中的observation legal actions单独篡改后，重新加载固定失败；
+5. direct CLI从仓库外临时cwd使用相对history路径时，runner builder被调用并收到解析后的仓库外绝对路径；
+6. direct CLI相对decision trace仍在runner/transport前拒绝；
+7. history与decision trace相同/冲突、已有trace旧bytes不变、launcher既有路径测试继续通过；
+8. 现有ACK、binding、Agent mutation、pass/wildcard、三种mode source及隐私测试继续通过。
 
-测试只使用临时目录、假transport和假Agent。不得访问真实workspace、`.env`或网络。
+测试只使用临时目录、patch、假transport和假Agent；不得访问真实workspace、`.env`或网络。
 
 ## 【验证要求】
-
-先运行新增decision-trace与三个反例测试，再运行：
 
 ```powershell
 $env:PYTHON_DOTENV_DISABLED='1'
@@ -110,12 +80,10 @@ git diff --check
 
 ## 【完成标准】
 
-- 三个规划反例全部转为稳定回归并通过；
-- fresh输出前置失败与内部同match恢复边界不混淆；
-- 持久绑定能区分不同match，且不泄露match/run身份；
-- Agent无法污染调用前canonical证据；
-- pass、wildcard与三种mode source证据完整，observability不漂移；
-- 原ack、重发、重启、finished、旁路失败与隐私边界保持；
+- 两个规划反例转为稳定回归并通过；
+- parser强制两份legal actions完全一致，持久session篡改不能绕过；
+- history-only direct CLI旧语义恢复，decision trace的新绝对路径/fresh输出门槛不退化；
+- 现有ACK、binding、深隔离、pass/wildcard、三种mode source及隐私边界保持；
 - 定向、全量和diff check通过；
 - 未运行live、网络、真实模型或容量，未触碰真实workspace，未创建commit。
 
@@ -123,12 +91,11 @@ git diff --check
 
 最终报告必须包含：
 
-1. 三个反例各自根因；
+1. 两个反例各自根因；
 2. 实际修正设计及修改文件；
-3. fresh输出拒绝与同match恢复如何区分；
-4. trace绑定为何不泄露match/run身份；
-5. pre-call深隔离如何保证canonical证据不受Agent修改；
-6. pass、wildcard、三种mode source测试结果；
-7. 精确测试命令、项数、结果与 `git diff --check`；
-8. 是否访问live、网络、模型、`.env`或真实workspace（预期均为否）；
-9. 当前项目范围内是否仍有已知风险。固定级牌2、无贡、单局不得列为风险。
+3. parser如何保证observation/top-level legal actions一致；
+4. history兼容语义与decision-trace新路径门槛如何分离；
+5. 新增反例测试与既有ACK/binding/深隔离回归结果；
+6. 精确测试命令、项数、结果与 `git diff --check`；
+7. 是否访问live、网络、模型、`.env`或真实workspace（预期均为否）；
+8. 当前项目范围内是否仍有已知风险。固定级牌2、无贡、单局不得列为风险。

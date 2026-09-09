@@ -2165,3 +2165,12 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 额外反例2：match A写入后重建 `ConnectorDecisionTrace`，再用内容相同的match B更新，recorder仍为 `ok`；当前仅比较decision前缀，无法持久证明single-match身份。
 - 额外反例3：合成Agent修改传入legal action的嵌套 `wildcard_info`，最终trace不再等于调用前的canonical actions，且未标记失败；根因是handler的浅复制共享嵌套列表。
 - 因三项均违反预先验收，本次实现不提交。纠错测试必须先让三个反例转绿，再补三种agent mode source及pass/wildcard逐字段保留，并复跑同一78项集合（加新增测试）与全量。
+
+## 2026-09-09 决策证据纠错复核
+
+- 独立定向命令：`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_botzone_decision_trace tests.test_botzone_session tests.test_botzone_connector tests.test_botzone_runner tests.test_botzone_live_launcher tests.test_botzone_history tests.test_botzone_adapter_observation tests.test_botzone_agent_observability -q`，85项通过，用时5.772秒。
+- 独立主规则命令：`.\.venv\Scripts\python.exe -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q`，39项通过，用时0.179秒。
+- 独立全量命令：`.\.venv\Scripts\python.exe -m unittest discover -q`，704项通过，用时55.969秒；`git diff --check`通过，仅有既有LF/CRLF提示。
+- 新反例：`decision_trace_payload()` 面对observation与顶层legal actions不一致时未拒绝，实测输出 `mismatched_observation_actions=accepted False`。现有Agent mutation测试只证明handler构造结果相等，没有覆盖持久化校验器的强不变量。
+- 兼容性diff：原 `_history_path()` 会解析相对路径后按仓库/state/audit边界判断；当前共用 `_diagnostic_path()` 先要求absolute，改变了仅启用history时的既有direct CLI行为。需新增仓库外cwd相对history路径仍可用、相对decision trace仍拒绝的成对回归。
+- 因以上两项仍在预定验收范围内，704项通过不等于实现完成；当前代码不提交。

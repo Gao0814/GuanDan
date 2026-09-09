@@ -1997,3 +1997,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - recorder写完match A后重建实例，再传入决策前缀完全相同的match B，状态仍为 `ok`。当前文件不含持久绑定身份，内容前缀不能证明同一match恢复。
 - handler只对action字典做浅复制。合成Agent修改一个非选中action的嵌套 `wildcard_info` 后，trace与调用前 `project_decision()` canonical actions不同，且 `decision_trace_failed=False`。
 - 当前代码保持未提交。下一任务不得推倒ack主体，只做输出前置门槛、持久低敏trace绑定及pre-call深拷贝隔离，并补最小回归。
+
+### 决策证据纠错复核仍有两项验收缺口
+
+- 首轮三个反例均已有对应实现与测试：fresh direct CLI会在runner/transport前拒绝已有trace；trace顶层和session持久化随机32位binding；handler在Agent调用前递归隔离observation与canonical actions。
+- 规划Codex独立复跑Botzone定向85项、主规则39项、全量704项，均通过；`git diff --check`无whitespace error。这说明ACK、重启、finished、三种mode source与现有回归没有已知漂移。
+- 新最小脚本确认 `decision_trace_payload()` 接受observation内 `legal_actions=[{"action_id":999}]`、顶层legal actions为原始pass动作的互相矛盾payload，并返回两份不相等的证据。持久化校验必须把二者逐字段相等提升为强不变量，而不能只由handler构造路径偶然保证。
+- diff确认direct CLI把原 `_history_path()` 合并成要求absolute的 `_diagnostic_path()`；这使从仓库外cwd解析到仓库外文件的相对history路径由可用变为configuration error，违反本任务“不改变history兼容语义”的约束。decision trace自身仍应保持绝对外部路径要求。
+- 当前代码继续保持未提交。下一任务只修复上述两项并补最小反例；通过后才由规划Codex建立实现检查点，再安排seed `47002` evidence回收与下一次单局采样。
