@@ -10,7 +10,7 @@
 4. 默认关闭、Header ack后写入的connector decision trace已实现并提交为 `045fb75`。规划Codex独立复现历史反例并通过Botzone定向88项、主规则39项和全量707项。
 5. seed `47002` 的五份已审计evidence已于2026-09-10逐项移入Windows回收站。规划Codex独立确认固定workspace精确只剩空的普通目录 `audit/`、`state/`、`streams/`，Git clean且无connector。
 6. 下一任务只运行一局人工Botzone `deepseek` 采样，固定seed `47003`、玩家1、级牌2、无需进贡，同时显式写入history和decision trace。选择DeepSeek是为了覆盖当前模型成功动作及三项守卫的真实决策链，不是做RuleBased/DeepSeek胜率对比。
-7. 连接与建桌严格按普通live顺序：零网络preflight → 启动唯一connector → 页面确认“已连接” → 才向项目所有者提示seed和配置 → 核对后只点击一次开始。页面只读监督不可用时等待项目所有者明确确认，不得因此结束任务。
+7. 连接、人工建桌、配置核对、持续监测和evidence验收已沉淀到项目Skill `botzone-manual-live`；下一执行Prompt只提供本局输入和额外约束。workspace回收另由 `botzone-workspace-recycle` 处理，继续保持清理与live分离。
 8. 该局的完成目标是获得可归属的history、decision trace、audit、state和streams。条件守卫未触发、输赢或可恢复的非致命transport错误都不是重开理由；完成后保留现场，由规划Codex复审后再决定是否存在新的高置信度策略缺陷。
 
 牌谱和decision trace基础设施已经足够支持下一轮诊断。此时继续造新规则会缺少决策点证据，因此先采集一局完整公开输入、原始legal actions、实际selected action和source；不为追样本重复建桌，也不把单局结果直接当作胜率结论。

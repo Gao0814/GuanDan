@@ -24,6 +24,7 @@
 - 规划Codex独立复现全部五个历史反例已转绿，并运行定向88项、主规则39项、全量707项通过；实现检查点为 `045fb75`。history-only direct CLI旧相对路径语义已恢复，decision trace仍要求绝对仓库外新文件。当前范围内无已知剩余风险。
 - seed `47002` 的五份已审计evidence已经逐项移入Windows回收站；规划Codex独立复核固定workspace精确只剩空的普通目录 `audit/`、`state/`、`streams/`，Git clean且无connector。未永久删除或清空回收站。
 - 下一步只运行一局人工 `deepseek` 采样：seed `47003`、玩家1、级牌2、无需进贡，同时写history与decision trace。必须先启动唯一connector并确认页面“已连接”，之后才提示seed；完成后保留全部evidence供策略复审，不因守卫未触发、输赢或非致命HTTP错误重开。
+- 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留本次seed、Agent、预算、artifact和特殊验收，避免继续复制整套流程。
 
 ### Connector-observed 牌谱实现与加固复审
 
@@ -175,7 +176,7 @@
 - 六种固定低基数 profile 已覆盖缺 requests、缺 responses、空 object、inner-stage candidate、optional-only 和其他 object。
 - `botzone_local_smoke_audit` 升级到 v4，只新增 `diagnostic_profiles` 聚合；既有 `diagnostics`、`diagnostic_details` 保持兼容。
 - 本轮复核：扩展定向 36 项、全量 574 项通过，`git diff --check` 通过；边界扫描无新增网络或敏感配置读取。
-- 七个实现/测试文件尚未独立提交。由于当前规划职责只允许编辑 docs，不能替实现任务提交这些文件。
+- 七个实现/测试文件在该历史阶段尚未独立提交；当时的规划复审没有把未经独立封存的业务改动混入文档提交。当前Git分工以根目录 `AGENTS.md` 为准。
 - 下一步：L5-A2b6 先封存精确实现检查点，再执行一次零网络 preflight。没有新授权前不得启动 live connector。
 - L5-A2b4 仍为 `botzone_deepseek_connector_no_tribute_smoke_invalid`，不得追认或复用授权。
 

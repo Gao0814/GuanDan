@@ -17,6 +17,7 @@
 - `agents/` 包含 `RuleBasedAIAgent`、`DeepSeekAIAgent`、开局公式、手牌评分、记牌、RAG、confidence shadow/prompt 和 strategy intent shadow/prompt。
 - `integrations/botzone/` 包含 Botzone 108 实体牌 ID 映射、deal/play 协议、Bot JSON envelope 与 direct-stage 两种 wire mode、HTTP 长轮询、会话持久化、pending/ack 事务、无贡 play adapter、RuleBased/DeepSeek 组合、运行 provenance、聚合审计和前台 runner。
 - connector 支持显式 `--agent rule|deepseek|conditional_pressure_pass`、仓库外 state 目录、`--run-token`、零网络 preflight、完成目标和 v7/v8 completion audit。新增条件 mode 只由精确 opt-in 启用，默认仍是 `rule`。可读history负责逐手展示；新增默认关闭的decision trace在Header ack后保存完整公开observation、原始canonical legal actions、selected action及低基数source。
+- 仓库级Skills位于 `.agents/skills/`：`botzone-manual-live` 封装单局人工连接、建桌、监测和evidence验收；`botzone-workspace-recycle` 封装已审计artifact的精确回收站清理。run-specific seed、Agent、预算、文件allowlist与hash仍只放在当前任务Prompt。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
 - 最新已提交实现检查点为 `045fb75`：在 `295b9b5` 算法基线上新增acknowledged Botzone decision trace，不改变策略、engine、audit或默认关闭行为。规划Codex已独立复跑定向88项、主规则39项和全量707项通过。
@@ -271,7 +272,7 @@ git diff --check
 - 最新检查点新增队友小王→大王守卫、`teammate_control_block`、双action-ID schema校验与对应测试；提交前由规划Codex独立运行相关65项、主规则39项和全量689项通过，并完成staged diff检查。
 - 最新Botzone诊断检查点：`045fb75 feat: record acknowledged Botzone decisions`；提交前由规划Codex独立复现反例并运行定向88项、主规则39项、全量707项及staged diff检查。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
-- Coding Codex默认不提交；完成后由规划Codex独立复核并负责Git检查点。
+- Coding Codex负责提交其业务代码、tests及任务直接相关修改；规划Codex独立复核结果，只提交自己产生的 `AGENTS.md`、项目Skills和docs上下文修改，不代为提交未完成或未经复核的业务改动。
 
 ## 13. Do Not Assume
 
@@ -284,4 +285,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按 `docs/NEXT_PROMPT.md` 执行一局普通人工Botzone `deepseek` 采样：先完成零网络preflight并启动唯一connector，页面确认“已连接”后才提示seed `47003`及玩家1/级牌2/无贡配置；同时写入history与decision trace，完成后保留全部evidence供规划复审。不得扩展为多局/capacity，不得在live任务中清理workspace或修改仓库。
+按 `docs/NEXT_PROMPT.md` 的本局参数和 `.agents/skills/botzone-manual-live/SKILL.md` 的稳定流程执行一局人工Botzone `deepseek` 采样；同时写入history与decision trace，完成后保留全部evidence供规划复审。不得扩展为多局/capacity，不得在live任务中清理workspace或修改仓库。
