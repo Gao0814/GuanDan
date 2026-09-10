@@ -19,7 +19,11 @@
 
 12. `teammate_control_block`守卫前真实模型检查返回`target_special`，但执行所复用的测试fixture包含“单张9压单张小王”的伪合法候选。当前引擎独立验证为大王可压小王、9不可压小王，因此该模型输入违反canonical legal actions前提；原`teammate_control_prompt_raw_model_not_ready`改判为`teammate_control_prompt_raw_model_inconclusive`，不形成prompt不足证据。
 
-下一步只修复该测试fixture：目标小王→大王场景必须使用engine可证明的canonical候选；原“普通低价值动作不拦截”测试若要保留，必须另建真正合法且不满足大王守卫语义的场景。不得借机修改生产guard、prompt或RAG。修复提交并复审后，再规划一次canonical真实模型检查。
+该阶段因此只安排修复测试fixture：目标小王→大王场景必须使用engine可证明的canonical候选；原“普通低价值动作不拦截”测试若要保留，必须另建真正合法且不满足大王守卫语义的场景。不得借机修改生产guard、prompt或RAG。
+
+13. fixture修正已提交为`8db3154`：目标场景精确为pass与大王两个canonical候选；普通动作非触发测试移至队友单张8、本家以9合法跟牌的独立场景。规划Codex独立复跑41项定向、39项主规则和710项全量通过，生产文件零修改。
+
+下一步对修正后的canonical小王→大王fixture执行一次真实DeepSeek原始动作检查。只允许一个模型请求，必须在任何后置守卫前读取原始选择；不运行Botzone、不修改代码。上一轮受伪合法候选污染的调用永久保持inconclusive，不并入新结果。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
@@ -2024,3 +2028,4 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 第9个决策在既有共享策略认为应保留队友控桌资源时，由DeepSeek选择特殊牌压制。进一步检查确认模型prompt没有提供table leader identity/relation；现有strategy-intent组件可从同一公开输入生成`support_teammate / teammate_controls_table`，但Botzone factory将其关闭。
 - strategy-intent接线已提交为`454a422`并通过独立复审。受约束执行报告随后给出off=`special`、on=`pass`和`strategy_intent_target_decision_improved`；规划Codex独立复核trace仍为88,983 bytes / SHA-256 `4ba2ea88a13046f8f7907df6dd124175dceee3a88e9723be88c6581a28bc3512`且Git clean。
 - 全10条trace的后续只读审计判定为`seed_47003_no_additional_high_confidence_candidate`；规划Codex独立复算分类一致且三个后置守卫触发数均为0。本局至此封板。下一步只对现有队友小王→大王合成fixture执行一次守卫前真实模型检查，不重开Botzone live、不修改代码。
+- 原fixture随后被证明含有不能压小王的伪合法单张9；该次调用改判inconclusive。修复检查点`8db3154`已把目标候选收敛为pass与大王，并经规划Codex独立通过41/39/710项。下一步只对修正后的canonical fixture重新执行一次守卫前模型检查。

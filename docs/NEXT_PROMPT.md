@@ -1,39 +1,33 @@
 # 给执行 Codex 的下一任务 Prompt
 
-修复队友“小王控桌、本家持有大王”DeepSeek守卫测试中的canonical legal-action缺口。当前测试helper把单张9列为可压单张小王的合法动作，但引擎真值明确判定9不能压小王；这使上一轮真实模型检查的输入前提无效。本任务只修复测试证据，不修改生产策略。
+使用提交`8db3154`修正后的队友“小王控桌、本家持有大王”canonical公开fixture，执行一次当前生产strategy-intent开启时的真实DeepSeek原始动作检查。必须在任何确定性后置策略守卫应用之前读取模型原始选择；本任务不修改代码，不运行Botzone。
+
+项目所有者发送本Prompt即授权：通过项目现有配置向当前配置的DeepSeek模型发送这一份合成公开observation、两个canonical legal actions、当前RAG与strategy-intent prompt，总计最多一次模型请求。不得扩大授权范围。上一轮含伪合法单张9的调用永久保持inconclusive，不计入本次结果或请求数。
 
 ## 【开始前】
 
-1. 阅读并遵守`AGENTS.md`，检查适用项目Skills；本任务没有适用的Botzone live或workspace-cleanup Skill。
-2. 阅读`docs/CLEAN_HANDOFF.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`，以及`engine/rules.py`、`agents/conditional_pressure_pass_policy.py`、`agents/deepseek_ai.py`和相关测试。
-3. 检查Git状态必须clean，确认HEAD包含`1df757a`。先用当前引擎稳定复现：大王可压单张小王，普通单张9不可压单张小王。
+1. 阅读并遵守`AGENTS.md`，检查适用项目Skills；本任务不使用live或workspace-cleanup Skill。
+2. 阅读`docs/CLEAN_HANDOFF.md`、`agents/deepseek_ai.py`、`agents/conditional_pressure_pass_policy.py`、strategy router/prompt、RAG及`tests/test_deepseek_step_e.py`相关fixture。
+3. 检查Git状态必须clean，确认HEAD包含`8db3154`。用当前引擎再次确认目标fixture只有pass与大王两个候选，大王可压小王，且不存在单张9或其他伪合法动作；不满足则停止且不调用模型。
 
-## 【目标】
+## 【目标与方法】
 
-- 使`teammate_control_block`目标测试fixture只包含与该公开局面一致、由引擎规则真值支持的canonical legal actions；目标局面应至少保留原始pass和大王压制候选。
-- 修正或拆分当前依赖伪合法单张9的“普通低价值动作不拦截”测试。若保留该行为测试，必须使用另一个规则上真正合法、且不满足“小王→大王”守卫语义的公开局面；不得继续把不可能的动作伪装成legal action。
-- 增加最小回归，明确锁定目标fixture中每个非pass动作都能压过table action，且9不能压小王。
+- fixture必须严格满足`teammate_big_joker_pass_id()`的全部公开前提：队友单张小王领牌、pass与大王压制合法、出大王不能立即出完、对手均未结束且余牌大于2、history/table一致。
+- 使用当前生产设置生成`ready / support_teammate / teammate_controls_table`；若不是该状态，停止且不调用模型。
+- 使用当前生产RAG、动作剪枝、模型、temperature和其他请求参数，client重试固定为0。
+- 直接取得客户端返回的原始action ID并验证它是这两个原始legal actions之一的严格整数ID。不得先经过`_preserve_teammate_big_joker()`、其他`DeepSeekAIAgent`成功动作后置守卫或RuleBased替代。
+- 外部模型请求上限严格为1。失败、非法结果或前置不满足时不得重试。
 
-## 【约束】
+## 【隐私与禁止事项】
 
-- 只修改相关测试文件；除非发现独立、可复现的生产缺陷并先停止报告，否则不得修改`agents/`、`engine/`、`integrations/`、RAG或配置。
-- 不改变`teammate_control_block`、strategy router/intent、prompt文案、RAG、DeepSeek fallback、observability或动作优先级。
-- 不通过放宽引擎规则让9能够压小王；engine仍是合法性唯一真值。
-- 不访问网络、DeepSeek、Botzone、Edge或`.env`；不触碰`D:\VsCodeProject\BotzoneWorkspace`。
-- 不运行容量评测或live。
+- 只报告原始动作类别：`pass`或`target_special`，不得输出action ID、牌面、完整observation/legal actions、prompt、模型response/reasoning、API key、URL、Header、Cookie或配置正文。
+- 不修改代码、tests、docs、配置或`D:\VsCodeProject\BotzoneWorkspace`；不创建报告文件或Git commit。
+- 不运行Botzone、Edge、connector、preflight、live、容量评测或全量测试。
 
-## 【验证与完成标准】
+## 【唯一判定】
 
-至少运行：
+- 原始模型选择`pass`：`teammate_control_canonical_prompt_raw_model_pass`。这只支持下一步规划将`teammate_control_block`转为shadow或退役候选，不直接授权本任务修改生产代码。
+- 原始模型选择`target_special`：`teammate_control_canonical_prompt_raw_model_not_ready`。下一步应诊断并补强模型上下文，不得扩大后置覆盖。
+- 前置、请求或合法性失败：`teammate_control_canonical_prompt_raw_model_inconclusive`。
 
-```powershell
-$env:PYTHON_DOTENV_DISABLED='1'
-.\.venv\Scripts\python.exe -m unittest tests.test_deepseek_step_e tests.test_conditional_pressure_pass tests.test_strategy_intent_prompt_wiring -q
-.\.venv\Scripts\python.exe -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q
-.\.venv\Scripts\python.exe -m unittest discover -q
-git diff --check
-```
-
-完成标准：目标fixture不再含任何不能压table action的伪合法非pass；相关守卫与非触发测试仍表达真实可达语义；生产文件零修改；全部验证通过。
-
-提交时只暂存本任务测试修改并创建一个清晰的Git commit，不得提交无关变化。最终报告：根因、测试语义如何修正、修改文件、验证命令/结果、commit hash、最终Git状态，以及当前范围内是否仍有风险。不得运行上一轮真实模型检查；canonical模型复放由规划Codex复审后另行安排。
+最终报告：唯一判定、canonical候选数、intent状态、RAG低敏scene/action-context、模型调用状态、原始动作类别与合法性、实际外部请求数、Git HEAD/status；同时确认仓库与workspace未修改。不得输出敏感正文。

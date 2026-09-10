@@ -30,6 +30,7 @@
 - seed `47003`全10条trace及三个后置守卫的只读审计判定为`seed_47003_no_additional_high_confidence_candidate`。规划Codex独立复算得到相同低敏聚合：自由2、队友领牌4、对手领牌1、公开证据不足3；pass 5、ordinary 4、special 1；三个守卫在记录动作上的实际触发数均为0。第9条是已完成的既有缺口，其他记录不能同时满足完整证据、稳定复现和明确prompt/RAG改进边界，因此本局封板，不新增算法规则。
 - 三个守卫经代码复核均会改写合法且成功的模型策略动作，不是合法性或协议安全守卫，现登记为DeepSeek策略自主权技术债；但本局没有足够样本支持直接删除。
 - 随后的`teammate_control_block`真实模型原始动作检查虽返回合法`target_special`，但其复用的测试fixture把单张9列为可压单张小王的“合法动作”。规划Codex用当前`BaseRuleEngine.can_beat()`独立复现：大王可压小王，9不可压小王。该输入不是engine canonical legal actions，故原`teammate_control_prompt_raw_model_not_ready`不成立，改判`teammate_control_prompt_raw_model_inconclusive`；不能据此修改prompt或评价模型。下一步只修正相关测试fixture及其语义，不联网、不改生产策略。
+- canonical fixture修正已提交为`8db3154`，范围仅为两份测试：目标小王场景只含pass与大王；普通低价值非触发测试迁移到队友普通单张8、本家以9合法跟牌的独立场景，并加入引擎真值回归。规划Codex独立复跑定向41项、主规则39项和全量710项通过，`git diff --check`通过。下一步允许对修正后的canonical fixture做一次守卫前真实DeepSeek检查，不修改代码或运行Botzone。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审
