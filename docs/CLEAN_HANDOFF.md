@@ -99,7 +99,7 @@ connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评
 
 seed `47003` 的单局DeepSeek采样已经完成connector与ACK trace闭环：11/11/11 request/response/Header、qualified finish=1、10条decision trace与audit守恒、history/trace均为`ok`，无transport failure。平台终局分类为`platform_error`，所以不能作为正常胜负结果；它不否定已通过binding、selected-action、ACK和provenance校验的逐决策证据。
 
-规划Codex独立复现第9个ACK决策：队友领牌、pass合法、全部非pass均为特殊牌、本家不能立即出完且无对手残局压力；共享`teammate_pressure_pass_id()`和当前默认RuleBased均选择原始pass，而当前DeepSeek成功模型路径稳定返回模型选择的特殊牌并保持`model` source。`docs/NEXT_PROMPT.md` 只包含这一后置守卫绕过的离线修复Prompt；下一任务不运行Botzone、网络、真实模型或live，也不读取或清理真实workspace。
+规划Codex独立复现第9个ACK决策并检查实际模型输入：公开输入能严格确定队友领牌，但structured prompt没有table leader identity/relation，RAG scene tags也没有该关系。现有strategy router在同一输入上生成ready的`support_teammate / teammate_controls_table` payload，Botzone DeepSeek factory却显式关闭其消费路径。`docs/NEXT_PROMPT.md` 当前只要求离线接通这份策略上下文，不新增自动pass或RuleBased后置覆盖，也不运行Botzone、网络、真实模型或live。
 
 L5-A4h11a partial manifest、seed `45001` evidence、seed `47001` prestart evidence与seed `47002` evidence均已移入Windows回收站。seed `47003` evidence完整保留在固定workspace；无残留connector。
 
@@ -261,7 +261,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测或decision-trace结构验收缺口。seed `47003` 已提供一个完整公开、ACK确认的策略复现：共享队友特殊资源保留策略与默认RuleBased选择pass，而DeepSeek成功模型路径接受特殊牌并保持`model` source。下一任务按 `docs/NEXT_PROMPT.md` 只修复这一后置守卫绕过。
+当前没有失败的本地单测或decision-trace结构验收缺口。seed `47003` 已提供一个完整公开、ACK确认的模型输入缺口：prompt未把公开history中的领牌者关联为队友，已有ready strategy-intent payload又未在Botzone DeepSeek路径启用。下一任务按 `docs/NEXT_PROMPT.md` 只接通该提示上下文并保留模型合法选择。
 
 ## 12. Working Tree Status
 
@@ -287,4 +287,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按 `docs/NEXT_PROMPT.md` 离线修复DeepSeek成功模型动作对既有队友特殊资源保留策略的绕过。使用脱敏合成fixture，不读取真实workspace；不得扩展为新live、多局/capacity、真实模型调用或无证据的新策略。
+按 `docs/NEXT_PROMPT.md` 离线接通Botzone DeepSeek现有strategy-intent prompt，使模型获得经过公开校验的table-leader relation并继续自主选择合法动作。使用脱敏合成fixture，不读取真实workspace；不得新增自动pass、扩展为新live、多局/capacity或真实模型调用。

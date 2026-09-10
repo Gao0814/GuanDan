@@ -24,8 +24,8 @@
 - 规划Codex独立复现全部五个历史反例已转绿，并运行定向88项、主规则39项、全量707项通过；实现检查点为 `045fb75`。history-only direct CLI旧相对路径语义已恢复，decision trace仍要求绝对仓库外新文件。当前范围内无已知剩余风险。
 - seed `47002` 的五份已审计evidence已经逐项移入Windows回收站；规划Codex独立复核固定workspace精确只剩空的普通目录 `audit/`、`state/`、`streams/`，Git clean且无connector。未永久删除或清空回收站。
 - seed `47003` 的人工 `deepseek` 采样已经完成：11/11/11 request/response/Header、qualified finish=1、10条ACK后decision trace与audit守恒、history/trace均为`ok`，无transport failure；平台终局分类为`platform_error`，因此不作为正常胜负结果。现场完整保留且未重开。
-- 规划Codex独立验证该局第9个ACK决策：队友领牌、pass合法、所有非pass均为特殊牌、不能立即出完且无对手残局压力；共享`teammate_pressure_pass_id()`与当前默认RuleBased均选择原始pass，而DeepSeek成功模型路径稳定返回模型选择的特殊牌并记为`model`。这是当前代码可复现的后置守卫绕过，不依赖平台胜负。
-- 下一步只离线修复这条DeepSeek队友资源保留绕过，复用共享策略与现有`teammate_control_block`低基数source；不运行新live、容量评测或真实模型，不从本局`platform_error`诊断算法胜负。
+- 规划Codex独立验证该局第9个ACK决策及实际模型输入：公开局面能严格确定队友领牌，但structured prompt只分别显示桌面牌型和玩家队伍，没有给出table leader identity/relation；RAG scene tags同样缺失该关系。现有strategy router在同一输入上产生ready的`support_teammate / teammate_controls_table` payload，但Botzone DeepSeek factory显式关闭其消费路径。
+- 项目所有者明确要求DeepSeek保持合法动作空间内的策略决策权。下一步只离线接通现有strategy-intent prompt，让模型获得完整公开关系后自主选择；不新增自动pass或RuleBased后置覆盖，不运行新live、容量评测或真实模型。离线复审后再单独规划少量真实模型单决策复放。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审
