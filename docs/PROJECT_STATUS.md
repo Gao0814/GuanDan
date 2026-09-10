@@ -26,7 +26,8 @@
 - seed `47003` 的人工 `deepseek` 采样已经完成：11/11/11 request/response/Header、qualified finish=1、10条ACK后decision trace与audit守恒、history/trace均为`ok`，无transport failure；平台终局分类为`platform_error`，因此不作为正常胜负结果。现场完整保留且未重开。
 - 规划Codex独立验证该局第9个ACK决策及实际模型输入：公开局面能严格确定队友领牌，但structured prompt只分别显示桌面牌型和玩家队伍，没有给出table leader identity/relation；RAG scene tags同样缺失该关系。现有strategy router在同一输入上产生ready的`support_teammate / teammate_controls_table` payload，但Botzone DeepSeek factory显式关闭其消费路径。
 - strategy-intent接线已提交为`454a422`：Botzone DeepSeek factory启用现有router与prompt formatter，未新增后置动作覆盖。规划Codex独立复跑119项定向、39项主规则和709项全量通过；真实第9条公开输入在无网络fake client复核中得到ready的`support_teammate / teammate_controls_table`，合法特殊牌选择仍保持`model`。
-- 下一步只做该固定决策的一次真实DeepSeek off/on复放，总计最多两次模型请求、零Botzone桌、零代码修改；用于验证补全公开上下文是否改善目标动作，不扩展为胜率或容量结论。
+- 受约束执行报告将第9条固定决策的真实DeepSeek off/on复放判定为`strategy_intent_target_decision_improved`：off侧成功选择合法特殊牌，on侧在`ready / support_teammate / teammate_controls_table`意图下成功选择合法pass；两侧使用独立Agent、总请求2、重试0，未使用RuleBased替代或新增后置pass。规划Codex独立复核trace仍为88,983 bytes / SHA-256 `4ba2ea88a13046f8f7907df6dd124175dceee3a88e9723be88c6581a28bc3512`，Git仍clean；模型响应按隐私契约未持久化，因此动作对照以该低敏执行报告为证据。该结果支持“补全队友控桌公开语义改善了这个目标决策”，不构成整体胜率结论。
+- 下一步不打新桌、不做容量评测。只读审计seed `47003`的10条已确认decision trace及现有成功模型动作后置策略守卫，判断是否还存在可迁移到prompt/RAG的高置信度公开上下文缺口；没有充分证据时明确停止，不制造新规则。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审

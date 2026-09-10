@@ -99,7 +99,9 @@ connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评
 
 seed `47003` 的单局DeepSeek采样已经完成connector与ACK trace闭环：11/11/11 request/response/Header、qualified finish=1、10条decision trace与audit守恒、history/trace均为`ok`，无transport failure。平台终局分类为`platform_error`，所以不能作为正常胜负结果；它不否定已通过binding、selected-action、ACK和provenance校验的逐决策证据。
 
-strategy-intent接线已提交为`454a422`：Botzone DeepSeek factory启用现有router与prompt formatter，未新增后置动作覆盖。规划Codex独立复跑119项定向、39项主规则和709项全量通过；真实第9条公开输入经无网络factory复核得到ready的`support_teammate / teammate_controls_table`，fake模型的原始合法特殊牌仍保持`model`。`docs/NEXT_PROMPT.md` 当前只要求该固定决策最多两次真实DeepSeek off/on复放，不运行Botzone或修改仓库。
+strategy-intent接线已提交为`454a422`：Botzone DeepSeek factory启用现有router与prompt formatter，未新增后置动作覆盖。规划Codex独立复跑119项定向、39项主规则和709项全量通过；真实第9条公开输入经无网络factory复核得到ready的`support_teammate / teammate_controls_table`，fake模型的原始合法特殊牌仍保持`model`。
+
+受约束执行报告将该固定决策的真实DeepSeek off/on复放判定为`strategy_intent_target_decision_improved`：off侧模型成功返回合法特殊牌，on侧模型成功返回合法pass；on侧意图为`ready / support_teammate / teammate_controls_table`，两侧使用独立Agent，总请求2、重试0，没有RuleBased替代或新增后置pass。规划Codex独立复核trace仍为88,983 bytes / SHA-256 `4ba2ea88a13046f8f7907df6dd124175dceee3a88e9723be88c6581a28bc3512`，仓库仍clean；模型响应按隐私契约未持久化，无法从artifact独立重演。该结果是目标决策的输入消融证据，不是整体胜率结论。下一任务改为只读审计全部10条trace与既有成功模型动作后置策略守卫，寻找至多一个新的prompt/RAG上下文缺口。
 
 L5-A4h11a partial manifest、seed `45001` evidence、seed `47001` prestart evidence与seed `47002` evidence均已移入Windows回收站。seed `47003` evidence完整保留在固定workspace；无残留connector。
 
@@ -163,7 +165,7 @@ D:\VsCodeProject\BotzoneVerifiedUiCapacity-43001-43002
 - `GuanDanGame.step()` 拒绝不在当前 action map 中的 ID。来源：`engine/game.py`、`tests/test_game_flow.py`。
 - `BaseAgent` 契约只返回 action ID；`require_legal_action_id()` 再次验证 ID。来源：`agents/base.py`。
 - `DeepSeekAIAgent` 在模型前执行 only-pass、一次出完和可选开局公式 shortcut。来源：`agents/deepseek_ai.py::select_action()`。
-- connector 的 DeepSeek 组合显式关闭 confidence 和 strategy-intent prompt。来源：`integrations/botzone/agent_runtime.py::build_agent_factory()`。
+- connector 的 DeepSeek 组合继续关闭confidence prompt，但已由`454a422`启用strategy router shadow与strategy-intent prompt。来源：`integrations/botzone/agent_runtime.py::build_agent_factory()`。
 - DeepSeek client wrapper 只保留合法 action ID，丢弃自由文本 reasoning，并分类 success/timeout/exception/invalid_suggestion。来源：`integrations/botzone/agent_runtime.py::_StrictDeepSeekClient`。
 - adapter 会对 Agent 返回类型、合法 ID 和 provenance 分别 fail-closed；DeepSeek 外层 fallback 仍必须返回合法 ID。来源：`integrations/botzone/play_adapter.py::NoTributeRuleBasedHandler`。
 - transport 只发 HTTPS GET，拒绝重定向，限制响应大小，并用固定类别脱敏错误。来源：`integrations/botzone/http_transport.py`。
@@ -193,6 +195,7 @@ D:\VsCodeProject\BotzoneVerifiedUiCapacity-43001-43002
 - **UNVERIFIED:** 上一执行报告所称 PowerShell 参数不兼容的精确命令与根因；报告未提供足够错误细节。
 - **UNVERIFIED:** 首次 formal preflight 的具体失败断言；报告未提供 return code 或 stdout/stderr 捕获值。当前代码测试支持 LF/CRLF，两者不能仅凭猜测归因为旧验证器误判。
 - **UNVERIFIED:** DeepSeek 相对 RuleBased 存在动作质量、因果效果或胜率提升。
+- **CONFIRMED（受约束执行报告 + 本地完整性复核）:** seed `47003`第9条固定决策中，off侧真实模型选择合法特殊牌，on侧在队友控桌意图提示下选择合法pass；trace bytes/hash与Git未变已独立复核，模型动作对照因隐私契约不持久化而不能从artifact重演。该证据支持公开上下文改善了目标决策，不外推到其他决策或胜率。
 - **VERIFIED（本地 proxy）:** 条件化炸弹资源保留 pass 在修复后的 one-step 与整局固定 seed 评测中均满足预设 retain 门槛，且两次运行结果确定一致。
 - **UNVERIFIED:** 该候选在真实 Botzone 对局中是否会触发，以及是否改善长期真实胜率；下一次单局 smoke 只验证 opt-in 路径，不回答长期胜率问题。
 
@@ -261,7 +264,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测或已知strategy-intent接线缺口。seed `47003`的模型输入缺口已由`454a422`补齐并通过离线复审；下一任务按`docs/NEXT_PROMPT.md`只做同一决策的两侧真实模型复放，验证动作层影响。
+当前没有失败的本地单测或已知strategy-intent接线缺口。seed `47003`的模型输入缺口已由`454a422`补齐，并在同一固定决策的真实模型off/on复放中得到目标动作层正向证据。下一任务按`docs/NEXT_PROMPT.md`只读审计剩余trace与既有后置策略守卫，不调用模型。
 
 ## 12. Working Tree Status
 
@@ -288,4 +291,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`对seed `47003`第9条已确认决策执行一次真实DeepSeek strategy-intent off/on复放。最多两次模型请求，只读现有trace，不运行Botzone、不修改仓库、不输出敏感正文。
+按`docs/NEXT_PROMPT.md`只读审计seed `47003`全部10条已确认决策及现有成功模型动作后置策略守卫。只选择有完整公开证据的至多一个prompt/RAG候选；不联网、不运行Botzone、不修改仓库、不输出敏感正文。

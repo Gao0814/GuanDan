@@ -12,8 +12,9 @@
 6. seed `47003` 的connector/ACK trace闭环有效，但平台终局分类为`platform_error`，不能作为正常胜负结果。10条decision trace与audit、binding、selected action和provenance守恒，仍可用于逐决策诊断。
 7. 独立复审在第9个ACK决策发现可复现的模型上下文缺口：prompt显示桌面牌型和玩家队伍，却没有指出桌面动作由谁领出；RAG也没有领牌者关系。现有strategy router能从同一公开输入严格得到`support_teammate / teammate_controls_table`，但Botzone DeepSeek factory将其prompt路径关闭。
 8. strategy-intent接线已由`454a422`完成并经规划Codex独立复审：119项定向、39项主规则、709项全量通过；真实第9条公开输入经factory得到ready的`support_teammate / teammate_controls_table`，且fake模型的合法特殊牌仍原样保留。
+9. 受约束执行报告将第9条固定决策的真实DeepSeek off/on复放判定为`strategy_intent_target_decision_improved`：off=`special`、on=`pass`，两侧均模型成功且动作合法；on侧意图为`ready / support_teammate / teammate_controls_table`，总请求2、重试0，没有RuleBased替代或新增后置pass。规划Codex独立复核trace与Git未变；模型响应按隐私契约未持久化。该单点结果支持prompt输入改善，不是整局胜率。
 
-下一步只对第9个固定决策做一次strategy-intent off/on真实DeepSeek复放，总计最多两次模型请求、零Botzone桌。它用于判断补全公开上下文后模型动作是否变化，不形成长期胜率结论。
+下一步只读审计seed `47003`全部10条decision trace，并盘点`danger_opponent_block`、`short_endgame_plan`、`teammate_control_block`三类成功模型动作后置策略守卫在prompt/router/RAG中的表达。目标是选择至多一个新的高置信度prompt/RAG缺口；不联网、不打新桌、不修改算法，证据不足则明确不立项。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
@@ -2011,9 +2012,9 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 规划Codex独立复核最终workspace精确只含空的普通目录 `audit/`、`state/`、`streams/`，`D:\VsCodeProject`下没有第二个 `Botzone*` 顶层目录，项目connector为0，Git仍clean。
 - 随后的单局 `deepseek` decision-trace采样按该边界执行；seed `47003`只在页面确认已连接后提示，未执行容量评测、修改代码或清理现场。
 
-### seed 47003 decision trace 形成首个可复现策略缺陷
+### seed 47003 decision trace 形成首个可复现策略输入缺口
 
 - connector以exit 0 / `finished_target`结束，11/11/11 request/response/Header、qualified finish=1、transport failure=0；history与decision trace均为`ok`，10条ACK决策和audit source聚合一致。
 - 平台终局分类为`platform_error`，不能用于胜负判断；ACK、binding、selected-action和provenance验证仍允许逐决策诊断。
 - 第9个决策在既有共享策略认为应保留队友控桌资源时，由DeepSeek选择特殊牌压制。进一步检查确认模型prompt没有提供table leader identity/relation；现有strategy-intent组件可从同一公开输入生成`support_teammate / teammate_controls_table`，但Botzone factory将其关闭。
-- strategy-intent接线已提交为`454a422`并通过独立复审；下一步只做同一决策的off/on真实模型复放，不重开Botzone live，也不修改代码。
+- strategy-intent接线已提交为`454a422`并通过独立复审。受约束执行报告随后给出off=`special`、on=`pass`和`strategy_intent_target_decision_improved`；规划Codex独立复核trace仍为88,983 bytes / SHA-256 `4ba2ea88a13046f8f7907df6dd124175dceee3a88e9723be88c6581a28bc3512`且Git clean。下一步只读审计全部10条trace和既有后置策略守卫，不重开Botzone live、不调用模型、不修改代码。
