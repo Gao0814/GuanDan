@@ -6,6 +6,10 @@ from unittest.mock import patch
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from agents.rule_based_ai import RuleBasedAIAgent
+from engine.actions import Action, ActionType
+from engine.cards import Card
+from engine.patterns import PatternType
+from engine.rules import BaseRuleEngine
 
 
 def _observation() -> dict[str, object]:
@@ -138,7 +142,27 @@ def _teammate_joker_legal_actions() -> list[dict[str, object]]:
     return [
         {"action_id": 1, "declared_pattern": "pass", "declared_cards": [], "carrier_cards": [], "wildcard_count": 0, "wildcard_info": [], "display_text": "pass"},
         {"action_id": 2, "declared_pattern": "single", "declared_cards": ["BJ"], "carrier_cards": ["BJ"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:BJ"},
-        {"action_id": 3, "declared_pattern": "single", "declared_cards": ["9"], "carrier_cards": ["9S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:9"},
+    ]
+
+
+def _teammate_ordinary_observation() -> dict[str, object]:
+    table = {"action_id": None, "declared_pattern": "single", "declared_cards": ["8"], "carrier_cards": ["8S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:8"}
+    return {
+        "my_info": {"player_id": 4, "team": "team_24", "hand_cards": ["9S", "7S"], "hand_count": 2},
+        "current_round": {"step_no": 12, "round_no": 4, "current_player_id": 4, "current_level_rank": "2", "constraint": "single:8", "table_action": table},
+        "other_players": [
+            {"player_id": 1, "team": "team_13", "hand_count": 5, "finished": False, "finish_rank": None},
+            {"player_id": 2, "team": "team_24", "hand_count": 8, "finished": False, "finish_rank": None},
+            {"player_id": 3, "team": "team_13", "hand_count": 5, "finished": False, "finish_rank": None},
+        ],
+        "history": {"actions": [{"step_no": 12, "round_no": 4, "player_id": 2, "declared_pattern": "single", "declared_cards": ["8"], "carrier_cards": ["8S"]}], "finish_order": []},
+    }
+
+
+def _teammate_ordinary_legal_actions() -> list[dict[str, object]]:
+    return [
+        {"action_id": 1, "declared_pattern": "pass", "declared_cards": [], "carrier_cards": [], "wildcard_count": 0, "wildcard_info": [], "display_text": "pass"},
+        {"action_id": 2, "declared_pattern": "single", "declared_cards": ["9"], "carrier_cards": ["9S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:9"},
     ]
 
 
@@ -179,6 +203,17 @@ def _agent_with_counting_dependencies() -> tuple[DeepSeekAIAgent, CountingClient
 
 
 class TestDeepSeekStepE(unittest.TestCase):
+    def test_teammate_joker_fixture_matches_engine_follow_legality(self) -> None:
+        rules = BaseRuleEngine()
+        small_joker = Action(2, ActionType.PLAY, PatternType.SINGLE, (Card("SJ"),), (Card("SJ"),), display_text="single:SJ")
+        big_joker = Action(4, ActionType.PLAY, PatternType.SINGLE, (Card("BJ"),), (Card("BJ"),), display_text="single:BJ")
+        nine = Action(4, ActionType.PLAY, PatternType.SINGLE, (Card("9"),), (Card("9", "S"),), display_text="single:9")
+
+        non_pass = [action for action in _teammate_joker_legal_actions() if action["declared_pattern"] != "pass"]
+        self.assertEqual([action["declared_cards"] for action in non_pass], [["BJ"]])
+        self.assertTrue(rules.can_beat(big_joker, small_joker, current_level_rank="2"))
+        self.assertFalse(rules.can_beat(nine, small_joker, current_level_rank="2"))
+
     def test_successful_model_big_joker_over_teammate_small_joker_is_preserved_as_pass(self) -> None:
         class BigJokerClient:
             def __init__(self) -> None:
@@ -224,10 +259,14 @@ class TestDeepSeekStepE(unittest.TestCase):
                 return DeepSeekSuggestion(action_id=self.action_id, reasoning="ignored")
 
         config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
-        for action_id in (1, 3):
+        cases = (
+            (_teammate_joker_observation(), _teammate_joker_legal_actions(), 1),
+            (_teammate_ordinary_observation(), _teammate_ordinary_legal_actions(), 2),
+        )
+        for observation, actions, action_id in cases:
             with self.subTest(action_id=action_id), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
                 agent = DeepSeekAIAgent(4, FixedClient(action_id), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
-                self.assertEqual(agent.select_action(_teammate_joker_observation(), _teammate_joker_legal_actions()), action_id)
+                self.assertEqual(agent.select_action(observation, actions), action_id)
                 self.assertEqual(agent.last_decision_source, "model")
     def test_successful_model_single_jack_is_replaced_by_shorter_free_lead_plan(self) -> None:
         class SingleJackClient:

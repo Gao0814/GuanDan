@@ -109,7 +109,6 @@ def _joker_teammate_actions(*, include_pass: bool = True) -> list[dict[str, obje
         actions.append({"action_id": 1, "declared_pattern": "pass", "declared_cards": [], "carrier_cards": [], "wildcard_count": 0, "wildcard_info": [], "display_text": "pass"})
     actions.extend([
         {"action_id": 2, "declared_pattern": "single", "declared_cards": ["BJ"], "carrier_cards": ["BJ"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:BJ"},
-        {"action_id": 3, "declared_pattern": "single", "declared_cards": ["9"], "carrier_cards": ["9S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:9"},
     ])
     return actions
 
@@ -204,7 +203,6 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
         self.assertEqual(teammate_big_joker_pass_id(_joker_teammate_observation(), actions, 4, 2), 1)
         cases: list[tuple[dict[str, object], list[dict[str, object]], int]] = []
         cases.append((_joker_teammate_observation(), actions, 1))
-        cases.append((_joker_teammate_observation(), actions, 3))
         cases.append((_joker_teammate_observation(my_hand_count=1), actions, 2))
         cases.append((_joker_teammate_observation(opponent_count=2), actions, 2))
         cases.append((_joker_teammate_observation(opponent_finished=True), actions, 2))
