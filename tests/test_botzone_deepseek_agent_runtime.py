@@ -109,6 +109,70 @@ def _config(key: str | None = "synthetic-credential") -> object:
     )
 
 
+def _strategy_action(action_id: int, pattern: str, cards: list[str]) -> dict[str, object]:
+    return {
+        "action_id": action_id,
+        "declared_pattern": pattern,
+        "declared_cards": [] if pattern == "pass" else [card[:-1] for card in cards],
+        "carrier_cards": [] if pattern == "pass" else list(cards),
+        "wildcard_count": 0,
+        "wildcard_info": [],
+        "display_text": "pass" if pattern == "pass" else pattern,
+    }
+
+
+def _teammate_control_observation(*, leader_id: int | None = 3, malformed: bool = False) -> dict[str, object]:
+    table_action = None
+    history_actions: list[dict[str, object]] = [
+        {
+            "step_no": step,
+            "round_no": 1,
+            "player_id": ((step - 1) % 4) + 1,
+            "declared_pattern": "pass",
+            "declared_cards": [],
+            "carrier_cards": [],
+        }
+        for step in range(1, 9)
+    ]
+    if leader_id is not None:
+        table_action = {
+            "action_id": None,
+            "declared_pattern": "single",
+            "declared_cards": ["9"],
+            "carrier_cards": ["9S"],
+            "display_text": "single:9",
+        }
+        history_action = dict(table_action)
+        history_action.pop("action_id")
+        if malformed:
+            history_action["declared_cards"] = ["8"]
+        history_action.update({"step_no": 9, "round_no": 2, "player_id": leader_id})
+        history_actions.append(history_action)
+    return {
+        "my_info": {
+            "player_id": 1,
+            "team": "team_13",
+            "hand_cards": ["3S", "3H", "4S", "4H", "5S", "5H", "6S", "6H"],
+            "hand_count": 8,
+            "remaining_single_card_count": 4,
+        },
+        "current_round": {
+            "step_no": 9,
+            "round_no": 2,
+            "current_player_id": 1,
+            "current_level_rank": "2",
+            "constraint": "single:9" if table_action is not None else "free",
+            "table_action": table_action,
+        },
+        "other_players": [
+            {"player_id": 2, "team": "team_24", "hand_count": 8, "finished": False},
+            {"player_id": 3, "team": "team_13", "hand_count": 8, "finished": False},
+            {"player_id": 4, "team": "team_24", "hand_count": 8, "finished": False},
+        ],
+        "history": {"actions": history_actions, "finish_order": []},
+    }
+
+
 def _deepseek_handler(raw: _RawClient) -> NoTributeRuleBasedHandler:
     factory = build_agent_factory(
         "deepseek",
@@ -343,6 +407,39 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
             agent = factory(1)
         self.assertIsInstance(agent, DeepSeekAIAgent)
         self.assertEqual(raw.calls, [])
+
+    def test_deepseek_factory_enables_validated_teammate_control_prompt_without_rewriting_model_choice(self) -> None:
+        actions = [
+            _strategy_action(1, "pass", []),
+            _strategy_action(2, "bomb", ["9S", "9H", "9C", "9D"]),
+        ]
+        for selected in (1, 2):
+            with self.subTest(selected=selected):
+                raw = _RawClient(selected)
+                with patch("agents.deepseek_ai.AppConfig.from_env", return_value=_config()):
+                    factory = build_agent_factory(
+                        "deepseek",
+                        config_loader=lambda: _config(),
+                        client_factory=lambda **_: raw,
+                        rag_factory=lambda: None,
+                    )
+                    agent = factory(1)
+                    self.assertIsInstance(agent, DeepSeekAIAgent)
+                    assert isinstance(agent, DeepSeekAIAgent)
+                    self.assertTrue(agent.strategy_router_shadow_enabled)
+                    self.assertTrue(agent.strategy_intent_prompt_enabled)
+                    self.assertEqual(agent.select_action(_teammate_control_observation(), actions), selected)
+
+                self.assertEqual(len(raw.calls), 1)
+                prompt = raw.calls[0].get("strategy_intent_prompt")
+                self.assertIsNotNone(prompt)
+                assert prompt is not None
+                self.assertEqual(
+                    (prompt.status, prompt.intent, prompt.diagnostics),
+                    ("ready", "support_teammate", ()),
+                )
+                self.assertIn("队友当前控桌", prompt.text)
+                self.assertEqual(agent.last_decision_source, "model")
 
     def test_valid_model_id_uses_provenance_and_public_payload_only(self) -> None:
         raw = _RawClient(1)

@@ -48,6 +48,61 @@ def _observation(*, hand_count: int = 5) -> dict[str, object]:
     }
 
 
+def _follow_observation(*, leader_id: int | None, malformed_history: bool = False) -> dict[str, object]:
+    table_action = None
+    history_actions: list[dict[str, object]] = [
+        {
+            "step_no": step,
+            "round_no": 1,
+            "player_id": ((step - 1) % 4) + 1,
+            "declared_pattern": "pass",
+            "declared_cards": [],
+            "carrier_cards": [],
+        }
+        for step in range(1, 9)
+    ]
+    if leader_id is not None:
+        table_action = {
+            "action_id": None,
+            "declared_pattern": "single",
+            "declared_cards": ["9"],
+            "carrier_cards": ["9S"],
+            "display_text": "single:9",
+        }
+        history_action = {
+            "step_no": 9,
+            "round_no": 2,
+            "player_id": leader_id,
+            "declared_pattern": "single",
+            "declared_cards": ["8"] if malformed_history else ["9"],
+            "carrier_cards": ["9S"],
+        }
+        history_actions.append(history_action)
+    return {
+        "my_info": {
+            "player_id": 1,
+            "team": "team_13",
+            "hand_cards": ["3S", "3H", "4S", "4H", "5S", "5H", "6S", "6H"],
+            "hand_count": 8,
+            "remaining_single_card_count": 4,
+        },
+        "current_round": {
+            "step_no": 9,
+            "round_no": 2,
+            "current_player_id": 1,
+            "current_level_rank": "2",
+            "constraint": "single:9" if table_action is not None else "free",
+            "table_action": table_action,
+        },
+        "other_players": [
+            {"player_id": 2, "team": "team_24", "hand_count": 8, "finished": False},
+            {"player_id": 3, "team": "team_13", "hand_count": 8, "finished": False},
+            {"player_id": 4, "team": "team_24", "hand_count": 8, "finished": False},
+        ],
+        "history": {"actions": history_actions, "finish_order": []},
+    }
+
+
 def _intent(status: str = "available") -> StrategyIntentContext:
     available = status == "available"
     return StrategyIntentContext(
@@ -206,6 +261,48 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
             self.assertEqual(on.select_action(observation, actions), 1)
         self.assertIsNotNone(on.last_strategy_intent)
         self.assertIsNone(on.last_strategy_intent_prompt)
+
+    def test_public_router_marks_only_strict_teammate_lead_as_teammate_control(self) -> None:
+        actions = [_action(1, "pass"), _action(2, "bomb", ["9S", "9H", "9C", "9D"])]
+        teammate = self._agent(
+            _Client(2),
+            strategy_router_shadow_enabled=True,
+            strategy_intent_prompt_enabled=True,
+            opening_formula_enabled=False,
+        )
+        self.assertEqual(teammate.select_action(_follow_observation(leader_id=3), actions), 2)
+        self.assertEqual(
+            (teammate.last_strategy_intent.status, teammate.last_strategy_intent.intent, teammate.last_strategy_intent.reason_codes),
+            ("available", "support_teammate", ("teammate_controls_table",)),
+        )
+        self.assertEqual((teammate.last_strategy_intent_prompt.status, teammate.last_strategy_intent_prompt.intent), ("ready", "support_teammate"))
+        self.assertIn("队友当前控桌", teammate.last_strategy_intent_prompt.text)
+
+        for observation in (
+            _follow_observation(leader_id=2),
+            _follow_observation(leader_id=None),
+        ):
+            with self.subTest(leader=observation["current_round"]["table_action"]):
+                agent = self._agent(
+                    _Client(2),
+                    strategy_router_shadow_enabled=True,
+                    strategy_intent_prompt_enabled=True,
+                    opening_formula_enabled=False,
+                )
+                self.assertEqual(agent.select_action(observation, actions), 2)
+                self.assertNotEqual(agent.last_strategy_intent.reason_codes, ("teammate_controls_table",))
+                self.assertNotEqual(agent.last_strategy_intent_prompt.intent, "support_teammate")
+
+        malformed = self._agent(
+            _Client(2),
+            strategy_router_shadow_enabled=True,
+            strategy_intent_prompt_enabled=True,
+            opening_formula_enabled=False,
+        )
+        self.assertEqual(malformed.select_action(_follow_observation(leader_id=3, malformed_history=True), actions), 2)
+        self.assertEqual(malformed.last_strategy_intent.status, "unavailable")
+        self.assertEqual(malformed.last_strategy_intent_prompt.status, "omitted")
+        self.assertNotIn("strategy_intent_prompt", malformed.client.calls[0])
 
     def test_client_validates_exact_payload_and_insertion_order(self) -> None:
         observation = _observation()

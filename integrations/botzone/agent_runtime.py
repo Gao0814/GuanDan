@@ -107,8 +107,8 @@ def build_agent_factory(
             opening_formula_enabled=bool(getattr(config, "opening_formula_enabled", True)),
             card_confidence_shadow_enabled=False,
             card_confidence_prompt_enabled=False,
-            strategy_router_shadow_enabled=False,
-            strategy_intent_prompt_enabled=False,
+            strategy_router_shadow_enabled=True,
+            strategy_intent_prompt_enabled=True,
         )
 
     return create
