@@ -101,7 +101,9 @@ seed `47003` 的单局DeepSeek采样已经完成connector与ACK trace闭环：11
 
 strategy-intent接线已提交为`454a422`：Botzone DeepSeek factory启用现有router与prompt formatter，未新增后置动作覆盖。规划Codex独立复跑119项定向、39项主规则和709项全量通过；真实第9条公开输入经无网络factory复核得到ready的`support_teammate / teammate_controls_table`，fake模型的原始合法特殊牌仍保持`model`。
 
-受约束执行报告将该固定决策的真实DeepSeek off/on复放判定为`strategy_intent_target_decision_improved`：off侧模型成功返回合法特殊牌，on侧模型成功返回合法pass；on侧意图为`ready / support_teammate / teammate_controls_table`，两侧使用独立Agent，总请求2、重试0，没有RuleBased替代或新增后置pass。规划Codex独立复核trace仍为88,983 bytes / SHA-256 `4ba2ea88a13046f8f7907df6dd124175dceee3a88e9723be88c6581a28bc3512`，仓库仍clean；模型响应按隐私契约未持久化，无法从artifact独立重演。该结果是目标决策的输入消融证据，不是整体胜率结论。下一任务改为只读审计全部10条trace与既有成功模型动作后置策略守卫，寻找至多一个新的prompt/RAG上下文缺口。
+受约束执行报告将该固定决策的真实DeepSeek off/on复放判定为`strategy_intent_target_decision_improved`：off侧模型成功返回合法特殊牌，on侧模型成功返回合法pass；on侧意图为`ready / support_teammate / teammate_controls_table`，两侧使用独立Agent，总请求2、重试0，没有RuleBased替代或新增后置pass。规划Codex独立复核trace仍为88,983 bytes / SHA-256 `4ba2ea88a13046f8f7907df6dd124175dceee3a88e9723be88c6581a28bc3512`，仓库仍clean；模型响应按隐私契约未持久化，无法从artifact独立重演。该结果是目标决策的输入消融证据，不是整体胜率结论。
+
+全10条trace及三个成功模型动作后置守卫的只读审计随后判定为`seed_47003_no_additional_high_confidence_candidate`。规划Codex使用当前生产代码独立复算，得到自由2、队友领牌4、对手领牌1、证据不足3，以及pass 5、ordinary 4、special 1；三个守卫对记录动作的触发数均为0。第9条只重复已完成缺口，其他记录不足以定义新的prompt/RAG修改，故seed `47003`分析封板。三个守卫均属策略覆盖而非协议安全，但在没有对应证据时不直接删除；下一任务仅对`teammate_control_block`现有合成fixture做一次守卫前真实模型检查。
 
 L5-A4h11a partial manifest、seed `45001` evidence、seed `47001` prestart evidence与seed `47002` evidence均已移入Windows回收站。seed `47003` evidence完整保留在固定workspace；无残留connector。
 
@@ -264,7 +266,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测或已知strategy-intent接线缺口。seed `47003`的模型输入缺口已由`454a422`补齐，并在同一固定决策的真实模型off/on复放中得到目标动作层正向证据。下一任务按`docs/NEXT_PROMPT.md`只读审计剩余trace与既有后置策略守卫，不调用模型。
+当前没有失败的本地单测或已知strategy-intent接线缺口。seed `47003`已经完成全10条trace审计且没有额外高置信度候选。下一任务按`docs/NEXT_PROMPT.md`使用合成公开fixture做一次真实DeepSeek守卫前选择检查，不运行Botzone或修改代码。
 
 ## 12. Working Tree Status
 
@@ -291,4 +293,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`只读审计seed `47003`全部10条已确认决策及现有成功模型动作后置策略守卫。只选择有完整公开证据的至多一个prompt/RAG候选；不联网、不运行Botzone、不修改仓库、不输出敏感正文。
+按`docs/NEXT_PROMPT.md`复用现有队友小王→大王合成公开fixture，在当前生产strategy-intent开启时取得一次后置守卫前的真实DeepSeek原始选择。最多一次模型请求，不运行Botzone、不修改仓库、不输出prompt或模型正文。

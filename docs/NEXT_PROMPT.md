@@ -1,46 +1,33 @@
 # 给执行 Codex 的下一任务 Prompt
 
-只读审计seed `47003`的全部10条已确认decision trace，以及当前DeepSeek成功动作路径中的三个确定性策略后置守卫。目标是判断是否存在下一个应优先迁移到prompt/router/RAG的高置信度公开上下文缺口；本任务不修改代码，也不调用模型。
+使用现有`teammate_control_block`单元测试中的队友“小王控桌、本家可用大王压制且pass合法”合成公开fixture，执行一次当前生产strategy-intent开启时的真实DeepSeek原始动作检查。必须在任何确定性后置策略守卫应用之前读取模型原始选择；本任务不修改代码，不运行Botzone。
+
+项目所有者发送本Prompt即授权：通过项目现有配置向当前配置的DeepSeek模型发送这一份合成公开observation、原始legal actions、当前RAG与strategy-intent prompt，总计最多一次模型请求。不得扩大授权范围。
 
 ## 【开始前】
 
 1. 阅读并遵守`AGENTS.md`，检查适用项目Skills；本任务不使用live或workspace-cleanup Skill。
-2. 阅读`docs/CLEAN_HANDOFF.md`及DeepSeek、strategy router/intent、RAG和三个后置守卫相关代码与测试。检查Git状态必须clean，确认HEAD包含`454a422`。
-3. 只读核对`D:\VsCodeProject\BotzoneWorkspace\decision-trace.json`仍为88,983 bytes、SHA-256 `4ba2ea88a13046f8f7907df6dd124175dceee3a88e9723be88c6581a28bc3512`，schema、binding、顺序及10条记录结构有效。仅在内存分析，不修改任何workspace artifact。
+2. 阅读`docs/CLEAN_HANDOFF.md`以及`agents/deepseek_ai.py`、`agents/conditional_pressure_pass_policy.py`、strategy router/prompt和对应测试。检查Git状态必须clean，确认HEAD包含`454a422`。
+3. 从现有测试提取目标合成fixture的公开字段，不读取seed `47003`手牌或`.env`文件正文。DeepSeek配置只能经现有`AppConfig`/client装配使用，任何密钥或端点不得输出。
 
-## 【已确认事实】
+## 【目标与方法】
 
-- 受约束执行报告将第9条固定决策的真实DeepSeek off/on复放判定为`strategy_intent_target_decision_improved`：off=`special`、on=`pass`；on侧为`ready / support_teammate / teammate_controls_table`，两侧动作均合法，总请求2、重试0。规划Codex已独立复核trace与Git未变；模型响应按隐私契约未持久化。
-- 该结果只证明补全队友控桌语义改善了这个目标决策，不证明整体胜率。
-- DeepSeek是合法动作空间内的主要策略决策者。不得因为模型与RuleBased偏好不同就把RuleBased动作新增为成功模型动作的后置覆盖。
-- 当前成功模型动作路径仍存在`danger_opponent_block`、`teammate_control_block`和`short_endgame_plan`三个确定性策略后置守卫；本任务只审计，不删除或扩大它们。
+- fixture必须严格满足当前`teammate_big_joker_pass_id()`的全部公开前提：队友单张小王领牌、原始pass与大王压制均合法、模型若选大王不会立即出完、对手均未结束且余牌大于2、history/table一致。
+- 使用当前生产设置生成`ready / support_teammate / teammate_controls_table`；若不是该状态，停止且不调用模型。
+- 使用当前生产RAG、动作剪枝、模型、temperature和其他请求参数，client重试固定为0。
+- 直接取得模型返回的原始action ID并验证它是原始legal actions中的严格整数ID。不得先经过`_preserve_teammate_big_joker()`、`DeepSeekAIAgent`成功动作后置守卫链或RuleBased替代。
+- 外部模型请求上限严格为1。失败、非法结果或前置不满足时不得重试。
 
-## 【审计任务】
+## 【隐私与禁止事项】
 
-1. 对10条trace逐条使用当前生产代码生成低敏分类：自由/跟随队友/跟随对手、strategy intent状态与类别、RAG scene/action-context标签、记录动作类别，以及三个后置守卫各自是否具备触发前提。不得输出手牌、牌面、action ID、完整observation/legal actions、prompt或模型文本。
-2. 对三个后置守卫分别确认：
-   - 它解决的公开策略语义是什么；
-   - 当前router/intent prompt/RAG是否已经明确向模型表达该语义；
-   - 它是合法性/协议安全守卫，还是会改写一个已经合法且成功的模型策略动作；
-   - seed `47003` trace中是否存在完整、可复现的相关决策证据。
-3. 只在同时满足以下条件时提出一个后续实现候选：
-   - 输入来自完整ACK trace和公开字段；
-   - 当前prompt/router/RAG确实遗漏或弱化了与动作选择直接相关的公开语义；
-   - 能以当前代码稳定复现该信息缺口；
-   - 修复方向是让DeepSeek获得更好的策略上下文，而不是用RuleBased替换成功模型动作；
-   - 能定义最小单元测试与至多两个真实模型请求的后续验证。
-4. 如果没有候选同时满足上述条件，明确判定证据不足，不得根据单局输赢、与RuleBased不同或主观牌感制造新规则。
+- 只报告原始动作类别：`pass`、`target_special`（以大王压队友小王）或`other_legal`，不得输出action ID、牌面、完整observation/legal actions、prompt、模型response/reasoning、API key、URL、Header、Cookie或其他配置正文。
+- 不修改代码、tests、docs、配置或`D:\VsCodeProject\BotzoneWorkspace`；不创建报告文件或Git commit。
+- 不运行Botzone、Edge、connector、preflight、live、容量评测或全量测试。
 
-## 【禁止事项】
+## 【唯一判定】
 
-- 不访问网络、DeepSeek、Botzone或Edge；不启动connector/preflight/live/容量评测。
-- 不读取`.env`，不修改代码、tests、docs、配置或workspace；不创建报告文件或Git commit。
+- 原始模型选择`pass`：`teammate_control_prompt_raw_model_pass`。这只支持下一步规划将`teammate_control_block`改为shadow或退役候选，不直接授权本任务修改生产代码。
+- 原始模型选择`target_special`或其他合法非pass：`teammate_control_prompt_raw_model_not_ready`。下一步应诊断并补强模型上下文，不得用该结果扩展后置覆盖。
+- 前置、请求或合法性失败：`teammate_control_prompt_raw_model_inconclusive`。
 
-## 【完成标准与报告】
-
-唯一判定只能是：
-
-- `seed_47003_next_prompt_candidate_identified`；或
-- `seed_47003_no_additional_high_confidence_candidate`。
-
-最终报告需包含：10条决策的低敏分类聚合；三个后置守卫的策略/安全性质与当前prompt覆盖结论；如有候选，给出唯一候选的缺失上下文、稳定复现、建议修改范围和最小验证；如无候选，说明证据边界。最后报告artifact前后bytes/SHA-256、Git HEAD/status，以及网络/模型/Botzone调用均为0。不得输出任何敏感正文。
+最终报告：唯一判定、intent状态、RAG低敏scene/action-context、模型调用状态、原始动作类别与合法性、实际外部请求数、Git HEAD/status；同时确认仓库与workspace未修改。不得输出敏感正文。

@@ -14,7 +14,10 @@
 8. strategy-intent接线已由`454a422`完成并经规划Codex独立复审：119项定向、39项主规则、709项全量通过；真实第9条公开输入经factory得到ready的`support_teammate / teammate_controls_table`，且fake模型的合法特殊牌仍原样保留。
 9. 受约束执行报告将第9条固定决策的真实DeepSeek off/on复放判定为`strategy_intent_target_decision_improved`：off=`special`、on=`pass`，两侧均模型成功且动作合法；on侧意图为`ready / support_teammate / teammate_controls_table`，总请求2、重试0，没有RuleBased替代或新增后置pass。规划Codex独立复核trace与Git未变；模型响应按隐私契约未持久化。该单点结果支持prompt输入改善，不是整局胜率。
 
-下一步只读审计seed `47003`全部10条decision trace，并盘点`danger_opponent_block`、`short_endgame_plan`、`teammate_control_block`三类成功模型动作后置策略守卫在prompt/router/RAG中的表达。目标是选择至多一个新的高置信度prompt/RAG缺口；不联网、不打新桌、不修改算法，证据不足则明确不立项。
+10. 全10条trace和三个后置守卫的只读审计判定为`seed_47003_no_additional_high_confidence_candidate`。规划Codex独立复算关系、intent、RAG场景和动作类别一致，三个守卫实际触发数均为0；seed `47003`不再支持新的算法规则。
+11. `danger_opponent_block`、`teammate_control_block`、`short_endgame_plan`均属于成功模型动作后的策略覆盖，而非协议安全。它们暂不删除，但作为DeepSeek策略自主权技术债逐项取得prompt-first证据。
+
+下一步从证据最充分的`teammate_control_block`开始：复用现有合成公开fixture，在当前生产strategy-intent开启、后置守卫应用之前只调用一次真实DeepSeek，观察模型是否自行选择pass。该任务不运行Botzone、不修改代码；结果只决定后续是规划守卫退役，还是继续补强prompt。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
@@ -2017,4 +2020,5 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - connector以exit 0 / `finished_target`结束，11/11/11 request/response/Header、qualified finish=1、transport failure=0；history与decision trace均为`ok`，10条ACK决策和audit source聚合一致。
 - 平台终局分类为`platform_error`，不能用于胜负判断；ACK、binding、selected-action和provenance验证仍允许逐决策诊断。
 - 第9个决策在既有共享策略认为应保留队友控桌资源时，由DeepSeek选择特殊牌压制。进一步检查确认模型prompt没有提供table leader identity/relation；现有strategy-intent组件可从同一公开输入生成`support_teammate / teammate_controls_table`，但Botzone factory将其关闭。
-- strategy-intent接线已提交为`454a422`并通过独立复审。受约束执行报告随后给出off=`special`、on=`pass`和`strategy_intent_target_decision_improved`；规划Codex独立复核trace仍为88,983 bytes / SHA-256 `4ba2ea88a13046f8f7907df6dd124175dceee3a88e9723be88c6581a28bc3512`且Git clean。下一步只读审计全部10条trace和既有后置策略守卫，不重开Botzone live、不调用模型、不修改代码。
+- strategy-intent接线已提交为`454a422`并通过独立复审。受约束执行报告随后给出off=`special`、on=`pass`和`strategy_intent_target_decision_improved`；规划Codex独立复核trace仍为88,983 bytes / SHA-256 `4ba2ea88a13046f8f7907df6dd124175dceee3a88e9723be88c6581a28bc3512`且Git clean。
+- 全10条trace的后续只读审计判定为`seed_47003_no_additional_high_confidence_candidate`；规划Codex独立复算分类一致且三个后置守卫触发数均为0。本局至此封板。下一步只对现有队友小王→大王合成fixture执行一次守卫前真实模型检查，不重开Botzone live、不修改代码。
