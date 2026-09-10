@@ -150,6 +150,7 @@ python -m unittest tests.test_cli_debug_output -q
 - manifest 或零网络 preflight 本身不消耗 Botzone seed，但已写 manifest 不得重写；恢复任务必须保持其中的 seed/token。seed 从执行 Codex 首次向项目所有者发出包含该 seed 的建桌配置提示时起视为已使用，之后无论 live 成败都不得复用。
 - 人工建桌流程中，在旧桌已关闭、唯一 connector 持续运行且页面“已连接”之后，执行 Codex 才明确告知项目所有者本局 seed、seat、贡牌和级牌配置；项目所有者随后创建/配置唯一目标桌并停在启动前。执行 Codex 核对配置后，必须再次复述这些配置并明确提示项目所有者只点击一次“开始游戏！”。验证码、登录和网页操作不交给 connector。
 - connector 的显式 opt-in 可读牌谱允许记录本家完整初始/当前手牌、Botzone 请求实际暴露的公开出牌历史、本家已确认动作和终局结果；本家手牌只能进入仓库外牌谱文件，不能进入聚合 audit 或普通日志。其他玩家暗牌只允许在终局后、已证明动作尾部完整且能由 108 张实体牌守恒唯一推出时标注为“推导”，否则必须写未知。不得记录密钥、连接 URL、Cookie 或模型自由文本，也不得把可能缺少终局前末尾动作的观测历史声称为完整裁判牌谱。
+- connector 的显式 opt-in decision trace 必须写入仓库外的新文件且默认关闭；只允许在响应 Header 已确认后记录本家当时的公开 observation、逐字段一致的原始 canonical legal actions、最终原始合法 action ID/action 与固定低基数 source。pending 未确认动作不得落盘；单文件只能绑定一个 match，fresh CLI 不得覆盖既有 trace。trace 不得包含 match ID、run token、URL、Header、Cookie、密钥、prompt、模型响应/reasoning、notes 或异常正文，也不得进入聚合 audit 或普通日志。
 
 ## Codex 工作规则
 

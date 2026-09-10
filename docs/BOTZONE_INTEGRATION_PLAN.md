@@ -17,7 +17,7 @@ Botzone 请求允许 connector 累积四名玩家的公开 `HistoryEntry`、本�
 
 真实 smoke 同时确认：本地 AI connector 在本家出完后可能不再收到 play 请求，之后的 finished row 只证明平台对局已结束，不补发完整动作尾部。因此文件中的第N轮是 connector 基于已观察动作分组出的第N个牌权段，不等于裁判完整整局轮数。只有后续观测到下一段才能证明前一段边界；terminal tail 不完整时，最后一段不得标成已证明“轮结束”。
 
-真实 `45001` history 的策略诊断定位到RuleBased无条件排除pass的候选机制。原one-step与新整局对称trial均在固定级牌2下满足retain门槛；Botzone显式 `conditional_pressure_pass` mode及两类低敏source已离线接通，validator也已收口。对手领牌条件化保牌在 `150006a` 合入默认RuleBased，队友控桌炸弹保留在 `5daf326` 完成，危险对手pass阻断在 `fb3d791` 完成，小手牌短序列守卫在 `dc9638c` 完成，队友小王后保留大王及table sentinel加固在 `295b9b5` 完成；最新已提交全量基线为689项。seed `47002`的16次决策复盘没有发现可同时满足完整公开重建、当前机制复现和严格更优替代的新缺陷。ack后canonical决策证据的未提交实现现已通过85项定向和704项全量，首轮fresh输出、跨重启binding和pre-call深拷贝缺口已修正；仍需强制observation/top-level legal actions相等，并恢复history-only direct CLI旧路径语义。完成前不重打live，也不做跨13级牌推广。Botzone profile继续固定级牌2、无需进贡；这是既定范围而非剩余风险，正式capacity仍延期。
+真实 `45001` history 的策略诊断定位到RuleBased无条件排除pass的候选机制。原one-step与新整局对称trial均在固定级牌2下满足retain门槛；Botzone显式 `conditional_pressure_pass` mode及两类低敏source已离线接通，validator也已收口。对手领牌条件化保牌在 `150006a` 合入默认RuleBased，队友控桌炸弹保留在 `5daf326` 完成，危险对手pass阻断在 `fb3d791` 完成，小手牌短序列守卫在 `dc9638c` 完成，队友小王后保留大王及table sentinel加固在 `295b9b5` 完成。seed `47002`的16次决策复盘没有发现可同时满足完整公开重建、当前机制复现和严格更优替代的新缺陷。ack后canonical decision trace已在 `045fb75` 完成：五个历史反例转绿，定向88项、主规则39项、全量707项通过。下一步先独立回收旧evidence，再只安排一局新trace采样；不恢复百局或16局容量，也不做跨13级牌推广。Botzone profile继续固定级牌2、无需进贡；这是既定范围而非剩余风险，正式capacity仍延期。
 
 ## L5-A2b5：required-fields 安全画像
 

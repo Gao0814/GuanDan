@@ -2174,3 +2174,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 新反例：`decision_trace_payload()` 面对observation与顶层legal actions不一致时未拒绝，实测输出 `mismatched_observation_actions=accepted False`。现有Agent mutation测试只证明handler构造结果相等，没有覆盖持久化校验器的强不变量。
 - 兼容性diff：原 `_history_path()` 会解析相对路径后按仓库/state/audit边界判断；当前共用 `_diagnostic_path()` 先要求absolute，改变了仅启用history时的既有direct CLI行为。需新增仓库外cwd相对history路径仍可用、相对decision trace仍拒绝的成对回归。
 - 因以上两项仍在预定验收范围内，704项通过不等于实现完成；当前代码不提交。
+
+## 2026-09-10 决策证据最终验收
+
+- 独立最小脚本确认：`trace_mismatch=rejected`、`trace_equal=accepted`；仓库外临时cwd的相对history调用runner一次且收到解析后的绝对路径，相对decision trace返回configuration error且runner调用为0。
+- 独立定向命令：`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_botzone_decision_trace tests.test_botzone_session tests.test_botzone_connector tests.test_botzone_runner tests.test_botzone_live_launcher tests.test_botzone_history tests.test_botzone_adapter_observation tests.test_botzone_agent_observability -q`，88项通过，用时6.051秒。
+- 独立主规则命令：`.\.venv\Scripts\python.exe -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q`，39项通过，用时0.167秒。
+- 独立全量命令：`.\.venv\Scripts\python.exe -m unittest discover -q`，707项通过，用时43.047秒；工作树与staged `git diff --check`均无whitespace error，仅有既有LF/CRLF提示。
+- staged清单精确为6个Botzone实现文件、1个新增recorder、3个既有测试文件和1个新增decision-trace测试，共11项；提交检查点为 `045fb75`。

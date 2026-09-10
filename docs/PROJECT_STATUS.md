@@ -20,9 +20,9 @@
 - 规划Codex独立复跑六个最小契约案例、相关65项、主规则39项和全量689项通过，实现检查点为 `295b9b5`；当前范围内无已知剩余风险。
 - seed `47002` 的只读策略审计已经完成：16次本家决策中14次可按公开语义重建，9个pass点均为仅pass合法；两个可精确比较的自由出牌点，冻结基线的残余最少分组数与全体合法动作最优值相同。第1、6次决策因牌谱未保存完整canonical声明/载体细节，不能唯一还原原始动作。
 - 当前结论为：**现有evidence不足以支持下一项算法修改。** 不把静态排序、单局输赢或不可唯一还原的动作强行定性为新缺陷。
-- 下一步不是新规则、容量或重复live，而是离线增加一个默认关闭的connector决策证据文件：只在Header ack后记录本家当时的完整公开observation、原始canonical legal actions、最终原始action ID及低基数source。它用于让下一次单局牌谱具备可复现诊断条件，不改变动作选择、协议、audit或默认运行。
-- 决策证据的首轮三个缺口已经在当前未提交工作树中修正：direct CLI前置拒绝已有trace、随机持久binding区分match、Agent输入与pre-call canonical证据递归隔离。规划Codex独立复跑定向85项、主规则39项、全量704项均通过。
-- 该实现仍未验收提交：最小脚本证明 `decision_trace_payload()` 仍接受observation内legal actions与顶层legal actions不一致；同时共用 `_diagnostic_path()` 意外改变了原有direct CLI history路径兼容语义，禁止了从仓库外cwd解析到仓库外目标的相对history路径。下一任务只补这两项与回归，不改ACK主体、不清理workspace、不运行live。
+- 默认关闭的connector decision trace已经完成并提交：只在Header ack后记录本家当时的公开observation、逐字段一致的原始canonical legal actions、最终原始action ID/action及低基数source；fresh输出、随机持久binding、递归隔离、重发/重启/finished与旁路失败边界均有测试。
+- 规划Codex独立复现全部五个历史反例已转绿，并运行定向88项、主规则39项、全量707项通过；实现检查点为 `045fb75`。history-only direct CLI旧相对路径语义已恢复，decision trace仍要求绝对仓库外新文件。当前范围内无已知剩余风险。
+- 下一步是独立回收已完成审计的seed `47002`旧evidence，只保留固定workspace中的空 `audit/`、`state/`、`streams/` 目录；清理任务不启动live。清理复核后才安排一次携带history与decision trace的人工单局采样，不运行百局容量。
 
 ### Connector-observed 牌谱实现与加固复审
 

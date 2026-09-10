@@ -2005,3 +2005,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 新最小脚本确认 `decision_trace_payload()` 接受observation内 `legal_actions=[{"action_id":999}]`、顶层legal actions为原始pass动作的互相矛盾payload，并返回两份不相等的证据。持久化校验必须把二者逐字段相等提升为强不变量，而不能只由handler构造路径偶然保证。
 - diff确认direct CLI把原 `_history_path()` 合并成要求absolute的 `_diagnostic_path()`；这使从仓库外cwd解析到仓库外文件的相对history路径由可用变为configuration error，违反本任务“不改变history兼容语义”的约束。decision trace自身仍应保持绝对外部路径要求。
 - 当前代码继续保持未提交。下一任务只修复上述两项并补最小反例；通过后才由规划Codex建立实现检查点，再安排seed `47002` evidence回收与下一次单局采样。
+
+### 决策证据实现最终通过
+
+- shared payload/parser现强制observation内legal actions存在、为list且与顶层canonical actions逐字段逐顺序相等；构造和持久session篡改均fail closed。
+- direct CLI恢复原history相对路径解析语义；decision trace继续要求绝对仓库外路径，并保留fresh已有输出、state/audit/history冲突与launcher门槛。
+- 规划Codex独立最小脚本结果为：矛盾副本拒绝、相等副本接受、仓库外相对history进入runner、相对trace在runner前拒绝。
+- 独立复跑Botzone定向88项、主规则39项、全量707项和staged diff检查均通过；11个实现/测试文件已提交为 `045fb75 feat: record acknowledged Botzone decisions`。
+- 当前范围内无已知剩余风险。下一步严格分离为seed `47002`旧evidence回收任务；完成后再规划一局新decision-trace采样，不恢复百局/16局容量。

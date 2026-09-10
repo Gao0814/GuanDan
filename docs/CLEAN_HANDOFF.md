@@ -16,15 +16,15 @@
 - `GuanDanGame` 暴露 `reset()`、`observe()`、`legal_actions()` 和 `step(action_id)`；公开动作使用稳定的原始 `action_id`。
 - `agents/` 包含 `RuleBasedAIAgent`、`DeepSeekAIAgent`、开局公式、手牌评分、记牌、RAG、confidence shadow/prompt 和 strategy intent shadow/prompt。
 - `integrations/botzone/` 包含 Botzone 108 实体牌 ID 映射、deal/play 协议、Bot JSON envelope 与 direct-stage 两种 wire mode、HTTP 长轮询、会话持久化、pending/ack 事务、无贡 play adapter、RuleBased/DeepSeek 组合、运行 provenance、聚合审计和前台 runner。
-- connector 支持显式 `--agent rule|deepseek|conditional_pressure_pass`、仓库外 state 目录、`--run-token`、零网络 preflight、完成目标和 v7/v8 completion audit。新增条件 mode 只由精确 opt-in 启用，默认仍是 `rule`。现有可读history不保存每次本家决策的完整canonical legal actions。
+- connector 支持显式 `--agent rule|deepseek|conditional_pressure_pass`、仓库外 state 目录、`--run-token`、零网络 preflight、完成目标和 v7/v8 completion audit。新增条件 mode 只由精确 opt-in 启用，默认仍是 `rule`。可读history负责逐手展示；新增默认关闭的decision trace在Header ack后保存完整公开observation、原始canonical legal actions、selected action及低基数source。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
-- 最新已提交算法检查点为 `295b9b5`：在 `dc9638c` 的自由出牌小手牌短序列守卫之后，新增DeepSeek队友小王后保留大王的窄守卫，并加固共享constraint/table sentinel校验。规划Codex已在显式禁用dotenv环境中独立复跑全量689项通过。
+- 最新已提交实现检查点为 `045fb75`：在 `295b9b5` 算法基线上新增acknowledged Botzone decision trace，不改变策略、engine、audit或默认关闭行为。规划Codex已独立复跑定向88项、主规则39项和全量707项通过。
 
 上述实现检查点：
 
 ```text
-295b9b5
+045fb75
 ```
 
 当前分支：`cao`。提交数量会随规划检查点继续变化；读取者应以实际 `git rev-list --left-right --count origin/cao...HEAD` 为准，不使用本文中的历史 ahead 数字。
@@ -96,7 +96,7 @@ Botzone local-AI endpoint
 
 connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评测、Botzone显式 `conditional_pressure_pass` wiring、trial validator、默认RuleBased两类保牌、DeepSeek危险对手pass阻断、自由出牌小手牌短序列守卫和队友小王后大王保留均已完成。DeepSeek失败fallback仍使用冻结旧静态基线。seed `47002`已完成真实对局但含2次HTTP error，真实条件化pass为0；其后只读策略审计没有得到新的高置信度缺陷。
 
-`docs/NEXT_PROMPT.md` 当前只包含决策证据的第二次窄纠错Prompt。首轮三个反例已经修正，但必须补强observation/top-level legal actions一致性校验，并恢复direct CLI既有history路径兼容语义；不运行Botzone/网络/模型/容量，也不清理真实workspace。
+`docs/NEXT_PROMPT.md` 当前只包含seed `47002`旧evidence的独立回收Prompt。decision trace实现已经完成验收；清理只使用Windows回收站式精确单文件操作，不运行Botzone/网络/模型/preflight/test或live。
 
 L5-A4h11a partial manifest、seed `45001` evidence与seed `47001` prestart evidence均已移入Windows回收站。seed `47002`当前evidence完整保留在固定workspace，等待后续清理；无残留connector。
 
@@ -110,7 +110,7 @@ seed `47002`也已使用且不得复用。页面连接门槛先通过，对局�
 
 seed `47002` 后续只读策略审计确认：16次决策中14次可按公开语义重建，9次pass均只有pass合法；两个可精确比较的自由出牌点不存在严格更优的残余分组。第1、6次缺少足以唯一恢复canonical动作的声明/载体细节。结论是现有evidence不足以支持下一项算法修改，不得据此猜测新规则。
 
-决策证据实现当前仍未提交。fresh CLI门槛、跨recorder持久binding和Agent深隔离已出现并通过85项定向/704项全量；但规划最小脚本确认payload校验器仍接受observation与顶层legal actions矛盾，且共用路径函数改变了原有history相对路径兼容语义。测试通过不抵消这两项未覆盖契约，完成纠错前不得进入workspace清理或live。
+决策证据实现已最终提交为 `045fb75`。五个历史反例全部转绿：fresh输出前置拒绝、跨recorder随机持久binding、Agent深隔离、observation/top-level legal actions强一致，以及history-only direct CLI旧路径兼容。规划复跑88项定向、39项主规则和707项全量通过；当前范围内无已知剩余风险。
 
 ## 6. Confirmed Symptoms
 
@@ -173,8 +173,8 @@ D:\VsCodeProject\BotzoneVerifiedUiCapacity-43001-43002
 - 新 `46200..46399` 整局 trial 两次完全一致：400/400局、197 active pairs、1433次 pass、candidate/baseline score=`422/378`、名次和=`1966/2034`、pair=`73/53/74`；判定 `retain_conditional_pressure_pass_for_botzone_opt_in_smoke`。该结果仍不证明真实 Botzone 胜率。
 - trial的pair/game、W/D/L互补、rank/diagnostic、非空容量、active/pass、单方名次范围和digest均已封口；真实两套report/hash不变。
 - Botzone显式mode已接通并以 `conditional_pressure_pass` / `conditional_rule_based` 低敏source守恒；正式RuleBased/DeepSeek benchmark拒绝混入conditional audit。
-- 当前全量测试：668 项通过。命令：`.venv\Scripts\python.exe -m unittest discover -q`，Python 3.11.9。
-- 当前 history 定向/connector 相关：16/54 项通过。命令见 `docs/TESTS.md`。
+- 当前全量测试：707 项通过。命令：`.venv\Scripts\python.exe -m unittest discover -q`，Python 3.11.9。
+- 当前 decision-trace/Botzone 定向：88 项通过；engine主回归：39项通过。精确命令见 `docs/TESTS.md`。
 - 当前 benchmark 定向测试：13 项通过。命令：`python -m unittest tests.test_botzone_policy_benchmark -q`。
 - 当前 engine 主回归：39 项通过。命令：`python -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q`。
 - 当前 preflight 输出定向测试：5 项通过。命令：`.venv\Scripts\python.exe -m unittest tests.test_botzone_preflight_output -q`。
@@ -252,13 +252,13 @@ python -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tes
 git diff --check
 ```
 
-当前最新独立结果为：短序列/DeepSeek/observability相关31项、engine主回归39项、全量684项通过，`git diff --check`通过。更早的runtime-trial validator单文件8项、条件化相关28项与四个固定SHA-256也已独立复核，不因本阶段改变。
+当前最新独立结果为：decision-trace/Botzone相关88项、engine主回归39项、全量707项通过，`git diff --check`通过。更早的runtime-trial validator单文件8项、条件化相关28项与四个固定SHA-256也已独立复核，不因本阶段改变。
 
 ### Minimal reproduction of the current failure state
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的既有本地单测，但有两个可独立复现的decision-trace验收缺口：矛盾legal-action双副本被接受，以及history-only direct CLI相对路径兼容性漂移。下一任务按 `docs/NEXT_PROMPT.md` 修正这两项，不运行live或修改策略。
+当前没有失败的本地单测或已知decision-trace验收缺口。下一任务按 `docs/NEXT_PROMPT.md` 回收已完成审计的seed `47002`旧evidence，为后续单局采样准备空workspace；本任务不运行live或修改仓库实现。
 
 ## 12. Working Tree Status
 
@@ -269,6 +269,7 @@ git diff --check
 - 小手牌短序列检查点：`dc9638c feat: guard short free-lead endgames`。
 - 最新算法检查点：`295b9b5 feat: preserve big joker behind teammate`。
 - 最新检查点新增队友小王→大王守卫、`teammate_control_block`、双action-ID schema校验与对应测试；提交前由规划Codex独立运行相关65项、主规则39项和全量689项通过，并完成staged diff检查。
+- 最新Botzone诊断检查点：`045fb75 feat: record acknowledged Botzone decisions`；提交前由规划Codex独立复现反例并运行定向88项、主规则39项、全量707项及staged diff检查。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex默认不提交；完成后由规划Codex独立复核并负责Git检查点。
 
@@ -283,4 +284,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按 `docs/NEXT_PROMPT.md` 保留当前未提交decision-trace主体，只修复payload双副本一致性与history-only direct CLI路径兼容性，补反例测试并复跑定向/全量。不得修改策略、engine、audit/history格式，不读取或清理seed `47002` workspace evidence，也不运行live/网络/模型/容量。完成后由规划Codex复核代码、测试、Git状态并负责提交。
+按 `docs/NEXT_PROMPT.md` 对固定workspace内已完成审计的seed `47002`五个旧artifact执行精确Windows回收站式清理，只保留空的 `audit/`、`state/`、`streams/`。不得永久删除、递归删除、清空回收站、运行live/网络/模型/preflight/test或修改仓库。

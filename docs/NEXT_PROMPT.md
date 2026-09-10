@@ -1,101 +1,94 @@
 # 给 Coding Codex 的下一任务 Prompt
 
-你负责修正当前工作树中尚未提交的 Botzone decision-trace 实现剩余两项验收缺口，补测试并报告结果。保留现有ACK持久化、fresh输出门槛、随机持久binding和pre-call递归隔离主体；不要回退整个实现，也不要创建Git commit。不要运行真实Botzone、connector进程、Edge、网络、DeepSeek模型或容量评测，不要读取、写入或清理 `D:\VsCodeProject\BotzoneWorkspace`。
+你负责执行一次独立、可恢复的固定 Botzone workspace 旧 evidence 清理。不要修改仓库文件，不要运行测试、preflight、connector、Botzone、Edge、网络、Agent或模型，不要创建Git commit。清理完成后停止，不要在同一任务中开始下一局live。
 
 ## 【项目长期约束】
 
-开始前完整读取并遵守仓库根目录及适用范围内的 `AGENTS.md`，并阅读 `docs/CLEAN_HANDOFF.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md` 与相关测试。
+开始前完整读取并遵守仓库根目录及适用范围内的 `AGENTS.md`，并阅读 `docs/CLEAN_HANDOFF.md`。项目所有者已经在 `AGENTS.md` 中长期授权：规划Codex完成上一轮审计并写入文档后，可清理 `D:\VsCodeProject\BotzoneWorkspace` 内已核对的旧artifact，无需再次请求授权。
 
-保持engine/Agent/integration边界。Agent只消费公开observation与原始canonical legal actions，并返回原始合法整数action ID；本任务只修诊断证据及CLI兼容性，不修改策略、规则、协议、fallback、audit或history格式。
-
-固定级牌2、四人、无需进贡、单局是既定范围，不是风险。
+本任务只允许Windows回收站式可恢复操作；不得永久删除，不得清空回收站，不得使用递归删除、通配符或扩大到其他目录。全部检查和回收必须在同一个PowerShell控制面内完成，不跨shell拼接路径。
 
 ## 【当前项目状态】
 
-当前未提交工作树已有完整decision-trace主体：`--decision-trace-file`默认关闭；pending决策只在Header ack后进入confirmed并原子写JSON；重发、重启、replay、重复ack及ack+finished已有测试；trace保存公开observation、canonical legal actions、selected ID/action与低基数source；runner/CLI暴露 `disabled|ok|failed`；v7/v8 audit不变。
+decision trace实现已由规划Codex独立复核并提交为：
 
-上一轮三个反例已经修正：
+```text
+045fb75 feat: record acknowledged Botzone decisions
+```
 
-1. fresh direct CLI会在runner/transport构造前拒绝已有trace文件；
-2. session与trace顶层保存独立随机32位binding，同binding及精确前缀才能跨recorder恢复，不同match fail closed；
-3. handler在Agent调用前递归隔离证据与Agent输入，selected action从pre-call canonical集合取得。
+独立验证为Botzone定向88项、主规则39项、全量707项通过。下一次live需要新的 `history.txt` 与 `decision-trace.json`，因此必须先单独回收seed `47002`的旧evidence。
 
-规划Codex已独立复跑decision-trace/Botzone定向85项、主规则39项、全量704项，均通过；`git diff --check`无whitespace error。但以下两个反例仍成立，所以代码尚未验收、尚未提交：
+规划Codex在2026-09-10只读复核的预期现场：
 
-1. `decision_trace_payload()` 接受observation内 `legal_actions=[{"action_id":999}]`、顶层legal actions为另一份合法pass动作的矛盾输入，返回payload且两份证据不相等。现有handler测试只证明正常构造路径相等，没有把一致性变成持久化校验不变量。
-2. direct CLI原 `_history_path()` 会先把相对路径解析为绝对路径，再拒绝仓库内、state内或与audit相同的目标；当前共用 `_diagnostic_path()` 先要求输入本身为absolute。因此从仓库外cwd传入、最终仍解析到仓库外的相对history路径由可用变成configuration error，违反“不改变history兼容语义”。decision trace自身的绝对外部路径要求是新契约，必须继续保留。
+- `D:\VsCodeProject` 下唯一以 `Botzone` 开头的直属目录是普通非链接目录 `D:\VsCodeProject\BotzoneWorkspace`；
+- workspace顶层精确包含普通非链接目录 `audit`、`state`、`streams`，以及文件 `history.txt`；
+- 五个旧文件为：
+
+| 相对路径 | bytes | SHA-256 |
+| --- | ---: | --- |
+| `audit\completion-audit.json` | 818 | `068ff687ce7d7a1d02114637ba0d4bbe1875493f35dd46799b8ad0bc5a27b708` |
+| `history.txt` | 8146 | `7d786b1640bfa8d0d747a74fb01eafdee19ff6e0516ee60167757e00ea5b94d0` |
+| `state\fa8dbb17486ade96de29840b182b3c8cc8abfb7020fbdb816ba0ccbcbf60cf26.json` | 115 | `5313a2007ae344139770c86ca978e4c9b6aabd27c2f3c8dea3b750ec3f5df309` |
+| `streams\stderr.txt` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `streams\stdout.txt` | 58 | `e990db21b8510eb12cecb343c57155c4fa68cbb4ac07c42143ee226a5a2c96e6` |
+
+这些文件已经完成结果与策略审计，可以回收。目录 `audit/`、`state/`、`streams/` 必须保留并最终为空。
 
 ## 【本次任务目标】
 
-只修复上述两个缺口：
+在全部只读门槛精确匹配后，把上述五个文件逐个移入Windows回收站，并验证workspace最终精确只剩三个空目录：
 
-- decision trace的observation内 `legal_actions` 必须存在、为list，并与顶层 `legal_actions` 在JSON规范化后逐字段、逐顺序完全相等；构建payload和读取持久session都必须fail closed；
-- 恢复decision-trace接线前direct CLI的history-only路径语义，同时保持decision trace必须传绝对仓库外路径、已有trace前置拒绝、history/trace冲突拒绝和launcher现有绝对路径门槛。
-
-## 【需要检查的范围】
-
-优先检查：
-
-- `integrations/botzone/session.py`
-- `integrations/botzone/__main__.py`
-- `tests/test_botzone_decision_trace.py`
-- `tests/test_botzone_history.py`
-- 现有launcher/connector/runner/session回归
-
-不要修改engine、Agent策略、evaluation、audit schema、history renderer或真实workspace。不要覆盖当前未提交decision-trace主体。
-
-## 【本次任务约束】
-
-- 一致性校验必须在共享payload/parser边界执行，不能只在handler临时断言；observation缺少 `legal_actions`、值为None/非list或与顶层有任一嵌套字段差异时都拒绝。
-- 合法payload继续保留pass、逢人配 `declared_cards/carrier_cards/wildcard_count/wildcard_info/display_text` 与table `action_id=None`。
-- 可以恢复独立 `_history_path()` 并为decision trace保留专用validator，或采用等价设计；但仅启用history时的既有解析与边界必须保持。
-- 从仓库外临时cwd传入相对 `history.txt`、解析结果也在仓库外且不与state/audit冲突时应继续进入runner构造；相对decision trace必须固定拒绝。
-- fresh trace已存在时仍必须在runner/transport构造前失败且旧bytes不变。
-- pending/ack、binding、重启、finished、旁路失败、三种agent mode source、observability、audit与默认关闭语义不得改变。
-- 不新增依赖、不修改`.env`、不创建Git commit。
-
-## 【必须新增的回归测试】
-
-至少覆盖：
-
-1. `decision_trace_payload()` 拒绝observation缺少/None/非list的legal actions；
-2. observation与顶层legal actions在action ID、顺序或嵌套 `wildcard_info` 任一处不一致时拒绝；
-3. 合法的两份逐字段相等副本继续通过；
-4. 将已持久化active session中的observation legal actions单独篡改后，重新加载固定失败；
-5. direct CLI从仓库外临时cwd使用相对history路径时，runner builder被调用并收到解析后的仓库外绝对路径；
-6. direct CLI相对decision trace仍在runner/transport前拒绝；
-7. history与decision trace相同/冲突、已有trace旧bytes不变、launcher既有路径测试继续通过；
-8. 现有ACK、binding、Agent mutation、pass/wildcard、三种mode source及隐私测试继续通过。
-
-测试只使用临时目录、patch、假transport和假Agent；不得访问真实workspace、`.env`或网络。
-
-## 【验证要求】
-
-```powershell
-$env:PYTHON_DOTENV_DISABLED='1'
-.\.venv\Scripts\python.exe -m unittest tests.test_botzone_decision_trace tests.test_botzone_session tests.test_botzone_connector tests.test_botzone_runner tests.test_botzone_live_launcher tests.test_botzone_history tests.test_botzone_adapter_observation tests.test_botzone_agent_observability -q
-.\.venv\Scripts\python.exe -m unittest discover -q
-git diff --check
+```text
+D:\VsCodeProject\BotzoneWorkspace\audit
+D:\VsCodeProject\BotzoneWorkspace\state
+D:\VsCodeProject\BotzoneWorkspace\streams
 ```
+
+## 【执行前门槛】
+
+在任何回收动作前一次性验证：
+
+1. 仓库 `git status --short` 为空，并记录当前HEAD；如果不为空，停止且不改任何文件。
+2. `D:\VsCodeProject` 下以 `Botzone` 开头的直属目录集合精确为 `BotzoneWorkspace`。
+3. workspace根及三个子目录都是普通目录、非符号链接/联接点/reparse point。
+4. workspace递归inventory除三个目录和表中五个文件外没有其他项目。
+5. 五个文件均为普通非链接文件，bytes与完整SHA-256逐项匹配。
+6. 没有正在运行且可安全归属于本项目Botzone connector的进程；检查时不得输出命令行、URL、token或其他敏感参数。
+
+任一门槛不匹配都必须停止，实际回收数为0；不要自行修复inventory、删除未知项或请求新的授权。
+
+## 【回收方式与安全边界】
+
+- 使用Windows回收站API，例如 `Microsoft.VisualBasic.FileIO.FileSystem::DeleteFile(..., SendToRecycleBin)` 的精确单文件调用。
+- 对五个已验证绝对路径逐个处理；不得使用 `Remove-Item`、`rm`、`del`、递归参数、目录删除或通配符。
+- 不得删除或移动workspace根及 `audit/`、`state/`、`streams/`。
+- 如果某个文件回收失败，立即停止后续回收，报告已完成与未完成的精确低敏清单；不要重试其他删除机制。
+- 不得清空回收站。
+
+## 【完成后验证】
+
+1. 五个旧文件原路径全部不存在。
+2. workspace递归inventory精确为三个普通非链接空目录。
+3. `D:\VsCodeProject` 下仍只有一个 `Botzone*`直属目录。
+4. Git HEAD与完整 `git status --short` 前后一致且为空。
+5. 没有启动connector、浏览器、网络、preflight、Agent/model或测试。
 
 ## 【完成标准】
 
-- 两个规划反例转为稳定回归并通过；
-- parser强制两份legal actions完全一致，持久session篡改不能绕过；
-- history-only direct CLI旧语义恢复，decision trace的新绝对路径/fresh输出门槛不退化；
-- 现有ACK、binding、深隔离、pass/wildcard、三种mode source及隐私边界保持；
-- 定向、全量和diff check通过；
-- 未运行live、网络、真实模型或容量，未触碰真实workspace，未创建commit。
+- 五个精确旧文件均进入Windows回收站，未永久删除；
+- 三个固定空目录保留；
+- 没有inventory drift、仓库变化或其他运行副作用；
+- 本任务在清理报告后结束，不分配seed、不启动下一局。
 
 ## 【执行后的报告要求】
 
 最终报告必须包含：
 
-1. 两个反例各自根因；
-2. 实际修正设计及修改文件；
-3. parser如何保证observation/top-level legal actions一致；
-4. history兼容语义与decision-trace新路径门槛如何分离；
-5. 新增反例测试与既有ACK/binding/深隔离回归结果；
-6. 精确测试命令、项数、结果与 `git diff --check`；
-7. 是否访问live、网络、模型、`.env`或真实workspace（预期均为否）；
-8. 当前项目范围内是否仍有已知风险。固定级牌2、无贡、单局不得列为风险。
+1. 固定判定：成功时使用 `botzone_workspace_seed_47002_evidence_recycled`；
+2. 六项执行前门槛是否全部通过；
+3. 五个回收文件的相对路径、bytes和SHA-256；
+4. 最终workspace精确inventory；
+5. Git HEAD/status前后一致性；
+6. 是否执行永久删除或清空回收站（预期均为否）；
+7. connector、浏览器、网络、preflight、Agent/model和测试调用计数（预期均为0）；
+8. 明确说明下一seed尚未分配，本任务未开始live。
