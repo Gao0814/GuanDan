@@ -20,6 +20,15 @@ def _deal() -> bytes:
     return f"1 0\nunit\n{payload}".encode()
 
 
+def _play() -> bytes:
+    payload = json.dumps(
+        {"stage": "play", "history": [[], [], [], []], "done": [], "pass_on": -1,
+         "global": {"level": "2", "tribute": 0, "first": None, "last": None, "resist": False, "tribute_cards": {}, "return_cards": {}}},
+        separators=(",", ":"),
+    )
+    return f"1 0\nunit\n{payload}".encode()
+
+
 class _Transport:
     def __init__(self, polls: list[bytes | Exception]) -> None:
         self.polls = polls
@@ -113,6 +122,28 @@ class BotzoneRunnerTests(unittest.TestCase):
                 history_file=base / "missing" / "history.txt",
             ).run(max_cycles=1)
         self.assertEqual((disabled.history_status, ok.history_status, failed.history_status), ("disabled", "ok", "failed"))
+
+    def test_decision_trace_status_distinguishes_disabled_ok_and_write_failure(self) -> None:
+        with TemporaryDirectory() as root:
+            base = __import__("pathlib").Path(root)
+            disabled = build_foreground_runner(
+                RuntimeConfig("https://private.invalid/secret", state_directory=base / "disabled"),
+                _Transport([_deal()]), sleep=lambda _: None,
+            ).run(max_cycles=1)
+            ok = build_foreground_runner(
+                RuntimeConfig("https://private.invalid/secret", state_directory=base / "ok"),
+                _Transport([_deal(), _play(), b"0 0\n"]), sleep=lambda _: None,
+                decision_trace_file=base / "trace.json",
+            ).run(max_cycles=3)
+            failed = build_foreground_runner(
+                RuntimeConfig("https://private.invalid/secret", state_directory=base / "failed"),
+                _Transport([_deal(), _play(), b"0 0\n"]), sleep=lambda _: None,
+                decision_trace_file=base / "missing" / "trace.json",
+            ).run(max_cycles=3)
+        self.assertEqual(
+            (disabled.decision_trace_status, ok.decision_trace_status, failed.decision_trace_status),
+            ("disabled", "ok", "failed"),
+        )
 
     def test_long_poll_timeouts_are_idle_and_do_not_trigger_failure_limit(self) -> None:
         with TemporaryDirectory() as root:

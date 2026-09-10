@@ -27,7 +27,7 @@ from .protocol import (
     parse_action_claim,
     resolve_table_view,
 )
-from .session import HandlerContext, HandlerResult, PlayEffect
+from .session import HandlerContext, HandlerResult, PlayEffect, decision_trace_payload
 
 
 _BOTZONE_TO_ENGINE_SUIT = {"h": "H", "d": "D", "s": "S", "c": "C"}
@@ -129,6 +129,7 @@ class NoTributeRuleBasedHandler:
         cache_agents: bool = False,
         agent_mode: str = "rule",
         observability: AgentObservabilityRecorder | None = None,
+        decision_trace_enabled: bool = False,
     ) -> None:
         self._agent_factory = agent_factory or (lambda player_id: RuleBasedAIAgent(player_id=player_id))
         self._fallback_to_rule = fallback_to_rule
@@ -137,6 +138,7 @@ class NoTributeRuleBasedHandler:
         self._agent_mode = agent_mode
         self._observability = observability
         self._observability_failed = False
+        self._decision_trace_enabled = decision_trace_enabled
 
     def release_match(self, match_key: str) -> None:
         """Forget mutable agent state after a match has been durably finished."""
@@ -156,9 +158,14 @@ class NoTributeRuleBasedHandler:
         if isinstance(request, DealRequest):
             return HandlerResult(b"[]")
         projection = project_decision(context)
-        agent_actions = [dict(action) for action in projection.legal_actions]
-        agent_observation = copy.deepcopy(dict(projection.observation))
-        agent_observation["legal_actions"] = agent_actions
+        # Preserve an immutable-by-convention pre-call public snapshot.  The
+        # Agent receives independent recursive copies and may not alter the
+        # canonical evidence or provenance input by mutating nested payloads.
+        canonical_actions = copy.deepcopy([dict(action) for action in projection.legal_actions])
+        trace_observation = copy.deepcopy(dict(projection.observation))
+        trace_observation["legal_actions"] = copy.deepcopy(canonical_actions)
+        agent_observation = copy.deepcopy(trace_observation)
+        agent_actions = copy.deepcopy(canonical_actions)
         engine_player = botzone_player_to_engine_player(context.local_player_id)
         cache_key = (context.match_key, engine_player)
         agent = self._agents.get(cache_key) if self._cache_agents else None
@@ -176,7 +183,7 @@ class NoTributeRuleBasedHandler:
             adapter_fallback = True
             selected_id = _fallback_action_id(
                 engine_player,
-                agent_observation,
+                trace_observation,
                 agent_actions,
                 projection.legal_actions,
                 frozen_static=self._agent_mode == "deepseek",
@@ -214,8 +221,28 @@ class NoTributeRuleBasedHandler:
             raise AdapterError("missing_provenance")
         action_claim = encode_action_claim(action, context.own_hand, context.global_state.level)
         response = json.dumps(action_claim.to_json(), separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-        self._record_decision_source(self._decision_source(agent, adapter_fallback))
-        return HandlerResult(response, PlayEffect(action_claim.action, action_claim.claim))
+        source = self._decision_source(agent, adapter_fallback)
+        self._record_decision_source(source)
+        trace = None
+        trace_failed = False
+        if self._decision_trace_enabled:
+            selected_action = next(
+                (action for action in canonical_actions if action["action_id"] == selected_id),
+                None,
+            )
+            if selected_action is None:
+                raise AdapterError("missing_public_selected_action")
+            try:
+                trace = decision_trace_payload(
+                    trace_observation,
+                    canonical_actions,
+                    selected_id,
+                    selected_action,
+                    source,
+                )
+            except ValueError:
+                trace_failed = True
+        return HandlerResult(response, PlayEffect(action_claim.action, action_claim.claim), trace, trace_failed)
 
     def _record_model_outcome(self, agent: object | None) -> str | None:
         client = getattr(agent, "client", getattr(agent, "_client", None))

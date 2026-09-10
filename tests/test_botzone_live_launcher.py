@@ -68,18 +68,34 @@ class BotzoneLiveLauncherTests(unittest.TestCase):
             (root / "streams" / "stdout.txt").rename(root / "streams" / "stdout-closed.txt")
             (root / "streams" / "stderr.txt").rename(root / "streams" / "stderr-closed.txt")
 
-    def test_optional_history_file_is_forwarded_without_changing_default_arguments(self) -> None:
+    def test_optional_private_artifacts_are_forwarded_without_changing_default_arguments(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            arguments = _argv(root) + ("--history-file", str(root / "history.txt"))
+            arguments = _argv(root) + ("--history-file", str(root / "history.txt"), "--decision-trace-file", str(root / "trace.json"))
             config = parse_launcher_args(arguments)
             self.assertEqual(config.history_file, root / "history.txt")
+            self.assertEqual(config.decision_trace_file, root / "trace.json")
             self.assertIn("--history-file", connector_argv(config))
+            self.assertIn("--decision-trace-file", connector_argv(config))
             default_root = root / "default"
             default_root.mkdir()
             default = parse_launcher_args(_argv(default_root))
             self.assertIsNone(default.history_file)
+            self.assertIsNone(default.decision_trace_file)
             self.assertNotIn("--history-file", connector_argv(default))
+            self.assertNotIn("--decision-trace-file", connector_argv(default))
+
+    def test_existing_decision_trace_is_rejected_before_streams_or_connector_start(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            trace = root / "trace.json"
+            original = b'{"existing":"trace"}\n'
+            trace.write_bytes(original)
+            with self.assertRaises(LauncherError):
+                parse_launcher_args(_argv(root) + ("--decision-trace-file", str(trace)))
+            self.assertEqual(trace.read_bytes(), original)
+            self.assertFalse((root / "streams" / "stdout.txt").exists())
+            self.assertFalse((root / "streams" / "stderr.txt").exists())
 
     def test_history_file_cannot_share_state_or_stream_artifact_directories(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -92,6 +108,14 @@ class BotzoneLiveLauncherTests(unittest.TestCase):
             stream_args = _argv(root) + ("--history-file", str(root / "streams" / "history.txt"))
             with self.assertRaises(LauncherError):
                 parse_launcher_args(stream_args)
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            same_args = _argv(root) + ("--history-file", str(root / "same.json"), "--decision-trace-file", str(root / "same.json"))
+            with self.assertRaises(LauncherError):
+                parse_launcher_args(same_args)
+            state_args = _argv(root) + ("--decision-trace-file", str(root / "state" / "trace.json"))
+            with self.assertRaises(LauncherError):
+                parse_launcher_args(state_args)
 
     def test_entrypoint_failure_is_normalized_and_both_streams_close(self) -> None:
         with TemporaryDirectory() as temporary:

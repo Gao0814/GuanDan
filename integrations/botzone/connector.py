@@ -72,6 +72,7 @@ class MockConnector:
         handler: RequestHandler,
         result_observability: ResultObservabilityRecorder | None = None,
         history_recorder: HistoryRecorder | None = None,
+        decision_trace_recorder: HistoryRecorder | None = None,
     ) -> None:
         self._store = store
         self._transport = transport
@@ -81,6 +82,7 @@ class MockConnector:
         )
         self._result_observability_failed = False
         self._history_recorder = history_recorder
+        self._decision_trace_recorder = decision_trace_recorder
         self._play_pending: set[str] = set()
         self._play_acknowledged: set[str] = set()
         self._finished_qualified: set[str] = set()
@@ -89,6 +91,7 @@ class MockConnector:
         diagnostics: Counter[str] = Counter()
         diagnostic_details: Counter[str] = Counter()
         diagnostic_profiles: Counter[str] = Counter()
+        self._recover_decision_traces()
         try:
             deliveries = self._store.pending_deliveries()
             headers = MappingProxyType({item.header_name: item.response for item in deliveries})
@@ -137,11 +140,14 @@ class MockConnector:
                 record = self._store.load(match_id)
                 if record is not None:
                     self._record_history(record)
+                    self._record_decision_trace(record)
             except SessionStorageError:
                 # The acknowledgement has already committed; diagnostic output
                 # must not alter its transaction result.
                 if self._history_recorder is not None:
                     self._history_recorder.failed = True
+                if self._decision_trace_recorder is not None:
+                    self._decision_trace_recorder.failed = True
 
         try:
             batch = parse_poll(raw_poll)
@@ -160,6 +166,7 @@ class MockConnector:
         for row in batch.finished:
             category = _finished_category(row.player_count)
             self._record_finished_history(row)
+            self._record_finished_decision_trace(row)
             try:
                 cleaned = self._store.finish(row)
             except SessionStorageError:
@@ -255,13 +262,15 @@ class MockConnector:
                     if request.wire_mode == "bot_envelope"
                     else encode_direct_response(request.stage, result.response)
                 )
-                result = HandlerResult(encoded, result.effect)
+                result = HandlerResult(encoded, result.effect, result.decision_trace, result.decision_trace_failed)
             completed = self._store.complete_handler(record, result)
         except (BotEnvelopeError, SessionStorageError) as exc:
             diagnostics[_normalized_session_error(exc)] += 1
             return 0, diagnostics, details, profiles
         if isinstance(request.stage, PlayRequest) and completed.pending_response:
             self._play_pending.add(request.match_id)
+        if result.decision_trace_failed and self._decision_trace_recorder is not None:
+            self._decision_trace_recorder.failed = True
         self._record_history(completed)
         return int(completed.pending_response is not None), diagnostics, details, profiles
 
@@ -286,9 +295,44 @@ class MockConnector:
         except Exception:
             self._history_recorder.failed = True
 
+    def _record_decision_trace(self, record: SessionRecord) -> None:
+        """Render only snapshots that the store has already acknowledged."""
+
+        if self._decision_trace_recorder is None:
+            return
+        try:
+            self._decision_trace_recorder.update(record)
+        except Exception:
+            self._decision_trace_recorder.failed = True
+
+    def _recover_decision_traces(self) -> None:
+        """Recover acknowledged snapshots if a prior process ended after ack."""
+
+        if self._decision_trace_recorder is None or self._decision_trace_recorder.failed:
+            return
+        try:
+            for record in self._store.active_records():
+                self._record_decision_trace(record)
+        except Exception:
+            self._decision_trace_recorder.failed = True
+
+    def _record_finished_decision_trace(self, row: FinishedRow) -> None:
+        if self._decision_trace_recorder is None:
+            return
+        try:
+            record = self._store.load(row.match_id)
+            if record is not None:
+                self._decision_trace_recorder.finish(record, row)
+        except Exception:
+            self._decision_trace_recorder.failed = True
+
     @property
     def history_status(self) -> str:
         return "disabled" if self._history_recorder is None else self._history_recorder.status
+
+    @property
+    def decision_trace_status(self) -> str:
+        return "disabled" if self._decision_trace_recorder is None else self._decision_trace_recorder.status
 
 
 def _normalized_session_error(error: SessionStorageError) -> str:

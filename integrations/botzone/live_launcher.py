@@ -37,6 +37,7 @@ class LauncherConfig:
     stdout_file: Path
     stderr_file: Path
     history_file: Path | None
+    decision_trace_file: Path | None
 
     def __repr__(self) -> str:
         return "LauncherConfig(redacted)"
@@ -87,6 +88,10 @@ def _run_token(value: object) -> str:
         raise LauncherError("invalid_argument") from exc
 
 
+def _paths_overlap(first: Path, second: Path) -> bool:
+    return first == second or first.is_relative_to(second) or second.is_relative_to(first)
+
+
 def parse_launcher_args(argv: Sequence[object]) -> LauncherConfig:
     """Accept exactly the bounded connector arguments plus private stream paths."""
 
@@ -103,9 +108,11 @@ def parse_launcher_args(argv: Sequence[object]) -> LauncherConfig:
         "--stdout-file",
         "--stderr-file",
         "--history-file",
+        "--decision-trace-file",
     }
-    required = expected - {"--history-file"}
-    if len(items) not in {len(required) * 2, len(expected) * 2}:
+    optional = {"--history-file", "--decision-trace-file"}
+    required = expected - optional
+    if len(items) not in {len(required) * 2, (len(required) + 1) * 2, len(expected) * 2}:
         raise LauncherError("invalid_argument")
     values: dict[str, object] = {}
     for index in range(0, len(items), 2):
@@ -127,16 +134,26 @@ def parse_launcher_args(argv: Sequence[object]) -> LauncherConfig:
         stdout_file=_external_file(values["--stdout-file"]),
         stderr_file=_external_file(values["--stderr-file"]),
         history_file=_external_file(values["--history-file"]) if "--history-file" in values else None,
+        decision_trace_file=_external_file(values["--decision-trace-file"]) if "--decision-trace-file" in values else None,
     )
-    paths = (config.audit_file, config.stdout_file, config.stderr_file) + ((config.history_file,) if config.history_file is not None else ())
-    if len(set(paths)) != len(paths) or config.stdout_file.parent != config.stderr_file.parent:
+    paths = (
+        (config.audit_file, config.stdout_file, config.stderr_file)
+        + ((config.history_file,) if config.history_file is not None else ())
+        + ((config.decision_trace_file,) if config.decision_trace_file is not None else ())
+    )
+    if len(set(paths)) != len(paths) or any(
+        _paths_overlap(first, second)
+        for index, first in enumerate(paths)
+        for second in paths[index + 1:]
+    ) or config.stdout_file.parent != config.stderr_file.parent:
         raise LauncherError("invalid_path")
     stream_directory = config.stdout_file.parent
     if not stream_directory.is_dir() or any(stream_directory.iterdir()):
         raise LauncherError("invalid_stream_directory")
-    if config.history_file is not None and (
-        config.history_file.is_relative_to(config.state_directory)
-        or config.history_file.is_relative_to(stream_directory)
+    private_files = tuple(path for path in (config.history_file, config.decision_trace_file) if path is not None)
+    if any(
+        path.is_relative_to(config.state_directory) or path.is_relative_to(stream_directory)
+        for path in private_files
     ):
         raise LauncherError("invalid_path")
     if any(path.exists() for path in paths):
@@ -155,6 +172,7 @@ def connector_argv(config: LauncherConfig) -> tuple[str, ...]:
         "--stop-after-finished", str(config.stop_after_finished),
         "--audit-file", str(config.audit_file),
         *( ("--history-file", str(config.history_file)) if config.history_file is not None else () ),
+        *( ("--decision-trace-file", str(config.decision_trace_file)) if config.decision_trace_file is not None else () ),
     )
 
 

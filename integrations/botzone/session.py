@@ -6,12 +6,15 @@ import base64
 import hashlib
 import json
 import os
+import re
+import secrets
 import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
 from .bot_io import BotReplay
+from .agent_observability import DECISION_SOURCES
 from .cards import RANKS
 from .models import ActionClaim, DealRequest, GlobalState, HistoryEntry, PlayRequest
 from .poll import FinishedRow
@@ -26,6 +29,27 @@ TOMBSTONE_SCHEMA: Final[str] = "botzone_no_tribute_finished"
 
 class SessionStorageError(ValueError):
     """Stored state is unavailable, invalid, or cannot be written atomically."""
+
+
+_DECISION_TRACE_FORBIDDEN_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "match_id",
+        "request_digest",
+        "run_token",
+        "url",
+        "headers",
+        "header",
+        "cookie",
+        "cookies",
+        "api" + "_key",
+        "prompt",
+        "response",
+        "reasoning",
+        "notes",
+        "metadata",
+    }
+)
+_DECISION_TRACE_BINDING_PATTERN: Final[re.Pattern[str]] = re.compile(r"[0-9a-f]{32}\Z")
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,11 +78,33 @@ class ConfirmedPlay:
 
 
 @dataclass(frozen=True, slots=True)
+class DecisionTracePayload:
+    """The public decision snapshot held until its response is acknowledged."""
+
+    observation: dict[str, object]
+    legal_actions: tuple[dict[str, object], ...]
+    selected_action_id: int
+    selected_action: dict[str, object]
+    decision_source: str
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "observation": self.observation,
+            "legal_actions": list(self.legal_actions),
+            "selected_action_id": self.selected_action_id,
+            "selected_action": self.selected_action,
+            "decision_source": self.decision_source,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class HandlerResult:
     """A handler response and its typed, deferred hand-state effect."""
 
     response: bytes | None
     effect: PlayEffect | None = None
+    decision_trace: DecisionTracePayload | None = None
+    decision_trace_failed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +151,9 @@ class SessionRecord:
     cached_response: bytes | None
     cached_response_digest: str | None
     confirmed_history: tuple[ConfirmedPlay, ...] = ()
+    decision_trace_binding: str | None = None
+    pending_decision_trace: DecisionTracePayload | None = None
+    confirmed_decision_traces: tuple[DecisionTracePayload, ...] = ()
     finished: FinishedRow | None = None
     run_token: str | None = None
 
@@ -130,6 +179,12 @@ class SessionRecord:
         }
         if self.confirmed_history:
             payload["confirmed_history"] = [item.to_json() for item in self.confirmed_history]
+        if self.decision_trace_binding is not None:
+            payload["decision_trace_binding"] = _validate_decision_trace_binding(self.decision_trace_binding)
+        if self.pending_decision_trace is not None:
+            payload["pending_decision_trace"] = self.pending_decision_trace.to_json()
+        if self.confirmed_decision_traces:
+            payload["confirmed_decision_traces"] = [item.to_json() for item in self.confirmed_decision_traces]
         if self.run_token is not None:
             payload["run_token"] = validate_run_token(self.run_token)
         return payload
@@ -160,6 +215,12 @@ def _validate_match_id(value: object) -> str:
         or any(ord(character) < 32 for character in value)
     ):
         raise SessionStorageError("invalid_match_id")
+    return value
+
+
+def _validate_decision_trace_binding(value: object) -> str:
+    if type(value) is not str or _DECISION_TRACE_BINDING_PATTERN.fullmatch(value) is None:
+        raise SessionStorageError("invalid_decision_trace_binding")
     return value
 
 
@@ -232,6 +293,94 @@ def _parse_confirmed_history(value: object, level: str, history_length: int) -> 
     except ProtocolValidationError as exc:
         raise SessionStorageError("invalid_confirmed_history") from exc
     return tuple(parsed)
+
+
+def _json_trace_value(value: object) -> object:
+    """Deep-copy only JSON-safe public data and reject known private fields."""
+
+    try:
+        normalized = json.loads(json.dumps(value, ensure_ascii=True, allow_nan=False, separators=(",", ":")))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise SessionStorageError("invalid_decision_trace") from exc
+
+    def visit(item: object) -> None:
+        if isinstance(item, dict):
+            for key, nested in item.items():
+                if not isinstance(key, str) or key.lower() in _DECISION_TRACE_FORBIDDEN_KEYS:
+                    raise SessionStorageError("invalid_decision_trace")
+                visit(nested)
+        elif isinstance(item, list):
+            for nested in item:
+                visit(nested)
+
+    visit(normalized)
+    return normalized
+
+
+def _parse_decision_trace(value: object) -> DecisionTracePayload | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {
+        "observation", "legal_actions", "selected_action_id", "selected_action", "decision_source"
+    }:
+        raise SessionStorageError("invalid_decision_trace")
+    observation = _json_trace_value(value["observation"])
+    legal_actions = _json_trace_value(value["legal_actions"])
+    selected_action = _json_trace_value(value["selected_action"])
+    selected_action_id = value["selected_action_id"]
+    source = value["decision_source"]
+    if (
+        not isinstance(observation, dict)
+        or not isinstance(legal_actions, list)
+        or not all(isinstance(action, dict) for action in legal_actions)
+        or type(selected_action_id) is not int
+        or not isinstance(selected_action, dict)
+        or type(source) is not str
+        or source not in DECISION_SOURCES
+    ):
+        raise SessionStorageError("invalid_decision_trace")
+    # The observation is the exact public payload passed to the Agent.  Its
+    # embedded legal actions must remain the same canonical collection stored
+    # beside it; otherwise the artifact could not replay one coherent input.
+    observed_actions = observation.get("legal_actions")
+    if not isinstance(observed_actions, list) or observed_actions != legal_actions:
+        raise SessionStorageError("invalid_decision_trace")
+    selected = [
+        action
+        for action in legal_actions
+        if type(action.get("action_id")) is int and action["action_id"] == selected_action_id
+    ]
+    if len(selected) != 1 or selected[0] != selected_action:
+        raise SessionStorageError("invalid_decision_trace")
+    if any(type(action.get("action_id")) is not int for action in legal_actions):
+        raise SessionStorageError("invalid_decision_trace")
+    return DecisionTracePayload(
+        observation=observation,
+        legal_actions=tuple(legal_actions),
+        selected_action_id=selected_action_id,
+        selected_action=selected_action,
+        decision_source=source,
+    )
+
+
+def decision_trace_payload(
+    observation: object,
+    legal_actions: object,
+    selected_action_id: object,
+    selected_action: object,
+    decision_source: object,
+) -> DecisionTracePayload:
+    """Build a validated, serialization-safe snapshot from a public decision."""
+
+    return _parse_decision_trace(
+        {
+            "observation": observation,
+            "legal_actions": legal_actions,
+            "selected_action_id": selected_action_id,
+            "selected_action": selected_action,
+            "decision_source": decision_source,
+        }
+    ) or (_ for _ in ()).throw(SessionStorageError("invalid_decision_trace"))
 
 
 def _parse_global(value: object, stage: str) -> GlobalState:
@@ -307,11 +456,15 @@ def _record_from_json(value: object) -> SessionRecord:
     if value.get("schema") != SESSION_SCHEMA or type(version) is not int:
         raise SessionStorageError("incompatible_session")
     fields = set(value)
-    if version == SESSION_VERSION and (fields == expected or fields == expected | {"confirmed_history"}):
+    optional_trace_fields = {
+        "confirmed_history",
+        "decision_trace_binding",
+        "pending_decision_trace",
+        "confirmed_decision_traces",
+    }
+    if version == SESSION_VERSION and expected.issubset(fields) and fields - expected <= optional_trace_fields:
         run_token = None
-    elif version == TOKEN_SESSION_VERSION and (
-        fields == expected | {"run_token"} or fields == expected | {"run_token", "confirmed_history"}
-    ):
+    elif version == TOKEN_SESSION_VERSION and expected.issubset(fields) and "run_token" in fields and fields - expected - {"run_token"} <= optional_trace_fields:
         try:
             run_token = validate_run_token(value["run_token"])
         except RunProvenanceError as exc:
@@ -368,6 +521,29 @@ def _record_from_json(value: object) -> SessionRecord:
     ):
         raise SessionStorageError("history_alignment_failed")
     confirmed_history = _parse_confirmed_history(value.get("confirmed_history"), parsed_global.level, len(parsed_history))
+    decision_trace_binding = (
+        _validate_decision_trace_binding(value["decision_trace_binding"])
+        if "decision_trace_binding" in value
+        else None
+    )
+    pending_decision_trace = _parse_decision_trace(value.get("pending_decision_trace"))
+    confirmed_decision_traces = value.get("confirmed_decision_traces")
+    if confirmed_decision_traces is None:
+        parsed_confirmed_traces: tuple[DecisionTracePayload, ...] = ()
+    elif not isinstance(confirmed_decision_traces, list):
+        raise SessionStorageError("invalid_decision_trace")
+    else:
+        parsed_confirmed_traces = tuple(
+            trace for trace in (_parse_decision_trace(item) for item in confirmed_decision_traces) if trace is not None
+        )
+        if len(parsed_confirmed_traces) != len(confirmed_decision_traces):
+            raise SessionStorageError("invalid_decision_trace")
+    if pending_decision_trace is not None and (
+        pending is None or effect is None or stage != "play" or decision_trace_binding is None
+    ):
+        raise SessionStorageError("invalid_decision_trace")
+    if parsed_confirmed_traces and decision_trace_binding is None:
+        raise SessionStorageError("invalid_decision_trace")
     finished = _parse_finished(value["finished"])
     if finished is not None and finished.match_id != match_id:
         raise SessionStorageError("session_key_mismatch")
@@ -387,6 +563,9 @@ def _record_from_json(value: object) -> SessionRecord:
         cached_response=cached,
         cached_response_digest=cached_digest,
         confirmed_history=confirmed_history,
+        decision_trace_binding=decision_trace_binding,
+        pending_decision_trace=pending_decision_trace,
+        confirmed_decision_traces=parsed_confirmed_traces,
         finished=finished,
         run_token=run_token,
     )
@@ -395,12 +574,21 @@ def _record_from_json(value: object) -> SessionRecord:
 class SessionStore:
     """Disk-backed store; all persisted files are namespaced by a hashed key."""
 
-    def __init__(self, state_directory: Path | str, *, run_token: str | None = None) -> None:
+    def __init__(
+        self,
+        state_directory: Path | str,
+        *,
+        run_token: str | None = None,
+        decision_trace_enabled: bool = False,
+    ) -> None:
         self._root = Path(state_directory)
         try:
             self._run_token = None if run_token is None else validate_run_token(run_token)
         except RunProvenanceError as exc:
             raise SessionStorageError("invalid_run_token") from exc
+        if type(decision_trace_enabled) is not bool:
+            raise SessionStorageError("invalid_decision_trace")
+        self._decision_trace_enabled = decision_trace_enabled
 
     @property
     def run_token(self) -> str | None:
@@ -489,12 +677,14 @@ class SessionStore:
         if isinstance(stage, DealRequest):
             own_hand = stage.deliver
             local_player_id = stage.your_id
-            latest_window, history, confirmed_history = (), (), ()
+            latest_window, history, confirmed_history, confirmed_decision_traces = (), (), (), ()
+            decision_trace_binding = secrets.token_hex(16) if self._decision_trace_enabled else None
         elif record is None:
             assert replay is not None
             own_hand = replay.own_hand
             local_player_id = replay.local_player_id
-            latest_window, history, confirmed_history = replay.latest_window, replay.history, ()
+            latest_window, history, confirmed_history, confirmed_decision_traces = replay.latest_window, replay.history, (), ()
+            decision_trace_binding = secrets.token_hex(16) if self._decision_trace_enabled else None
         else:
             if replay is not None and (replay.local_player_id != record.local_player_id or replay.own_hand != record.own_hand):
                 raise SessionStorageError("envelope_replay_conflict")
@@ -502,6 +692,10 @@ class SessionStore:
             local_player_id = record.local_player_id
             latest_window, history = merge_history(record.latest_window, record.history, stage.history)
             confirmed_history = record.confirmed_history
+            confirmed_decision_traces = record.confirmed_decision_traces
+            decision_trace_binding = record.decision_trace_binding or (
+                secrets.token_hex(16) if self._decision_trace_enabled else None
+            )
         global_state = stage.global_state
         prepared = SessionRecord(
             match_id=match_id,
@@ -519,6 +713,8 @@ class SessionStore:
             cached_response=None,
             cached_response_digest=None,
             confirmed_history=confirmed_history,
+            decision_trace_binding=decision_trace_binding,
+            confirmed_decision_traces=confirmed_decision_traces,
             run_token=self._run_token,
         )
         self.save(prepared)
@@ -533,11 +729,20 @@ class SessionStore:
         if response is not None and (b"\r" in response or b"\n" in response):
             raise SessionStorageError("header_injection")
         effect = result.effect
+        trace = result.decision_trace
         if record.stage == "deal" and effect is not None:
             raise SessionStorageError("malformed_handler_result")
         if record.stage == "play" and response is not None and effect is None:
             raise SessionStorageError("malformed_handler_result")
         if response is None and effect is not None:
+            raise SessionStorageError("malformed_handler_result")
+        if trace is not None and not isinstance(trace, DecisionTracePayload):
+            raise SessionStorageError("malformed_handler_result")
+        if type(result.decision_trace_failed) is not bool:
+            raise SessionStorageError("malformed_handler_result")
+        if trace is not None and (record.stage != "play" or response is None or effect is None):
+            raise SessionStorageError("malformed_handler_result")
+        if trace is not None and record.decision_trace_binding is None:
             raise SessionStorageError("malformed_handler_result")
         if effect is not None:
             if not isinstance(effect, PlayEffect):
@@ -561,6 +766,7 @@ class SessionStore:
             handler_completed=True,
             cached_response=response,
             cached_response_digest=record.request_digest if response is not None else None,
+            pending_decision_trace=trace,
         )
         self.save(next_record)
         return next_record
@@ -610,6 +816,29 @@ class SessionStore:
                 deliveries.append(PendingDelivery(record.match_id, header_name, record.pending_response))
         return tuple(deliveries)
 
+    def active_records(self) -> tuple[SessionRecord, ...]:
+        """Return validated active records for best-effort diagnostic recovery."""
+
+        if not self._root.exists():
+            return ()
+        records: list[SessionRecord] = []
+        for path in sorted(self._root.glob("*.json")):
+            try:
+                decoded = json.loads(path.read_text(encoding="utf-8"))
+                if _is_tombstone(decoded):
+                    self._validate_tombstone_token(_tombstone_run_token(decoded))
+                    continue
+                record = _record_from_json(decoded)
+                self._validate_record_token(record)
+            except SessionStorageError as exc:
+                if str(exc) == "run_token_mismatch":
+                    raise
+                raise SessionStorageError("corrupt_session") from exc
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise SessionStorageError("corrupt_session") from exc
+            records.append(record)
+        return tuple(records)
+
     def mark_inflight(self, deliveries: tuple[PendingDelivery, ...]) -> None:
         for delivery in deliveries:
             record = self.load(delivery.match_id)
@@ -637,12 +866,15 @@ class SessionStore:
                         raise SessionStorageError("invalid_play_effect")
                     own_hand = tuple(card_id for card_id in own_hand if card_id not in deductions)
                 confirmed_history = record.confirmed_history
+                confirmed_decision_traces = record.confirmed_decision_traces
                 if record.pending_effect is not None and record.pending_effect.claim is not None:
                     confirmed = ConfirmedPlay(
                         HistoryEntry(record.local_player_id, ActionClaim(record.pending_effect.action, record.pending_effect.claim)),
                         len(record.history),
                     )
                     confirmed_history = confirmed_history + (confirmed,)
+                if record.pending_decision_trace is not None:
+                    confirmed_decision_traces = confirmed_decision_traces + (record.pending_decision_trace,)
                 self.save(replace(
                     record,
                     own_hand=own_hand,
@@ -650,6 +882,8 @@ class SessionStore:
                     pending_effect=None,
                     delivery_state="idle",
                     confirmed_history=confirmed_history,
+                    pending_decision_trace=None,
+                    confirmed_decision_traces=confirmed_decision_traces,
                 ))
                 acknowledged.append(delivery.match_id)
         return tuple(acknowledged)

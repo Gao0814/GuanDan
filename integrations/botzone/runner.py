@@ -19,6 +19,7 @@ from .connector import (
     Transport,
 )
 from .history import ConnectorObservedHistory
+from .decision_trace import ConnectorDecisionTrace
 from .agent_observability import AgentObservabilityRecorder, AgentObservabilitySnapshot
 from .agent_runtime import build_agent_factory
 from .play_adapter import NoTributeRuleBasedHandler
@@ -58,6 +59,7 @@ class RunnerSummary:
     local_team_score_counts: tuple[tuple[str, int], ...] = ()
     result_observability_valid: bool = True
     history_status: str = "disabled"
+    decision_trace_status: str = "disabled"
 
 
 class ForegroundRunner:
@@ -237,10 +239,15 @@ class ForegroundRunner:
             result_snapshot.local_team_score_counts,
             result_observability_valid,
             self._history_status(),
+            self._decision_trace_status(),
         )
 
     def _history_status(self) -> str:
         status = getattr(self._connector, "history_status", "disabled")
+        return status if status in {"disabled", "ok", "failed"} else "failed"
+
+    def _decision_trace_status(self) -> str:
+        status = getattr(self._connector, "decision_trace_status", "disabled")
         return status if status in {"disabled", "ok", "failed"} else "failed"
 
 
@@ -263,10 +270,15 @@ def build_foreground_runner(
     clock: Callable[[], float] = time.monotonic,
     run_token: str | None = None,
     history_file: Path | str | None = None,
+    decision_trace_file: Path | str | None = None,
 ) -> ForegroundRunner:
     observability = AgentObservabilityRecorder()
     if agent_mode == "rule":
-        handler = NoTributeRuleBasedHandler(agent_mode="rule", observability=observability)
+        handler = NoTributeRuleBasedHandler(
+            agent_mode="rule",
+            observability=observability,
+            decision_trace_enabled=decision_trace_file is not None,
+        )
     elif agent_mode == "deepseek":
         handler = NoTributeRuleBasedHandler(
             prepared_agent_factory or agent_factory_builder(agent_mode),
@@ -274,6 +286,7 @@ def build_foreground_runner(
             cache_agents=True,
             agent_mode="deepseek",
             observability=observability,
+            decision_trace_enabled=decision_trace_file is not None,
         )
     elif agent_mode == "conditional_pressure_pass":
         handler = NoTributeRuleBasedHandler(
@@ -282,15 +295,22 @@ def build_foreground_runner(
             cache_agents=True,
             agent_mode="conditional_pressure_pass",
             observability=observability,
+            decision_trace_enabled=decision_trace_file is not None,
         )
     else:
         raise ValueError("invalid_agent_mode")
     recorder = ConnectorObservedHistory(history_file) if history_file is not None else None
+    decision_trace_recorder = ConnectorDecisionTrace(decision_trace_file) if decision_trace_file is not None else None
     connector = MockConnector(
-        SessionStore(config.state_directory, run_token=run_token),
+        SessionStore(
+            config.state_directory,
+            run_token=run_token,
+            decision_trace_enabled=decision_trace_file is not None,
+        ),
         transport,
         handler,
         history_recorder=recorder,
+        decision_trace_recorder=decision_trace_recorder,
     )
     return ForegroundRunner(
         connector,

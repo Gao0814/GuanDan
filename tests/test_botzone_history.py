@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -278,7 +279,7 @@ class BotzoneHistoryTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertEqual(_pattern_label(entry(ids), level), expected)
 
-    def test_cli_history_argument_reaches_actual_runner_composition(self) -> None:
+    def test_cli_private_artifact_arguments_reach_actual_runner_composition(self) -> None:
         from integrations.botzone import __main__ as entry
 
         with TemporaryDirectory() as root:
@@ -290,8 +291,13 @@ class BotzoneHistoryTests(unittest.TestCase):
                 raise ValueError("synthetic")
 
             with patch.object(entry, "build_foreground_runner", side_effect=fail_after_capture):
-                self.assertEqual(entry.main(["--url", "https://example.invalid", "--state-dir", str(state), "--history-file", str(Path(root) / "history.txt")], environ={}), 2)
+                self.assertEqual(entry.main([
+                    "--url", "https://example.invalid", "--state-dir", str(state),
+                    "--history-file", str(Path(root) / "history.txt"),
+                    "--decision-trace-file", str(Path(root) / "trace.json"),
+                ], environ={}), 2)
             self.assertEqual(received["history_file"], Path(root) / "history.txt")
+            self.assertEqual(received["decision_trace_file"], Path(root) / "trace.json")
 
     def test_cli_rejects_a_history_file_inside_the_repository(self) -> None:
         from integrations.botzone import __main__ as entry
@@ -309,6 +315,62 @@ class BotzoneHistoryTests(unittest.TestCase):
             self.assertEqual(entry.main(["--url", "https://example.invalid", "--state-dir", str(state), "--history-file", str(state / "history.txt")], environ={}), 2)
             self.assertEqual(entry.main(["--url", "https://example.invalid", "--state-dir", str(base / "other-state"), "--audit-file", str(base / "same.txt"), "--history-file", str(base / "same.txt")], environ={}), 2)
 
+    def test_cli_rejects_relative_or_conflicting_decision_trace_paths(self) -> None:
+        from integrations.botzone import __main__ as entry
+
+        with TemporaryDirectory() as root:
+            base = Path(root)
+            state = base / "state"
+            common = ["--url", "https://example.invalid", "--state-dir", str(state)]
+            with patch.object(entry, "build_foreground_runner") as build:
+                self.assertEqual(entry.main([*common, "--decision-trace-file", "relative.json"], environ={}), 2)
+            build.assert_not_called()
+            self.assertEqual(entry.main([*common, "--decision-trace-file", str(state / "trace.json")], environ={}), 2)
+            self.assertEqual(entry.main([
+                *common, "--history-file", str(base / "same.json"),
+                "--decision-trace-file", str(base / "same.json"),
+            ], environ={}), 2)
+
+    def test_cli_history_only_keeps_external_relative_path_compatibility(self) -> None:
+        from integrations.botzone import __main__ as entry
+
+        with TemporaryDirectory() as root:
+            base = Path(root)
+            received: dict[str, object] = {}
+
+            def fail_after_capture(*_: object, **kwargs: object) -> object:
+                received.update(kwargs)
+                raise ValueError("synthetic")
+
+            previous = Path.cwd()
+            try:
+                os.chdir(base)
+                with patch.object(entry, "build_foreground_runner", side_effect=fail_after_capture) as build:
+                    self.assertEqual(entry.main([
+                        "--url", "https://example.invalid", "--state-dir", str(base / "state"),
+                        "--history-file", "history.txt",
+                    ], environ={}), 2)
+                build.assert_called_once()
+            finally:
+                os.chdir(previous)
+            self.assertEqual(received["history_file"], base / "history.txt")
+
+    def test_cli_rejects_existing_decision_trace_before_runner_composition(self) -> None:
+        from integrations.botzone import __main__ as entry
+
+        with TemporaryDirectory() as root:
+            base = Path(root)
+            trace = base / "trace.json"
+            original = b'{"existing":"trace"}\n'
+            trace.write_bytes(original)
+            with patch.object(entry, "build_foreground_runner") as build:
+                self.assertEqual(entry.main([
+                    "--url", "https://example.invalid", "--state-dir", str(base / "state"),
+                    "--decision-trace-file", str(trace),
+                ], environ={}), 2)
+            build.assert_not_called()
+            self.assertEqual(trace.read_bytes(), original)
+
     def test_cli_summary_exposes_fixed_history_status(self) -> None:
         from integrations.botzone import __main__ as entry
 
@@ -316,13 +378,13 @@ class BotzoneHistoryTests(unittest.TestCase):
             run_token = None
 
             def run(self, **_: object) -> object:
-                return type("Summary", (), {"cycles": 3, "finished_seen": 1, "history_status": "failed", "stopped": "finished_target", "finished_qualified": 1})()
+                return type("Summary", (), {"cycles": 3, "finished_seen": 1, "history_status": "failed", "decision_trace_status": "ok", "stopped": "finished_target", "finished_qualified": 1})()
 
         with TemporaryDirectory() as root:
             output = StringIO()
             with patch.object(entry, "build_foreground_runner", return_value=_Runner()), redirect_stdout(output):
                 self.assertEqual(entry.main(["--url", "https://example.invalid", "--state-dir", str(Path(root) / "state")], environ={}), 0)
-        self.assertEqual(output.getvalue(), "connector_finished cycles=3 finished=1 history=failed exit=0\n")
+        self.assertEqual(output.getvalue(), "connector_finished cycles=3 finished=1 history=failed decision_trace=ok exit=0\n")
 
 
 if __name__ == "__main__":

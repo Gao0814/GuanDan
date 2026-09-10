@@ -23,16 +23,60 @@ _RUNTIME_PREFLIGHT_OUTPUTS = {
 }
 
 
-def _history_path(value: str | None, *, state_directory: Path, audit_file: str | None) -> Path | None:
-    """Keep the opt-in private-hand artifact outside the source checkout."""
+def _paths_overlap(first: Path, second: Path | None) -> bool:
+    return second is not None and (
+        first == second or first.is_relative_to(second) or second.is_relative_to(first)
+    )
+
+
+def _history_path(
+    value: str | None,
+    *,
+    state_directory: Path,
+    audit_file: str | None,
+    other_file: Path | None = None,
+) -> Path | None:
+    """Preserve the established direct-CLI history path interpretation."""
 
     if value is None:
         return None
     target = Path(value).resolve()
     project_root = Path(__file__).resolve().parents[2]
     audit_target = Path(audit_file).resolve() if audit_file is not None else None
-    if target.is_relative_to(project_root) or target.is_relative_to(state_directory.resolve()) or target == audit_target:
+    if (
+        target.is_relative_to(project_root)
+        or target.is_relative_to(state_directory.resolve())
+        or target == audit_target
+        or _paths_overlap(target, other_file)
+    ):
         raise ValueError("invalid_history_path")
+    return target
+
+
+def _decision_trace_path(
+    value: str | None,
+    *,
+    state_directory: Path,
+    audit_file: str | None,
+    history_file: Path | None,
+) -> Path | None:
+    """Require the new private trace artifact to use an explicit external path."""
+
+    if value is None:
+        return None
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        raise ValueError("invalid_decision_trace_path")
+    target = candidate.resolve()
+    project_root = Path(__file__).resolve().parents[2]
+    audit_target = Path(audit_file).resolve() if audit_file is not None else None
+    if (
+        target.is_relative_to(project_root)
+        or target.is_relative_to(state_directory.resolve())
+        or _paths_overlap(target, audit_target)
+        or _paths_overlap(target, history_file)
+    ):
+        raise ValueError("invalid_decision_trace_path")
     return target
 
 
@@ -67,6 +111,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     parser.add_argument("--stop-after-finished", type=int, default=1)
     parser.add_argument("--audit-file")
     parser.add_argument("--history-file", help="optional UTF-8 connector-observed history artifact")
+    parser.add_argument("--decision-trace-file", help="optional acknowledged-local-decision JSON artifact")
     parser.add_argument("--run-token")
     parser.add_argument("--preflight-only", action="store_true", help="validate configuration and storage without polling")
     arguments = parser.parse_args(argv)
@@ -96,6 +141,14 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             state_directory=config.state_directory,
             audit_file=arguments.audit_file,
         )
+        decision_trace_file = _decision_trace_path(
+            arguments.decision_trace_file,
+            state_directory=config.state_directory,
+            audit_file=arguments.audit_file,
+            history_file=history_file,
+        )
+        if decision_trace_file is not None and decision_trace_file.exists():
+            raise ValueError("decision_trace_output_exists")
         runner = build_foreground_runner(
             config,
             LocalAIHttpTransport(
@@ -107,6 +160,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             prepared_agent_factory=prepared_agent_factory,
             run_token=run_token,
             history_file=history_file,
+            decision_trace_file=decision_trace_file,
         )
         summary = runner.run(
             max_cycles=arguments.max_cycles,
@@ -123,7 +177,8 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
         return 2
     print(
         f"connector_finished cycles={summary.cycles} finished={summary.finished_seen} "
-        f"history={getattr(summary, 'history_status', 'disabled')} exit={exit_code}"
+        f"history={getattr(summary, 'history_status', 'disabled')} "
+        f"decision_trace={getattr(summary, 'decision_trace_status', 'disabled')} exit={exit_code}"
     )
     return exit_code
 
