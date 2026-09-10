@@ -6,14 +6,14 @@
 
 1. 当前主线是算法优化，不恢复8对/16局或百局capacity，也不扩展到其他级牌、贡还或多局升级；固定profile为四人、级牌2、无需进贡的单局。
 2. 已完成并提交五项窄策略修正：默认RuleBased的对手压力保牌、队友控桌保炸弹，DeepSeek的危险对手pass阻断、1–4张自由出牌短序列规划和队友小王后保留大王。最新算法检查点为 `295b9b5`。
-3. seed `47002` 已按“先确认页面已连接，再提示seed和建桌”完成真实对局，但旧history不能唯一重建全部canonical决策输入；现有evidence不足以支持新的算法修改。
+3. seed `47002` 已按“先确认页面已连接，再提示seed和建桌”完成真实对局，但旧history不能唯一重建全部canonical决策输入；该局本身不足以支持新的算法修改。
 4. 默认关闭、Header ack后写入的connector decision trace已实现并提交为 `045fb75`。规划Codex独立复现历史反例并通过Botzone定向88项、主规则39项和全量707项。
-5. seed `47002` 的五份已审计evidence已于2026-09-10逐项移入Windows回收站。规划Codex独立确认固定workspace精确只剩空的普通目录 `audit/`、`state/`、`streams/`，Git clean且无connector。
-6. 下一任务只运行一局人工Botzone `deepseek` 采样，固定seed `47003`、玩家1、级牌2、无需进贡，同时显式写入history和decision trace。选择DeepSeek是为了覆盖当前模型成功动作及三项守卫的真实决策链，不是做RuleBased/DeepSeek胜率对比。
-7. 连接、人工建桌、配置核对、持续监测和evidence验收已沉淀到项目Skill `botzone-manual-live`；下一执行Prompt只提供本局输入和额外约束。workspace回收另由 `botzone-workspace-recycle` 处理，继续保持清理与live分离。
-8. 该局的完成目标是获得可归属的history、decision trace、audit、state和streams。条件守卫未触发、输赢或可恢复的非致命transport错误都不是重开理由；完成后保留现场，由规划Codex复审后再决定是否存在新的高置信度策略缺陷。
+5. seed `47002` 的五份已审计evidence已于2026-09-10逐项移入Windows回收站。随后执行的seed `47003`单局DeepSeek采样已形成history、decision trace、audit、finished tombstone和streams，现场保留且无connector残留。
+6. seed `47003` 的connector/ACK trace闭环有效，但平台终局分类为`platform_error`，不能作为正常胜负结果。10条decision trace与audit、binding、selected action和provenance守恒，仍可用于逐决策诊断。
+7. 独立复审在第9个ACK决策发现可复现的不一致：严格公开条件满足既有队友特殊资源保留策略，默认RuleBased选择原始pass，但DeepSeek成功模型路径接受特殊牌压制并记为`model`。这不是从输赢推断出的缺陷。
+8. 下一任务仅离线修复这一条DeepSeek后置守卫，复用共享`teammate_pressure_pass_id()`与现有`teammate_control_block`记账；不运行更多live、容量评测或真实模型，不扩展其他策略。
 
-牌谱和decision trace基础设施已经足够支持下一轮诊断。此时继续造新规则会缺少决策点证据，因此先采集一局完整公开输入、原始legal actions、实际selected action和source；不为追样本重复建桌，也不把单局结果直接当作胜率结论。
+牌谱和decision trace基础设施已提供第一个可完整复现的真实决策缺陷。当前优先修复已证明的Agent路径不一致；平台`platform_error`只排除胜负用途，不否定已通过ACK与provenance校验的逐决策证据。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
@@ -2009,4 +2009,11 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 清理执行前Git clean、唯一固定workspace、目录非链接、精确inventory、五项bytes/SHA-256和无connector门槛全部通过。
 - seed `47002` 的audit、history、唯一state、stdout和stderr已逐项移入Windows回收站；未永久删除、未清空回收站。
 - 规划Codex独立复核最终workspace精确只含空的普通目录 `audit/`、`state/`、`streams/`，`D:\VsCodeProject`下没有第二个 `Botzone*` 顶层目录，项目connector为0，Git仍clean。
-- 下一任务为单局 `deepseek` decision-trace采样，seed `47003`只在页面确认已连接后提示。它不执行容量评测、不修改代码、不清理现场。
+- 随后的单局 `deepseek` decision-trace采样按该边界执行；seed `47003`只在页面确认已连接后提示，未执行容量评测、修改代码或清理现场。
+
+### seed 47003 decision trace 形成首个可复现策略缺陷
+
+- connector以exit 0 / `finished_target`结束，11/11/11 request/response/Header、qualified finish=1、transport failure=0；history与decision trace均为`ok`，10条ACK决策和audit source聚合一致。
+- 平台终局分类为`platform_error`，不能用于胜负判断；ACK、binding、selected-action和provenance验证仍允许逐决策诊断。
+- 第9个决策在既有共享策略严格判定应保留队友控桌资源时，由DeepSeek成功模型路径选择特殊牌压制。当前代码的假client最小复现保持`model` source；默认RuleBased选择原始pass。
+- 下一步只修复这条后置守卫绕过并复用现有`teammate_control_block`记账；不重开live，不新增无证据策略。

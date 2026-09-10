@@ -19,12 +19,14 @@
 - table-action契约已正确恢复并加固：engine/state零差异，engine与Botzone继续输出 `action_id=None`；共享validator区分legal action严格整数ID与table action精确None sentinel，同时要求constraint为非空跟牌字符串且等于table display。
 - 规划Codex独立复跑六个最小契约案例、相关65项、主规则39项和全量689项通过，实现检查点为 `295b9b5`；当前范围内无已知剩余风险。
 - seed `47002` 的只读策略审计已经完成：16次本家决策中14次可按公开语义重建，9个pass点均为仅pass合法；两个可精确比较的自由出牌点，冻结基线的残余最少分组数与全体合法动作最优值相同。第1、6次决策因牌谱未保存完整canonical声明/载体细节，不能唯一还原原始动作。
-- 当前结论为：**现有evidence不足以支持下一项算法修改。** 不把静态排序、单局输赢或不可唯一还原的动作强行定性为新缺陷。
+- seed `47002` 审计当时的结论为：**该局evidence不足以支持下一项算法修改。** 不把静态排序、单局输赢或不可唯一还原的动作强行定性为新缺陷；该历史结论已被后续更完整的seed `47003` decision trace推进，而不是被追溯改判。
 - 默认关闭的connector decision trace已经完成并提交：只在Header ack后记录本家当时的公开observation、逐字段一致的原始canonical legal actions、最终原始action ID/action及低基数source；fresh输出、随机持久binding、递归隔离、重发/重启/finished与旁路失败边界均有测试。
 - 规划Codex独立复现全部五个历史反例已转绿，并运行定向88项、主规则39项、全量707项通过；实现检查点为 `045fb75`。history-only direct CLI旧相对路径语义已恢复，decision trace仍要求绝对仓库外新文件。当前范围内无已知剩余风险。
 - seed `47002` 的五份已审计evidence已经逐项移入Windows回收站；规划Codex独立复核固定workspace精确只剩空的普通目录 `audit/`、`state/`、`streams/`，Git clean且无connector。未永久删除或清空回收站。
-- 下一步只运行一局人工 `deepseek` 采样：seed `47003`、玩家1、级牌2、无需进贡，同时写history与decision trace。必须先启动唯一connector并确认页面“已连接”，之后才提示seed；完成后保留全部evidence供策略复审，不因守卫未触发、输赢或非致命HTTP错误重开。
-- 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留本次seed、Agent、预算、artifact和特殊验收，避免继续复制整套流程。
+- seed `47003` 的人工 `deepseek` 采样已经完成：11/11/11 request/response/Header、qualified finish=1、10条ACK后decision trace与audit守恒、history/trace均为`ok`，无transport failure；平台终局分类为`platform_error`，因此不作为正常胜负结果。现场完整保留且未重开。
+- 规划Codex独立验证该局第9个ACK决策：队友领牌、pass合法、所有非pass均为特殊牌、不能立即出完且无对手残局压力；共享`teammate_pressure_pass_id()`与当前默认RuleBased均选择原始pass，而DeepSeek成功模型路径稳定返回模型选择的特殊牌并记为`model`。这是当前代码可复现的后置守卫绕过，不依赖平台胜负。
+- 下一步只离线修复这条DeepSeek队友资源保留绕过，复用共享策略与现有`teammate_control_block`低基数source；不运行新live、容量评测或真实模型，不从本局`platform_error`诊断算法胜负。
+- 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审
 

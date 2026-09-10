@@ -52,6 +52,8 @@ Use the current schemas rather than historical assumptions. At minimum verify:
 
 A nonfatal transport error that did not prevent completion or break delivery/ack conservation is a recorded transport observation, not an automatic reason to discard or replay the game. Preserve conservative history completeness markers when the connector did not observe the terminal tail.
 
+Keep platform outcome validity separate from connector and decision-evidence validity. A qualified finish classified as `platform_error` is not a normal game result and cannot support win/loss claims, but acknowledged decision trace entries remain usable for per-decision diagnosis when their binding, sequence, selected-action, provenance, and audit conservation checks all pass.
+
 ## Report
 
 Report the actual stage reached, ordering of connection/seed/config/start, process and aggregate counts, evidence status/inventory, Git status, and only genuine in-scope risks. Do not print private artifact bodies or sensitive identifiers. Return the untouched evidence to the planning Codex for strategy review.

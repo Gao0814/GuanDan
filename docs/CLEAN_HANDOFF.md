@@ -97,9 +97,11 @@ Botzone local-AI endpoint
 
 connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评测、Botzone显式 `conditional_pressure_pass` wiring、trial validator、默认RuleBased两类保牌、DeepSeek危险对手pass阻断、自由出牌小手牌短序列守卫和队友小王后大王保留均已完成。DeepSeek失败fallback仍使用冻结旧静态基线。seed `47002`已完成真实对局但含2次HTTP error，真实条件化pass为0；其后只读策略审计没有得到新的高置信度缺陷。
 
-`docs/NEXT_PROMPT.md` 当前只包含seed `47002`旧evidence的独立回收Prompt。decision trace实现已经完成验收；清理只使用Windows回收站式精确单文件操作，不运行Botzone/网络/模型/preflight/test或live。
+seed `47003` 的单局DeepSeek采样已经完成connector与ACK trace闭环：11/11/11 request/response/Header、qualified finish=1、10条decision trace与audit守恒、history/trace均为`ok`，无transport failure。平台终局分类为`platform_error`，所以不能作为正常胜负结果；它不否定已通过binding、selected-action、ACK和provenance校验的逐决策证据。
 
-L5-A4h11a partial manifest、seed `45001` evidence与seed `47001` prestart evidence均已移入Windows回收站。seed `47002`当前evidence完整保留在固定workspace，等待后续清理；无残留connector。
+规划Codex独立复现第9个ACK决策：队友领牌、pass合法、全部非pass均为特殊牌、本家不能立即出完且无对手残局压力；共享`teammate_pressure_pass_id()`和当前默认RuleBased均选择原始pass，而当前DeepSeek成功模型路径稳定返回模型选择的特殊牌并保持`model` source。`docs/NEXT_PROMPT.md` 只包含这一后置守卫绕过的离线修复Prompt；下一任务不运行Botzone、网络、真实模型或live，也不读取或清理真实workspace。
+
+L5-A4h11a partial manifest、seed `45001` evidence、seed `47001` prestart evidence与seed `47002` evidence均已移入Windows回收站。seed `47003` evidence完整保留在固定workspace；无残留connector。
 
 seed `45001` 的普通人工 RuleBased history smoke 已完成并通过独立复核：15/15/15 请求闭环、qualified finished 1、14 次 rule primary、零 model/fallback、exit 0、`history=ok`，stderr 空。最后不完整观测段的显示语义与标题格式均已修复，并经16/54/643项独立复跑通过。
 
@@ -240,7 +242,7 @@ D:\VsCodeProject\BotzoneVerifiedUiCapacity-43001-43002
 - `tests/test_botzone_policy_benchmark.py`：当前 benchmark 的最直接契约测试。
 - `tests/test_botzone_connector.py`、`test_botzone_session.py`、`test_botzone_play_adapter.py`、`test_botzone_deepseek_agent_runtime.py`：connector 主链测试。
 - `config.py`：DeepSeek 配置和实际 dotenv 加载行为。
-- 仓库外运行目录：当前唯一顶层目录是 `D:\VsCodeProject\BotzoneWorkspace`；它是普通非链接目录，递归精确只含空的普通目录 `audit/`、`state/`、`streams/`。seed `47002`的audit、history、唯一v4 tombstone、stdout和stderr已在完整审计后逐项移入Windows回收站；旧21项、旧partial manifest、seed `45001` evidence与seed `47001` prestart evidence也已移入Windows回收站。
+- 仓库外运行目录：当前唯一顶层目录是 `D:\VsCodeProject\BotzoneWorkspace`；它是普通非链接目录，包含seed `47003`保留的audit、history、decision trace、唯一v4 finished tombstone、stdout和stderr，以及三个普通目录`audit/`、`state/`、`streams/`。这些evidence已完成低敏hash、结构、ACK计数和provenance复核，尚未清理。
 
 ## 11. Tests and Reproduction
 
@@ -259,7 +261,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测或已知decision-trace验收缺口。seed `47002`旧evidence已经回收且空workspace已独立复核；下一任务按 `docs/NEXT_PROMPT.md` 运行一局携带history与decision trace的人工 `deepseek` 采样，不运行容量评测或修改仓库实现。
+当前没有失败的本地单测或decision-trace结构验收缺口。seed `47003` 已提供一个完整公开、ACK确认的策略复现：共享队友特殊资源保留策略与默认RuleBased选择pass，而DeepSeek成功模型路径接受特殊牌并保持`model` source。下一任务按 `docs/NEXT_PROMPT.md` 只修复这一后置守卫绕过。
 
 ## 12. Working Tree Status
 
@@ -285,4 +287,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按 `docs/NEXT_PROMPT.md` 的本局参数和 `.agents/skills/botzone-manual-live/SKILL.md` 的稳定流程执行一局人工Botzone `deepseek` 采样；同时写入history与decision trace，完成后保留全部evidence供规划复审。不得扩展为多局/capacity，不得在live任务中清理workspace或修改仓库。
+按 `docs/NEXT_PROMPT.md` 离线修复DeepSeek成功模型动作对既有队友特殊资源保留策略的绕过。使用脱敏合成fixture，不读取真实workspace；不得扩展为新live、多局/capacity、真实模型调用或无证据的新策略。
