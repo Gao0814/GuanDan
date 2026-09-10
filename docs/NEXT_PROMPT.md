@@ -1,94 +1,124 @@
 # 给 Coding Codex 的下一任务 Prompt
 
-你负责执行一次独立、可恢复的固定 Botzone workspace 旧 evidence 清理。不要修改仓库文件，不要运行测试、preflight、connector、Botzone、Edge、网络、Agent或模型，不要创建Git commit。清理完成后停止，不要在同一任务中开始下一局live。
+你负责执行一次人工Botzone单局 `deepseek` 决策证据采样。你同时负责命令执行、持续监测和与项目所有者交互，但本任务不修改仓库代码、测试、配置或文档，不创建Git commit，不进行多局或容量实验。
 
 ## 【项目长期约束】
 
-开始前完整读取并遵守仓库根目录及适用范围内的 `AGENTS.md`，并阅读 `docs/CLEAN_HANDOFF.md`。项目所有者已经在 `AGENTS.md` 中长期授权：规划Codex完成上一轮审计并写入文档后，可清理 `D:\VsCodeProject\BotzoneWorkspace` 内已核对的旧artifact，无需再次请求授权。
+开始前完整读取并遵守仓库根目录及适用范围内的 `AGENTS.md`，并阅读 `docs/CLEAN_HANDOFF.md`。以当前仓库、Git状态和实际只读验证为准，不把历史报告自动当作现场事实。
 
-本任务只允许Windows回收站式可恢复操作；不得永久删除，不得清空回收站，不得使用递归删除、通配符或扩大到其他目录。全部检查和回收必须在同一个PowerShell控制面内完成，不跨shell拼接路径。
+本项目当前Botzone固定profile是四人、单局、级牌 `2`、无需进贡。跨级牌、贡还、多局升级和百局/16局capacity不属于本任务。网页建桌、填写配置和点击开始均由项目所有者手工完成；你只做best-effort只读监督，不能替项目所有者点击或输入。
 
 ## 【当前项目状态】
 
-decision trace实现已由规划Codex独立复核并提交为：
-
-```text
-045fb75 feat: record acknowledged Botzone decisions
-```
-
-独立验证为Botzone定向88项、主规则39项、全量707项通过。下一次live需要新的 `history.txt` 与 `decision-trace.json`，因此必须先单独回收seed `47002`的旧evidence。
-
-规划Codex在2026-09-10只读复核的预期现场：
-
-- `D:\VsCodeProject` 下唯一以 `Botzone` 开头的直属目录是普通非链接目录 `D:\VsCodeProject\BotzoneWorkspace`；
-- workspace顶层精确包含普通非链接目录 `audit`、`state`、`streams`，以及文件 `history.txt`；
-- 五个旧文件为：
-
-| 相对路径 | bytes | SHA-256 |
-| --- | ---: | --- |
-| `audit\completion-audit.json` | 818 | `068ff687ce7d7a1d02114637ba0d4bbe1875493f35dd46799b8ad0bc5a27b708` |
-| `history.txt` | 8146 | `7d786b1640bfa8d0d747a74fb01eafdee19ff6e0516ee60167757e00ea5b94d0` |
-| `state\fa8dbb17486ade96de29840b182b3c8cc8abfb7020fbdb816ba0ccbcbf60cf26.json` | 115 | `5313a2007ae344139770c86ca978e4c9b6aabd27c2f3c8dea3b750ec3f5df309` |
-| `streams\stderr.txt` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `streams\stdout.txt` | 58 | `e990db21b8510eb12cecb343c57155c4fa68cbb4ac07c42143ee226a5a2c96e6` |
-
-这些文件已经完成结果与策略审计，可以回收。目录 `audit/`、`state/`、`streams/` 必须保留并最终为空。
+- 已验收的acknowledged decision trace实现检查点为 `045fb75 feat: record acknowledged Botzone decisions`；规划Codex独立运行Botzone定向88项、主规则39项、全量707项通过。
+- decision trace默认关闭；显式启用后只在Header ack后保存本家当时的完整公开observation、逐字段一致的原始canonical legal actions、最终原始action ID/action与低基数source。
+- seed `47002`旧evidence已经审计并移入Windows回收站。2026-09-10规划Codex独立复核：`D:\VsCodeProject`下唯一 `Botzone*` 顶层目录是普通非链接目录 `D:\VsCodeProject\BotzoneWorkspace`；其递归内容精确为三个空的普通非链接目录 `audit/`、`state/`、`streams/`；项目connector进程为0；Git clean。
+- 下一局预留seed为 `47003`，但在页面明确确认本地AI“已连接”之前，不得向项目所有者提示该seed，也不得让项目所有者创建目标桌。seed从你首次把它发给项目所有者时才视为已使用。
 
 ## 【本次任务目标】
 
-在全部只读门槛精确匹配后，把上述五个文件逐个移入Windows回收站，并验证workspace最终精确只剩三个空目录：
+运行唯一一局 `deepseek` 人工Botzone对局，同时生成并保留：
 
 ```text
-D:\VsCodeProject\BotzoneWorkspace\audit
-D:\VsCodeProject\BotzoneWorkspace\state
-D:\VsCodeProject\BotzoneWorkspace\streams
+D:\VsCodeProject\BotzoneWorkspace\audit\completion-audit.json
+D:\VsCodeProject\BotzoneWorkspace\history.txt
+D:\VsCodeProject\BotzoneWorkspace\decision-trace.json
+D:\VsCodeProject\BotzoneWorkspace\state\<唯一session或finished tombstone>.json
+D:\VsCodeProject\BotzoneWorkspace\streams\stdout.txt
+D:\VsCodeProject\BotzoneWorkspace\streams\stderr.txt
 ```
 
-## 【执行前门槛】
+本局用于取得可重建的真实决策点，不用于证明DeepSeek胜率、与RuleBased比较或追求某个守卫必须触发。只运行一桌；无论输赢、source分布或条件守卫是否触发，都不得为追样本创建第二桌。
 
-在任何回收动作前一次性验证：
+## 【执行前检查范围】
 
-1. 仓库 `git status --short` 为空，并记录当前HEAD；如果不为空，停止且不改任何文件。
-2. `D:\VsCodeProject` 下以 `Botzone` 开头的直属目录集合精确为 `BotzoneWorkspace`。
-3. workspace根及三个子目录都是普通目录、非符号链接/联接点/reparse point。
-4. workspace递归inventory除三个目录和表中五个文件外没有其他项目。
-5. 五个文件均为普通非链接文件，bytes与完整SHA-256逐项匹配。
-6. 没有正在运行且可安全归属于本项目Botzone connector的进程；检查时不得输出命令行、URL、token或其他敏感参数。
+在任何写入、preflight或connector启动前：
 
-任一门槛不匹配都必须停止，实际回收数为0；不要自行修复inventory、删除未知项或请求新的授权。
+1. 记录当前HEAD并确认 `git status --short` 为空；若不为空，停止且不修改任何内容。
+2. 确认 `D:\VsCodeProject` 下以 `Botzone` 开头的直属目录集合精确为 `BotzoneWorkspace`。
+3. 确认workspace根及 `audit/`、`state/`、`streams/` 均为普通非链接目录，递归inventory精确只有这三个空目录。
+4. 确认没有正在运行且可安全归属于本项目Botzone connector的进程；不得输出进程命令行、URL、token或敏感参数。
+5. 只读确认当前CLI支持 `--agent deepseek`、`--history-file`、`--decision-trace-file`、`--run-token`、`--audit-file` 和 `--preflight-only`。不要重复运行单元测试。
 
-## 【回收方式与安全边界】
+若纯本地命令解析、路径、随机token生成、PowerShell参数或捕获方式有错误，在workspace尚未写入、connector未启动、页面未建桌且seed未提示的情况下，它只是可原地修正的qualification问题；允许在系统临时scratch中修正并重试，不得直接结束任务或把它升级为正式实验失败。
 
-- 使用Windows回收站API，例如 `Microsoft.VisualBasic.FileIO.FileSystem::DeleteFile(..., SendToRecycleBin)` 的精确单文件调用。
-- 对五个已验证绝对路径逐个处理；不得使用 `Remove-Item`、`rm`、`del`、递归参数、目录删除或通配符。
-- 不得删除或移动workspace根及 `audit/`、`state/`、`streams/`。
-- 如果某个文件回收失败，立即停止后续回收，报告已完成与未完成的精确低敏清单；不要重试其他删除机制。
-- 不得清空回收站。
+## 【固定运行配置】
+
+- Agent：精确为 `deepseek`。
+- 本家：玩家1 / seat 0。
+- 当前级牌：`2`。
+- 需要进贡：`否`。
+- 单局seed：`47003`，只能在页面连接准入通过后向项目所有者提示一次。
+- state目录：`D:\VsCodeProject\BotzoneWorkspace\state`。
+- audit：`D:\VsCodeProject\BotzoneWorkspace\audit\completion-audit.json`。
+- history：`D:\VsCodeProject\BotzoneWorkspace\history.txt`。
+- decision trace：`D:\VsCodeProject\BotzoneWorkspace\decision-trace.json`。
+- stdout/stderr：固定 `streams` 目录下的两个文件。
+- `timeout-seconds=120`、`max-cycles=100`、`max-wall-seconds=3600`、`stop-after-finished=1`。
+- 为本局生成一个新的随机32位小写十六进制run token，只传入进程；不得在对话、日志摘要或报告中输出token。
+
+不要人工读取或输出 `.env`、连接URL、API key、Cookie或Header；允许项目现有配置加载路径在preflight/live中正常使用这些配置。
+
+## 【执行顺序】
+
+1. 先用项目 `.venv\Scripts\python.exe` 执行一次 `--agent deepseek --preflight-only` 的零网络组合预检。要求exit 0、stdout唯一有效行 `preflight_ready`、stderr为空、state仍为空。preflight失败时先按固定低敏分类诊断；如果是无外部副作用的编排错误，允许原地修正。不得调用DeepSeek模型或Botzone poll来完成preflight。
+2. 用 `integrations.botzone.live_launcher` 和上述固定参数启动唯一、持续的前台connector，取得可继续等待/轮询的进程session。不得仅启动一个会被工具提前终止的临时子进程。
+3. connector启动后，要求项目所有者刷新/检查Botzone本地AI页面。若你能可靠读取已打开的Edge页面，只做只读核对；不能可靠读取时，等待项目所有者明确回复“已连接”。connector进程存活、idle timeout或尚无state都不能替代页面“已连接”证据。
+4. 页面仍显示“未连接”时，保持connector运行并协助诊断连接；不要提示seed、不要让项目所有者建桌、不要提前结束任务。若必须停止connector修正连接配置，只能在0 request、0 state、无history/trace、未提示seed、未建桌的条件下停止并清理由本次启动产生的空audit/streams，然后原地重启；这不是live失败。
+5. 页面确认“已连接”后，才向项目所有者明确发送并复述：seed `47003`、玩家1、级牌 `2`、需要进贡 `否`、Agent为 `deepseek`。请项目所有者手工创建唯一桌、完成配置并停在点击开始前。发送该消息后seed视为已使用，不得复用。
+6. 对配置进行best-effort只读核对。若页面明确显示seed、seat、级牌或贡牌配置不匹配，指出具体字段并拒绝接受“已开始”，等待项目所有者修正。若页面无法可靠读取，接受项目所有者明确的“配置完成/准备好了”作为fallback，不得因监督失败终止任务。
+7. 配置确认后，再次复述四项配置并明确提示项目所有者只点击一次“开始游戏！”。随后立即监测connector进程、首个request、state、history和decision trace；一旦这些证据表明对局已经开始，不再要求项目所有者额外回复“已开始”。
+8. 对局进行中持续等待并做低敏监督。每隔不超过60秒给项目所有者简短状态；不要输出本家手牌、完整observation/legal actions、URL、token、模型文本或trace正文。不要因为暂时没有新请求、页面只读失败或项目所有者没有回复就直接结束。
+9. 等待唯一对局到qualified finished、明确不可恢复的connector退出/协议失败，或3600秒上限。结束后不得清理、改写、移动或回收任何evidence，不得启动第二个connector或第二桌。
+
+## 【重要不变量】
+
+- live期间仓库冻结；发现代码缺陷只保留evidence并报告，不能现场改代码后继续同一局。
+- 同时最多一个项目connector和一个目标桌。
+- Agent只能从原始canonical legal actions返回合法action ID；不得绕过engine或手工替换动作。
+- pending未ack的本家动作不得进入decision trace；重发、重启、重复ack/replay不得形成重复decision。
+- history和decision trace是私有仓库外evidence。普通输出与audit不得包含本家手牌、完整observation/legal actions、trace绑定ID、match ID、URL、token、Header、Cookie、密钥、prompt、模型响应/reasoning、异常正文或自由文本。
+- 固定级牌2、无贡、单局是已接受范围，不得列为剩余风险。
+- 可恢复的非致命 `http_error` 若未阻止最终完成或破坏request/response/Header及ack守恒，只记录为传输观察，不得把整局证据自动作废或重开。
 
 ## 【完成后验证】
 
-1. 五个旧文件原路径全部不存在。
-2. workspace递归inventory精确为三个普通非链接空目录。
-3. `D:\VsCodeProject` 下仍只有一个 `Botzone*`直属目录。
-4. Git HEAD与完整 `git status --short` 前后一致且为空。
-5. 没有启动connector、浏览器、网络、preflight、Agent/model或测试。
+对局结束后仅做低敏一致性检查，不输出私有文件正文：
+
+1. connector已退出且无残留项目connector；记录exit code与停止原因。
+2. audit能解析，`agent_mode=deepseek`，run归属与唯一state/tombstone一致；request、response、Header、finished、transport、model/source/fallback计数满足现有schema守恒。
+3. `history.txt` 存在、状态为 `history=ok`、UTF-8/LF，包含标题、本家座位/级牌、已观察步骤和终局区；如尾部不完整，保留 `terminal_tail_may_be_unobserved`，不得声称完整裁判牌谱。
+4. `decision-trace.json` 存在、状态为 `decision_trace=ok`；只报告schema/version、decision数量、source聚合、与audit决策数是否一致，以及顺序号/action ID/selected action映射是否逐项有效。不得输出binding或任何决策正文。
+5. 五类目标evidence路径均保留；报告每个文件的相对路径、bytes和SHA-256，但state文件名与任何敏感值应脱敏。
+6. Git HEAD与 `git status --short` 前后一致且为空；未修改仓库。
+
+如果对局正常完成且上述证据守恒，固定判定为：
+
+```text
+botzone_deepseek_decision_trace_sample_completed
+```
+
+如果已开始但未正常完成，使用最接近实际边界的低敏判定，保留全部evidence并停止；不要重试。若页面一直未连接且seed从未提示，报告pre-seed连接阻塞并继续等待项目所有者指示，不得声称seed已消耗或创建目标桌。
 
 ## 【完成标准】
 
-- 五个精确旧文件均进入Windows回收站，未永久删除；
-- 三个固定空目录保留；
-- 没有inventory drift、仓库变化或其他运行副作用；
-- 本任务在清理报告后结束，不分配seed、不启动下一局。
+- 最多一局、一个connector、一个目标桌；
+- 页面已连接后才提示并使用seed `47003`；
+- 对局完成时history与decision trace均为 `ok`，audit/state/streams归属与计数守恒；
+- 未运行容量评测、未修改仓库、未清理现场；
+- 一局结果只作为后续策略诊断证据，不直接升级为胜率结论。
 
 ## 【执行后的报告要求】
 
 最终报告必须包含：
 
-1. 固定判定：成功时使用 `botzone_workspace_seed_47002_evidence_recycled`；
-2. 六项执行前门槛是否全部通过；
-3. 五个回收文件的相对路径、bytes和SHA-256；
-4. 最终workspace精确inventory；
-5. Git HEAD/status前后一致性；
-6. 是否执行永久删除或清空回收站（预期均为否）；
-7. connector、浏览器、网络、preflight、Agent/model和测试调用计数（预期均为0）；
-8. 明确说明下一seed尚未分配，本任务未开始live。
+1. 固定低敏判定与是否完成对局；
+2. preflight、页面连接准入、seed提示、配置核对和开始监测的实际顺序；
+3. connector启动次数、最大并发数、cycles及request/response/Header/finished/transport聚合；
+4. Agent/model attempts/outcomes、fallback和全部低基数decision source计数；
+5. history与decision trace状态、decision数量及其与audit的守恒结果；
+6. evidence相对路径、bytes和SHA-256，不输出私有正文或敏感标识；
+7. Git前后状态、残留connector、是否修改仓库、是否启动第二桌；
+8. 当前范围内真实存在的剩余风险；固定级牌2、无贡、单局不得写成风险。
+
+不要在本任务内分析整局并修改算法。把完整evidence原样保留，交回项目规划Codex做独立复审和下一步规划。

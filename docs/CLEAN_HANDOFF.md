@@ -239,7 +239,7 @@ D:\VsCodeProject\BotzoneVerifiedUiCapacity-43001-43002
 - `tests/test_botzone_policy_benchmark.py`：当前 benchmark 的最直接契约测试。
 - `tests/test_botzone_connector.py`、`test_botzone_session.py`、`test_botzone_play_adapter.py`、`test_botzone_deepseek_agent_runtime.py`：connector 主链测试。
 - `config.py`：DeepSeek 配置和实际 dotenv 加载行为。
-- 仓库外运行目录：当前唯一顶层目录是 `D:\VsCodeProject\BotzoneWorkspace`；它保留seed `47002`的818-byte audit、8146-byte history、唯一115-byte v4 tombstone、58-byte stdout和空stderr。旧21项、旧partial manifest、seed `45001` evidence与seed `47001` prestart evidence均已移入Windows回收站。
+- 仓库外运行目录：当前唯一顶层目录是 `D:\VsCodeProject\BotzoneWorkspace`；它是普通非链接目录，递归精确只含空的普通目录 `audit/`、`state/`、`streams/`。seed `47002`的audit、history、唯一v4 tombstone、stdout和stderr已在完整审计后逐项移入Windows回收站；旧21项、旧partial manifest、seed `45001` evidence与seed `47001` prestart evidence也已移入Windows回收站。
 
 ## 11. Tests and Reproduction
 
@@ -258,7 +258,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测或已知decision-trace验收缺口。下一任务按 `docs/NEXT_PROMPT.md` 回收已完成审计的seed `47002`旧evidence，为后续单局采样准备空workspace；本任务不运行live或修改仓库实现。
+当前没有失败的本地单测或已知decision-trace验收缺口。seed `47002`旧evidence已经回收且空workspace已独立复核；下一任务按 `docs/NEXT_PROMPT.md` 运行一局携带history与decision trace的人工 `deepseek` 采样，不运行容量评测或修改仓库实现。
 
 ## 12. Working Tree Status
 
@@ -284,4 +284,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按 `docs/NEXT_PROMPT.md` 对固定workspace内已完成审计的seed `47002`五个旧artifact执行精确Windows回收站式清理，只保留空的 `audit/`、`state/`、`streams/`。不得永久删除、递归删除、清空回收站、运行live/网络/模型/preflight/test或修改仓库。
+按 `docs/NEXT_PROMPT.md` 执行一局普通人工Botzone `deepseek` 采样：先完成零网络preflight并启动唯一connector，页面确认“已连接”后才提示seed `47003`及玩家1/级牌2/无贡配置；同时写入history与decision trace，完成后保留全部evidence供规划复审。不得扩展为多局/capacity，不得在live任务中清理workspace或修改仓库。

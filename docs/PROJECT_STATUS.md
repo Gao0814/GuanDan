@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：算法优化与可读决策轨迹（2026-09-09）
+## 当前阶段：算法优化与单局决策证据采样（2026-09-10）
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
@@ -22,7 +22,8 @@
 - 当前结论为：**现有evidence不足以支持下一项算法修改。** 不把静态排序、单局输赢或不可唯一还原的动作强行定性为新缺陷。
 - 默认关闭的connector decision trace已经完成并提交：只在Header ack后记录本家当时的公开observation、逐字段一致的原始canonical legal actions、最终原始action ID/action及低基数source；fresh输出、随机持久binding、递归隔离、重发/重启/finished与旁路失败边界均有测试。
 - 规划Codex独立复现全部五个历史反例已转绿，并运行定向88项、主规则39项、全量707项通过；实现检查点为 `045fb75`。history-only direct CLI旧相对路径语义已恢复，decision trace仍要求绝对仓库外新文件。当前范围内无已知剩余风险。
-- 下一步是独立回收已完成审计的seed `47002`旧evidence，只保留固定workspace中的空 `audit/`、`state/`、`streams/` 目录；清理任务不启动live。清理复核后才安排一次携带history与decision trace的人工单局采样，不运行百局容量。
+- seed `47002` 的五份已审计evidence已经逐项移入Windows回收站；规划Codex独立复核固定workspace精确只剩空的普通目录 `audit/`、`state/`、`streams/`，Git clean且无connector。未永久删除或清空回收站。
+- 下一步只运行一局人工 `deepseek` 采样：seed `47003`、玩家1、级牌2、无需进贡，同时写history与decision trace。必须先启动唯一connector并确认页面“已连接”，之后才提示seed；完成后保留全部evidence供策略复审，不因守卫未触发、输赢或非致命HTTP错误重开。
 
 ### Connector-observed 牌谱实现与加固复审
 

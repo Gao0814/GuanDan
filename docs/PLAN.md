@@ -2,28 +2,18 @@
 
 当前进度与风险见 `docs/PROJECT_STATUS.md`。下一步实施任务见 `docs/NEXT_PROMPT.md`。
 
-## 当前优先级（2026-09-07）
+## 当前优先级（2026-09-10）
 
-1. connector 可读牌谱、真实 history smoke 和尾部语义修复均已通过，不再扩张该基础设施或重打当前 live。
-2. history 新标题空格和现有 `45001` 牌谱14次本家决策的只读审计均已完成；相关16/54项与全量643项由规划 Codex 独立通过。
-3. 首个候选机制已经稳定复现：RuleBased 只要存在非 pass 就排除 pass，因此跟随对手且只能用炸弹类资源压制时也无法保留资源；真实两手动作只是线索，不足以单独证明决策错误。
-4. evaluation-only 条件化候选的 history schema 错配已经修复；真实 public API 回归和独立双运行确认 `46000..46199` 产生686次机会、617个 changed pairs，质量指标满足预注册 retain 门槛。
-5. 当前唯一判定为 `retain_conditional_pressure_pass_for_runtime_trial`。它只证明改变单个公开决策点、随后回到 baseline 的本地 rollout proxy 略占优，不等同于整局反复触发收益或 Botzone 胜率。
-6. 条件逻辑已提取为 `agents/` 下唯一 opt-in Agent；新 `46200..46399` 整局 paired trial 400/400局完成，候选 score/名次和为422/1966，baseline 为378/2034，满足 `retain_conditional_pressure_pass_for_botzone_opt_in_smoke`。
-7. Botzone offline wiring 已完成：显式 `conditional_pressure_pass` mode贯通 factory、preflight composition、CLI、launcher、runner、adapter、observability和audit；默认 rule/deepseek不变。
-8. validator遗留的W/D/L互补、rank/diagnostic allowlist、空容量、active/pass关系和单方名次范围已全部补齐；8/28/668项测试及两套固定hash由规划Codex独立通过。
-9. seed `47002` 已按修正时序完成真实对局；非激活runtime路径闭环，但2次 `http_error`阻止严格smoke标签，真实条件化pass为0。下一任务不重打live，也不扩展跨级牌容量。
-10. 当前算法与Botzone profile固定级牌2、无需进贡。已取消13级牌、每级牌百对的错误规划；规则引擎保留级牌/逢人配接口不等于策略阶段必须做跨级牌泛化。
-11. 固定级牌2证据支持的条件化保牌逻辑已合入默认RuleBased；共享判定、冻结旧基线、DeepSeek fallback与evaluation语义均已验证，全量668项通过，实现检查点为 `150006a`。
-12. 同队炸弹互耗已修复：队友领牌且只有炸弹类压制时，默认RuleBased在无立即出完和对手残局压力的场景选择原始pass；全量671项通过，实现检查点为 `5daf326`。
-13. 危险对手阻断已完成：真实绕过路径是DeepSeek模型成功返回合法pass；现在严格公开条件命中时改选冻结selector给出的原始非pass，并以 `danger_opponent_block` 记录为成功模型尝试。全量674项通过，实现检查点为 `fb3d791`。
-14. 自由出牌小手牌短序列守卫已完成：对1–4张公开手牌按carrier多重集计算最少分组，只覆盖严格更差的模型首手；并列和证据不足保持原动作。全量684项通过，实现检查点为 `dc9638c`。
-15. DeepSeek队友小王后保留大王的窄守卫已完成：资源范围不扩展到普通牌，立即出完与危险对手场景保持模型动作；table action继续使用canonical `action_id=None`。相关65项、主规则39项和全量689项通过，实现检查点为 `295b9b5`。
-16. 现有 `record.txt` 高置信度缺陷已全部处理。seed `47002` 的16次 `conditional_rule_based` 决策只读审计也已完成：14次可按公开语义重建，9个pass点均只有pass合法；两个可精确比较的自由出牌点没有严格更优替代。第1、6次缺少足以唯一还原canonical动作的细节，因此不支持新增策略规则。
-17. 显式opt-in的connector决策证据主体已实现，ack持久化、原子JSON、runner/CLI/launcher接线及现有测试成立；但尚未通过规划复审，不能提交或进入live。
-18. 下一步只修复三个实证缺口：fresh CLI必须在runner前拒绝既有trace；跨recorder重启时用持久、非match派生的低敏绑定ID区分同match恢复与第二match；trace必须保存Agent调用前深拷贝的canonical输入，不能被Agent修改共享嵌套对象污染。补齐三种mode source、pass/wildcard精确保留回归后重跑定向与全量。
+1. 当前主线是算法优化，不恢复8对/16局或百局capacity，也不扩展到其他级牌、贡还或多局升级；固定profile为四人、级牌2、无需进贡的单局。
+2. 已完成并提交五项窄策略修正：默认RuleBased的对手压力保牌、队友控桌保炸弹，DeepSeek的危险对手pass阻断、1–4张自由出牌短序列规划和队友小王后保留大王。最新算法检查点为 `295b9b5`。
+3. seed `47002` 已按“先确认页面已连接，再提示seed和建桌”完成真实对局，但旧history不能唯一重建全部canonical决策输入；现有evidence不足以支持新的算法修改。
+4. 默认关闭、Header ack后写入的connector decision trace已实现并提交为 `045fb75`。规划Codex独立复现历史反例并通过Botzone定向88项、主规则39项和全量707项。
+5. seed `47002` 的五份已审计evidence已于2026-09-10逐项移入Windows回收站。规划Codex独立确认固定workspace精确只剩空的普通目录 `audit/`、`state/`、`streams/`，Git clean且无connector。
+6. 下一任务只运行一局人工Botzone `deepseek` 采样，固定seed `47003`、玩家1、级牌2、无需进贡，同时显式写入history和decision trace。选择DeepSeek是为了覆盖当前模型成功动作及三项守卫的真实决策链，不是做RuleBased/DeepSeek胜率对比。
+7. 连接与建桌严格按普通live顺序：零网络preflight → 启动唯一connector → 页面确认“已连接” → 才向项目所有者提示seed和配置 → 核对后只点击一次开始。页面只读监督不可用时等待项目所有者明确确认，不得因此结束任务。
+8. 该局的完成目标是获得可归属的history、decision trace、audit、state和streams。条件守卫未触发、输赢或可恢复的非致命transport错误都不是重开理由；完成后保留现场，由规划Codex复审后再决定是否存在新的高置信度策略缺陷。
 
-牌谱基础设施、`45001`真实smoke、两阶段候选评测、Botzone offline wiring、validator收口、两项默认RuleBased保牌、危险对手阻断和小手牌短序列守卫均已完成。`47002`证明新时序可以完成对局，但没有触发候选且包含两次HTTP错误；其现有牌谱不足以证明新的策略缺陷。当前先补齐单局决策证据的canonical输入/输出，不继续消耗真实桌，也不收集与项目范围无关的容量。
+牌谱和decision trace基础设施已经足够支持下一轮诊断。此时继续造新规则会缺少决策点证据，因此先采集一局完整公开输入、原始legal actions、实际selected action和source；不为追样本重复建桌，也不把单局结果直接当作胜率结论。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
@@ -2013,3 +2003,10 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 规划Codex独立最小脚本结果为：矛盾副本拒绝、相等副本接受、仓库外相对history进入runner、相对trace在runner前拒绝。
 - 独立复跑Botzone定向88项、主规则39项、全量707项和staged diff检查均通过；11个实现/测试文件已提交为 `045fb75 feat: record acknowledged Botzone decisions`。
 - 当前范围内无已知剩余风险。下一步严格分离为seed `47002`旧evidence回收任务；完成后再规划一局新decision-trace采样，不恢复百局/16局容量。
+
+### seed 47002 evidence 已回收，进入单局 decision-trace 采样
+
+- 清理执行前Git clean、唯一固定workspace、目录非链接、精确inventory、五项bytes/SHA-256和无connector门槛全部通过。
+- seed `47002` 的audit、history、唯一state、stdout和stderr已逐项移入Windows回收站；未永久删除、未清空回收站。
+- 规划Codex独立复核最终workspace精确只含空的普通目录 `audit/`、`state/`、`streams/`，`D:\VsCodeProject`下没有第二个 `Botzone*` 顶层目录，项目connector为0，Git仍clean。
+- 下一任务为单局 `deepseek` decision-trace采样，seed `47003`只在页面确认已连接后提示。它不执行容量评测、不修改代码、不清理现场。
