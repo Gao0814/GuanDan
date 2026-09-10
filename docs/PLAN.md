@@ -17,7 +17,9 @@
 10. 全10条trace和三个后置守卫的只读审计判定为`seed_47003_no_additional_high_confidence_candidate`。规划Codex独立复算关系、intent、RAG场景和动作类别一致，三个守卫实际触发数均为0；seed `47003`不再支持新的算法规则。
 11. `danger_opponent_block`、`teammate_control_block`、`short_endgame_plan`均属于成功模型动作后的策略覆盖，而非协议安全。它们暂不删除，但作为DeepSeek策略自主权技术债逐项取得prompt-first证据。
 
-下一步从证据最充分的`teammate_control_block`开始：复用现有合成公开fixture，在当前生产strategy-intent开启、后置守卫应用之前只调用一次真实DeepSeek，观察模型是否自行选择pass。该任务不运行Botzone、不修改代码；结果只决定后续是规划守卫退役，还是继续补强prompt。
+12. `teammate_control_block`守卫前真实模型检查返回`target_special`，但执行所复用的测试fixture包含“单张9压单张小王”的伪合法候选。当前引擎独立验证为大王可压小王、9不可压小王，因此该模型输入违反canonical legal actions前提；原`teammate_control_prompt_raw_model_not_ready`改判为`teammate_control_prompt_raw_model_inconclusive`，不形成prompt不足证据。
+
+下一步只修复该测试fixture：目标小王→大王场景必须使用engine可证明的canonical候选；原“普通低价值动作不拦截”测试若要保留，必须另建真正合法且不满足大王守卫语义的场景。不得借机修改生产guard、prompt或RAG。修复提交并复审后，再规划一次canonical真实模型检查。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
