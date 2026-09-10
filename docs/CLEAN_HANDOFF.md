@@ -99,7 +99,7 @@ connector可读牌谱、普通人工RuleBased history smoke、两阶段候选评
 
 seed `47003` 的单局DeepSeek采样已经完成connector与ACK trace闭环：11/11/11 request/response/Header、qualified finish=1、10条decision trace与audit守恒、history/trace均为`ok`，无transport failure。平台终局分类为`platform_error`，所以不能作为正常胜负结果；它不否定已通过binding、selected-action、ACK和provenance校验的逐决策证据。
 
-规划Codex独立复现第9个ACK决策并检查实际模型输入：公开输入能严格确定队友领牌，但structured prompt没有table leader identity/relation，RAG scene tags也没有该关系。现有strategy router在同一输入上生成ready的`support_teammate / teammate_controls_table` payload，Botzone DeepSeek factory却显式关闭其消费路径。`docs/NEXT_PROMPT.md` 当前只要求离线接通这份策略上下文，不新增自动pass或RuleBased后置覆盖，也不运行Botzone、网络、真实模型或live。
+strategy-intent接线已提交为`454a422`：Botzone DeepSeek factory启用现有router与prompt formatter，未新增后置动作覆盖。规划Codex独立复跑119项定向、39项主规则和709项全量通过；真实第9条公开输入经无网络factory复核得到ready的`support_teammate / teammate_controls_table`，fake模型的原始合法特殊牌仍保持`model`。`docs/NEXT_PROMPT.md` 当前只要求该固定决策最多两次真实DeepSeek off/on复放，不运行Botzone或修改仓库。
 
 L5-A4h11a partial manifest、seed `45001` evidence、seed `47001` prestart evidence与seed `47002` evidence均已移入Windows回收站。seed `47003` evidence完整保留在固定workspace；无残留connector。
 
@@ -255,13 +255,13 @@ python -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tes
 git diff --check
 ```
 
-当前最新独立结果为：decision-trace/Botzone相关88项、engine主回归39项、全量707项通过，`git diff --check`通过。更早的runtime-trial validator单文件8项、条件化相关28项与四个固定SHA-256也已独立复核，不因本阶段改变。
+当前最新独立结果为：strategy-intent/DeepSeek/Botzone相关119项、engine主回归39项、全量709项通过，`git diff --check`通过。更早的decision-trace相关88项、runtime-trial validator单文件8项、条件化相关28项与四个固定SHA-256也已独立复核，不因本阶段改变。
 
 ### Minimal reproduction of the current failure state
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测或decision-trace结构验收缺口。seed `47003` 已提供一个完整公开、ACK确认的模型输入缺口：prompt未把公开history中的领牌者关联为队友，已有ready strategy-intent payload又未在Botzone DeepSeek路径启用。下一任务按 `docs/NEXT_PROMPT.md` 只接通该提示上下文并保留模型合法选择。
+当前没有失败的本地单测或已知strategy-intent接线缺口。seed `47003`的模型输入缺口已由`454a422`补齐并通过离线复审；下一任务按`docs/NEXT_PROMPT.md`只做同一决策的两侧真实模型复放，验证动作层影响。
 
 ## 12. Working Tree Status
 
@@ -273,6 +273,7 @@ git diff --check
 - 最新算法检查点：`295b9b5 feat: preserve big joker behind teammate`。
 - 最新检查点新增队友小王→大王守卫、`teammate_control_block`、双action-ID schema校验与对应测试；提交前由规划Codex独立运行相关65项、主规则39项和全量689项通过，并完成staged diff检查。
 - 最新Botzone诊断检查点：`045fb75 feat: record acknowledged Botzone decisions`；提交前由规划Codex独立复现反例并运行定向88项、主规则39项、全量707项及staged diff检查。
+- 最新DeepSeek提示检查点：`454a422 feat: enable strategy intent prompt for Botzone DeepSeek`；规划Codex独立检查三文件diff，复跑119/39/709项，并以真实第9条公开输入验证factory提示接线和模型动作自主权。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex负责提交其业务代码、tests及任务直接相关修改；规划Codex独立复核结果，只提交自己产生的 `AGENTS.md`、项目Skills和docs上下文修改，不代为提交未完成或未经复核的业务改动。
 
@@ -287,4 +288,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按 `docs/NEXT_PROMPT.md` 离线接通Botzone DeepSeek现有strategy-intent prompt，使模型获得经过公开校验的table-leader relation并继续自主选择合法动作。使用脱敏合成fixture，不读取真实workspace；不得新增自动pass、扩展为新live、多局/capacity或真实模型调用。
+按`docs/NEXT_PROMPT.md`对seed `47003`第9条已确认决策执行一次真实DeepSeek strategy-intent off/on复放。最多两次模型请求，只读现有trace，不运行Botzone、不修改仓库、不输出敏感正文。

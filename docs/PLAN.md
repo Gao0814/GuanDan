@@ -11,9 +11,9 @@
 5. seed `47002` 的五份已审计evidence已于2026-09-10逐项移入Windows回收站。随后执行的seed `47003`单局DeepSeek采样已形成history、decision trace、audit、finished tombstone和streams，现场保留且无connector残留。
 6. seed `47003` 的connector/ACK trace闭环有效，但平台终局分类为`platform_error`，不能作为正常胜负结果。10条decision trace与audit、binding、selected action和provenance守恒，仍可用于逐决策诊断。
 7. 独立复审在第9个ACK决策发现可复现的模型上下文缺口：prompt显示桌面牌型和玩家队伍，却没有指出桌面动作由谁领出；RAG也没有领牌者关系。现有strategy router能从同一公开输入严格得到`support_teammate / teammate_controls_table`，但Botzone DeepSeek factory将其prompt路径关闭。
-8. 下一任务仅离线把现有、已验证的strategy-intent prompt接入Botzone DeepSeek，使模型看到“队友当前控桌”后仍自主选择合法动作；不新增自动pass或RuleBased后置覆盖，不运行live、容量评测或真实模型。
+8. strategy-intent接线已由`454a422`完成并经规划Codex独立复审：119项定向、39项主规则、709项全量通过；真实第9条公开输入经factory得到ready的`support_teammate / teammate_controls_table`，且fake模型的合法特殊牌仍原样保留。
 
-牌谱和decision trace基础设施已提供第一个可完整复现的真实模型输入缺口。当前先补齐公开策略上下文，再以独立、极小规模的真实模型单决策复放验证动作是否改善；不为这项验证重打Botzone或扩成百局。
+下一步只对第9个固定决策做一次strategy-intent off/on真实DeepSeek复放，总计最多两次模型请求、零Botzone桌。它用于判断补全公开上下文后模型动作是否变化，不形成长期胜率结论。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
@@ -2016,4 +2016,4 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - connector以exit 0 / `finished_target`结束，11/11/11 request/response/Header、qualified finish=1、transport failure=0；history与decision trace均为`ok`，10条ACK决策和audit source聚合一致。
 - 平台终局分类为`platform_error`，不能用于胜负判断；ACK、binding、selected-action和provenance验证仍允许逐决策诊断。
 - 第9个决策在既有共享策略认为应保留队友控桌资源时，由DeepSeek选择特殊牌压制。进一步检查确认模型prompt没有提供table leader identity/relation；现有strategy-intent组件可从同一公开输入生成`support_teammate / teammate_controls_table`，但Botzone factory将其关闭。
-- 下一步只接通这份公开策略上下文，不用本地规则替换合法模型动作；完成离线复审后，再单独规划少量真实模型复放，不重开Botzone live。
+- strategy-intent接线已提交为`454a422`并通过独立复审；下一步只做同一决策的off/on真实模型复放，不重开Botzone live，也不修改代码。

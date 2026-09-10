@@ -1,38 +1,36 @@
-# 给 Coding Codex 的下一任务 Prompt
+# 给执行 Codex 的下一任务 Prompt
 
-修复 Botzone DeepSeek 提示中缺失“当前领牌者与本家的队伍关系”的上下文，使模型能够基于完整公开信息自主判断是否保留特殊牌。本任务不新增模型输出后的策略强制覆盖。
+对seed `47003` decision trace中的第9个已确认决策执行一次极小规模、无Botzone的真实DeepSeek strategy-intent off/on复放。项目所有者发送本Prompt即授权：使用项目现有DeepSeek配置，把该决策中已在原live发送过的公开observation、原始legal actions和必要RAG上下文再次发送给同一配置的模型；总计最多两次模型决策调用。不得扩大授权范围。
 
 ## 【开始前】
 
-1. 阅读并遵守 `AGENTS.md`，检查适用项目 Skills；本任务不执行 live 或 workspace cleanup。
-2. 阅读 `docs/CLEAN_HANDOFF.md`，检查 Git 状态，并复核相关 prompt、strategy-intent、RAG 与 Botzone Agent factory 代码和测试。
-3. 只修改并提交本任务的业务代码和测试，不纳入其他来源的工作区变化。
+1. 阅读并遵守`AGENTS.md`，检查适用项目Skills；本任务不使用live或workspace-cleanup Skill。
+2. 阅读`docs/CLEAN_HANDOFF.md`及相关DeepSeek prompt/strategy-intent代码，检查Git状态必须clean，确认HEAD包含`454a422`。
+3. 对`D:\VsCodeProject\BotzoneWorkspace\decision-trace.json`只读核对既有bytes/SHA-256及schema；只在内存中读取第9条decision，不修改任何workspace artifact。
 
-## 【已验证的问题模型】
+## 【目标与固定对照】
 
-seed `47003` 的第9条ACK decision trace证明：模型在队友领牌、pass合法且可压动作全为特殊牌时选择了特殊牌。平台终局为`platform_error`，不能用于胜负判断，但该决策的公开observation、canonical legal actions、selected action、binding、ACK和audit provenance均有效。
+在相同observation、相同原始legal actions、相同RAG、相同模型、相同temperature和其他配置下，各执行一次：
 
-当前代码的关键事实：
+- off：`strategy_router_shadow_enabled=False`、`strategy_intent_prompt_enabled=False`；
+- on：`strategy_router_shadow_enabled=True`、`strategy_intent_prompt_enabled=True`。
 
-- `DeepSeekClient._build_structured_prompt()` 显示桌面牌型和各玩家队伍关系，却不显示桌面动作的领牌者是谁；传入的`history`没有被渲染为领牌关系。
-- 当前RAG scene tags没有table-leader relation；该真实决策被归为endgame，并命中一般残局材料，而不是队友控桌材料。
-- 同一公开fixture经过现有`route_strategy_intent()`会得到`support_teammate / teammate_controls_table`，`build_strategy_intent_prompt_payload()`返回`ready`；加入后prompt会明确出现“队友当前控桌”。
-- Botzone `build_agent_factory("deepseek")` 当前显式关闭`strategy_router_shadow_enabled`和`strategy_intent_prompt_enabled`，所以这段已验证上下文未进入真实模型请求。
+两侧都必须让真实DeepSeek自主返回action ID；不得用RuleBased替换结果，不得新增或临时启用自动pass。使用独立的新Agent实例，避免跨侧状态污染。将client重试数固定为0，使外部模型请求上限严格为两次；任一侧请求失败则如实判为inconclusive，不追加第三次请求。
 
-不得读取真实workspace或把真实手牌、牌面、标识符复制进测试；使用脱敏合成fixture复现这些结构事实。
+## 【证据与隐私边界】
 
-## 【任务目标】
+- 调用前确认on侧生成`ready / support_teammate / teammate_controls_table`，off侧没有该payload；否则停止且不调用模型。
+- 两侧返回都必须是各自原始legal actions中的严格整数ID；按实际模型结果比较，不预设pass一定胜出。
+- 不输出或持久化本家手牌、完整observation/legal actions、action ID、牌面、prompt、模型response/reasoning、API key、URL、Header、Cookie、run token、match/binding/state文件名。
+- 只允许报告每侧动作类别：`pass`、`ordinary`或`special`，以及合法性、模型调用结果和strategy-intent状态。
+- 不修改代码、tests、docs、配置或workspace；不运行Botzone、connector、preflight、live、容量评测或全量测试；不创建报告文件或Git commit。
 
-让Botzone DeepSeek在每次适用决策中收到经过现有严格公开校验的strategy-intent prompt，尤其能明确知道“队友当前控桌”；模型仍从原始合法动作中自主选择，合法的模型结果不得因为与RuleBased不同而被改写。
+## 【判定】
 
-## 【约束与验证】
+- off=`special`、on=`pass`：`strategy_intent_target_decision_improved`。
+- off=`pass`、on=`pass`：`strategy_intent_target_decision_consistent_pass`，不能单次归因改进。
+- off=`special`、on=`special`：`strategy_intent_target_decision_not_improved`，下一步应优化模型提示/RAG，不加后置覆盖。
+- off=`pass`、on=`special`：`strategy_intent_target_decision_regressed`。
+- 任一侧非success、非法动作或前置不满足：`strategy_intent_target_decision_replay_inconclusive`。
 
-- 优先复用现有`strategy_router`和`strategy_intent_prompt`契约，不复制第二份领牌者识别逻辑。
-- 先复现并解释为何该路径在Botzone factory关闭，再做最小接线；不要借本任务修改RAG corpus、engine、audit schema、decision trace schema或历史evaluation基线。
-- router/prompt遇到畸形或不完整公开payload时保持现有fail-closed/omitted语义，不得影响模型合法动作校验与既有fallback。
-- 不新增`teammate_pressure_pass_id()`后置调用，不新增自动pass，不改变现有危险对手、小王→大王及短自由出牌守卫。
-- 测试至少证明：目标fixture向client传入ready的`support_teammate / teammate_controls_table` payload；对手领牌和自由出牌不会被错标；畸形证据会省略；fake client返回原始合法pass或特殊牌时均保持其选择；Botzone factory默认DeepSeek路径实际启用该提示，而RuleBased/conditional模式不受影响。
-- 显式禁用dotenv，运行相关prompt/router/DeepSeek/Botzone定向测试、主规则回归、全量测试和`git diff --check`。
-- 不运行Botzone、connector、网络、真实DeepSeek或容量评测。真实模型是否因此改正必须留给后续单决策、少量请求的独立复放验证，不能由mock测试宣称。
-
-完成后检查diff并创建仅含本任务业务代码和测试的commit。最终报告根因、接线位置、模型自主权边界、验证命令与结果、commit、Git状态，以及后续真实单决策复放需要验证什么。
+最终报告：唯一判定、两侧低敏动作类别、两次模型调用状态、on侧intent状态、动作合法性、artifact前后bytes/SHA-256、Git HEAD/status、实际外部请求数。不得输出敏感正文。
