@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
+from agents.conditional_pressure_pass_policy import teammate_big_joker_opportunity
 from agents.game_phase import CRITICAL_ENDGAME, ENDGAME, MIDGAME, NEAR_OPEN_ENDGAME, OPENING, GamePhaseContext
 
 
@@ -73,6 +74,8 @@ class StrategyIntentContext:
     hand_total_score: int | None
     hand_control_score: int | None
     diagnostics: tuple[str, ...]
+    opponents_all_active: bool = False
+    teammate_big_joker_opportunity: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -97,6 +100,8 @@ class StrategyIntentContext:
             "hand_total_score": self.hand_total_score,
             "hand_control_score": self.hand_control_score,
             "diagnostics": list(self.diagnostics),
+            "opponents_all_active": self.opponents_all_active,
+            "teammate_big_joker_opportunity": self.teammate_big_joker_opportunity,
         }
 
 
@@ -430,6 +435,7 @@ def route_strategy_intent(
     active_opponent_ids = sorted(
         player_id for player_id in opponent_ids if not player_by_id[player_id]["finished"]
     )
+    opponents_all_active = len(active_opponent_ids) == len(opponent_ids)
     minimum_opponent_hand_count = (
         min(player_by_id[player_id]["hand_count"] for player_id in active_opponent_ids)
         if active_opponent_ids
@@ -454,9 +460,14 @@ def route_strategy_intent(
         and player_by_id[table_leader_id]["hand_count"] <= 2
     )
     hand_strength = "weak" if label in _WEAK_LABELS else "non_weak"
+    teammate_big_joker_opportunity_available = (
+        teammate_big_joker_opportunity(observation, legal_actions, my_player_id) is not None
+    )
 
     if can_finish_now:
         intent, reason_codes = RUN_OUT, ("can_finish_now",)
+    elif teammate_big_joker_opportunity_available:
+        intent, reason_codes = SUPPORT_TEAMMATE, ("teammate_big_joker_preservation",)
     elif table_leader_relation == "teammate":
         intent, reason_codes = SUPPORT_TEAMMATE, ("teammate_controls_table",)
     elif table_leader_relation == "opponent" and table_leader_is_urgent:
@@ -499,4 +510,6 @@ def route_strategy_intent(
         hand_total_score=total_score,
         hand_control_score=control_score,
         diagnostics=(),
+        opponents_all_active=opponents_all_active,
+        teammate_big_joker_opportunity=teammate_big_joker_opportunity_available,
     )

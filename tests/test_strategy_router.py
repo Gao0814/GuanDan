@@ -13,6 +13,10 @@ from agents.strategy_router import (
     StrategyIntentContext,
     route_strategy_intent,
 )
+from tests.test_deepseek_step_e import (
+    _teammate_joker_legal_actions,
+    _teammate_joker_observation,
+)
 
 
 _TEAM = {1: "team_13", 2: "team_24", 3: "team_13", 4: "team_24"}
@@ -168,6 +172,7 @@ class TestStrategyRouter(unittest.TestCase):
                 "can_finish_now": False, "is_free_lead": False,
                 "table_leader_player_id": 3, "table_leader_relation": "teammate", "table_leader_is_urgent": False,
                 "hand_strength": "non_weak", "hand_total_score": 50, "hand_control_score": 10, "diagnostics": [],
+                "opponents_all_active": True, "teammate_big_joker_opportunity": False,
             },
         )
 
@@ -188,6 +193,7 @@ class TestStrategyRouter(unittest.TestCase):
                 "can_finish_now": False, "is_free_lead": False,
                 "table_leader_player_id": 4, "table_leader_relation": "opponent", "table_leader_is_urgent": True,
                 "hand_strength": "non_weak", "hand_total_score": 50, "hand_control_score": 10, "diagnostics": [],
+                "opponents_all_active": True, "teammate_big_joker_opportunity": False,
             },
         )
 
@@ -205,8 +211,72 @@ class TestStrategyRouter(unittest.TestCase):
                 "can_finish_now": False, "is_free_lead": True,
                 "table_leader_player_id": None, "table_leader_relation": None, "table_leader_is_urgent": False,
                 "hand_strength": "non_weak", "hand_total_score": 50, "hand_control_score": 10, "diagnostics": [],
+                "opponents_all_active": True, "teammate_big_joker_opportunity": False,
             },
         )
+
+    def test_big_joker_teammate_control_is_a_specific_public_reason(self) -> None:
+        observation = _teammate_joker_observation()
+        context = route_strategy_intent(
+            observation,
+            _teammate_joker_legal_actions(),
+            phase_context=GamePhaseContext(ENDGAME, 2, (5, 8, 5), 18, 12, 0),
+            hand_evaluation=_evaluation(),
+        )
+        self.assertEqual(
+            (context.status, context.intent, context.reason_codes),
+            ("available", SUPPORT_TEAMMATE, ("teammate_big_joker_preservation",)),
+        )
+        self.assertTrue(context.teammate_big_joker_opportunity)
+        self.assertTrue(context.opponents_all_active)
+
+        ordinary = self._route(_observation(table_leader_id=3))
+        self.assertEqual(ordinary.reason_codes, ("teammate_controls_table",))
+        self.assertFalse(ordinary.teammate_big_joker_opportunity)
+
+        cases: list[tuple[dict[str, object], list[dict[str, object]]]] = []
+        free = _teammate_joker_observation()
+        free["current_round"] = {"step_no": 12, "round_no": 4, "current_player_id": 4, "constraint": "free", "table_action": None}
+        free["history"] = {"actions": []}
+        cases.append((free, _teammate_joker_legal_actions()))
+        opponent = _teammate_joker_observation()
+        opponent["history"]["actions"][0]["player_id"] = 1  # type: ignore[index]
+        cases.append((opponent, _teammate_joker_legal_actions()))
+        mismatch = _teammate_joker_observation()
+        mismatch["history"]["actions"][0]["carrier_cards"] = ["BJ"]  # type: ignore[index]
+        cases.append((mismatch, _teammate_joker_legal_actions()))
+        no_pass = [action for action in _teammate_joker_legal_actions() if action["declared_pattern"] != "pass"]
+        cases.append((_teammate_joker_observation(), no_pass))
+        no_big = [action for action in _teammate_joker_legal_actions() if action["declared_pattern"] == "pass"]
+        cases.append((_teammate_joker_observation(), no_big))
+        cases.append((_teammate_joker_observation(own_count=1), _teammate_joker_legal_actions()))
+        cases.append((_teammate_joker_observation(opponent_count=2), _teammate_joker_legal_actions()))
+        cases.append((_teammate_joker_observation(opponent_finished=True), _teammate_joker_legal_actions()))
+        malformed_player = _teammate_joker_observation()
+        malformed_player["other_players"][0]["team"] = "wrong"  # type: ignore[index]
+        cases.append((malformed_player, _teammate_joker_legal_actions()))
+        malformed_action = _teammate_joker_legal_actions()
+        malformed_action[1]["wildcard_info"] = "invalid"
+        cases.append((_teammate_joker_observation(), malformed_action))
+        for snapshot, actions in cases:
+            with self.subTest(snapshot=snapshot):
+                others = snapshot["other_players"]
+                assert isinstance(others, list)
+                context = route_strategy_intent(
+                    snapshot,
+                    actions,
+                    phase_context=GamePhaseContext(
+                        ENDGAME,
+                        snapshot["my_info"]["hand_count"],  # type: ignore[index]
+                        tuple(item["hand_count"] for item in others),
+                        sum(item["hand_count"] for item in others if not item["finished"]),
+                        12,
+                        sum(1 for item in others if item["finished"]),
+                    ),
+                    hand_evaluation=_evaluation(),
+                )
+                self.assertFalse(context.teammate_big_joker_opportunity)
+                self.assertNotEqual(context.reason_codes, ("teammate_big_joker_preservation",))
 
     def test_urgency_ties_and_fallback_intents(self) -> None:
         cases = (

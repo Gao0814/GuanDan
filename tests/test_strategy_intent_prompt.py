@@ -29,6 +29,7 @@ def _context(
         "weak_hand": "run_out",
         "stable_control": "control",
         "teammate_controls_table": "support_teammate",
+        "teammate_big_joker_preservation": "support_teammate",
         "urgent_opponent_controls_table": "block_opponent",
         "teammate_more_urgent": "support_teammate",
         "opponent_more_urgent": "block_opponent",
@@ -58,9 +59,19 @@ def _context(
         "hand_total_score": 30 if reason == "weak_hand" else 50,
         "hand_control_score": 10,
         "diagnostics": (),
+        "opponents_all_active": False,
+        "teammate_big_joker_opportunity": False,
     }
     if reason == "teammate_controls_table":
         values.update(is_free_lead=False, table_leader_player_id=3, table_leader_relation="teammate")
+    elif reason == "teammate_big_joker_preservation":
+        values.update(
+            is_free_lead=False,
+            table_leader_player_id=3,
+            table_leader_relation="teammate",
+            opponents_all_active=True,
+            teammate_big_joker_opportunity=True,
+        )
     elif reason == "urgent_opponent_controls_table":
         values.update(
             is_free_lead=False,
@@ -166,6 +177,11 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             "weak_hand": ("run_out", "加速走牌", "手牌偏弱，优先减少手数"),
             "stable_control": ("control", "控制牌权", "手牌控制力稳定"),
             "teammate_controls_table": ("support_teammate", "支援队友", "队友当前控桌"),
+            "teammate_big_joker_preservation": (
+                "support_teammate",
+                "支援队友",
+                "队友已用小王控桌，pass合法；大王不能直接出完且无紧急阻断对手的公开需要。优先考虑让队友保持牌权并保留大王这一高价值控制资源",
+            ),
             "urgent_opponent_controls_table": ("block_opponent", "阻断对手", "紧急对手当前控桌"),
             "teammate_more_urgent": ("support_teammate", "支援队友", "队友跑牌更紧迫"),
             "opponent_more_urgent": ("block_opponent", "阻断对手", "对手威胁更紧迫"),
@@ -194,6 +210,7 @@ class TestStrategyIntentPrompt(unittest.TestCase):
         expected_lengths = {
             "opponent_urgent": (74, 74, 84, 83),
             "teammate_controls_table": (74, 74, 84, 83),
+            "teammate_big_joker_preservation": (131, 131, 141, 140),
             "teammate_urgent": (74, 74, 84, 83),
             "can_finish_now": (75, 75, 85, 84),
             "opponent_more_urgent": (75, 75, 85, 84),
@@ -210,16 +227,16 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             "critical_endgame",
         )
         payload_envelopes = {
-            "midgame": (74, 81),
-            "endgame": (74, 81),
-            "near_open_endgame": (84, 91),
-            "critical_endgame": (83, 90),
+            "midgame": (74, 131),
+            "endgame": (74, 131),
+            "near_open_endgame": (84, 141),
+            "critical_endgame": (83, 140),
         }
         delta_envelopes = {
-            "midgame": (83, 90),
-            "endgame": (83, 90),
-            "near_open_endgame": (93, 100),
-            "critical_endgame": (92, 99),
+            "midgame": (83, 140),
+            "endgame": (83, 140),
+            "near_open_endgame": (93, 150),
+            "critical_endgame": (92, 149),
         }
 
         observed_reasons: dict[str, set[str]] = {phase: set() for phase in phases}
@@ -247,7 +264,7 @@ class TestStrategyIntentPrompt(unittest.TestCase):
                 self.assertEqual(len(lengths), len(expected_reasons))
                 self.assertEqual(
                     max(lengths),
-                    expected_lengths["urgency_tie_block_opponent"][phases.index(phase)],
+                    expected_lengths["teammate_big_joker_preservation"][phases.index(phase)],
                 )
                 self.assertEqual((min(lengths), max(lengths)), payload_envelopes[phase])
                 self.assertEqual(
@@ -357,6 +374,8 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             replace(base, hand_strength=["weak"]),  # type: ignore[arg-type]
             replace(base, is_free_lead=1),  # type: ignore[arg-type]
             replace(base, table_leader_is_urgent=1),  # type: ignore[arg-type]
+            replace(base, opponents_all_active=1),  # type: ignore[arg-type]
+            replace(base, teammate_big_joker_opportunity=1),  # type: ignore[arg-type]
             replace(base, table_leader_relation="opponent", table_leader_player_id=None),
             replace(base, table_leader_relation=[]),  # type: ignore[arg-type]
             replace(base, is_free_lead=True, table_leader_relation="opponent", table_leader_player_id=2),
@@ -381,6 +400,15 @@ class TestStrategyIntentPrompt(unittest.TestCase):
         self.assertEqual(
             build_strategy_intent_prompt_payload(replace(context, phase="opening")).diagnostics,
             ("invalid_phase",),
+        )
+        special = _context("teammate_big_joker_preservation")
+        special_ready = build_strategy_intent_prompt_payload(special)
+        self.assertEqual(
+            build_strategy_intent_prompt_payload(
+                special,
+                max_chars=len(special_ready.text) - 1,
+            ).diagnostics,
+            ("prompt_budget_exceeded",),
         )
 
     def test_preregistered_cross_field_counterexamples_fail_closed(self) -> None:
@@ -487,6 +515,8 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             (replace(different_urgent_leader, table_leader_is_urgent=False), "invalid_intent_reason"),
             (replace(different_urgent_leader, minimum_opponent_hand_count=3, urgent_opponent_ids=()), "invalid_context_fields"),
             (replace(_context("teammate_controls_table"), teammate_hand_count=1, table_leader_is_urgent=False), "invalid_context_fields"),
+            (replace(_context("teammate_big_joker_preservation"), opponents_all_active=False), "invalid_context_fields"),
+            (replace(_context("teammate_big_joker_preservation"), minimum_opponent_hand_count=2, urgent_opponent_ids=(2,)), "invalid_context_fields"),
         )
         for context, diagnostic in invalid_cases:
             with self.subTest(context=context):

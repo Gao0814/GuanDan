@@ -21,6 +21,10 @@ _REASON_DETAILS = {
     "weak_hand": ("run_out", "手牌偏弱，优先减少手数"),
     "stable_control": ("control", "手牌控制力稳定"),
     "teammate_controls_table": ("support_teammate", "队友当前控桌"),
+    "teammate_big_joker_preservation": (
+        "support_teammate",
+        "队友已用小王控桌，pass合法；大王不能直接出完且无紧急阻断对手的公开需要。优先考虑让队友保持牌权并保留大王这一高价值控制资源",
+    ),
     "urgent_opponent_controls_table": ("block_opponent", "紧急对手当前控桌"),
     "teammate_more_urgent": ("support_teammate", "队友跑牌更紧迫"),
     "opponent_more_urgent": ("block_opponent", "对手威胁更紧迫"),
@@ -138,7 +142,11 @@ def _valid_player_fields(context: StrategyIntentContext) -> bool:
     if context.hand_control_score > context.hand_total_score:
         return False
     expected_strength = "weak" if context.hand_total_score < 40 else "non_weak"
-    return context.hand_strength == expected_strength
+    return (
+        context.hand_strength == expected_strength
+        and type(context.opponents_all_active) is bool
+        and type(context.teammate_big_joker_opportunity) is bool
+    )
 
 
 def _valid_table_fields(context: StrategyIntentContext) -> bool:
@@ -175,6 +183,8 @@ def _expected_reason(context: StrategyIntentContext) -> str:
 
     if context.can_finish_now:
         return "can_finish_now"
+    if context.teammate_big_joker_opportunity:
+        return "teammate_big_joker_preservation"
     if context.table_leader_relation == "teammate":
         return "teammate_controls_table"
     if (
@@ -238,6 +248,17 @@ def build_strategy_intent_prompt_payload(
         or type(context.table_leader_is_urgent) is not bool
         or not _valid_player_fields(context)
         or not _valid_table_fields(context)
+    ):
+        diagnostics.add("invalid_context_fields")
+    if context.teammate_big_joker_opportunity and not (
+        context.intent == "support_teammate"
+        and context.table_leader_relation == "teammate"
+        and context.is_free_lead is False
+        and context.can_finish_now is False
+        and context.opponents_all_active is True
+        and context.minimum_opponent_hand_count is not None
+        and context.minimum_opponent_hand_count > 2
+        and context.urgent_opponent_ids == ()
     ):
         diagnostics.add("invalid_context_fields")
     if not diagnostics and type(reason) is str:

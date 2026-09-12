@@ -21,6 +21,10 @@ from integrations.botzone.play_adapter import AdapterError, NoTributeRuleBasedHa
 from integrations.botzone.runner import build_foreground_runner
 from integrations.botzone.runtime_config import RuntimeConfig
 from integrations.botzone.session import HandlerContext, SessionStore
+from tests.test_deepseek_step_e import (
+    _teammate_joker_legal_actions,
+    _teammate_joker_observation,
+)
 
 
 def _global() -> dict[str, object]:
@@ -440,6 +444,41 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
                 )
                 self.assertIn("队友当前控桌", prompt.text)
                 self.assertEqual(agent.last_decision_source, "model")
+
+    def test_deepseek_factory_passes_special_big_joker_preservation_prompt(self) -> None:
+        for selected, expected_action, expected_source in (
+            (1, 1, "model"),
+            (2, 1, "teammate_control_block"),
+        ):
+            with self.subTest(selected=selected):
+                raw = _RawClient(selected)
+                with patch("agents.deepseek_ai.AppConfig.from_env", return_value=_config()):
+                    factory = build_agent_factory(
+                        "deepseek",
+                        config_loader=lambda: _config(),
+                        client_factory=lambda **_: raw,
+                        rag_factory=lambda: None,
+                    )
+                    agent = factory(4)
+                    self.assertIsInstance(agent, DeepSeekAIAgent)
+                    assert isinstance(agent, DeepSeekAIAgent)
+                    self.assertEqual(
+                        agent.select_action(_teammate_joker_observation(), _teammate_joker_legal_actions()),
+                        expected_action,
+                    )
+
+                self.assertEqual(len(raw.calls), 1)
+                prompt = raw.calls[0].get("strategy_intent_prompt")
+                self.assertIsNotNone(prompt)
+                assert prompt is not None
+                self.assertEqual(
+                    (agent.last_strategy_intent.status, agent.last_strategy_intent.reason_codes),
+                    ("available", ("teammate_big_joker_preservation",)),
+                )
+                self.assertEqual((prompt.status, prompt.intent, prompt.diagnostics), ("ready", "support_teammate", ()))
+                self.assertIn("保留大王这一高价值控制资源", prompt.text)
+                self.assertEqual(agent.last_decision_source, expected_source)
+                self.assertEqual(agent.client.last_outcome, "success")
 
     def test_valid_model_id_uses_provenance_and_public_payload_only(self) -> None:
         raw = _RawClient(1)

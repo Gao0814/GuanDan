@@ -10,6 +10,7 @@ from agents.conditional_pressure_pass_ai import ConditionalPressurePassAIAgent a
 from agents.conditional_pressure_pass_policy import (
     conditional_pressure_pass_id,
     dangerous_opponent_pass_id,
+    teammate_big_joker_opportunity,
     teammate_big_joker_pass_id,
     teammate_pressure_pass_id,
 )
@@ -200,7 +201,15 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
 
     def test_teammate_big_joker_guard_is_narrow_and_fail_closed(self) -> None:
         actions = _joker_teammate_actions()
+        self.assertEqual(teammate_big_joker_opportunity(_joker_teammate_observation(), actions, 4), (1, (2,)))
         self.assertEqual(teammate_big_joker_pass_id(_joker_teammate_observation(), actions, 4, 2), 1)
+        duplicate_big_joker = dict(actions[1], action_id=3)
+        multiple_big_jokers = actions + [duplicate_big_joker]
+        self.assertEqual(
+            teammate_big_joker_opportunity(_joker_teammate_observation(), multiple_big_jokers, 4),
+            (1, (2, 3)),
+        )
+        self.assertEqual(teammate_big_joker_pass_id(_joker_teammate_observation(), multiple_big_jokers, 4, 3), 1)
         cases: list[tuple[dict[str, object], list[dict[str, object]], int]] = []
         cases.append((_joker_teammate_observation(), actions, 1))
         cases.append((_joker_teammate_observation(my_hand_count=1), actions, 2))
@@ -228,6 +237,8 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
         for observation, legal_actions, selected in cases:
             with self.subTest(selected=selected, constraint=observation["current_round"]["constraint"]):
                 self.assertIsNone(teammate_big_joker_pass_id(observation, legal_actions, 4, selected))
+
+        self.assertEqual(teammate_big_joker_opportunity(_joker_teammate_observation(), actions, 4), (1, (2,)))
 
     def test_shared_follow_context_rejects_malformed_constraint_and_table_identity_for_all_helpers(self) -> None:
         def assert_all_fail(mutator) -> None:

@@ -279,8 +279,29 @@ def teammate_big_joker_pass_id(
     patterns remain untouched until independently justified.
     """
 
-    if not _is_int(selected_action_id):
+    opportunity = teammate_big_joker_opportunity(
+        observation,
+        legal_actions,
+        expected_player_id,
+    )
+    if opportunity is None or not _is_int(selected_action_id):
         return None
+    pass_id, big_joker_action_ids = opportunity
+    return pass_id if selected_action_id in big_joker_action_ids else None
+
+
+def teammate_big_joker_opportunity(
+    observation: object,
+    legal_actions: object,
+    expected_player_id: int,
+) -> tuple[int, tuple[int, ...]] | None:
+    """Return original pass/big-joker IDs for the proved teammate-control opportunity.
+
+    This deliberately does not inspect a model selection.  It is the shared
+    public predicate for both the post-model guard and strategy-intent prompt
+    context; callers still decide whether and how to use the evidence.
+    """
+
     context = _pressure_pass_context(observation, legal_actions, expected_player_id)
     if context is None:
         return None
@@ -293,8 +314,12 @@ def teammate_big_joker_pass_id(
         if _TEAM[player_id] != _TEAM[expected_player_id]
     ):
         return None
-    selected = next((action for action in non_pass if action.get("action_id") == selected_action_id), None)
-    if selected is None or len(selected["carrier_cards"]) >= hand_count:
+    big_jokers = tuple(
+        action
+        for action in non_pass
+        if _common_action_signature(action) == ("single", ("BJ",), ("BJ",))
+    )
+    if not big_jokers or any(len(action["carrier_cards"]) >= hand_count for action in big_jokers):
         return None
     if not isinstance(observation, Mapping):
         return None
@@ -305,7 +330,12 @@ def teammate_big_joker_pass_id(
     if not isinstance(table_action, Mapping):
         return None
     leader_signature = _common_action_signature(table_action)
-    selected_signature = _common_action_signature(selected)
-    if leader_signature != ("single", ("SJ",), ("SJ",)) or selected_signature != ("single", ("BJ",), ("BJ",)):
+    if leader_signature != ("single", ("SJ",), ("SJ",)):
         return None
-    return pass_id
+    big_joker_ids: list[int] = []
+    for action in big_jokers:
+        action_id = action.get("action_id")
+        if not _is_int(action_id):
+            return None
+        big_joker_ids.append(action_id)
+    return pass_id, tuple(big_joker_ids)
