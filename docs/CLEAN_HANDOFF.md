@@ -107,7 +107,9 @@ strategy-intent接线已提交为`454a422`：Botzone DeepSeek factory启用现�
 
 其后的`teammate_control_block`守卫前真实模型调用成功并返回`target_special`，但评测前提无效：复用的`tests/test_deepseek_step_e.py::_teammate_joker_legal_actions()`同时提供pass、大王和单张9，而当前引擎证明9不能压单张小王。该列表不是canonical legal actions。规划Codex据此把执行判定从`teammate_control_prompt_raw_model_not_ready`改为`teammate_control_prompt_raw_model_inconclusive`；本次调用不授权prompt/RAG修改，因此当时只安排修复测试fixture并锁定engine真值。
 
-测试证据修正已提交为`8db3154`：目标小王场景现只含pass与大王两个canonical候选；原普通低价值动作非触发测试已迁移到队友普通单张8、本家以9合法压制的独立场景，并新增引擎真值回归。规划Codex独立检查两文件提交范围，复跑定向41项、主规则39项和全量710项通过，`git diff --check`通过，工作树clean。下一任务允许对修正后的canonical fixture做一次新的守卫前真实模型检查；旧inconclusive调用不合并。
+测试证据修正已提交为`8db3154`：目标小王场景现只含pass与大王两个canonical候选；原普通低价值动作非触发测试已迁移到队友普通单张8、本家以9合法压制的独立场景，并新增引擎真值回归。规划Codex独立检查两文件提交范围，复跑定向41项、主规则39项和全量710项通过，`git diff --check`通过，工作树clean；随后只对该canonical fixture做了一次新的守卫前真实模型检查，旧inconclusive调用未合并。
+
+受约束执行报告将新的canonical检查判定为`teammate_control_canonical_prompt_raw_model_not_ready`：候选数2，intent为`ready / support_teammate / teammate_controls_table`，RAG为`endgame / endgame`，唯一模型请求成功且原始选择为合法大王；结果在后置守卫前捕获。模型响应按隐私契约未持久化，但规划Codex独立确认提交、fixture、引擎真值与Git clean。当前可复现缺口是strategy-intent只表达泛化“队友当前控桌”，没有表达小王→大王的高价值资源代价和无紧急阻断需要。下一任务只实现共享公开判定驱动的专用prompt reason，不改RAG或后置动作行为。
 
 L5-A4h11a partial manifest、seed `45001` evidence、seed `47001` prestart evidence与seed `47002` evidence均已移入Windows回收站。seed `47003` evidence完整保留在固定workspace；无残留connector。
 
@@ -270,7 +272,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测或已知strategy-intent接线缺口。seed `47003`已经完成全10条trace审计且没有额外高置信度候选。小王→大王测试fixture的canonical缺口已由`8db3154`修正并通过独立复审；下一任务按`docs/NEXT_PROMPT.md`只做一次修正后守卫前真实模型检查，不运行Botzone或修改代码。
+当前没有失败的本地单测。seed `47003`已经完成全10条trace审计且没有额外高置信度候选。小王→大王canonical模型检查现已形成一个窄strategy-intent语义缺口；下一任务按`docs/NEXT_PROMPT.md`只实现专用prompt reason及测试，不联网或运行Botzone。
 
 ## 12. Working Tree Status
 
@@ -298,4 +300,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`对修正后的队友小王→大王canonical fixture执行一次守卫前真实DeepSeek原始选择检查。最多一次请求，不运行Botzone、不修改仓库、不输出prompt或模型正文。
+按`docs/NEXT_PROMPT.md`实现队友小王→大王资源保留的专用strategy-intent reason，并与现有公开守卫条件共享真值。只做离线代码与测试，不改RAG、不移除或扩大后置守卫、不联网。
