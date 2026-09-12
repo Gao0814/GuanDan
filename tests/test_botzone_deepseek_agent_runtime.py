@@ -448,7 +448,7 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
     def test_deepseek_factory_passes_special_big_joker_preservation_prompt(self) -> None:
         for selected, expected_action, expected_source in (
             (1, 1, "model"),
-            (2, 1, "teammate_control_block"),
+            (2, 2, "model"),
         ):
             with self.subTest(selected=selected):
                 raw = _RawClient(selected)

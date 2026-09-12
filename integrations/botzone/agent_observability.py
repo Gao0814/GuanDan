@@ -6,6 +6,15 @@ from collections import Counter
 from dataclasses import dataclass
 
 
+LEGACY_DECISION_SOURCES = frozenset(
+    {
+        # Older v8 audits and acknowledged decision traces can contain this
+        # retired post-model rewrite.  Keep it readable, but no current
+        # production DeepSeek path emits it.
+        "teammate_control_block",
+    }
+)
+
 DECISION_SOURCES = frozenset(
     {
         "rule_primary",
@@ -13,13 +22,12 @@ DECISION_SOURCES = frozenset(
         "model",
         "danger_opponent_block",
         "short_endgame_plan",
-        "teammate_control_block",
         "deepseek_rule_fallback",
         "adapter_rule_fallback",
         "conditional_pressure_pass",
         "conditional_rule_based",
     }
-)
+) | LEGACY_DECISION_SOURCES
 MODEL_OUTCOMES = frozenset({"success", "timeout", "exception", "invalid_suggestion"})
 AGENT_MODES = frozenset({"rule", "deepseek", "conditional_pressure_pass"})
 

@@ -11,7 +11,6 @@ from agents.conditional_pressure_pass_policy import (
     conditional_pressure_pass_id,
     dangerous_opponent_pass_id,
     teammate_big_joker_opportunity,
-    teammate_big_joker_pass_id,
     teammate_pressure_pass_id,
 )
 from agents.rule_based_ai import FrozenRuleBasedAIAgent, RuleBasedAIAgent
@@ -199,44 +198,41 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
             with self.subTest(observation=observation):
                 self.assertIsNone(dangerous_opponent_pass_id(observation, legal_actions, 2))
 
-    def test_teammate_big_joker_guard_is_narrow_and_fail_closed(self) -> None:
+    def test_teammate_big_joker_opportunity_is_narrow_and_fail_closed(self) -> None:
         actions = _joker_teammate_actions()
         self.assertEqual(teammate_big_joker_opportunity(_joker_teammate_observation(), actions, 4), (1, (2,)))
-        self.assertEqual(teammate_big_joker_pass_id(_joker_teammate_observation(), actions, 4, 2), 1)
         duplicate_big_joker = dict(actions[1], action_id=3)
         multiple_big_jokers = actions + [duplicate_big_joker]
         self.assertEqual(
             teammate_big_joker_opportunity(_joker_teammate_observation(), multiple_big_jokers, 4),
             (1, (2, 3)),
         )
-        self.assertEqual(teammate_big_joker_pass_id(_joker_teammate_observation(), multiple_big_jokers, 4, 3), 1)
-        cases: list[tuple[dict[str, object], list[dict[str, object]], int]] = []
-        cases.append((_joker_teammate_observation(), actions, 1))
-        cases.append((_joker_teammate_observation(my_hand_count=1), actions, 2))
-        cases.append((_joker_teammate_observation(opponent_count=2), actions, 2))
-        cases.append((_joker_teammate_observation(opponent_finished=True), actions, 2))
-        cases.append((_joker_teammate_observation(), _joker_teammate_actions(include_pass=False), 2))
+        cases: list[tuple[dict[str, object], list[dict[str, object]]]] = []
+        cases.append((_joker_teammate_observation(my_hand_count=1), actions))
+        cases.append((_joker_teammate_observation(opponent_count=2), actions))
+        cases.append((_joker_teammate_observation(opponent_finished=True), actions))
+        cases.append((_joker_teammate_observation(), _joker_teammate_actions(include_pass=False)))
 
         free = _joker_teammate_observation()
         free["current_round"] = {"step_no": 12, "round_no": 4, "current_player_id": 4, "constraint": "free", "table_action": None}
         free["history"] = {"actions": []}
-        cases.append((free, actions, 2))
+        cases.append((free, actions))
 
         enemy_lead = _joker_teammate_observation()
         enemy_lead["history"]["actions"][0]["player_id"] = 1  # type: ignore[index]
-        cases.append((enemy_lead, actions, 2))
+        cases.append((enemy_lead, actions))
 
         mismatch = _joker_teammate_observation()
         mismatch["history"]["actions"][0]["carrier_cards"] = ["BJ"]  # type: ignore[index]
-        cases.append((mismatch, actions, 2))
+        cases.append((mismatch, actions))
 
         bad_team = _joker_teammate_observation()
         bad_team["other_players"][1]["team"] = "wrong"  # type: ignore[index]
-        cases.append((bad_team, actions, 2))
+        cases.append((bad_team, actions))
 
-        for observation, legal_actions, selected in cases:
-            with self.subTest(selected=selected, constraint=observation["current_round"]["constraint"]):
-                self.assertIsNone(teammate_big_joker_pass_id(observation, legal_actions, 4, selected))
+        for observation, legal_actions in cases:
+            with self.subTest(constraint=observation["current_round"]["constraint"]):
+                self.assertIsNone(teammate_big_joker_opportunity(observation, legal_actions, 4))
 
         self.assertEqual(teammate_big_joker_opportunity(_joker_teammate_observation(), actions, 4), (1, (2,)))
 
@@ -257,7 +253,7 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
 
             joker = _joker_teammate_observation()
             mutator(joker)
-            self.assertIsNone(teammate_big_joker_pass_id(joker, _joker_teammate_actions(), 4, 2))
+            self.assertIsNone(teammate_big_joker_opportunity(joker, _joker_teammate_actions(), 4))
 
         constraint_cases = {
             "missing": lambda observation: observation["current_round"].pop("constraint"),
@@ -285,11 +281,14 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
             (_observation(), _legal(("bomb", 4)), 2, conditional_pressure_pass_id),
             (_observation(opponent_count=2), _legal(("bomb", 4)), 2, dangerous_opponent_pass_id),
             (_review_teammate_observation(), _legal(("bomb", 4)), 1, teammate_pressure_pass_id),
-            (_joker_teammate_observation(), _joker_teammate_actions(), 4, lambda observation, actions, player: teammate_big_joker_pass_id(observation, actions, player, 2)),
         )
         for observation, actions, player_id, helper in valid_sentinel_cases:
             with self.subTest(category="table_action_id", value="none"):
                 self.assertEqual(helper(observation, actions, player_id), 1)
+        self.assertEqual(
+            teammate_big_joker_opportunity(_joker_teammate_observation(), _joker_teammate_actions(), 4),
+            (1, (2,)),
+        )
 
         identity_cases = {
             "missing": mutate_table_identity(None, remove=True),

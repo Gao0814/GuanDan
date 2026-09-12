@@ -266,30 +266,6 @@ def dangerous_opponent_pass_id(
     return pass_id
 
 
-def teammate_big_joker_pass_id(
-    observation: object,
-    legal_actions: object,
-    expected_player_id: int,
-    selected_action_id: int,
-) -> int | None:
-    """Return pass for the narrow proved case of a model spending big joker on a teammate.
-
-    The initial resource scope is intentionally only the public singleton
-    ``BJ`` response to a teammate's singleton ``SJ`` lead.  Other pressure
-    patterns remain untouched until independently justified.
-    """
-
-    opportunity = teammate_big_joker_opportunity(
-        observation,
-        legal_actions,
-        expected_player_id,
-    )
-    if opportunity is None or not _is_int(selected_action_id):
-        return None
-    pass_id, big_joker_action_ids = opportunity
-    return pass_id if selected_action_id in big_joker_action_ids else None
-
-
 def teammate_big_joker_opportunity(
     observation: object,
     legal_actions: object,

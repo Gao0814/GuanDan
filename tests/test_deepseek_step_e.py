@@ -214,41 +214,27 @@ class TestDeepSeekStepE(unittest.TestCase):
         self.assertTrue(rules.can_beat(big_joker, small_joker, current_level_rank="2"))
         self.assertFalse(rules.can_beat(nine, small_joker, current_level_rank="2"))
 
-    def test_successful_model_big_joker_over_teammate_small_joker_is_preserved_as_pass(self) -> None:
+    def test_successful_model_keeps_canonical_teammate_joker_choice(self) -> None:
         class BigJokerClient:
-            def __init__(self) -> None:
+            def __init__(self, action_id: int) -> None:
                 self.calls = 0
+                self.action_id = action_id
 
             def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
                 self.calls += 1
-                return DeepSeekSuggestion(action_id=2, reasoning="ignored")
+                return DeepSeekSuggestion(action_id=self.action_id, reasoning="ignored")
 
         config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
-        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
-            client = BigJokerClient()
-            actions = _teammate_joker_legal_actions()
-            agent = DeepSeekAIAgent(4, client, rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
-            chosen = agent.select_action(_teammate_joker_observation(), actions)
-        self.assertEqual(chosen, 1)
-        self.assertIn(chosen, {action["action_id"] for action in actions})
-        self.assertEqual(agent.last_decision_source, "teammate_control_block")
-        self.assertEqual(client.calls, 1)
-
-    def test_teammate_joker_guard_preserves_model_action_for_finish_and_enemy_pressure(self) -> None:
-        class BigJokerClient:
-            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
-                return DeepSeekSuggestion(action_id=2, reasoning="ignored")
-
-        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
-        for observation, expected_source in (
-            (_teammate_joker_observation(own_count=1), "local"),
-            (_teammate_joker_observation(opponent_count=2), "model"),
-            (_teammate_joker_observation(opponent_finished=True), "model"),
-        ):
-            with self.subTest(own_count=observation["my_info"]["hand_count"]), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
-                agent = DeepSeekAIAgent(4, BigJokerClient(), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
-                self.assertEqual(agent.select_action(observation, _teammate_joker_legal_actions()), 2)
-                self.assertEqual(agent.last_decision_source, expected_source)
+        for suggested in (1, 2):
+            with self.subTest(suggested=suggested), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+                client = BigJokerClient(suggested)
+                actions = _teammate_joker_legal_actions()
+                agent = DeepSeekAIAgent(4, client, rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+                chosen = agent.select_action(_teammate_joker_observation(), actions)
+                self.assertEqual(chosen, suggested)
+                self.assertIn(chosen, {action["action_id"] for action in actions})
+                self.assertEqual(agent.last_decision_source, "model")
+                self.assertEqual(client.calls, 1)
 
     def test_teammate_joker_guard_does_not_block_model_pass_or_low_value_action(self) -> None:
         class FixedClient:

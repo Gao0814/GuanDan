@@ -106,17 +106,6 @@ class _ShortEndgamePlanAgent:
         return legal_actions[0]["action_id"]
 
 
-class _TeammateControlBlockAgent:
-    last_decision_source = "teammate_control_block"
-
-    def __init__(self) -> None:
-        self.client = _StrictDeepSeekClient(_Delegate(1))
-
-    def select_action(self, _: dict[str, object], legal_actions: list[dict[str, object]]) -> object:
-        self.client.suggest_action_id(observation={}, legal_actions=legal_actions)
-        return legal_actions[0]["action_id"]
-
-
 class _ShortcutAgent:
     last_decision_source = "local"
 
@@ -234,7 +223,6 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
             ),
             ("deepseek", _DangerBlockAgent, False, "danger_opponent_block", (("success", 1),), ()),
             ("deepseek", _ShortEndgamePlanAgent, False, "short_endgame_plan", (("success", 1),), ()),
-            ("deepseek", _TeammateControlBlockAgent, False, "teammate_control_block", (("success", 1),), ()),
             ("deepseek", lambda: _ExplodingAgent(), True, "adapter_rule_fallback", (), ("adapter_rule_fallback",)),
         )
         for mode, factory, outer_fallback, expected, outcomes, fallbacks in cases:
@@ -253,6 +241,17 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 self.assertEqual(snapshot.decision_source_counts, ((expected, 1),))
                 self.assertEqual(snapshot.model_outcome_counts, outcomes)
                 self.assertEqual(snapshot.rule_fallback_count, len(fallbacks))
+
+    def test_retired_teammate_control_source_remains_read_compatible(self) -> None:
+        snapshot = AgentObservabilitySnapshot(
+            "deepseek",
+            1,
+            (("teammate_control_block", 1),),
+            1,
+            (("success", 1),),
+            0,
+        )
+        self.assertEqual(snapshot.to_json()["decision_source_counts"], [["teammate_control_block", 1]])
 
     def test_conditional_agent_uses_public_projection_and_distinguishes_both_sources(self) -> None:
         recorder = AgentObservabilityRecorder()

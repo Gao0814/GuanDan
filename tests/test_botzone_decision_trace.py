@@ -172,6 +172,14 @@ class BotzoneDecisionTraceTests(unittest.TestCase):
                 "rule_primary",
             )
 
+    def test_retired_teammate_control_trace_remains_read_compatible(self) -> None:
+        with TemporaryDirectory() as root:
+            store = SessionStore(root)
+            store.save(_record((_trace(source="teammate_control_block"),)))
+            restored = store.load("unit-a")
+        assert restored is not None
+        self.assertEqual(restored.confirmed_decision_traces[0].decision_source, "teammate_control_block")
+
     def test_trace_requires_observation_legal_actions_to_match_canonical_actions(self) -> None:
         source = _trace()
         payload = source.to_json()
@@ -441,7 +449,12 @@ class BotzoneDecisionTraceTests(unittest.TestCase):
                 )
                 result = handler(_context())
                 assert result.decision_trace is not None
-                self.assertEqual(result.decision_trace.to_json()["decision_source"], source)
+                trace = result.decision_trace.to_json()
+                self.assertEqual(trace["decision_source"], source)
+                self.assertEqual(
+                    trace["selected_action"],
+                    next(action for action in trace["legal_actions"] if action["action_id"] == trace["selected_action_id"]),
+                )
                 snapshot = recorder.snapshot(mode)
                 self.assertEqual(snapshot.agent_decision_count, 1)
                 self.assertEqual(dict(snapshot.decision_source_counts), {source: 1})
