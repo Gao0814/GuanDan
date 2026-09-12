@@ -34,6 +34,8 @@
 - 受约束执行报告将修正后canonical fixture的守卫前真实模型检查判定为`teammate_control_canonical_prompt_raw_model_not_ready`：候选精确为pass与大王，intent为`ready / support_teammate / teammate_controls_table`，RAG为`endgame / endgame`；唯一请求成功、重试0，原始模型仍选择合法大王。规划Codex独立确认Git clean、fixture canonical及当前prompt只提供泛化“队友当前控桌”语义。该结果支持一个窄prompt缺口：模型尚未获得小王→大王资源代价及无紧急阻断需要的明确公开策略依据。
 - 专用strategy-intent已由`24fb362`实现：共享`teammate_big_joker_opportunity()`只从公开observation与canonical legal actions识别原始pass/大王机会，后置守卫复用该真值；router新增`teammate_big_joker_preservation`，prompt明确队友小王已控桌、pass合法、大王不能直接出完且没有紧急对手时的资源保留意义。它不选择、过滤或改写模型动作，RAG和后置守卫行为未变。
 - 规划Codex独立检查8文件提交范围和守卫调用链，并复跑83项strategy-intent/DeepSeek/Botzone定向、39项主规则及712项全量测试通过，`git diff --check`通过。当前实现层范围内无已知剩余风险；下一步只做一次零重试、守卫前canonical真实模型复放，判断新版prompt是否改变原始选择。
+- 受约束执行报告将新版canonical复放判定为`teammate_big_joker_prompt_raw_model_improved`：候选精确为pass与大王，共享机会成立，intent为`ready / support_teammate / teammate_big_joker_preservation`，RAG仍为`endgame / endgame`；唯一模型请求成功、重试0，后置守卫前原始选择为合法pass。Git与workspace未变。模型响应未持久化，因此该动作结果以低敏执行报告为证据；本地代码前提已由上一轮独立复审确认。
+- 该结果支持退役`teammate_control_block`主动改写：下一步移除生产DeepSeek成功路径中的强制pass，但保留专用prompt与共享机会真值。无需新增shadow运行机制；decision trace可离线重建机会。历史source只保留必要的读取兼容，不允许新生产路径继续产生。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审

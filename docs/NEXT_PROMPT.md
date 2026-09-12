@@ -1,43 +1,52 @@
 # 给执行 Codex 的下一任务 Prompt
 
-对提交`24fb362`新增的队友小王→大王专用strategy-intent执行一次真实DeepSeek原始动作复放。必须直接取得任何确定性后置守卫之前的模型建议；本任务只做一次受控模型调用，不修改代码，不运行Botzone。
-
-项目所有者发送本Prompt即授权：通过项目现有配置向当前配置的DeepSeek模型发送一份合成的公开observation、两个canonical legal actions、当前RAG和新版strategy-intent prompt，外部模型请求总上限为1，client重试固定为0。不得扩大授权范围。
+退役DeepSeek成功动作路径中的`teammate_control_block`主动覆盖：新版专用strategy-intent已在canonical真实模型复放中使模型原始选择pass，因此该场景应恢复为“模型从原始合法动作中自主选择”，不再由后置规则把合法大王强制改成pass。
 
 ## 【开始前】
 
-1. 阅读并遵守`AGENTS.md`，检查适用项目Skills；本任务不使用Botzone live或workspace-cleanup Skill。
-2. 阅读`docs/CLEAN_HANDOFF.md`、`agents/conditional_pressure_pass_policy.py`、`agents/strategy_router.py`、`agents/strategy_intent_prompt.py`、`agents/deepseek_ai.py`、`agents/deepseek_client.py`及相关canonical fixture测试。
-3. 检查Git状态必须clean，确认HEAD包含`24fb362`。若不满足，停止且不调用模型。
+1. 阅读并遵守`AGENTS.md`，检查适用项目Skills；本任务没有适用的Botzone live或workspace-cleanup Skill。
+2. 阅读`docs/CLEAN_HANDOFF.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`，以及DeepSeek成功动作路径、strategy router/prompt、共享`teammate_big_joker_opportunity()`、Botzone observability/session/trace和相关测试。
+3. 检查Git状态必须clean，确认HEAD包含`24fb362`。复现专用intent为`ready / support_teammate / teammate_big_joker_preservation`；把受约束真实模型判定`teammate_big_joker_prompt_raw_model_improved`视为本任务的执行依据，不重新调用模型。
 
-## 【调用前硬门槛】
+## 【目标】
 
-- 使用`8db3154`修正后的canonical fixture，并由当前引擎再次确认：原始合法候选精确为pass与单张大王两个，大王可以压队友领出的单张小王。
-- `teammate_big_joker_opportunity()`必须返回该fixture中的原始pass与大王候选身份。
-- 当前strategy intent必须为`ready / support_teammate / teammate_big_joker_preservation`，提示必须含新版高价值资源保留语义；若仍是泛化`teammate_controls_table`则停止。
-- RAG保持当前生产结果，预计低敏scene/action-context为`endgame / endgame`；不得修改或替换RAG以追求结果。
-- 使用当前生产模型、temperature和其余请求参数；client重试必须显式为0。
+- 从`DeepSeekAIAgent`成功建议处理链移除小王→大王的强制pass改写。模型返回原始合法pass时继续返回pass；模型返回原始合法大王时也必须原样返回该大王ID，`last_decision_source`为普通`model`。
+- 删除只服务于主动覆盖且已无生产调用者的私有函数/后置选择辅助；保留`teammate_big_joker_opportunity()`作为strategy router与专用prompt的公开机会真值。
+- 保持`teammate_big_joker_preservation` reason、prompt文本和Botzone factory接线不变。
+- 不新增shadow执行分支或新的audit/source类别。现有decision trace已足以在未来从公开observation与legal actions离线重建该机会。
 
-任一门槛不满足时，不得发送模型请求，判为inconclusive。
+## 【兼容性与不变量】
 
-## 【执行要求】
+- DeepSeek仍只返回原始`legal_actions`中的合法整数ID；不得用RuleBased替换成功模型动作。
+- `danger_opponent_block`与`short_endgame_plan`不属于本次范围，调用顺序和行为保持不变。
+- 不修改RAG、engine、Botzone协议、strategy-intent字段/序列化、fallback或audit schema/version。
+- 历史v8 audit、session或decision trace可能含`teammate_control_block`。若移除该类别会破坏现有持久证据解析，则把它保留为legacy read-compatible allowlist值，但新的生产DeepSeek路径不得再产生它。不得为了表面清理破坏历史兼容。
+- 不新增依赖，不访问网络、真实模型、Botzone、Edge或`.env`，不触碰`D:\VsCodeProject\BotzoneWorkspace`。
 
-- 直接调用客户端取得模型原始action ID，并验证它是两个原始canonical legal action ID之一。
-- 必须在`teammate_control_block`、`danger_opponent_block`、`short_endgame_plan`或任何RuleBased替代之前捕获结果。
-- 不允许以现有后置守卫最终返回pass冒充模型选择pass。
-- 外部模型请求最多1次；请求失败、响应非法或前置不满足时不得重试。
+## 【验证要求】
 
-## 【隐私与禁止事项】
+测试至少覆盖：
 
-- 只报告原始动作类别`pass`或`target_special`，不得输出action ID、牌面、完整observation/legal actions、prompt、模型响应/reasoning、API key、URL、Header、Cookie或配置正文。
-- 不读取或输出`.env`正文；若当前进程无法取得必要配置，直接判inconclusive。
-- 不修改代码、tests、docs、配置或`D:\VsCodeProject\BotzoneWorkspace`；不创建报告文件或Git commit。
-- 不运行Botzone、Edge、connector、preflight、live、容量评测或额外模型调用。
+- canonical小王→大王fixture继续生成专用ready intent/prompt；
+- fake client返回pass时最终仍为原始pass、source=`model`；
+- fake client返回大王时最终保留原始大王、source=`model`，不能再变成pass或`teammate_control_block`；
+- Botzone factory、adapter、model success计数及decision trace记录的selected action与最终模型动作一致；
+- 历史`teammate_control_block`聚合/trace兼容性按上述边界保留，或在有明确迁移设计和测试时安全处理；
+- 危险对手阻断、短残局规划、模型失败fallback及普通strategy-intent回归不漂移；
+- 仓库中不存在仍可从新生产DeepSeek路径触发`teammate_control_block`的调用链。
 
-## 【唯一判定】
+至少运行：
 
-- 原始模型选择`pass`：`teammate_big_joker_prompt_raw_model_improved`。这支持下一步把`teammate_control_block`规划为shadow/退役候选，但本任务不修改守卫。
-- 原始模型选择`target_special`：`teammate_big_joker_prompt_raw_model_still_not_ready`。下一步应独立检查当前`endgame / endgame` RAG是否稀释或冲突，不得扩大后置覆盖。
-- 任一前置、请求或合法性验证失败：`teammate_big_joker_prompt_raw_model_inconclusive`。
+```powershell
+$env:PYTHON_DOTENV_DISABLED='1'
+.\.venv\Scripts\python.exe -m unittest tests.test_deepseek_step_e tests.test_conditional_pressure_pass tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime tests.test_botzone_agent_observability tests.test_botzone_decision_trace -q
+.\.venv\Scripts\python.exe -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q
+.\.venv\Scripts\python.exe -m unittest discover -q
+git diff --check
+```
 
-最终报告：唯一判定、canonical候选数、共享机会判定、intent状态/reason、RAG低敏scene/action-context、模型调用状态、原始动作类别与合法性、实际外部请求数、重试数、Git HEAD/status；同时确认仓库与workspace未修改。不得输出敏感正文。
+## 【完成标准与报告】
+
+完成标准：专用prompt保持有效；生产DeepSeek不再改写合法大王为pass；canonical pass与大王选择均按模型原始ID返回并记为`model`；历史持久证据兼容、其他守卫和全部测试通过。
+
+只暂存并提交本任务产生的代码和测试修改，不提交无关变化。最终报告：主动覆盖的原调用链、删除/保留的组件、历史source兼容处理、实际修改文件、验证命令与结果、commit hash、Git状态及剩余风险。不得运行真实模型或live。

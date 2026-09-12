@@ -31,6 +31,10 @@
 
 下一步只对同一canonical fixture执行一次新版prompt下的守卫前真实模型复放，外部请求上限1、重试0。若原始选择变为pass，再规划把`teammate_control_block`转为shadow/退役；若仍选大王，下一步单独检查`endgame / endgame` RAG，不扩大后置覆盖。
 
+16. 新版canonical真实模型复放判定为`teammate_big_joker_prompt_raw_model_improved`：专用reason ready、RAG保持`endgame / endgame`，唯一请求在后置守卫前返回原始合法pass。该结果支持让prompt承担策略引导并退役强制动作覆盖，不外推为整体胜率结论。
+
+下一步从生产DeepSeek成功路径移除`teammate_control_block`改写，保留`teammate_big_joker_opportunity()`和专用prompt。无需新增shadow source；现有decision trace可重建机会。历史audit/session/trace中的旧source应保持必要读取兼容，但新路径只记录`model`。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度
@@ -2037,3 +2041,4 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - 原fixture随后被证明含有不能压小王的伪合法单张9；该次调用改判inconclusive。修复检查点`8db3154`已把目标候选收敛为pass与大王，并经规划Codex独立通过41/39/710项。下一步只对修正后的canonical fixture重新执行一次守卫前模型检查。
 - 修正后canonical模型检查仍返回大王，判定`teammate_control_canonical_prompt_raw_model_not_ready`。当前泛化队友控桌reason与`endgame / endgame` RAG不足以表达特定资源代价；下一步只增加共享真值驱动的专用strategy-intent reason，不改RAG或扩大后置守卫。
 - 专用reason已由`24fb362`完成并通过规划Codex独立83/39/712项验证。下一步只运行一次零重试、守卫前的canonical真实模型复放；实现本身不再待办。
+- 新版专用reason的canonical真实模型复放返回原始合法pass，判定`teammate_big_joker_prompt_raw_model_improved`。下一步退役`teammate_control_block`主动覆盖，保留prompt及历史source读取兼容。

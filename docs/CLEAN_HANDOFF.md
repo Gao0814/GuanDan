@@ -113,6 +113,8 @@ strategy-intent接线已提交为`454a422`：Botzone DeepSeek factory启用现�
 
 专用prompt改进已提交为`24fb362`。新增`teammate_big_joker_opportunity()`在模型选择前只从公开observation与canonical legal actions识别原始pass/大王机会，既有后置守卫改为复用它；router新增`teammate_big_joker_preservation` reason，prompt增加小王控桌、pass合法、不能直接出完、无紧急对手及保留大王的策略意义。RAG、engine、Botzone协议、audit、observability与守卫优先级/范围未改。规划Codex独立检查8文件diff并复跑83项定向、39项主规则、712项全量及`git diff --check`，全部通过。
 
+其后的单次canonical真实模型复放判定为`teammate_big_joker_prompt_raw_model_improved`：两个候选与共享机会判定均成立，intent为`ready / support_teammate / teammate_big_joker_preservation`，RAG保持`endgame / endgame`；唯一模型调用成功、重试0，后置守卫前原始选择为合法pass。仓库与workspace未修改。该结果支持下一任务退役`teammate_control_block`主动改写，保留专用prompt和共享机会真值；旧source只保留必要的持久证据读取兼容。
+
 L5-A4h11a partial manifest、seed `45001` evidence、seed `47001` prestart evidence与seed `47002` evidence均已移入Windows回收站。seed `47003` evidence完整保留在固定workspace；无残留connector。
 
 seed `45001` 的普通人工 RuleBased history smoke 已完成并通过独立复核：15/15/15 请求闭环、qualified finished 1、14 次 rule primary、零 model/fallback、exit 0、`history=ok`，stderr 空。最后不完整观测段的显示语义与标题格式均已修复，并经16/54/643项独立复跑通过。
@@ -274,7 +276,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测。seed `47003`已经完成全10条trace审计且没有额外高置信度候选。小王→大王专用strategy-intent已实现并通过独立复审；下一任务按`docs/NEXT_PROMPT.md`只做一次新版prompt的守卫前真实模型复放，不运行Botzone或修改代码。
+当前没有失败的本地单测。seed `47003`已经完成全10条trace审计且没有额外高置信度候选。小王→大王专用strategy-intent已实现并在canonical真实模型复放中返回原始pass；下一任务按`docs/NEXT_PROMPT.md`退役该场景的主动后置覆盖，不运行真实模型或Botzone。
 
 ## 12. Working Tree Status
 
@@ -303,4 +305,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`对队友小王→大王canonical fixture执行一次新版专用prompt下的守卫前真实DeepSeek原始选择检查。最多一次请求、重试0，不运行Botzone、不修改仓库、不输出prompt或模型正文。
+按`docs/NEXT_PROMPT.md`移除生产DeepSeek成功路径中的`teammate_control_block`动作改写，保留专用prompt、共享机会真值和必要的历史source读取兼容。只做代码与测试，不联网或运行Botzone。
