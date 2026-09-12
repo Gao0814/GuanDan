@@ -20,12 +20,12 @@
 - 仓库级Skills位于 `.agents/skills/`：`botzone-manual-live` 封装单局人工连接、建桌、监测和evidence验收；`botzone-workspace-recycle` 封装已审计artifact的精确回收站清理。run-specific seed、Agent、预算、文件allowlist与hash仍只放在当前任务Prompt。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
-- 最新已提交实现检查点为 `045fb75`：在 `295b9b5` 算法基线上新增acknowledged Botzone decision trace，不改变策略、engine、audit或默认关闭行为。规划Codex已独立复跑定向88项、主规则39项和全量707项通过。
+- 最新业务提交为 `e30362f`：已从DeepSeek成功模型动作路径移除`teammate_control_block`强制pass，保留专用prompt与共享机会判定。规划Codex独立复跑113项定向、39项主规则和713项全量均通过；但正式policy benchmark仍拒绝legacy v7/v8 `teammate_control_block` audit，因此完整验收尚待一个最小离线兼容补漏。
 
 上述实现检查点：
 
 ```text
-045fb75
+e30362f
 ```
 
 当前分支：`cao`。提交数量会随规划检查点继续变化；读取者应以实际 `git rev-list --left-right --count origin/cao...HEAD` 为准，不使用本文中的历史 ahead 数字。
@@ -190,7 +190,7 @@ D:\VsCodeProject\BotzoneVerifiedUiCapacity-43001-43002
 - 新 `46200..46399` 整局 trial 两次完全一致：400/400局、197 active pairs、1433次 pass、candidate/baseline score=`422/378`、名次和=`1966/2034`、pair=`73/53/74`；判定 `retain_conditional_pressure_pass_for_botzone_opt_in_smoke`。该结果仍不证明真实 Botzone 胜率。
 - trial的pair/game、W/D/L互补、rank/diagnostic、非空容量、active/pass、单方名次范围和digest均已封口；真实两套report/hash不变。
 - Botzone显式mode已接通并以 `conditional_pressure_pass` / `conditional_rule_based` 低敏source守恒；正式RuleBased/DeepSeek benchmark拒绝混入conditional audit。
-- 当前全量测试：707 项通过。命令：`.venv\Scripts\python.exe -m unittest discover -q`，Python 3.11.9。
+- 当前全量测试：713 项通过。命令：`.venv\Scripts\python.exe -m unittest discover -q`，Python 3.11.9。
 - 当前 decision-trace/Botzone 定向：88 项通过；engine主回归：39项通过。精确命令见 `docs/TESTS.md`。
 - 当前 benchmark 定向测试：13 项通过。命令：`python -m unittest tests.test_botzone_policy_benchmark -q`。
 - 当前 engine 主回归：39 项通过。命令：`python -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q`。
@@ -276,7 +276,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测。seed `47003`已经完成全10条trace审计且没有额外高置信度候选。小王→大王专用strategy-intent已实现并在canonical真实模型复放中返回原始pass；下一任务按`docs/NEXT_PROMPT.md`退役该场景的主动后置覆盖，不运行真实模型或Botzone。
+当前713项本地单测全部通过，但验收缺口是一个未被既有测试覆盖的离线读取反例：使用现有benchmark fixture构造成功模型计数守恒的legacy v7/v8 `teammate_control_block` audit，`_validate_audit()`均以`invalid_pairs`拒绝。`e30362f`的动作自主性修改保留；下一任务按`docs/NEXT_PROMPT.md`只修复policy benchmark的source/守恒兼容，不运行真实模型或Botzone。
 
 ## 12. Working Tree Status
 
@@ -291,6 +291,7 @@ git diff --check
 - 最新DeepSeek提示检查点：`454a422 feat: enable strategy intent prompt for Botzone DeepSeek`；规划Codex独立检查三文件diff，复跑119/39/709项，并以真实第9条公开输入验证factory提示接线和模型动作自主权。
 - 最新测试证据检查点：`8db3154 test: align teammate joker fixtures with rules`；规划Codex独立检查仅两份测试，复跑41/39/710项并确认生产文件零修改。
 - 最新strategy-intent检查点：`24fb362 feat: prompt big joker teammate preservation`；规划Codex独立检查8文件diff，复跑83/39/712项，确认RAG、engine、Botzone协议及后置守卫范围未改变。
+- 最新动作自主性检查点：`e30362f feat: retire teammate control action override`；核心退役路径经113/39/713项回归通过，但legacy v7/v8 audit的policy benchmark读取兼容尚未达成。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex负责提交其业务代码、tests及任务直接相关修改；规划Codex独立复核结果，只提交自己产生的 `AGENTS.md`、项目Skills和docs上下文修改，不代为提交未完成或未经复核的业务改动。
 
@@ -305,4 +306,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`移除生产DeepSeek成功路径中的`teammate_control_block`动作改写，保留专用prompt、共享机会真值和必要的历史source读取兼容。只做代码与测试，不联网或运行Botzone。
+按`docs/NEXT_PROMPT.md`修正`evaluation/botzone_policy_benchmark.py`的DeepSeek source读取与模型守恒：让当前活跃的`danger_opponent_block`/`short_endgame_plan`和仅用于历史读取的`teammate_control_block`能按成功模型动作正确消费。保持新生产DeepSeek路径仅产生`model`而不恢复旧改写；只做离线代码与测试，不联网或运行Botzone。

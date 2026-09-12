@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：算法优化与单局决策证据采样（2026-09-12）
+## 当前阶段：算法优化与 legacy audit 兼容补漏（2026-09-12）
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
@@ -36,6 +36,10 @@
 - 规划Codex独立检查8文件提交范围和守卫调用链，并复跑83项strategy-intent/DeepSeek/Botzone定向、39项主规则及712项全量测试通过，`git diff --check`通过。当前实现层范围内无已知剩余风险；下一步只做一次零重试、守卫前canonical真实模型复放，判断新版prompt是否改变原始选择。
 - 受约束执行报告将新版canonical复放判定为`teammate_big_joker_prompt_raw_model_improved`：候选精确为pass与大王，共享机会成立，intent为`ready / support_teammate / teammate_big_joker_preservation`，RAG仍为`endgame / endgame`；唯一模型请求成功、重试0，后置守卫前原始选择为合法pass。Git与workspace未变。模型响应未持久化，因此该动作结果以低敏执行报告为证据；本地代码前提已由上一轮独立复审确认。
 - 该结果支持退役`teammate_control_block`主动改写：下一步移除生产DeepSeek成功路径中的强制pass，但保留专用prompt与共享机会真值。无需新增shadow运行机制；decision trace可离线重建机会。历史source只保留必要的读取兼容，不允许新生产路径继续产生。
+- 主动改写退役已由`e30362f`实现：`DeepSeekAIAgent`的模型成功路径仅保留`danger_opponent_block`后再运行`short_endgame_plan`，不再调用小王→大王强制pass辅助。fake client返回pass或大王时都保留原始合法ID并记为`model`；共享`teammate_big_joker_opportunity()`仍由router消费，专用`teammate_big_joker_preservation` prompt和Botzone factory接线未变。
+- 规划Codex独立复跑指定DeepSeek/strategy/Botzone集合113项、主规则39项和全量713项，全部通过；`git diff --check`通过，起始工作树clean。
+- 但`e30362f`尚不能按完整验收封板：当前`evaluation/botzone_policy_benchmark.py`使用独立的旧source allowlist和模型守恒公式，规划Codex构造的合法legacy v7/v8 `teammate_control_block`审计均被`invalid_pairs`拒绝。session/decision trace和`AgentObservabilitySnapshot`的legacy读取回归已通过，缺口仅在正式audit离线消费器；同一消费器也尚未识别当前活跃的`danger_opponent_block`与`short_endgame_plan`。
+- 下一步是一个纯离线、最小的audit reader兼容修正：不恢复任何动作改写，不改schema/version，新生产路径仍不得产生`teammate_control_block`。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审

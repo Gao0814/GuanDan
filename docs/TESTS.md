@@ -2190,3 +2190,12 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 规划Codex独立运行主规则集合：39项通过，用时0.169秒。
 - 显式设置`PYTHON_DOTENV_DISABLED=1`后独立运行全量：712项通过，用时41.459秒；`git diff --check`通过。
 - diff复核确认只修改4个生产AI模块和4个测试文件；RAG、engine、Botzone协议、audit、observability及后置守卫优先级/适用范围未改变。当前实现层范围内无已知剩余风险。
+
+## 2026-09-12 `e30362f` 队友动作覆盖退役复审
+
+- 提交范围为2个AI生产文件、2个Botzone生产文件和5个相关测试；起始HEAD即`e30362fd22746e0813f9d614d9c32d867240c820`，工作树clean。
+- 独立定向命令：`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_deepseek_step_e tests.test_conditional_pressure_pass tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime tests.test_botzone_agent_observability tests.test_botzone_decision_trace -q`，113项通过，用时2.382秒。
+- 独立主规则集合39项通过，用时0.170秒；显式禁用dotenv后全量713项通过，用时41.450秒；`git diff --check`通过。
+- 代码和回归证明：fake client选pass/大王都保留原始合法ID且source为`model`；专用intent/prompt与Botzone factory未削弱；`danger_opponent_block`仍先于`short_endgame_plan`；新DeepSeek/adapter生产路径不再产生`teammate_control_block`。
+- session/decision trace与`AgentObservabilitySnapshot`的legacy source回归通过，但额外以现有policy benchmark fixture构造合法成功模型计数后，v7与v8 `teammate_control_block` audit均被`PolicyBenchmarkError("invalid_pairs")`拒绝。根因是`evaluation/botzone_policy_benchmark.py`维护了未同步的独立source allowlist和只计`model`/回退的守恒公式。
+- 因legacy audit读取兼容未达成，本提交的核心行为修改可保留，但完整验收暂不封板；下一步为离线audit reader的最小兼容补漏。
