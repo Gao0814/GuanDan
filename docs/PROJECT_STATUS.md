@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：算法优化与单局决策证据采样（2026-09-10）
+## 当前阶段：算法优化与单局决策证据采样（2026-09-12）
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
@@ -32,7 +32,8 @@
 - 随后的`teammate_control_block`真实模型原始动作检查虽返回合法`target_special`，但其复用的测试fixture把单张9列为可压单张小王的“合法动作”。规划Codex用当前`BaseRuleEngine.can_beat()`独立复现：大王可压小王，9不可压小王。该输入不是engine canonical legal actions，故原`teammate_control_prompt_raw_model_not_ready`不成立，改判`teammate_control_prompt_raw_model_inconclusive`；不能据此修改prompt或评价模型。下一步只修正相关测试fixture及其语义，不联网、不改生产策略。
 - canonical fixture修正已提交为`8db3154`，范围仅为两份测试：目标小王场景只含pass与大王；普通低价值非触发测试迁移到队友普通单张8、本家以9合法跟牌的独立场景，并加入引擎真值回归。规划Codex独立复跑定向41项、主规则39项和全量710项通过，`git diff --check`通过；该修正使随后的一次守卫前真实DeepSeek检查具备canonical前提。
 - 受约束执行报告将修正后canonical fixture的守卫前真实模型检查判定为`teammate_control_canonical_prompt_raw_model_not_ready`：候选精确为pass与大王，intent为`ready / support_teammate / teammate_controls_table`，RAG为`endgame / endgame`；唯一请求成功、重试0，原始模型仍选择合法大王。规划Codex独立确认Git clean、fixture canonical及当前prompt只提供泛化“队友当前控桌”语义。该结果支持一个窄prompt缺口：模型尚未获得小王→大王资源代价及无紧急阻断需要的明确公开策略依据。
-- 下一步只新增一个严格公开、action-aware的专用strategy-intent reason，并与现有大王守卫复用同一条件真值；它只向模型提供策略依据，不选择或过滤动作。后置守卫本轮暂留，RAG不同时调整，完成离线测试后再进行一次相同canonical模型复放。
+- 专用strategy-intent已由`24fb362`实现：共享`teammate_big_joker_opportunity()`只从公开observation与canonical legal actions识别原始pass/大王机会，后置守卫复用该真值；router新增`teammate_big_joker_preservation`，prompt明确队友小王已控桌、pass合法、大王不能直接出完且没有紧急对手时的资源保留意义。它不选择、过滤或改写模型动作，RAG和后置守卫行为未变。
+- 规划Codex独立检查8文件提交范围和守卫调用链，并复跑83项strategy-intent/DeepSeek/Botzone定向、39项主规则及712项全量测试通过，`git diff --check`通过。当前实现层范围内无已知剩余风险；下一步只做一次零重试、守卫前canonical真实模型复放，判断新版prompt是否改变原始选择。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审

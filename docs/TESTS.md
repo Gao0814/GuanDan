@@ -2182,3 +2182,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 独立主规则命令：`.\.venv\Scripts\python.exe -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q`，39项通过，用时0.167秒。
 - 独立全量命令：`.\.venv\Scripts\python.exe -m unittest discover -q`，707项通过，用时43.047秒；工作树与staged `git diff --check`均无whitespace error，仅有既有LF/CRLF提示。
 - staged清单精确为6个Botzone实现文件、1个新增recorder、3个既有测试文件和1个新增decision-trace测试，共11项；提交检查点为 `045fb75`。
+
+## 2026-09-12 队友小王→大王专用 strategy-intent 复审
+
+- 提交`24fb362`新增共享公开机会判定`teammate_big_joker_opportunity()`，由strategy router与既有后置守卫复用；prompt新增`teammate_big_joker_preservation`，但不选择、过滤或改写动作。
+- 规划Codex独立运行strategy-intent、DeepSeek与Botzone相关集合：83项通过，用时0.625秒。
+- 规划Codex独立运行主规则集合：39项通过，用时0.169秒。
+- 显式设置`PYTHON_DOTENV_DISABLED=1`后独立运行全量：712项通过，用时41.459秒；`git diff --check`通过。
+- diff复核确认只修改4个生产AI模块和4个测试文件；RAG、engine、Botzone协议、audit、observability及后置守卫优先级/适用范围未改变。当前实现层范围内无已知剩余风险。

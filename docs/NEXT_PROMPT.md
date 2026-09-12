@@ -1,56 +1,43 @@
 # 给执行 Codex 的下一任务 Prompt
 
-为队友“小王控桌、本家只有pass或大王压制”的严格公开场景增加一个专用strategy-intent reason，使DeepSeek在决策前明确获得高价值资源保留依据。该信息只进入模型prompt，不选择、过滤或改写动作；本任务不调用真实模型。
+对提交`24fb362`新增的队友小王→大王专用strategy-intent执行一次真实DeepSeek原始动作复放。必须直接取得任何确定性后置守卫之前的模型建议；本任务只做一次受控模型调用，不修改代码，不运行Botzone。
+
+项目所有者发送本Prompt即授权：通过项目现有配置向当前配置的DeepSeek模型发送一份合成的公开observation、两个canonical legal actions、当前RAG和新版strategy-intent prompt，外部模型请求总上限为1，client重试固定为0。不得扩大授权范围。
 
 ## 【开始前】
 
-1. 阅读并遵守`AGENTS.md`，检查适用项目Skills；本任务没有适用的Botzone live或workspace-cleanup Skill。
-2. 阅读`docs/CLEAN_HANDOFF.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`，以及strategy router/prompt、`teammate_big_joker_pass_id()`、DeepSeek接线和相关测试。
-3. 检查Git状态必须clean，确认HEAD包含`8db3154`。复现当前canonical fixture得到泛化`support_teammate / teammate_controls_table`，并确认守卫前模型检查的既有低敏判定为`teammate_control_canonical_prompt_raw_model_not_ready`。
+1. 阅读并遵守`AGENTS.md`，检查适用项目Skills；本任务不使用Botzone live或workspace-cleanup Skill。
+2. 阅读`docs/CLEAN_HANDOFF.md`、`agents/conditional_pressure_pass_policy.py`、`agents/strategy_router.py`、`agents/strategy_intent_prompt.py`、`agents/deepseek_ai.py`、`agents/deepseek_client.py`及相关canonical fixture测试。
+3. 检查Git状态必须clean，确认HEAD包含`24fb362`。若不满足，停止且不调用模型。
 
-## 【目标】
+## 【调用前硬门槛】
 
-- 从现有小王→大王守卫条件中提取或复用一个不依赖模型已选动作的严格公开机会判定，供strategy router与现有后置守卫共享，避免两份条件逻辑漂移。
-- 当且仅当公开证据严格证明以下条件时，router在既有优先级中产生一个新的固定reason code，intent仍为`support_teammate`：
-  - 跟牌且history/table一致，领牌者是队友；
-  - 队友以单张小王控桌；
-  - 原始canonical legal actions包含pass和单张大王压制；
-  - 使用大王不能立即出完；
-  - 对手均未结束且余牌大于2。
-- 专用prompt需明确表达：队友已用小王控桌、pass合法、此时用大王不能直接出完且没有紧急阻断对手的公开需要；应优先考虑让队友保持牌权并保留大王这一高价值控制资源。措辞必须保持“策略建议、由模型在合法候选中决定”，不得写成强制动作或合法性结论。
-- 普通队友领牌继续使用`teammate_controls_table`；任一字段畸形、history/table不一致、无pass、无大王、可立即出完、对手余1/2张或已结束时不得产生专用reason。
+- 使用`8db3154`修正后的canonical fixture，并由当前引擎再次确认：原始合法候选精确为pass与单张大王两个，大王可以压队友领出的单张小王。
+- `teammate_big_joker_opportunity()`必须返回该fixture中的原始pass与大王候选身份。
+- 当前strategy intent必须为`ready / support_teammate / teammate_big_joker_preservation`，提示必须含新版高价值资源保留语义；若仍是泛化`teammate_controls_table`则停止。
+- RAG保持当前生产结果，预计低敏scene/action-context为`endgame / endgame`；不得修改或替换RAG以追求结果。
+- 使用当前生产模型、temperature和其余请求参数；client重试必须显式为0。
 
-## 【重要约束】
+任一门槛不满足时，不得发送模型请求，判为inconclusive。
 
-- DeepSeek仍是合法动作空间内的主要策略决策者。不得新增、扩大或提前任何后置动作覆盖，不得用RuleBased替换成功模型动作。
-- 现有`teammate_control_block`本轮暂时保留且行为不变，等待新prompt完成后独立真实模型复放；不要在本任务把它转shadow或删除。
-- 不修改RAG scene/action-context、语料或检索。本轮只改变strategy-intent这一单一变量。
-- 不改变engine、Botzone协议、public observation/legal-actions契约、fallback、observability source或audit schema/version。
-- 只使用公开observation与原始canonical legal actions；始终返回/保留原始action ID。
-- 不访问网络、DeepSeek、Botzone、Edge或`.env`；不触碰`D:\VsCodeProject\BotzoneWorkspace`，不运行live或容量评测。
+## 【执行要求】
 
-## 【验证要求】
+- 直接调用客户端取得模型原始action ID，并验证它是两个原始canonical legal action ID之一。
+- 必须在`teammate_control_block`、`danger_opponent_block`、`short_endgame_plan`或任何RuleBased替代之前捕获结果。
+- 不允许以现有后置守卫最终返回pass冒充模型选择pass。
+- 外部模型请求最多1次；请求失败、响应非法或前置不满足时不得重试。
 
-测试至少覆盖：
+## 【隐私与禁止事项】
 
-- `8db3154`后的canonical小王→大王fixture产生新的ready reason、`support_teammate`和专用策略文本；
-- 普通队友控桌仍走原reason；
-- 对手领牌、自由出牌、history/table不一致、无pass、无大王、立即出完、危险对手、已结束对手及畸形action/player/team字段均不误触发；
-- prompt formatter对新增上下文字段、reason与预算继续fail closed；序列化稳定、固定长度/包络测试同步更新；
-- fake client无论返回pass还是大王，请求结果仍按既有模型success语义计数；大王分支只允许继续触发现有`teammate_control_block`，不得增加其他覆盖；Botzone factory确实把新ready payload传入client。
+- 只报告原始动作类别`pass`或`target_special`，不得输出action ID、牌面、完整observation/legal actions、prompt、模型响应/reasoning、API key、URL、Header、Cookie或配置正文。
+- 不读取或输出`.env`正文；若当前进程无法取得必要配置，直接判inconclusive。
+- 不修改代码、tests、docs、配置或`D:\VsCodeProject\BotzoneWorkspace`；不创建报告文件或Git commit。
+- 不运行Botzone、Edge、connector、preflight、live、容量评测或额外模型调用。
 
-至少运行：
+## 【唯一判定】
 
-```powershell
-$env:PYTHON_DOTENV_DISABLED='1'
-.\.venv\Scripts\python.exe -m unittest tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_deepseek_step_e tests.test_botzone_deepseek_agent_runtime tests.test_botzone_agent_observability -q
-.\.venv\Scripts\python.exe -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q
-.\.venv\Scripts\python.exe -m unittest discover -q
-git diff --check
-```
+- 原始模型选择`pass`：`teammate_big_joker_prompt_raw_model_improved`。这支持下一步把`teammate_control_block`规划为shadow/退役候选，但本任务不修改守卫。
+- 原始模型选择`target_special`：`teammate_big_joker_prompt_raw_model_still_not_ready`。下一步应独立检查当前`endgame / endgame` RAG是否稀释或冲突，不得扩大后置覆盖。
+- 任一前置、请求或合法性验证失败：`teammate_big_joker_prompt_raw_model_inconclusive`。
 
-## 【完成标准与报告】
-
-完成标准：canonical目标fixture稳定获得专用ready reason及策略建议；所有近似场景保持原行为或fail closed；生产动作选择、后置守卫、RAG、engine和Botzone契约无额外变化；全部测试通过。
-
-只暂存并提交本任务产生的代码和测试修改，不提交无关变化。最终报告：根因、共享判定设计、prompt新增语义、实际修改文件、为何不改RAG/后置守卫、测试命令与结果、commit hash、Git状态及剩余风险。不得运行真实模型；后续canonical复放由规划Codex复审后单独安排。
+最终报告：唯一判定、canonical候选数、共享机会判定、intent状态/reason、RAG低敏scene/action-context、模型调用状态、原始动作类别与合法性、实际外部请求数、重试数、Git HEAD/status；同时确认仓库与workspace未修改。不得输出敏感正文。

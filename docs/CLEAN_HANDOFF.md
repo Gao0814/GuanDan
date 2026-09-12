@@ -111,6 +111,8 @@ strategy-intent接线已提交为`454a422`：Botzone DeepSeek factory启用现�
 
 受约束执行报告将新的canonical检查判定为`teammate_control_canonical_prompt_raw_model_not_ready`：候选数2，intent为`ready / support_teammate / teammate_controls_table`，RAG为`endgame / endgame`，唯一模型请求成功且原始选择为合法大王；结果在后置守卫前捕获。模型响应按隐私契约未持久化，但规划Codex独立确认提交、fixture、引擎真值与Git clean。当前可复现缺口是strategy-intent只表达泛化“队友当前控桌”，没有表达小王→大王的高价值资源代价和无紧急阻断需要。下一任务只实现共享公开判定驱动的专用prompt reason，不改RAG或后置动作行为。
 
+专用prompt改进已提交为`24fb362`。新增`teammate_big_joker_opportunity()`在模型选择前只从公开observation与canonical legal actions识别原始pass/大王机会，既有后置守卫改为复用它；router新增`teammate_big_joker_preservation` reason，prompt增加小王控桌、pass合法、不能直接出完、无紧急对手及保留大王的策略意义。RAG、engine、Botzone协议、audit、observability与守卫优先级/范围未改。规划Codex独立检查8文件diff并复跑83项定向、39项主规则、712项全量及`git diff --check`，全部通过。
+
 L5-A4h11a partial manifest、seed `45001` evidence、seed `47001` prestart evidence与seed `47002` evidence均已移入Windows回收站。seed `47003` evidence完整保留在固定workspace；无残留connector。
 
 seed `45001` 的普通人工 RuleBased history smoke 已完成并通过独立复核：15/15/15 请求闭环、qualified finished 1、14 次 rule primary、零 model/fallback、exit 0、`history=ok`，stderr 空。最后不完整观测段的显示语义与标题格式均已修复，并经16/54/643项独立复跑通过。
@@ -272,7 +274,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前没有失败的本地单测。seed `47003`已经完成全10条trace审计且没有额外高置信度候选。小王→大王canonical模型检查现已形成一个窄strategy-intent语义缺口；下一任务按`docs/NEXT_PROMPT.md`只实现专用prompt reason及测试，不联网或运行Botzone。
+当前没有失败的本地单测。seed `47003`已经完成全10条trace审计且没有额外高置信度候选。小王→大王专用strategy-intent已实现并通过独立复审；下一任务按`docs/NEXT_PROMPT.md`只做一次新版prompt的守卫前真实模型复放，不运行Botzone或修改代码。
 
 ## 12. Working Tree Status
 
@@ -286,6 +288,7 @@ git diff --check
 - 最新Botzone诊断检查点：`045fb75 feat: record acknowledged Botzone decisions`；提交前由规划Codex独立复现反例并运行定向88项、主规则39项、全量707项及staged diff检查。
 - 最新DeepSeek提示检查点：`454a422 feat: enable strategy intent prompt for Botzone DeepSeek`；规划Codex独立检查三文件diff，复跑119/39/709项，并以真实第9条公开输入验证factory提示接线和模型动作自主权。
 - 最新测试证据检查点：`8db3154 test: align teammate joker fixtures with rules`；规划Codex独立检查仅两份测试，复跑41/39/710项并确认生产文件零修改。
+- 最新strategy-intent检查点：`24fb362 feat: prompt big joker teammate preservation`；规划Codex独立检查8文件diff，复跑83/39/712项，确认RAG、engine、Botzone协议及后置守卫范围未改变。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex负责提交其业务代码、tests及任务直接相关修改；规划Codex独立复核结果，只提交自己产生的 `AGENTS.md`、项目Skills和docs上下文修改，不代为提交未完成或未经复核的业务改动。
 
@@ -300,4 +303,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`实现队友小王→大王资源保留的专用strategy-intent reason，并与现有公开守卫条件共享真值。只做离线代码与测试，不改RAG、不移除或扩大后置守卫、不联网。
+按`docs/NEXT_PROMPT.md`对队友小王→大王canonical fixture执行一次新版专用prompt下的守卫前真实DeepSeek原始选择检查。最多一次请求、重试0，不运行Botzone、不修改仓库、不输出prompt或模型正文。
