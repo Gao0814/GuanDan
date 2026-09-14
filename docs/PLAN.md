@@ -67,6 +67,10 @@
 
 下一步仍是独立清理任务，不进入live：按`docs/NEXT_PROMPT.md`只回收剩余state、stderr、stdout三个精确文件，继续失败即停，并保留空`audit/state/streams`目录。只有规划Codex复审最终文件数为0后，才另行安排最新HEAD的人工单局DeepSeek采样。
 
+26. 恢复清理已完成：剩余state、stderr、stdout按新allowlist逐项进入Windows回收站，前三条旧路径继续不存在；永久删除、回收站清空、connector/live/model/preflight/browser和仓库修改均为0。规划Codex独立确认固定workspace为普通非链接目录，递归精确只含空`audit/state/streams`三个普通目录，文件数0；`D:\VsCodeProject`顶层`Botzone*`仍只有固定workspace，Git与项目connector均无漂移。
+
+技术上的下一候选任务是一局最新HEAD的人工`deepseek` decision-trace采样，但完整单局可能达到或超过10次真实模型请求。依据`AGENTS.md`，当前先进入授权门槛：拟使用seed `47004`、seat 0、级牌2、无贡、单局，进程级`DEEPSEEK_MAX_RETRIES=0`，以`max-cycles=100`给出真实模型请求硬上限100。未取得项目所有者明确授权前不得下发可执行live Prompt或启动任何外部步骤。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度

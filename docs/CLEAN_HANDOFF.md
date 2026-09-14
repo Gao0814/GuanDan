@@ -119,7 +119,7 @@ strategy-intent接线已提交为`454a422`：Botzone DeepSeek factory启用现�
 
 其后的单次canonical真实模型复放判定为`teammate_big_joker_prompt_raw_model_improved`：两个候选与共享机会判定均成立，intent为`ready / support_teammate / teammate_big_joker_preservation`，RAG保持`endgame / endgame`；唯一模型调用成功、重试0，后置守卫前原始选择为合法pass。仓库与workspace未修改。该结果支持下一任务退役`teammate_control_block`主动改写，保留专用prompt和共享机会真值；旧source只保留必要的持久证据读取兼容。
 
-L5-A4h11a partial manifest、seed `45001` evidence、seed `47001` prestart evidence与seed `47002` evidence均已移入Windows回收站。seed `47003` evidence完整保留在固定workspace；无残留connector。
+L5-A4h11a partial manifest、seed `45001` evidence、seed `47001` prestart evidence、seed `47002` evidence与已完成审计的seed `47003` evidence均已移入Windows回收站；未永久删除或清空回收站，无残留connector。
 
 seed `45001` 的普通人工 RuleBased history smoke 已完成并通过独立复核：15/15/15 请求闭环、qualified finished 1、14 次 rule primary、零 model/fallback、exit 0、`history=ok`，stderr 空。最后不完整观测段的显示语义与标题格式均已修复，并经16/54/643项独立复跑通过。
 
@@ -261,7 +261,7 @@ D:\VsCodeProject\BotzoneVerifiedUiCapacity-43001-43002
 - `tests/test_botzone_policy_benchmark.py`：当前 benchmark 的最直接契约测试。
 - `tests/test_botzone_connector.py`、`test_botzone_session.py`、`test_botzone_play_adapter.py`、`test_botzone_deepseek_agent_runtime.py`：connector 主链测试。
 - `config.py`：DeepSeek 配置和实际 dotenv 加载行为。
-- 仓库外运行目录：当前唯一顶层目录是 `D:\VsCodeProject\BotzoneWorkspace`；它是普通非链接目录，包含seed `47003`保留的audit、history、decision trace、唯一v4 finished tombstone、stdout和stderr，以及三个普通目录`audit/`、`state/`、`streams/`。这些evidence已完成低敏hash、结构、ACK计数和provenance复核，尚未清理。
+- 仓库外运行目录：当前唯一顶层目录是 `D:\VsCodeProject\BotzoneWorkspace`；它是普通非链接目录，递归精确只含三个空的普通非链接目录`audit/`、`state/`、`streams/`，文件数0。seed `47003` evidence已在审计和状态记录后分两次逐项移入Windows回收站。
 
 ## 11. Tests and Reproduction
 
@@ -280,7 +280,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前718项全量、134项动作覆盖退役定向和39项主规则回归均通过。三项成功模型后置策略覆盖已全部退役，专用公开strategy-intent仍保留。seed `47003` evidence回收已完成前三项，因执行脚本误抄第四项预期hash而安全停止；当前只剩已复核的state、stderr、stdout三个文件。下一任务按`docs/NEXT_PROMPT.md`仅恢复回收这三项，不运行preflight、connector、模型或Botzone。
+当前718项全量、134项动作覆盖退役定向和39项主规则回归均通过。三项成功模型后置策略覆盖已全部退役，专用公开strategy-intent仍保留。seed `47003` evidence已全部回收且workspace独立复核为空；下一候选为最新HEAD的人工单局DeepSeek decision-trace采样，但须先取得10+真实模型请求的明确授权。
 
 ## 12. Working Tree Status
 
@@ -314,4 +314,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`使用`botzone-workspace-recycle` Skill，只将seed `47003`仍存在的state、stderr、stdout三个精确文件逐项移入Windows回收站；前三个已回收路径必须继续不存在。只保留固定workspace与`audit/state/streams`三个空目录，恢复清理结束后再单独规划最新HEAD的人工单局DeepSeek采样。
+当前先取得项目所有者对seed `47004`人工单局DeepSeek采样的明确授权：真实模型请求硬上限100、重试0。授权前保持空workspace，不启动preflight、connector、浏览器、建桌或模型；授权后再依据`botzone-manual-live` Skill生成完整可执行Prompt。

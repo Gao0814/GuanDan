@@ -66,6 +66,8 @@
 - seed `47003`旧evidence回收首次执行只完成前三项：completion audit、decision trace和history已逐项移入Windows回收站。第四项在实际回收前因执行脚本误抄预期hash而安全停止；未尝试修正或重试，state、空stderr和stdout仍在原位，永久删除及connector/live/model/preflight/browser均为0。
 - 规划Codex独立复核确认前三条路径已不存在；剩余三个文件仍为普通非链接对象，大小依次115/0/76 bytes，完整SHA-256与原任务一致。固定workspace及`audit/state/streams`三个普通目录、唯一顶层`Botzone*`集合、无项目connector和Git clean状态均保持。当前workspace文件数为3，尚不能用于下一次live。
 - 下一任务是新的独立恢复清理，只允许处理剩余三个精确文件并继续失败即停；达到文件数0后仍须结束任务，由规划Codex复审后再安排live。
+- seed `47003`恢复清理已完成：剩余state、stderr、stdout逐项移入Windows回收站，前三条旧路径继续不存在；永久删除和回收站清空均为0。规划Codex独立确认workspace/root及`audit/state/streams`均为普通非链接目录，三个目录为空、文件数0，顶层`Botzone*`集合仍唯一，Git clean且项目connector为0。
+- 当前workspace已具备下一次live的空环境前提，但下一候选单局DeepSeek采样可能达到或超过10次真实模型请求。当前无明确Coding任务，live也尚未获得10+请求授权；在项目所有者明确授权seed `47004`、请求硬上限100、重试0前，不启动preflight、connector、浏览器监督、建桌或模型。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审
