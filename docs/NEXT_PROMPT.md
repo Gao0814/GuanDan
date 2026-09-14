@@ -1,50 +1,35 @@
-# 给 Coding Codex 的下一任务 Prompt
+# 给执行 Codex 的下一任务 Prompt
 
-退役DeepSeek成功模型路径中的`danger_opponent_block`主动动作改写。已有prompt-first证据满足删除门槛：canonical fixture中对手以单张8领牌且剩余1张，本家原始合法候选为pass/9/J；现有factory生成`ready / block_opponent / urgent_opponent_controls_table`，一次零重试真实DeepSeek请求在守卫前自行返回候选集内的`ordinary`动作，判定`danger_opponent_prompt_raw_model_ready`。本任务只实现退役与兼容，不再调用真实模型。
+对现有`short_endgame_plan`做一次prompt-first的守卫前真实DeepSeek原始动作检查。本任务只取得下一项策略修改的证据，不修改或提交代码、tests或docs。
+
+项目所有者已在`AGENTS.md`长期授权单个明确任务中严格少于10次的预注册真实DeepSeek请求；本任务请求上限精确为1，无需另行申请。
 
 ## 【开始前】
 
 1. 阅读并遵守`AGENTS.md`，检查适用项目Skills；本任务没有适用的Botzone live或workspace-cleanup Skill。
-2. 阅读`docs/CLEAN_HANDOFF.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`，以及`agents/deepseek_ai.py`、`agents/conditional_pressure_pass_policy.py`、`integrations/botzone/play_adapter.py`、`integrations/botzone/agent_observability.py`、`evaluation/botzone_policy_benchmark.py`和对应测试。
-3. 检查Git工作树，确认HEAD包含规划检查点和`3ee6e0e`。若存在外部修改，保持不动且不得混入提交。
+2. 阅读`docs/CLEAN_HANDOFF.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、`agents/deepseek_ai.py`、`agents/short_endgame_planner.py`、`agents/strategy_router.py`、`agents/strategy_intent_prompt.py`、`integrations/botzone/agent_runtime.py`和`tests/test_deepseek_step_e.py`中短残局fixture/回归。
+3. 检查Git工作树必须clean，HEAD必须包含`7499ccc`。不触碰`D:\VsCodeProject\BotzoneWorkspace`。
 
-## 【目标】
+## 【固定输入与离线前提】
 
-- 从`DeepSeekAIAgent`成功模型分支移除`_block_dangerous_opponent_pass()`调用，使模型返回任一合法pass或普通动作时都保持原始action ID与`model` source。
-- 若源码搜索确认没有其他生产消费者，删除`_block_dangerous_opponent_pass()`和`dangerous_opponent_pass_id()`及其仅验证已退役动作覆盖的测试/import；不要保留不可达策略改写代码。
-- 模型合法结果之后仍按现有条件调用`_plan_short_free_lead()`；`short_endgame_plan`的适用范围、selector、source和行为不得改变。
-- 保留strategy router与prompt中的`block_opponent / urgent_opponent_controls_table`，使模型继续收到危险对手公开策略依据。不得削弱或改写其intent、reason、RAG场景或Botzone factory接线。
-- 将`danger_opponent_block`明确转为legacy read-compatible source：旧audit/session/decision trace继续可读取和满足成功模型outcome守恒，但新DeepSeek/adapter运行路径不得产生或主动接受该source。优先沿用`teammate_control_block`现有退役模式，不复制第二套分类逻辑。
+- 只使用`tests/test_deepseek_step_e.py::_short_endgame_observation()`与`_short_endgame_legal_actions()`：本家自由出牌，手牌精确为`6S,7S,JH,JD`，canonical候选精确为单6、单7、两张实体J各自的单J，以及J对，共5个原始action ID。不得替换、增删或改写fixture。
+- 请求前调用当前`strictly_better_free_lead_action_ids()`逐一证明：action 1、2、5已经达到最少剩余分组，返回`None`；action 3、4严格更差，返回精确候选集合`(1,2,5)`。任一结果不符就零请求停止。
+- 用Botzone DeepSeek factory的现行接线做零网络fake检查，确认strategy intent为`available / control / stable_control`，prompt为`ready / control`，RAG低基数scene/phase/action_context为`endgame / near_open_endgame / endgame`。任一前提不符就零请求停止。
 
-## 【边界与不变量】
+## 【请求边界】
 
-- 不把RuleBased选择新增为成功模型动作的后置覆盖，不新增shadow source或替代守卫。
-- 不修改engine、RAG语料、公开observation/canonical legal action契约、fallback、Botzone协议、audit schema/version或conditional模式。
-- 不借机退役或调整`short_endgame_plan`；它是下一项独立prompt-first技术债。
-- 不访问网络、真实DeepSeek、Botzone、Edge、`.env`或`D:\VsCodeProject\BotzoneWorkspace`，不新增依赖。
+- 外部模型请求上限精确为1，`max_retries=0`，温度和其他生产prompt参数保持现状。不运行Botzone、connector、Edge、整局或第二个模型请求。
+- 必须在`_plan_short_free_lead()`之前取得模型原始action ID。可在单一进程内临时mock该函数使其返回原始选择与`False`；不得改写工作树或用后置最终动作伪装模型原始选择。
+- 不输出、写入或提交API key、base URL、完整prompt、模型response、reasoning或异常正文。不新建artifact或日志。
 
-## 【测试要求】
+## 【判定】
 
-至少覆盖：
+- 唯一请求成功，原始action ID属于`{1,2,5}`：判定`short_endgame_prompt_raw_model_ready`。这只支持下一任务规划退役`short_endgame_plan`，本任务不删除它。
+- 唯一请求成功，原始action ID属于`{3,4}`：判定`short_endgame_prompt_raw_model_not_ready`。下一步只能规划一个从公开canonical动作与手牌推导“优先最少剩余分组”的专用strategy-intent/prompt补强，不扩大后置覆盖。
+- timeout、exception、invalid suggestion、前提失败、原始ID不属于5个候选或请求计数不是1：判定`short_endgame_prompt_raw_model_inconclusive`，不授权代码修改或自动重试。
 
-- fake client在对手剩1张和2张的危险fixture中返回pass时，均保持原始pass action ID，source=`model`，模型调用精确1次；返回9或J时也保持原始合法ID与`model` source。
-- 现有`urgent_opponent_controls_table` router/prompt和Botzone factory回归继续通过。
-- `short_endgame_plan`仍在原有严格自由出牌条件下触发，范围外保持模型动作；退役危险守卫后不改变其行为。
-- legacy v7/v8 `danger_opponent_block` audit/session/decision trace仍可读取，source/model outcome/count不守恒继续fail closed；当前adapter不再把新决策归类为该source。
-- 源码扫描确认新生产DeepSeek/adapter路径无`danger_opponent_block`赋值或主动分支，也无`_block_dangerous_opponent_pass()`或`dangerous_opponent_pass_id()`调用；legacy常量、兼容注释和测试fixture中的字符串允许保留。
+## 【完成报告】
 
-至少运行：
+最终只报告固定低敏字段：前提是否通过、候选数5、最少分组ID集合是否为`{1,2,5}`、intent status/intent/reason、RAG scene/phase/action_context、请求数、重试数、模型结果类别、原始动作类别`minimum_group|strictly_worse_single_jack`、原始action ID是否属于固定候选集，以及代码/文件修改数、Git HEAD和请求前后是否clean。
 
-```powershell
-$env:PYTHON_DOTENV_DISABLED='1'
-.\.venv\Scripts\python.exe -m unittest tests.test_deepseek_step_e tests.test_conditional_pressure_pass tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime tests.test_botzone_agent_observability tests.test_botzone_decision_trace tests.test_botzone_policy_benchmark -q
-.\.venv\Scripts\python.exe -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q
-.\.venv\Scripts\python.exe -m unittest discover -q
-git diff --check
-```
-
-## 【完成标准与提交】
-
-完成标准：危险对手主动动作覆盖从生产DeepSeek路径完全退役；fake pass/9/J均保持原始合法ID与`model` source；专用router/prompt和`short_endgame_plan`无行为漂移；旧`danger_opponent_block`证据仍可读取但新生产路径不能产生；全量测试通过。
-
-只暂存并提交本任务产生的最小业务代码和测试修改，不提交规划docs、AGENTS或外部变化。最终报告列出删除路径、legacy兼容设计、保留的不变量、修改文件、验证命令与结果、commit hash、最终Git状态及当前范围内剩余风险。
+当前任务不创建commit；不把一次模型结果外推为整局或胜率结论。

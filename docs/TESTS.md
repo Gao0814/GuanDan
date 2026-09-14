@@ -2215,3 +2215,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 唯一真实DeepSeek请求成功、重试0；守卫前原始action ID属于固定候选集且类别为`ordinary`。危险对手守卫仅在内存中临时绕过，`short_endgame_plan`未触发，代码/文件修改为0，HEAD为`c772f8194c535bcf8d24cf599114227452b12e99`，Git请求前后clean。
 - 模型response/reasoning按既定隐私约束未持久化，故上述原始动作属于低敏执行报告证据，不能从仓库独立重演。规划Codex独立确认HEAD/clean状态、生产调用顺序及fixture/prompt前提，并运行`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_deepseek_step_e tests.test_conditional_pressure_pass tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_botzone_agent_observability tests.test_botzone_policy_benchmark -q`，95项通过，用时1.609秒。
 - 该单点结果满足预注册的动作覆盖退役门槛，不构成整体胜率证据；下一任务移除生产`danger_opponent_block`，同时保留历史source读取兼容和危险对手专用prompt。
+
+## 2026-09-14 `7499ccc` 危险对手动作覆盖退役复审
+
+- 提交精确修改`agents/deepseek_ai.py`、`agents/conditional_pressure_pass_policy.py`、两个Botzone生产文件和5个对应测试文件；router、prompt、RAG、factory、engine、`short_endgame_plan`及audit schema/version无diff。
+- 独立定向命令：`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_deepseek_step_e tests.test_conditional_pressure_pass tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime tests.test_botzone_agent_observability tests.test_botzone_decision_trace tests.test_botzone_policy_benchmark -q`，132项通过，用时2.399秒。
+- 独立主规则集合39项通过，用时0.167秒；显式禁用dotenv后全量718项通过，用时40.147秒；`git show --check`、工作树`git diff --check`和最终clean状态均通过。
+- fake client在危险fixture中返回pass/9/J均保持原始合法ID与`model` source；当前adapter把agent残留的旧`danger_opponent_block` source按成功模型归一为`model`，`short_endgame_plan`仍按原条件记录。
+- `danger_opponent_block`仅剩集中legacy常量与兼容测试；旧v7/v8 audit和decision trace可读，错误outcome/count继续fail closed。生产DeepSeek/adapter无旧helper、调用或主动source分支。当前范围内无已知实现剩余风险。

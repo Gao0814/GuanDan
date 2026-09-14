@@ -20,14 +20,14 @@
 - 仓库级Skills位于 `.agents/skills/`：`botzone-manual-live` 封装单局人工连接、建桌、监测和evidence验收；`botzone-workspace-recycle` 封装已审计artifact的精确回收站清理。run-specific seed、Agent、预算、文件allowlist与hash仍只放在当前任务Prompt。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
-- 最新业务提交为 `3ee6e0e`：已集中DeepSeek成功模型source/尝试source/正式benchmark source分类，修复legacy v7/v8 `teammate_control_block`及活跃`danger_opponent_block`/`short_endgame_plan`的audit读取和outcome守恒。规划Codex独立复跑109项定向、39项主规则和718项全量均通过；`e30362f` + `3ee6e0e`组合验收已封板。
+- 最新业务提交为 `7499ccc`：已从DeepSeek成功模型路径退役`danger_opponent_block`主动改写，删除无消费者helper；原始合法pass/9/J均保持`model` source，危险对手router/prompt/RAG和`short_endgame_plan`未变。该source仅保留legacy读取兼容；规划Codex独立复跑132项定向、39项主规则和718项全量均通过。
 - canonical危险对手fixture的受约束真实模型检查已判定`danger_opponent_prompt_raw_model_ready`：唯一请求成功、重试0，模型在后置守卫前自行返回固定候选集内的`ordinary`动作；现有`block_opponent / urgent_opponent_controls_table`输入已足以支持退役强制pass阻断。该结果以低敏执行报告为证据，不是整体胜率结论。
 - 项目所有者长期授权单个明确诊断/评测任务中严格少于10次的预注册真实DeepSeek请求，无需另行申请；10次及以上仍须事先授权，范围、重试、密钥和自由文本保密边界不变。
 
 上述实现检查点：
 
 ```text
-3ee6e0e
+7499ccc
 ```
 
 当前分支：`cao`。提交数量会随规划检查点继续变化；读取者应以实际 `git rev-list --left-right --count origin/cao...HEAD` 为准，不使用本文中的历史 ahead 数字。
@@ -278,7 +278,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前718项全量基线和本轮95项相关复核均通过。危险对手守卫前真实模型检查已经得到合法`ordinary`原始动作，满足预注册的退役门槛。下一任务按`docs/NEXT_PROMPT.md`移除生产`danger_opponent_block`动作改写，把该source转为只读legacy兼容；不改危险对手router/prompt、RAG、engine或`short_endgame_plan`。
+当前718项全量基线和本轮132项退役定向复核均通过。生产DeepSeek/adapter已不再产生`teammate_control_block`或`danger_opponent_block`，两者只保留旧audit/session/trace读取兼容；当前范围内无已知实现风险。下一任务按`docs/NEXT_PROMPT.md`只对固定4张自由出牌fixture做一次`short_endgame_plan`守卫前真实模型原始动作检查，不修改代码或运行Botzone。
 
 ## 12. Working Tree Status
 
@@ -295,6 +295,7 @@ git diff --check
 - 最新strategy-intent检查点：`24fb362 feat: prompt big joker teammate preservation`；规划Codex独立检查8文件diff，复跑83/39/712项，确认RAG、engine、Botzone协议及后置守卫范围未改变。
 - 最新动作自主性检查点：`e30362f feat: retire teammate control action override`；核心退役路径经113/39/713项回归通过，但legacy v7/v8 audit的policy benchmark读取兼容尚未达成。
 - 最新audit兼容检查点：`3ee6e0e fix: read legacy DeepSeek audit sources`；规划Codex独立复跑109/39/718项，legacy v7/v8正例可读且错误outcome反例fail closed。
+- 最新危险对手覆盖退役检查点：`7499ccc feat: retire danger opponent action override`；规划Codex独立复跑132/39/718项，确认原始pass/9/J保留、旧source只读兼容且`short_endgame_plan`无漂移。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex负责提交其业务代码、tests及任务直接相关修改；规划Codex独立复核结果，只提交自己产生的 `AGENTS.md`、项目Skills和docs上下文修改，不代为提交未完成或未经复核的业务改动。
 
@@ -309,4 +310,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`退役`danger_opponent_block`生产动作覆盖：模型成功返回任一合法action ID后保持原始选择，随后仅保留既有`short_endgame_plan`检查。删除无消费者的危险pass helper，保留`block_opponent / urgent_opponent_controls_table` router/prompt和历史audit/session/trace读取兼容；不运行真实模型或Botzone。
+按`docs/NEXT_PROMPT.md`对`tests/test_deepseek_step_e.py`现有4张自由出牌fixture执行一次真实DeepSeek守卫前原始动作检查。先证明action 1/2/5是最少分组集合、3/4严格更差，并确认factory输入为`ready / control / stable_control`与`endgame / near_open_endgame`；请求精确1次、重试0，不修改代码或运行Botzone。

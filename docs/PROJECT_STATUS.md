@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：算法优化与危险对手动作覆盖退役（2026-09-14）
+## 当前阶段：算法优化与短残局 override 的 prompt-first 复核（2026-09-14）
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
@@ -47,6 +47,10 @@
 - 受约束执行报告将该canonical危险对手检查判定为`danger_opponent_prompt_raw_model_ready`：前提通过，候选精确为pass/9/J，intent为`ready / block_opponent / urgent_opponent_controls_table`，RAG scene为`endgame`；唯一真实请求成功、重试0，守卫前原始动作属于候选集且类别为`ordinary`。守卫只在内存中临时绕过，短残局规划未触发，Git前后clean。模型自由文本按隐私约束未持久化，因此原始动作结果以该低敏执行报告为证据；规划Codex独立复跑当前相关95项通过。
 - 该单点结果满足预注册的退役门槛，但不构成整体胜率结论。下一项Coding任务只移除生产DeepSeek成功路径的`danger_opponent_block`动作改写和无剩余消费者的专用helper；保留`block_opponent / urgent_opponent_controls_table` router/prompt、RAG和`short_endgame_plan`。历史audit/session/decision trace中的`danger_opponent_block`必须继续可读，新生产路径不得再产生该source。
 - 项目所有者已长期授权：单个明确诊断或评测任务中预注册的真实DeepSeek请求严格少于10次时无需另行申请；达到10次或更多仍须事先授权，其他范围、重试和隐私约束不变。
+- 危险对手主动改写已由`7499ccc`退役：`_block_dangerous_opponent_pass()`与`dangerous_opponent_pass_id()`及专用覆盖测试删除，成功模型返回pass/9/J时均保留原始合法ID和`model` source。`block_opponent / urgent_opponent_controls_table` router/prompt、RAG、Botzone factory及`short_endgame_plan`保持不变。
+- `danger_opponent_block`现与`teammate_control_block`同属legacy read-compatible source：旧v7/v8 audit与decision trace可读且继续执行成功outcome/守恒校验；当前adapter遇到旧source时按成功模型归一为`model`。生产扫描仅在legacy常量和兼容测试见到该字符串，无主动分支、helper或调用链。
+- 规划Codex独立检查提交精确为4个生产文件和5个测试文件，复跑132项定向、39项主规则和718项全量全部通过，`git show --check`、工作树`git diff --check`与最终clean状态通过。`7499ccc`验收封板，当前范围内无已知实现剩余风险。
+- 仍待处理的成功模型后置覆盖仅有`short_endgame_plan`。固定4张自由出牌fixture中，action 1/2/5均达到最少剩余手数组，action 3/4因拆开J对而严格更差；当前factory只给出`ready / control / stable_control`，RAG scene/phase为`endgame / near_open_endgame`。下一步按prompt-first原则只做一次守卫前真实模型原始动作检查，再决定退役还是补充专用prompt。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审

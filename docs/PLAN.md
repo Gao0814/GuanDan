@@ -45,6 +45,10 @@
 
 下一项Coding任务从生产DeepSeek成功路径移除`danger_opponent_block`改写，并在确认无其他生产消费者后删除`_block_dangerous_opponent_pass()`与`dangerous_opponent_pass_id()`。保留现有`block_opponent / urgent_opponent_controls_table` router/prompt与RAG输入，使真实模型继续获得危险对手策略依据；`short_endgame_plan`的范围和行为不得改变。`danger_opponent_block`转为与`teammate_control_block`同类的legacy read-compatible source，新生产DeepSeek/adapter不得产生或主动接受它。
 
+20. `7499ccc`已完成危险对手动作覆盖退役：成功模型的pass/9/J均保持原始ID与`model` source；危险对手router/prompt/RAG保留；`danger_opponent_block`仅作legacy读取，旧证据守恒继续fail closed；`short_endgame_plan`未变。规划Codex独立复跑132/39/718项并确认生产路径零legacy主动分支，提交验收封板。
+
+剩余自主性技术债仅为`short_endgame_plan`。下一步对现有4张自由出牌canonical fixture做一次真实DeepSeek守卫前检查：公开手牌为6、7、J、J，五个合法首出中action 1/2/5均属于最少剩余分组，action 3/4因拆J对而严格更差；当前strategy intent为`ready / control / stable_control`，RAG为`endgame / near_open_endgame`。只用一个零重试请求判定现有通用prompt是否已能自主避开严格更差动作，不修改代码或Botzone。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度
