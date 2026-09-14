@@ -71,7 +71,7 @@
 
 27. seed `47004` 人工 `deepseek` decision-trace 采样已完成且未重开：26 cycles，25/25/25 request/response/Header，qualified finish=1，24条ACK决策与audit守恒；15次模型请求全部success、重试0、fallback 0，另有9次local shortcut。规划Codex独立验证v8 audit、v4 tombstone、trace binding/序号/selected action/source、history、stream和运行provenance，复跑Botzone/策略输入相关123项通过。平台结果为`local_team_loss`，只作结果分类，不作为策略质量结论。
 
-本局形成三个可复现且原因不同的策略输入问题。其一，模型在同时看到同点数四张/五张炸弹时选择四张，现有prompt未表达残余孤张和炸弹层级的联合代价；其二，自由首出Q来自`OpeningFormulaStrategy`本地短路，高点普通单张奖励压过清理孤张小牌，随后的2则是在跟A约束下由模型合法选择，不能混作同一原因；其三，原始legal actions存在对3，但free-lead transition剪枝因已有single而删除全部pair，模型根本不可见。下一项Coding任务按`docs/NEXT_PROMPT.md`只修正公开输入、剪枝和开局公式，不新增任何成功模型后置覆盖。
+本局形成三个可复现且原因不同的策略输入问题。其一，模型在同时看到同点数四张/五张炸弹时选择四张，现有prompt未表达残余孤张和炸弹层级的联合代价；其二，自由首出Q来自`OpeningFormulaStrategy`本地短路，问题是Q这一选择本身——清理累赘应优先不拆结构的低孤张，低成本试探也应优先10或更低的可牺牲普通单张，现有高点奖励反而无条件消耗更可能用于残局夺权的Q类资源；其三，原始legal actions存在对3，但free-lead transition剪枝因已有single而删除全部pair，模型根本不可见。下一项Coding任务按`docs/NEXT_PROMPT.md`只修正公开输入、剪枝和开局公式，不新增任何成功模型后置覆盖。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 

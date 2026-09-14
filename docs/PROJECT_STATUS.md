@@ -71,8 +71,8 @@
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 - seed `47004` 单局live随后已完成且未重开。规划Codex独立核对六份保留evidence：v8 audit为781 bytes、24条ACK trace为261,941 bytes，history与trace状态均为`ok`，v4 tombstone与audit provenance一致，stdout/stderr符合exit 0，且无残留connector。请求/响应/Header为25/25/25，15次模型调用全部success、0重试、0 fallback，9次local shortcut；平台分类`local_team_loss`不外推为策略质量。
 - 六份保留evidence的只读inventory为：audit 781 bytes / `018a95e4c6f286bb93f870d2c56baa6c05e6bde72b458f1a7dffdee61a0a88a4`；decision trace 261,941 / `87607a11e7dc1acf41e74c86c34767012cd734130e891b7c2fc807e44618ee00`；history 11,426 / `28864f2e44243085860e6bbbaa180b4fc7b663bc5825cc19416bb4387f23f7c8`；finished tombstone 115 / `6037548d58f35dceb751ecdf25216f83cdfee5cdde9848e1db99550ee95b4c55`；stdout 76 / `4ad569f46ba5902d05b4780156b64f78b24802141f94c880b6afbd051ad9df1c`；stderr 0 / `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。这些hash只证明本次复审时的文件身份；现阶段不得清理。
-- 三个现场观察已分因。四张/五张同点数炸弹均进入模型prompt，四张选择暴露的是残余结构提示缺口；自由首出Q由本地开局公式选择，公式对强控制手牌固定偏好较高普通单张，随后的2是在跟A时由模型选择且小牌不合法；单3点位的对3虽在原始canonical actions中，却被`_select_transition_actions()`因存在single而从prompt完全删除。
-- 当前明确的Coding任务是：free-lead剪枝同时保留代表性自然pair；精确修正强控制开局公式对孤张小牌的结构取舍；为同点数不同长度炸弹增加公开、低预算、fail-closed的残余结构提示。不得新增或恢复任何成功模型后置action override/source，不修改engine或Botzone evidence协议。现有seed `47004` evidence保持原位，清理另立任务。
+- 三个现场观察已分因。四张/五张同点数炸弹均进入模型prompt，四张选择暴露的是残余结构提示缺口；自由首出Q由本地开局公式选择，问题就是Q这一首攻本身：清理低价值孤张时4更合适，低成本试探时10或更低的可牺牲普通单张也优于先消耗Q类残局牌权资源，后续动作不构成Q的理由；单3点位的对3虽在原始canonical actions中，却被`_select_transition_actions()`因存在single而从prompt完全删除。
+- 当前明确的Coding任务是：free-lead剪枝同时保留代表性自然pair；精确修正强控制开局公式，区分“清理不拆结构的低孤张”与“用中低普通单张低成本试探”，并计入Q/J/K/A类较高单张的残局牌权机会成本；为同点数不同长度炸弹增加公开、低预算、fail-closed的残余结构提示。不得针对现场点数硬编码，不得新增或恢复任何成功模型后置action override/source，不修改engine或Botzone evidence协议。现有seed `47004` evidence保持原位，清理另立任务。
 
 ### Connector-observed 牌谱实现与加固复审
 

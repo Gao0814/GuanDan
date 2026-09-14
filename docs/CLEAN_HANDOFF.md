@@ -134,7 +134,7 @@ seed `47002` 后续只读策略审计确认：16次决策中14次可按公开语
 
 决策证据实现已最终提交为 `045fb75`。五个历史反例全部转绿：fresh输出前置拒绝、跨recorder随机持久binding、Agent深隔离、observation/top-level legal actions强一致，以及history-only direct CLI旧路径兼容。规划复跑88项定向、39项主规则和707项全量通过；当前范围内无已知剩余风险。
 
-seed `47004` 的三处策略观察已经由规划Codex从trace和生产代码独立分因：同点数四/五张炸弹均对模型可见但现有prompt没有残余孤张取舍；自由首出Q来自开局公式local shortcut而非模型，其后跟A时小牌不合法；对3存在于原始合法集合，却因free-lead transition剪枝在有single时完全不保留pair而对模型不可见。下一任务只修剪枝、开局公式和公开残余结构输入，不恢复任何后置策略改写。
+seed `47004` 的三处策略观察已经由规划Codex从trace和生产代码独立分因：同点数四/五张炸弹均对模型可见但现有prompt没有残余孤张取舍；自由首出Q来自开局公式local shortcut而非模型，缺陷就是Q这一首攻自身——清理孤张应优先不拆结构的低牌，低成本试探也应优先10或更低的可牺牲普通单张，并保留更高单张的残局牌权机会；对3存在于原始合法集合，却因free-lead transition剪枝在有single时完全不保留pair而对模型不可见。下一任务只修剪枝、开局公式和公开残余结构输入，不恢复任何后置策略改写。
 
 ## 6. Confirmed Symptoms
 
