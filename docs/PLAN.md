@@ -49,6 +49,10 @@
 
 剩余自主性技术债仅为`short_endgame_plan`。下一步对现有4张自由出牌canonical fixture做一次真实DeepSeek守卫前检查：公开手牌为6、7、J、J，五个合法首出中action 1/2/5均属于最少剩余分组，action 3/4因拆J对而严格更差；当前strategy intent为`ready / control / stable_control`，RAG为`endgame / near_open_endgame`。只用一个零重试请求判定现有通用prompt是否已能自主避开严格更差动作，不修改代码或Botzone。
 
+21. 该受约束真实模型检查判定为`short_endgame_prompt_raw_model_not_ready`：前提与`{1,2,5}`最少分组集合均确认，唯一请求成功、重试0，但守卫前原始动作落在严格更差的单J集合`{3,4}`。HEAD/工作树未变；规划Codex独立复跑78项并复算分组真值一致。该单点证据只说明`stable_control`缺少短残局最少分组语义，不证明整体策略优劣。
+
+下一项Coding任务在不改变后置动作的前提下补充专用prompt输入：从`agents/short_endgame_planner.py`抽出独立于模型选择的共享最少分组机会函数，只有完整公开free-lead/1–4张/canonical证据证明至少一个首手严格更差时才成立；router新增`run_out / short_endgame_minimum_groups`，prompt解释优先最少剩余分组并避免无谓拆组。`short_endgame_plan`继续复用同一真值且行为、source和顺序不变，完成后再对同一fixture做一次真实模型复放。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度

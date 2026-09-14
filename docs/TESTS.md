@@ -2223,3 +2223,10 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 独立主规则集合39项通过，用时0.167秒；显式禁用dotenv后全量718项通过，用时40.147秒；`git show --check`、工作树`git diff --check`和最终clean状态均通过。
 - fake client在危险fixture中返回pass/9/J均保持原始合法ID与`model` source；当前adapter把agent残留的旧`danger_opponent_block` source按成功模型归一为`model`，`short_endgame_plan`仍按原条件记录。
 - `danger_opponent_block`仅剩集中legacy常量与兼容测试；旧v7/v8 audit和decision trace可读，错误outcome/count继续fail closed。生产DeepSeek/adapter无旧helper、调用或主动source分支。当前范围内无已知实现剩余风险。
+
+## 2026-09-14 短残局守卫前真实模型检查复审
+
+- 受约束执行报告判定`short_endgame_prompt_raw_model_not_ready`：固定自由出牌fixture候选数5，最少分组集合为`{1,2,5}`；现行intent为`available / control / stable_control`，prompt为`ready / control`，RAG scene/phase/action_context为`endgame / near_open_endgame / endgame`。
+- 唯一真实DeepSeek请求成功、重试0；守卫前原始动作属于固定候选集，但类别为`strictly_worse_single_jack`，即落在action 3/4。代码/文件修改0，HEAD为`acf5af11e0236bcf8d24cf599114227452b12e99`，请求前后Git clean。
+- 模型response/reasoning按隐私约束未持久化，因此动作结果以低敏执行报告为证据，不能从仓库独立重演。规划Codex运行`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_short_endgame_planner tests.test_deepseek_step_e tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime -q`，78项通过；另逐一复算得到`{1: None, 2: None, 3: (1,2,5), 4: (1,2,5), 5: None}`。
+- 该结果不授权退役`short_endgame_plan`；下一步只补充共享公开机会判定和专用最少分组strategy-intent/prompt，守卫保持不变，之后再做同fixture复放。

@@ -23,6 +23,7 @@
 - 最新业务提交为 `7499ccc`：已从DeepSeek成功模型路径退役`danger_opponent_block`主动改写，删除无消费者helper；原始合法pass/9/J均保持`model` source，危险对手router/prompt/RAG和`short_endgame_plan`未变。该source仅保留legacy读取兼容；规划Codex独立复跑132项定向、39项主规则和718项全量均通过。
 - canonical危险对手fixture的受约束真实模型检查已判定`danger_opponent_prompt_raw_model_ready`：唯一请求成功、重试0，模型在后置守卫前自行返回固定候选集内的`ordinary`动作；现有`block_opponent / urgent_opponent_controls_table`输入已足以支持退役强制pass阻断。该结果以低敏执行报告为证据，不是整体胜率结论。
 - 项目所有者长期授权单个明确诊断/评测任务中严格少于10次的预注册真实DeepSeek请求，无需另行申请；10次及以上仍须事先授权，范围、重试、密钥和自由文本保密边界不变。
+- 固定4张自由出牌fixture的守卫前真实模型检查判定为`short_endgame_prompt_raw_model_not_ready`：最少分组集合为`{1,2,5}`，但唯一成功请求的原始动作落在严格更差的单J集合`{3,4}`。当前`ready / control / stable_control`提示未提供最少剩余分组语义；该低敏单点证据支持补充专用prompt，不支持删除或扩大守卫，也不是胜率结论。
 
 上述实现检查点：
 
@@ -278,7 +279,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前718项全量基线和本轮132项退役定向复核均通过。生产DeepSeek/adapter已不再产生`teammate_control_block`或`danger_opponent_block`，两者只保留旧audit/session/trace读取兼容；当前范围内无已知实现风险。下一任务按`docs/NEXT_PROMPT.md`只对固定4张自由出牌fixture做一次`short_endgame_plan`守卫前真实模型原始动作检查，不修改代码或运行Botzone。
+当前718项全量基线、132项危险覆盖退役定向和本轮78项短残局前提复核均通过。短残局原始模型仍选择严格更差的拆J对动作，因此`short_endgame_plan`暂不能退役。下一任务按`docs/NEXT_PROMPT.md`只增加共享最少分组机会真值与专用strategy-intent/prompt，不改后置动作、RAG、engine或Botzone协议。
 
 ## 12. Working Tree Status
 
@@ -310,4 +311,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`对`tests/test_deepseek_step_e.py`现有4张自由出牌fixture执行一次真实DeepSeek守卫前原始动作检查。先证明action 1/2/5是最少分组集合、3/4严格更差，并确认factory输入为`ready / control / stable_control`与`endgame / near_open_endgame`；请求精确1次、重试0，不修改代码或运行Botzone。
+按`docs/NEXT_PROMPT.md`为短残局最少分组补充专用strategy-intent：抽取独立于模型选择的共享机会函数，router在严格公开证据成立时输出`run_out / short_endgame_minimum_groups`，prompt解释优先最少剩余分组、避免无谓拆组。保持`short_endgame_plan`生产行为与source不变，不运行真实模型或Botzone。
