@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -327,26 +328,39 @@ class TestDeepSeekStepE(unittest.TestCase):
                 self.assertEqual(agent.select_action(observation, candidates), 3)
                 self.assertEqual(agent.last_decision_source, "model")
 
-    def test_successful_model_pass_is_blocked_for_proved_one_or_two_card_opponent(self) -> None:
-        class PassClient:
-            def __init__(self) -> None:
+    def test_danger_fixture_preserves_each_successful_model_action(self) -> None:
+        class FixedClient:
+            def __init__(self, action_id: int) -> None:
                 self.calls = 0
+                self.action_id = action_id
 
             def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
                 self.calls += 1
-                return DeepSeekSuggestion(action_id=1, reasoning="ignored")
+                return DeepSeekSuggestion(action_id=self.action_id, reasoning="ignored")
 
         config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
         for opponent_count in (1, 2):
-            with self.subTest(opponent_count=opponent_count), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
-                client = PassClient()
-                agent = DeepSeekAIAgent(1, client, rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
-                actions = _danger_legal_actions()
-                chosen = agent.select_action(_danger_observation(opponent_count=opponent_count), actions)
-                self.assertEqual(chosen, 2)
-                self.assertIn(chosen, {action["action_id"] for action in actions})
-                self.assertEqual(agent.last_decision_source, "danger_opponent_block")
-                self.assertEqual(client.calls, 1)
+            for action_id in (1, 2, 3):
+                with self.subTest(opponent_count=opponent_count, action_id=action_id), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+                    client = FixedClient(action_id)
+                    agent = DeepSeekAIAgent(1, client, rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+                    actions = _danger_legal_actions()
+                    chosen = agent.select_action(_danger_observation(opponent_count=opponent_count), actions)
+                    self.assertEqual(chosen, action_id)
+                    self.assertIn(chosen, {action["action_id"] for action in actions})
+                    self.assertEqual(agent.last_decision_source, "model")
+                    self.assertEqual(client.calls, 1)
+
+    def test_danger_retirement_has_no_production_override_path(self) -> None:
+        for path in (
+            Path("agents/deepseek_ai.py"),
+            Path("integrations/botzone/play_adapter.py"),
+        ):
+            with self.subTest(path=path):
+                source = path.read_text(encoding="utf-8")
+                self.assertNotIn("danger_opponent_block", source)
+                self.assertNotIn("_block_dangerous_opponent_pass", source)
+                self.assertNotIn("dangerous_opponent_pass_id", source)
 
     def test_successful_model_pass_remains_unchanged_when_opponent_has_three_cards(self) -> None:
         class PassClient:

@@ -247,25 +247,6 @@ def teammate_pressure_pass_id(
     )
 
 
-def dangerous_opponent_pass_id(
-    observation: object,
-    legal_actions: object,
-    expected_player_id: int,
-) -> int | None:
-    """Return the original pass id only for a proved opponent near-finish lead."""
-
-    context = _pressure_pass_context(observation, legal_actions, expected_player_id)
-    if context is None:
-        return None
-    pass_id, _non_pass, leader, players, _hand_count = context
-    if leader == expected_player_id or _TEAM[leader] == _TEAM[expected_player_id]:
-        return None
-    leader_public = players[leader]
-    if leader_public["finished"] or leader_public["hand_count"] > 2:
-        return None
-    return pass_id
-
-
 def teammate_big_joker_opportunity(
     observation: object,
     legal_actions: object,

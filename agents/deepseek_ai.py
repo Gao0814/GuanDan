@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 
 from config import AppConfig
 from agents.base import BaseAgent, require_legal_action_id
-from agents.conditional_pressure_pass_policy import dangerous_opponent_pass_id
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from agents.game_phase import classify_game_phase
 from agents.hand_evaluator import evaluate_hand
@@ -296,21 +295,6 @@ def _only_pass_action_id(legal_actions: list[dict[str, object]]) -> int | None:
     ):
         return _coerce_int(action.get("action_id"), default=-1)
     return None
-
-
-def _block_dangerous_opponent_pass(
-    observation: dict[str, object],
-    legal_actions: list[dict[str, object]],
-    player_id: int,
-    selected_action_id: int,
-) -> tuple[int, bool]:
-    """Replace only a proved-dangerous model pass with a static legal pressure action."""
-
-    pass_id = dangerous_opponent_pass_id(observation, legal_actions, player_id)
-    if pass_id is None or selected_action_id != pass_id:
-        return selected_action_id, False
-    chosen = FrozenRuleBasedAIAgent(player_id=player_id).select_action(observation, legal_actions)
-    return require_legal_action_id(chosen, legal_actions), True
 
 
 def _plan_short_free_lead(
@@ -808,23 +792,14 @@ class DeepSeekAIAgent(BaseAgent):
                 chosen = None
                 failure_reason = f"返回 action_id 非法：{exc}"
             else:
-                chosen, blocked = _block_dangerous_opponent_pass(
+                chosen, planned = _plan_short_free_lead(
                     observation,
                     legal_actions,
                     self.player_id,
                     chosen,
                 )
-                if blocked:
-                    self.last_decision_source = "danger_opponent_block"
-                else:
-                    chosen, planned = _plan_short_free_lead(
-                        observation,
-                        legal_actions,
-                        self.player_id,
-                        chosen,
-                    )
-                    if planned:
-                        self.last_decision_source = "short_endgame_plan"
+                if planned:
+                    self.last_decision_source = "short_endgame_plan"
                 if verbose:
                     action = _action_by_id(legal_actions, chosen)
                     display = _action_display_cn(action) if action is not None else "(unknown)"

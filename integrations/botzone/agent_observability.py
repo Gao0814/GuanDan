@@ -8,17 +8,17 @@ from dataclasses import dataclass
 
 LEGACY_DECISION_SOURCES = frozenset(
     {
-        # Older v8 audits and acknowledged decision traces can contain this
-        # retired post-model rewrite.  Keep it readable, but no current
-        # production DeepSeek path emits it.
+        # Older v7/v8 audits and acknowledged decision traces can contain these
+        # retired post-model rewrites.  Keep them readable, but no current
+        # production DeepSeek path emits them.
         "teammate_control_block",
+        "danger_opponent_block",
     }
 )
 
 SUCCESSFUL_MODEL_DECISION_SOURCES = frozenset(
     {
         "model",
-        "danger_opponent_block",
         "short_endgame_plan",
     }
 ) | LEGACY_DECISION_SOURCES
@@ -33,7 +33,6 @@ DECISION_SOURCES = frozenset(
         "rule_primary",
         "local_shortcut",
         "model",
-        "danger_opponent_block",
         "short_endgame_plan",
         "deepseek_rule_fallback",
         "adapter_rule_fallback",

@@ -267,7 +267,7 @@ class NoTributeRuleBasedHandler:
                 return source
             self._observability_failed = True
             return "adapter_rule_fallback"
-        if source in {"danger_opponent_block", "short_endgame_plan"}:
+        if source == "short_endgame_plan":
             outcome = self._record_model_outcome(agent)
             if outcome == "success":
                 return source

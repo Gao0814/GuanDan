@@ -9,7 +9,6 @@ import unittest
 from agents.conditional_pressure_pass_ai import ConditionalPressurePassAIAgent as RuntimeConditionalPressurePassAIAgent
 from agents.conditional_pressure_pass_policy import (
     conditional_pressure_pass_id,
-    dangerous_opponent_pass_id,
     teammate_big_joker_opportunity,
     teammate_pressure_pass_id,
 )
@@ -177,27 +176,6 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
                 expected = FrozenRuleBasedAIAgent(player_id=1).select_action(observation, actions)
                 self.assertEqual(RuleBasedAIAgent(player_id=1).select_action(observation, actions), expected)
 
-    def test_dangerous_opponent_guard_requires_a_proved_near_finish_enemy_lead(self) -> None:
-        actions = _legal(("triple", 3))
-        self.assertEqual(dangerous_opponent_pass_id(_observation(opponent_count=2), actions, 2), 1)
-        self.assertEqual(dangerous_opponent_pass_id(_observation(opponent_count=1), actions, 2), 1)
-        mismatch = _observation(opponent_count=2)
-        mismatch["history"]["actions"][0]["declared_cards"] = ["8", "8", "8"]  # type: ignore[index]
-        free = _observation(opponent_count=2)
-        free["current_round"] = {"step_no": 7, "round_no": 2, "current_player_id": 2, "constraint": "free", "table_action": None}
-        free["history"] = {"actions": []}
-        for observation, legal_actions in (
-            (_observation(opponent_count=3), actions),
-            (_observation(opponent_count=2, finished=True), actions),
-            (_observation(leader=4, opponent_count=2), actions),
-            (mismatch, actions),
-            (free, actions),
-            (_observation(opponent_count=2), [_action(1, "pass")]),
-            (_observation(opponent_count=2), [_action(2, "triple", 3)]),
-        ):
-            with self.subTest(observation=observation):
-                self.assertIsNone(dangerous_opponent_pass_id(observation, legal_actions, 2))
-
     def test_teammate_big_joker_opportunity_is_narrow_and_fail_closed(self) -> None:
         actions = _joker_teammate_actions()
         self.assertEqual(teammate_big_joker_opportunity(_joker_teammate_observation(), actions, 4), (1, (2,)))
@@ -243,10 +221,6 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
             mutator(enemy)
             self.assertIsNone(conditional_pressure_pass_id(enemy, enemy_actions, 2))
 
-            danger = _observation(opponent_count=2)
-            mutator(danger)
-            self.assertIsNone(dangerous_opponent_pass_id(danger, enemy_actions, 2))
-
             teammate = _review_teammate_observation()
             mutator(teammate)
             self.assertIsNone(teammate_pressure_pass_id(teammate, _legal(("bomb", 4)), 1))
@@ -279,7 +253,6 @@ class ConditionalPressurePassAgentTests(unittest.TestCase):
 
         valid_sentinel_cases = (
             (_observation(), _legal(("bomb", 4)), 2, conditional_pressure_pass_id),
-            (_observation(opponent_count=2), _legal(("bomb", 4)), 2, dangerous_opponent_pass_id),
             (_review_teammate_observation(), _legal(("bomb", 4)), 1, teammate_pressure_pass_id),
         )
         for observation, actions, player_id, helper in valid_sentinel_cases:

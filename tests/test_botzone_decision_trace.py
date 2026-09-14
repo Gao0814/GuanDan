@@ -172,13 +172,14 @@ class BotzoneDecisionTraceTests(unittest.TestCase):
                 "rule_primary",
             )
 
-    def test_retired_teammate_control_trace_remains_read_compatible(self) -> None:
-        with TemporaryDirectory() as root:
-            store = SessionStore(root)
-            store.save(_record((_trace(source="teammate_control_block"),)))
-            restored = store.load("unit-a")
-        assert restored is not None
-        self.assertEqual(restored.confirmed_decision_traces[0].decision_source, "teammate_control_block")
+    def test_retired_control_traces_remain_read_compatible(self) -> None:
+        for source in ("teammate_control_block", "danger_opponent_block"):
+            with self.subTest(source=source), TemporaryDirectory() as root:
+                store = SessionStore(root)
+                store.save(_record((_trace(source=source),)))
+                restored = store.load("unit-a")
+            assert restored is not None
+            self.assertEqual(restored.confirmed_decision_traces[0].decision_source, source)
 
     def test_trace_requires_observation_legal_actions_to_match_canonical_actions(self) -> None:
         source = _trace()

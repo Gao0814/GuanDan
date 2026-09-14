@@ -84,7 +84,7 @@ class _ModelAgent:
         return legal_actions[0]["action_id"]
 
 
-class _DangerBlockAgent:
+class _RetiredDangerSourceAgent:
     last_decision_source = "danger_opponent_block"
 
     def __init__(self) -> None:
@@ -221,7 +221,7 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 (("invalid_suggestion", 1),),
                 ("deepseek_rule_fallback",),
             ),
-            ("deepseek", _DangerBlockAgent, False, "danger_opponent_block", (("success", 1),), ()),
+            ("deepseek", _RetiredDangerSourceAgent, False, "model", (("success", 1),), ()),
             ("deepseek", _ShortEndgamePlanAgent, False, "short_endgame_plan", (("success", 1),), ()),
             ("deepseek", lambda: _ExplodingAgent(), True, "adapter_rule_fallback", (), ("adapter_rule_fallback",)),
         )
@@ -242,23 +242,25 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 self.assertEqual(snapshot.model_outcome_counts, outcomes)
                 self.assertEqual(snapshot.rule_fallback_count, len(fallbacks))
 
-    def test_retired_teammate_control_source_remains_read_compatible(self) -> None:
-        snapshot = AgentObservabilitySnapshot(
-            "deepseek",
-            1,
-            (("teammate_control_block", 1),),
-            1,
-            (("success", 1),),
-            0,
-        )
-        self.assertEqual(snapshot.to_json()["decision_source_counts"], [["teammate_control_block", 1]])
+    def test_retired_control_sources_remain_read_compatible(self) -> None:
+        for source in ("teammate_control_block", "danger_opponent_block"):
+            with self.subTest(source=source):
+                snapshot = AgentObservabilitySnapshot(
+                    "deepseek",
+                    1,
+                    ((source, 1),),
+                    1,
+                    (("success", 1),),
+                    0,
+                )
+                self.assertEqual(snapshot.to_json()["decision_source_counts"], [[source, 1]])
 
     def test_successful_model_rewrite_source_requires_success_outcome(self) -> None:
         with self.assertRaisesRegex(AgentObservabilityError, "^deepseek_model_outcome_mismatch$"):
             AgentObservabilitySnapshot(
                 "deepseek",
                 1,
-                (("teammate_control_block", 1),),
+                (("danger_opponent_block", 1),),
                 1,
                 (("timeout", 1),),
                 0,
