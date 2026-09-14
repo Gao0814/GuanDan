@@ -425,7 +425,7 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
             agent = factory(1)
             self.assertEqual(
                 agent.select_action(_short_endgame_observation(), _short_endgame_legal_actions()),
-                5,
+                3,
             )
 
         self.assertEqual(len(raw.calls), 1)
@@ -449,7 +449,7 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
             tuple(scene_tags.get(key) for key in ("scene", "phase", "action_context")),
             ("endgame", "near_open_endgame", "endgame"),
         )
-        self.assertEqual(agent.last_decision_source, "short_endgame_plan")
+        self.assertEqual(agent.last_decision_source, "model")
 
     def test_deepseek_factory_enables_validated_teammate_control_prompt_without_rewriting_model_choice(self) -> None:
         actions = [

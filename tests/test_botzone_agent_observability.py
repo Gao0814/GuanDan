@@ -95,7 +95,7 @@ class _RetiredDangerSourceAgent:
         return legal_actions[0]["action_id"]
 
 
-class _ShortEndgamePlanAgent:
+class _RetiredShortEndgameSourceAgent:
     last_decision_source = "short_endgame_plan"
 
     def __init__(self) -> None:
@@ -222,7 +222,7 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 ("deepseek_rule_fallback",),
             ),
             ("deepseek", _RetiredDangerSourceAgent, False, "model", (("success", 1),), ()),
-            ("deepseek", _ShortEndgamePlanAgent, False, "short_endgame_plan", (("success", 1),), ()),
+            ("deepseek", _RetiredShortEndgameSourceAgent, False, "model", (("success", 1),), ()),
             ("deepseek", lambda: _ExplodingAgent(), True, "adapter_rule_fallback", (), ("adapter_rule_fallback",)),
         )
         for mode, factory, outer_fallback, expected, outcomes, fallbacks in cases:
@@ -242,8 +242,8 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 self.assertEqual(snapshot.model_outcome_counts, outcomes)
                 self.assertEqual(snapshot.rule_fallback_count, len(fallbacks))
 
-    def test_retired_control_sources_remain_read_compatible(self) -> None:
-        for source in ("teammate_control_block", "danger_opponent_block"):
+    def test_retired_model_rewrite_sources_remain_read_compatible(self) -> None:
+        for source in ("teammate_control_block", "danger_opponent_block", "short_endgame_plan"):
             with self.subTest(source=source):
                 snapshot = AgentObservabilitySnapshot(
                     "deepseek",
@@ -255,16 +255,20 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
                 )
                 self.assertEqual(snapshot.to_json()["decision_source_counts"], [[source, 1]])
 
-    def test_successful_model_rewrite_source_requires_success_outcome(self) -> None:
-        with self.assertRaisesRegex(AgentObservabilityError, "^deepseek_model_outcome_mismatch$"):
-            AgentObservabilitySnapshot(
-                "deepseek",
-                1,
-                (("danger_opponent_block", 1),),
-                1,
-                (("timeout", 1),),
-                0,
-            )
+    def test_successful_model_rewrite_sources_require_success_outcome(self) -> None:
+        for source in ("teammate_control_block", "danger_opponent_block", "short_endgame_plan"):
+            with self.subTest(source=source), self.assertRaisesRegex(
+                AgentObservabilityError,
+                "^deepseek_model_outcome_mismatch$",
+            ):
+                AgentObservabilitySnapshot(
+                    "deepseek",
+                    1,
+                    ((source, 1),),
+                    1,
+                    (("timeout", 1),),
+                    0,
+                )
 
     def test_conditional_agent_uses_public_projection_and_distinguishes_both_sources(self) -> None:
         recorder = AgentObservabilityRecorder()
@@ -392,37 +396,40 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
         self.assertEqual((snapshot.model_attempt_count, snapshot.rule_fallback_count), (0, 0))
         self.assertEqual(handler._agents, {})
 
-    def test_v7_audit_preserves_agent_aggregates_and_rejects_inconsistent_snapshot(self) -> None:
-        summary = RunnerSummary(
-            1,
-            1,
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            "cycle_limit_unfinished",
-            (),
-            agent_mode="deepseek",
-            agent_decision_count=1,
-            decision_source_counts=(("model", 1),),
-            model_attempt_count=1,
-            model_outcome_counts=(("success", 1),),
-            rule_fallback_count=0,
-        )
-        with TemporaryDirectory() as root:
-            target = Path(root).parent / "agent-observability-audit.json"
-            write_audit(target, summary, 6)
-            payload = json.loads(target.read_text(encoding="utf-8"))
-            self.assertEqual(payload["version"], 7)
-            self.assertEqual(payload["decision_source_counts"], [["model", 1]])
-            self.assertEqual(payload["model_outcome_counts"], [["success", 1]])
-            self.assertEqual(payload["result_category_counts"], [])
-            for marker in ("match", "history", "prompt", "reasoning", "action_id"):
-                self.assertNotIn(marker, json.dumps(payload).lower())
-            with self.assertRaises(ValueError):
-                write_audit(target, replace(summary, model_attempt_count=0), 6)
+    def test_v7_audit_preserves_legacy_model_rewrite_aggregates_and_rejects_inconsistency(self) -> None:
+        for source in ("model", "teammate_control_block", "danger_opponent_block", "short_endgame_plan"):
+            with self.subTest(source=source):
+                summary = RunnerSummary(
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    0,
+                    "cycle_limit_unfinished",
+                    (),
+                    agent_mode="deepseek",
+                    agent_decision_count=1,
+                    decision_source_counts=((source, 1),),
+                    model_attempt_count=1,
+                    model_outcome_counts=(("success", 1),),
+                    rule_fallback_count=0,
+                )
+                with TemporaryDirectory() as root:
+                    target = Path(root).parent / "agent-observability-audit.json"
+                    write_audit(target, summary, 6)
+                    payload = json.loads(target.read_text(encoding="utf-8"))
+                self.assertEqual(payload["version"], 7)
+                self.assertEqual(payload["decision_source_counts"], [[source, 1]])
+                self.assertEqual(payload["model_outcome_counts"], [["success", 1]])
+                self.assertEqual(payload["result_category_counts"], [])
+                for marker in ("match", "history", "prompt", "reasoning", "action_id"):
+                    self.assertNotIn(marker, json.dumps(payload).lower())
+                with TemporaryDirectory() as root:
+                    with self.assertRaises(ValueError):
+                        write_audit(Path(root) / "invalid.json", replace(summary, model_attempt_count=0), 6)
 
     def test_v7_audit_accepts_conditional_mode_without_schema_or_version_change(self) -> None:
         summary = RunnerSummary(

@@ -255,62 +255,27 @@ class TestDeepSeekStepE(unittest.TestCase):
                 agent = DeepSeekAIAgent(4, FixedClient(action_id), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
                 self.assertEqual(agent.select_action(observation, actions), action_id)
                 self.assertEqual(agent.last_decision_source, "model")
-    def test_successful_model_single_jack_is_replaced_by_shorter_free_lead_plan(self) -> None:
-        class SingleJackClient:
-            def __init__(self) -> None:
-                self.calls = 0
-
-            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
-                self.calls += 1
-                return DeepSeekSuggestion(action_id=3, reasoning="ignored")
-
-        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
-        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
-            client = SingleJackClient()
-            actions = _short_endgame_legal_actions()
-            agent = DeepSeekAIAgent(1, client, rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
-            chosen = agent.select_action(_short_endgame_observation(), actions)
-        self.assertEqual(chosen, 5)
-        self.assertIn(chosen, {action["action_id"] for action in actions})
-        self.assertEqual(agent.last_decision_source, "short_endgame_plan")
-        self.assertEqual(client.calls, 1)
-
-    def test_successful_model_best_or_tied_free_lead_is_not_overridden(self) -> None:
+    def test_successful_model_short_endgame_actions_remain_raw(self) -> None:
         class FixedClient:
             def __init__(self, action_id: int) -> None:
+                self.calls = 0
                 self.action_id = action_id
 
             def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
+                self.calls += 1
                 return DeepSeekSuggestion(action_id=self.action_id, reasoning="ignored")
 
         config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
-        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
-            agent = DeepSeekAIAgent(1, FixedClient(5), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
-            self.assertEqual(agent.select_action(_short_endgame_observation(), _short_endgame_legal_actions()), 5)
-        self.assertEqual(agent.last_decision_source, "model")
+        for action_id in (1, 2, 3, 4, 5):
+            with self.subTest(action_id=action_id), patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+                client = FixedClient(action_id)
+                agent = DeepSeekAIAgent(1, client, rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
+                chosen = agent.select_action(_short_endgame_observation(), _short_endgame_legal_actions())
+            self.assertEqual(chosen, action_id)
+            self.assertEqual(agent.last_decision_source, "model")
+            self.assertEqual(client.calls, 1)
 
-    def test_short_endgame_plan_uses_frozen_tie_break_only_after_strict_improvement(self) -> None:
-        class FixedClient:
-            def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
-                return DeepSeekSuggestion(action_id=1, reasoning="ignored")
-
-        observation = _short_endgame_observation()
-        observation["my_info"] = dict(observation["my_info"], hand_cards=["6S", "6H", "7S"], hand_count=3)
-        actions = [
-            {"action_id": 1, "declared_pattern": "single", "declared_cards": ["6"], "carrier_cards": ["6S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:6"},
-            {"action_id": 2, "declared_pattern": "single", "declared_cards": ["6"], "carrier_cards": ["6H"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:6"},
-            {"action_id": 3, "declared_pattern": "pair", "declared_cards": ["6", "6"], "carrier_cards": ["6S", "6H"], "wildcard_count": 0, "wildcard_info": [], "display_text": "pair:6,6"},
-            {"action_id": 4, "declared_pattern": "single", "declared_cards": ["7"], "carrier_cards": ["7S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:7"},
-        ]
-        config = SimpleNamespace(hand_evaluation_enabled=False, opening_formula_enabled=False, card_tracking_enabled=False)
-        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
-            agent = DeepSeekAIAgent(1, FixedClient(), rag_advisor=None, verbose=False, hand_evaluation_enabled=False, opening_formula_enabled=False)
-            chosen = agent.select_action(observation, actions)
-        self.assertEqual(chosen, 3)
-        self.assertIn(chosen, {action["action_id"] for action in actions})
-        self.assertEqual(agent.last_decision_source, "short_endgame_plan")
-
-    def test_short_endgame_plan_preserves_model_selection_outside_verified_scope(self) -> None:
+    def test_short_endgame_out_of_scope_model_selection_remains_raw(self) -> None:
         class FixedClient:
             def suggest_action_id(self, **_kwargs: object) -> DeepSeekSuggestion:
                 return DeepSeekSuggestion(action_id=3, reasoning="ignored")
@@ -351,16 +316,24 @@ class TestDeepSeekStepE(unittest.TestCase):
                     self.assertEqual(agent.last_decision_source, "model")
                     self.assertEqual(client.calls, 1)
 
-    def test_danger_retirement_has_no_production_override_path(self) -> None:
+    def test_retired_action_overrides_have_no_production_path(self) -> None:
+        forbidden = (
+            "danger_opponent_block",
+            "_block_dangerous_opponent_pass",
+            "dangerous_opponent_pass_id",
+            "short_endgame_plan",
+            "_plan_short_free_lead",
+            "strictly_better_free_lead_action_ids",
+        )
         for path in (
             Path("agents/deepseek_ai.py"),
             Path("integrations/botzone/play_adapter.py"),
         ):
             with self.subTest(path=path):
                 source = path.read_text(encoding="utf-8")
-                self.assertNotIn("danger_opponent_block", source)
-                self.assertNotIn("_block_dangerous_opponent_pass", source)
-                self.assertNotIn("dangerous_opponent_pass_id", source)
+                for marker in forbidden:
+                    with self.subTest(marker=marker):
+                        self.assertNotIn(marker, source)
 
     def test_successful_model_pass_remains_unchanged_when_opponent_has_three_cards(self) -> None:
         class PassClient:

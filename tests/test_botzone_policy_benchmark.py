@@ -127,8 +127,8 @@ class BotzonePolicyBenchmarkTests(unittest.TestCase):
                 self.assertEqual(report.deepseek_model_attempt_count, 1)
                 self.assertEqual(report.deepseek_decision_source_counts, ((source, 1),))
 
-    def test_legacy_control_v8_audits_remain_read_compatible(self) -> None:
-        for source in ("teammate_control_block", "danger_opponent_block"):
+    def test_legacy_model_rewrite_v8_audits_remain_read_compatible(self) -> None:
+        for source in ("teammate_control_block", "danger_opponent_block", "short_endgame_plan"):
             with self.subTest(source=source):
                 conditions = BenchmarkConditions(PROFILE_VERSION, True, True, run_provenance_required=True)
                 schedule = build_selected_paired_schedule((37,), (0,), conditions)
@@ -159,7 +159,7 @@ class BotzonePolicyBenchmarkTests(unittest.TestCase):
 
     def test_successful_model_rewrite_sources_fail_closed_on_count_or_outcome_mismatch(self) -> None:
         schedule = build_selected_paired_schedule((41,), (0,), _conditions())
-        for source in ("teammate_control_block", "danger_opponent_block"):
+        for source in ("teammate_control_block", "danger_opponent_block", "short_endgame_plan"):
             for label, mutate in (
                 ("missing_attempt", lambda audit: audit.update(model_attempt_count=0)),
                 ("extra_attempt", lambda audit: audit.update(model_attempt_count=2, model_outcome_counts=[["success", 2]])),

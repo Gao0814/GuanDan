@@ -3,10 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import unittest
 
-from agents.short_endgame_planner import (
-    minimum_group_free_lead_action_ids,
-    strictly_better_free_lead_action_ids,
-)
+from agents.short_endgame_planner import minimum_group_free_lead_action_ids
 
 
 def _action(action_id: int, pattern: str, declared: list[str], carriers: list[str]) -> dict[str, object]:
@@ -48,30 +45,16 @@ def _six_seven_jack_actions() -> list[dict[str, object]]:
 
 
 class ShortEndgamePlannerTests(unittest.TestCase):
-    def test_pair_jack_strictly_beats_model_single_jack(self) -> None:
+    def test_pair_jack_exposes_minimum_group_first_actions(self) -> None:
         actions = _six_seven_jack_actions()
         observation = _observation(["6S", "7S", "JH", "JD"])
         self.assertEqual(minimum_group_free_lead_action_ids(observation, actions, 1), (1, 2, 5))
-        for selected in (1, 2, 5):
-            with self.subTest(selected=selected):
-                self.assertIsNone(strictly_better_free_lead_action_ids(observation, actions, 1, selected))
-        for selected in (3, 4):
-            with self.subTest(selected=selected):
-                self.assertEqual(
-                    strictly_better_free_lead_action_ids(observation, actions, 1, selected),
-                    (1, 2, 5),
-                )
 
-    def test_best_or_tied_model_action_is_preserved(self) -> None:
-        actions = _six_seven_jack_actions()
-        self.assertIsNone(
-            strictly_better_free_lead_action_ids(_observation(["6S", "7S", "JH", "JD"]), actions, 1, 5)
-        )
+    def test_all_tied_first_actions_do_not_expose_an_opportunity(self) -> None:
         tied_actions = [
             _action(1, "single", ["6"], ["6S"]),
             _action(2, "single", ["7"], ["7S"]),
         ]
-        self.assertIsNone(strictly_better_free_lead_action_ids(_observation(["6S", "7S"]), tied_actions, 1, 1))
         self.assertIsNone(minimum_group_free_lead_action_ids(_observation(["6S", "7S"]), tied_actions, 1))
 
     def test_multiple_best_actions_are_reported_in_original_canonical_order(self) -> None:
@@ -81,7 +64,7 @@ class ShortEndgamePlannerTests(unittest.TestCase):
             _action(3, "pair", ["6", "6"], ["6S", "6H"]),
             _action(4, "single", ["7"], ["7S"]),
         ]
-        result = strictly_better_free_lead_action_ids(_observation(["6S", "6H", "7S"]), actions, 1, 1)
+        result = minimum_group_free_lead_action_ids(_observation(["6S", "6H", "7S"]), actions, 1)
         self.assertEqual(result, (3, 4))
 
     def test_duplicate_public_tokens_are_counted_as_a_multiset(self) -> None:
@@ -90,7 +73,7 @@ class ShortEndgamePlannerTests(unittest.TestCase):
             _action(2, "pair", ["J", "J"], ["JH", "JH"]),
             _action(3, "single", ["6"], ["6S"]),
         ]
-        result = strictly_better_free_lead_action_ids(_observation(["JH", "JH", "6S"]), actions, 1, 1)
+        result = minimum_group_free_lead_action_ids(_observation(["JH", "JH", "6S"]), actions, 1)
         self.assertEqual(result, (2, 3))
 
     def test_incomplete_or_non_target_public_payload_fails_closed(self) -> None:
@@ -133,18 +116,7 @@ class ShortEndgamePlannerTests(unittest.TestCase):
 
         for payload, legal_actions in cases:
             with self.subTest(payload=payload["current_round"]["constraint"]):
-                self.assertIsNone(strictly_better_free_lead_action_ids(payload, legal_actions, 1, 3))
                 self.assertIsNone(minimum_group_free_lead_action_ids(payload, legal_actions, 1))
-
-    def test_selected_action_must_be_an_original_action_id(self) -> None:
-        self.assertIsNone(
-            strictly_better_free_lead_action_ids(
-                _observation(["6S", "7S", "JH", "JD"]),
-                _six_seven_jack_actions(),
-                1,
-                999,
-            )
-        )
 
 
 if __name__ == "__main__":

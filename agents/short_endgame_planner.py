@@ -163,27 +163,3 @@ def minimum_group_free_lead_action_ids(
         return None
     _, best_ids = analysis
     return best_ids
-
-
-def strictly_better_free_lead_action_ids(
-    observation: object,
-    legal_actions: object,
-    expected_player_id: int,
-    selected_action_id: int,
-) -> tuple[int, ...] | None:
-    """Return best original IDs only when ``selected_action_id`` uses more groups."""
-
-    if not _is_int(selected_action_id):
-        return None
-    analysis = _minimum_group_free_lead_analysis(
-        observation,
-        legal_actions,
-        expected_player_id,
-    )
-    if analysis is None:
-        return None
-    scores, best_ids = analysis
-    selected_score = scores.get(selected_action_id)
-    if selected_score is None or selected_action_id in best_ids:
-        return None
-    return best_ids

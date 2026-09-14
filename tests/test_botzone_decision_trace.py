@@ -172,8 +172,8 @@ class BotzoneDecisionTraceTests(unittest.TestCase):
                 "rule_primary",
             )
 
-    def test_retired_control_traces_remain_read_compatible(self) -> None:
-        for source in ("teammate_control_block", "danger_opponent_block"):
+    def test_retired_model_rewrite_traces_remain_read_compatible(self) -> None:
+        for source in ("teammate_control_block", "danger_opponent_block", "short_endgame_plan"):
             with self.subTest(source=source), TemporaryDirectory() as root:
                 store = SessionStore(root)
                 store.save(_record((_trace(source=source),)))

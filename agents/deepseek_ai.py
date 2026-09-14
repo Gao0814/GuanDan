@@ -21,7 +21,6 @@ from agents.hand_evaluator import evaluate_hand
 from agents.opening_strategy import OpeningFormulaStrategy
 from agents.rag_advisor import RAGAdvisor, RAGEvidence
 from agents.rule_based_ai import FrozenRuleBasedAIAgent
-from agents.short_endgame_planner import strictly_better_free_lead_action_ids
 
 if TYPE_CHECKING:
     from agents.card_confidence import CardConfidenceState
@@ -295,29 +294,6 @@ def _only_pass_action_id(legal_actions: list[dict[str, object]]) -> int | None:
     ):
         return _coerce_int(action.get("action_id"), default=-1)
     return None
-
-
-def _plan_short_free_lead(
-    observation: dict[str, object],
-    legal_actions: list[dict[str, object]],
-    player_id: int,
-    selected_action_id: int,
-) -> tuple[int, bool]:
-    """Replace only a strictly worse model free lead with a tied-best legal action."""
-
-    best_ids = strictly_better_free_lead_action_ids(
-        observation,
-        legal_actions,
-        player_id,
-        selected_action_id,
-    )
-    if not best_ids:
-        return selected_action_id, False
-    best_actions = [action for action in legal_actions if action.get("action_id") in best_ids]
-    if not best_actions:
-        return selected_action_id, False
-    chosen = FrozenRuleBasedAIAgent(player_id=player_id).select_action(observation, best_actions)
-    return require_legal_action_id(chosen, legal_actions), True
 
 
 def _build_rag_context(
@@ -792,14 +768,6 @@ class DeepSeekAIAgent(BaseAgent):
                 chosen = None
                 failure_reason = f"返回 action_id 非法：{exc}"
             else:
-                chosen, planned = _plan_short_free_lead(
-                    observation,
-                    legal_actions,
-                    self.player_id,
-                    chosen,
-                )
-                if planned:
-                    self.last_decision_source = "short_endgame_plan"
                 if verbose:
                     action = _action_by_id(legal_actions, chosen)
                     display = _action_display_cn(action) if action is not None else "(unknown)"

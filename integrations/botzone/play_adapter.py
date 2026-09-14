@@ -18,7 +18,13 @@ from engine.rules import BaseRuleEngine
 from engine.state import GameState, PlayerState, TableConstraint
 
 from .cards import BotzoneCard, card_from_id, card_id_for
-from .agent_observability import AgentObservabilityError, AgentObservabilityRecorder, AgentObservabilitySnapshot, MODEL_OUTCOMES
+from .agent_observability import (
+    LEGACY_DECISION_SOURCES,
+    AgentObservabilityError,
+    AgentObservabilityRecorder,
+    AgentObservabilitySnapshot,
+    MODEL_OUTCOMES,
+)
 from .models import ActionClaim, DealRequest, HistoryEntry, PlayRequest
 from .profile import require_no_tribute_context
 from .protocol import (
@@ -267,10 +273,10 @@ class NoTributeRuleBasedHandler:
                 return source
             self._observability_failed = True
             return "adapter_rule_fallback"
-        if source == "short_endgame_plan":
+        if source in LEGACY_DECISION_SOURCES:
             outcome = self._record_model_outcome(agent)
             if outcome == "success":
-                return source
+                return "model"
             self._observability_failed = True
             return "adapter_rule_fallback"
         if source in {"local", "local_opening_formula"}:

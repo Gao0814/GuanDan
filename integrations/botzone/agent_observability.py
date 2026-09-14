@@ -13,13 +13,13 @@ LEGACY_DECISION_SOURCES = frozenset(
         # production DeepSeek path emits them.
         "teammate_control_block",
         "danger_opponent_block",
+        "short_endgame_plan",
     }
 )
 
 SUCCESSFUL_MODEL_DECISION_SOURCES = frozenset(
     {
         "model",
-        "short_endgame_plan",
     }
 ) | LEGACY_DECISION_SOURCES
 MODEL_ATTEMPT_DECISION_SOURCES = SUCCESSFUL_MODEL_DECISION_SOURCES | frozenset(
@@ -33,7 +33,6 @@ DECISION_SOURCES = frozenset(
         "rule_primary",
         "local_shortcut",
         "model",
-        "short_endgame_plan",
         "deepseek_rule_fallback",
         "adapter_rule_fallback",
         "conditional_pressure_pass",
