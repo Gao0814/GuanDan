@@ -98,22 +98,13 @@ def _validated_free_lead_actions(
     return hand, tuple(actions)
 
 
-def strictly_better_free_lead_action_ids(
+def _minimum_group_free_lead_analysis(
     observation: object,
     legal_actions: object,
     expected_player_id: int,
-    selected_action_id: int,
-) -> tuple[int, ...] | None:
-    """Return best original IDs only when ``selected_action_id`` uses more groups.
+) -> tuple[dict[int, int], tuple[int, ...]] | None:
+    """Prove a strict first-action grouping difference from public payloads."""
 
-    Groups are carrier-card multisets from the current canonical free-lead
-    actions.  They may be reused only when the remaining multiset still has
-    enough cards.  ``None`` means the public proof is insufficient or the
-    model action is already tied for the minimum.
-    """
-
-    if not _is_int(selected_action_id):
-        return None
     validated = _validated_free_lead_actions(observation, legal_actions, expected_player_id)
     if validated is None:
         return None
@@ -143,10 +134,56 @@ def strictly_better_free_lead_action_ids(
         if tail is None:
             return None
         scores[action_id] = 1 + tail
-    selected_score = scores.get(selected_action_id)
-    if selected_score is None:
-        return None
     best_score = min(scores.values())
-    if selected_score <= best_score:
+    best_ids = tuple(action_id for action_id, score in scores.items() if score == best_score)
+    if len(best_ids) == len(scores):
         return None
-    return tuple(action_id for action_id, score in scores.items() if score == best_score)
+    return scores, best_ids
+
+
+def minimum_group_free_lead_action_ids(
+    observation: object,
+    legal_actions: object,
+    expected_player_id: int,
+) -> tuple[int, ...] | None:
+    """Return tied-best original IDs only for a proved short free-lead opportunity.
+
+    The evidence must be a complete canonical public payload for a local hand
+    of one to four cards.  Every legal first action must leave a hand that can
+    be partitioned by the same canonical carrier groups, and at least one
+    first action must use strictly more groups than the minimum.
+    """
+
+    analysis = _minimum_group_free_lead_analysis(
+        observation,
+        legal_actions,
+        expected_player_id,
+    )
+    if analysis is None:
+        return None
+    _, best_ids = analysis
+    return best_ids
+
+
+def strictly_better_free_lead_action_ids(
+    observation: object,
+    legal_actions: object,
+    expected_player_id: int,
+    selected_action_id: int,
+) -> tuple[int, ...] | None:
+    """Return best original IDs only when ``selected_action_id`` uses more groups."""
+
+    if not _is_int(selected_action_id):
+        return None
+    analysis = _minimum_group_free_lead_analysis(
+        observation,
+        legal_actions,
+        expected_player_id,
+    )
+    if analysis is None:
+        return None
+    scores, best_ids = analysis
+    selected_score = scores.get(selected_action_id)
+    if selected_score is None or selected_action_id in best_ids:
+        return None
+    return best_ids

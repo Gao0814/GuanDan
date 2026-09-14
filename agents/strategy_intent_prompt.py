@@ -18,6 +18,10 @@ _INTENT_TEXT = {
 }
 _REASON_DETAILS = {
     "can_finish_now": ("run_out", "本次可直接出完"),
+    "short_endgame_minimum_groups": (
+        "run_out",
+        "本家仅1–4张且当前自由出牌，完整canonical动作证明不同首手会导致不同的最少剩余分组数；优先选择使全部手牌所需分组数最少的首手，避免无谓拆散已有组合",
+    ),
     "weak_hand": ("run_out", "手牌偏弱，优先减少手数"),
     "stable_control": ("control", "手牌控制力稳定"),
     "teammate_controls_table": ("support_teammate", "队友当前控桌"),
@@ -146,6 +150,7 @@ def _valid_player_fields(context: StrategyIntentContext) -> bool:
         context.hand_strength == expected_strength
         and type(context.opponents_all_active) is bool
         and type(context.teammate_big_joker_opportunity) is bool
+        and type(context.short_endgame_minimum_groups) is bool
     )
 
 
@@ -192,6 +197,8 @@ def _expected_reason(context: StrategyIntentContext) -> str:
         and context.table_leader_is_urgent
     ):
         return "urgent_opponent_controls_table"
+    if context.short_endgame_minimum_groups:
+        return "short_endgame_minimum_groups"
     teammate_is_urgent = 0 < context.teammate_hand_count <= 2
     has_urgent_opponent = bool(context.urgent_opponent_ids)
     if teammate_is_urgent and has_urgent_opponent:
@@ -259,6 +266,16 @@ def build_strategy_intent_prompt_payload(
         and context.minimum_opponent_hand_count is not None
         and context.minimum_opponent_hand_count > 2
         and context.urgent_opponent_ids == ()
+    ):
+        diagnostics.add("invalid_context_fields")
+    if context.short_endgame_minimum_groups and not (
+        context.intent == "run_out"
+        and context.is_free_lead is True
+        and context.table_leader_player_id is None
+        and context.table_leader_relation is None
+        and context.table_leader_is_urgent is False
+        and context.my_hand_count is not None
+        and 1 <= context.my_hand_count <= 4
     ):
         diagnostics.add("invalid_context_fields")
     if not diagnostics and type(reason) is str:

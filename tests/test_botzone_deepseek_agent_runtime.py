@@ -22,6 +22,8 @@ from integrations.botzone.runner import build_foreground_runner
 from integrations.botzone.runtime_config import RuntimeConfig
 from integrations.botzone.session import HandlerContext, SessionStore
 from tests.test_deepseek_step_e import (
+    _short_endgame_legal_actions,
+    _short_endgame_observation,
     _teammate_joker_legal_actions,
     _teammate_joker_observation,
 )
@@ -411,6 +413,43 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
             agent = factory(1)
         self.assertIsInstance(agent, DeepSeekAIAgent)
         self.assertEqual(raw.calls, [])
+
+    def test_deepseek_factory_passes_short_endgame_minimum_groups_prompt(self) -> None:
+        raw = _RawClient(3)
+        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=_config()):
+            factory = build_agent_factory(
+                "deepseek",
+                config_loader=lambda: _config(),
+                client_factory=lambda **_: raw,
+            )
+            agent = factory(1)
+            self.assertEqual(
+                agent.select_action(_short_endgame_observation(), _short_endgame_legal_actions()),
+                5,
+            )
+
+        self.assertEqual(len(raw.calls), 1)
+        prompt = raw.calls[0].get("strategy_intent_prompt")
+        self.assertIsNotNone(prompt)
+        assert prompt is not None
+        self.assertEqual(
+            (agent.last_strategy_intent.status, agent.last_strategy_intent.intent, agent.last_strategy_intent.reason_codes),
+            ("available", "run_out", ("short_endgame_minimum_groups",)),
+        )
+        self.assertEqual((prompt.status, prompt.intent, prompt.diagnostics), ("ready", "run_out", ()))
+        self.assertIn("最少剩余分组", prompt.text)
+        self.assertIn("避免无谓拆散已有组合", prompt.text)
+        rag_context = raw.calls[0].get("rag_context")
+        self.assertIsInstance(rag_context, dict)
+        assert isinstance(rag_context, dict)
+        scene_tags = rag_context.get("scene_tags")
+        self.assertIsInstance(scene_tags, dict)
+        assert isinstance(scene_tags, dict)
+        self.assertEqual(
+            tuple(scene_tags.get(key) for key in ("scene", "phase", "action_context")),
+            ("endgame", "near_open_endgame", "endgame"),
+        )
+        self.assertEqual(agent.last_decision_source, "short_endgame_plan")
 
     def test_deepseek_factory_enables_validated_teammate_control_prompt_without_rewriting_model_choice(self) -> None:
         actions = [

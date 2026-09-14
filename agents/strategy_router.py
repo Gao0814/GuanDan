@@ -12,6 +12,7 @@ from typing import Mapping
 
 from agents.conditional_pressure_pass_policy import teammate_big_joker_opportunity
 from agents.game_phase import CRITICAL_ENDGAME, ENDGAME, MIDGAME, NEAR_OPEN_ENDGAME, OPENING, GamePhaseContext
+from agents.short_endgame_planner import minimum_group_free_lead_action_ids
 
 
 RUN_OUT = "run_out"
@@ -76,6 +77,7 @@ class StrategyIntentContext:
     diagnostics: tuple[str, ...]
     opponents_all_active: bool = False
     teammate_big_joker_opportunity: bool = False
+    short_endgame_minimum_groups: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -102,6 +104,7 @@ class StrategyIntentContext:
             "diagnostics": list(self.diagnostics),
             "opponents_all_active": self.opponents_all_active,
             "teammate_big_joker_opportunity": self.teammate_big_joker_opportunity,
+            "short_endgame_minimum_groups": self.short_endgame_minimum_groups,
         }
 
 
@@ -137,6 +140,7 @@ def _unavailable(phase: str | None, *codes: str) -> StrategyIntentContext:
         hand_total_score=None,
         hand_control_score=None,
         diagnostics=_diagnostics(*codes),
+        short_endgame_minimum_groups=False,
     )
 
 
@@ -463,6 +467,9 @@ def route_strategy_intent(
     teammate_big_joker_opportunity_available = (
         teammate_big_joker_opportunity(observation, legal_actions, my_player_id) is not None
     )
+    short_endgame_minimum_groups_available = (
+        minimum_group_free_lead_action_ids(observation, legal_actions, my_player_id) is not None
+    )
 
     if can_finish_now:
         intent, reason_codes = RUN_OUT, ("can_finish_now",)
@@ -472,6 +479,8 @@ def route_strategy_intent(
         intent, reason_codes = SUPPORT_TEAMMATE, ("teammate_controls_table",)
     elif table_leader_relation == "opponent" and table_leader_is_urgent:
         intent, reason_codes = BLOCK_OPPONENT, ("urgent_opponent_controls_table",)
+    elif short_endgame_minimum_groups_available:
+        intent, reason_codes = RUN_OUT, ("short_endgame_minimum_groups",)
     elif teammate_is_urgent and urgent_opponent_ids:
         if teammate_hand_count < minimum_opponent_hand_count:
             intent, reason_codes = SUPPORT_TEAMMATE, ("teammate_more_urgent",)
@@ -512,4 +521,5 @@ def route_strategy_intent(
         diagnostics=(),
         opponents_all_active=opponents_all_active,
         teammate_big_joker_opportunity=teammate_big_joker_opportunity_available,
+        short_endgame_minimum_groups=short_endgame_minimum_groups_available,
     )

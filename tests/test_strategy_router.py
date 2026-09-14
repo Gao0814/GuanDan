@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 import unittest
 
-from agents.game_phase import CRITICAL_ENDGAME, ENDGAME, MIDGAME, NEAR_OPEN_ENDGAME, OPENING, GamePhaseContext
+from agents.game_phase import CRITICAL_ENDGAME, ENDGAME, MIDGAME, NEAR_OPEN_ENDGAME, OPENING, GamePhaseContext, classify_game_phase
+from agents.hand_evaluator import evaluate_hand
 from agents.strategy_router import (
     BLOCK_OPPONENT,
     CONTROL,
@@ -14,6 +15,8 @@ from agents.strategy_router import (
     route_strategy_intent,
 )
 from tests.test_deepseek_step_e import (
+    _short_endgame_legal_actions,
+    _short_endgame_observation,
     _teammate_joker_legal_actions,
     _teammate_joker_observation,
 )
@@ -172,7 +175,7 @@ class TestStrategyRouter(unittest.TestCase):
                 "can_finish_now": False, "is_free_lead": False,
                 "table_leader_player_id": 3, "table_leader_relation": "teammate", "table_leader_is_urgent": False,
                 "hand_strength": "non_weak", "hand_total_score": 50, "hand_control_score": 10, "diagnostics": [],
-                "opponents_all_active": True, "teammate_big_joker_opportunity": False,
+                "opponents_all_active": True, "teammate_big_joker_opportunity": False, "short_endgame_minimum_groups": False,
             },
         )
 
@@ -193,7 +196,7 @@ class TestStrategyRouter(unittest.TestCase):
                 "can_finish_now": False, "is_free_lead": False,
                 "table_leader_player_id": 4, "table_leader_relation": "opponent", "table_leader_is_urgent": True,
                 "hand_strength": "non_weak", "hand_total_score": 50, "hand_control_score": 10, "diagnostics": [],
-                "opponents_all_active": True, "teammate_big_joker_opportunity": False,
+                "opponents_all_active": True, "teammate_big_joker_opportunity": False, "short_endgame_minimum_groups": False,
             },
         )
 
@@ -211,9 +214,86 @@ class TestStrategyRouter(unittest.TestCase):
                 "can_finish_now": False, "is_free_lead": True,
                 "table_leader_player_id": None, "table_leader_relation": None, "table_leader_is_urgent": False,
                 "hand_strength": "non_weak", "hand_total_score": 50, "hand_control_score": 10, "diagnostics": [],
-                "opponents_all_active": True, "teammate_big_joker_opportunity": False,
+                "opponents_all_active": True, "teammate_big_joker_opportunity": False, "short_endgame_minimum_groups": False,
             },
         )
+
+    def test_short_endgame_minimum_groups_is_a_specific_public_free_lead_reason(self) -> None:
+        observation = _short_endgame_observation()
+        actions = _short_endgame_legal_actions()
+        context = route_strategy_intent(
+            observation,
+            actions,
+            phase_context=classify_game_phase(observation),
+            hand_evaluation=evaluate_hand(observation, actions),
+        )
+        self.assertEqual(
+            (context.status, context.intent, context.reason_codes, context.short_endgame_minimum_groups),
+            ("available", RUN_OUT, ("short_endgame_minimum_groups",), True),
+        )
+
+        cases: list[tuple[dict[str, object], list[dict[str, object]]]] = []
+        tied = _short_endgame_observation()
+        tied["my_info"] = dict(tied["my_info"], hand_cards=["6S", "7S"], hand_count=2)
+        cases.append((tied, _short_endgame_legal_actions()[:2]))
+        oversized = _short_endgame_observation()
+        oversized["my_info"] = dict(
+            oversized["my_info"],
+            hand_cards=["3S", "4S", "5S", "6S", "7S"],
+            hand_count=5,
+        )
+        cases.append((oversized, _short_endgame_legal_actions()))
+        following = _short_endgame_observation()
+        following["current_round"] = dict(
+            following["current_round"],
+            constraint="single:5",
+            table_action={"declared_pattern": "single", "declared_cards": ["5"], "carrier_cards": ["5S"]},
+        )
+        cases.append((following, _short_endgame_legal_actions()))
+        pass_action = [{"action_id": 9, "declared_pattern": "pass", "declared_cards": [], "carrier_cards": [], "wildcard_count": 0, "wildcard_info": [], "display_text": "pass"}]
+        cases.append((_short_endgame_observation(), pass_action + _short_endgame_legal_actions()))
+        duplicate_id = _short_endgame_legal_actions()
+        duplicate_id[1]["action_id"] = 1
+        cases.append((_short_endgame_observation(), duplicate_id))
+        bad_carrier = _short_endgame_legal_actions()
+        bad_carrier[0]["carrier_cards"] = ["AS"]
+        cases.append((_short_endgame_observation(), bad_carrier))
+        cases.append((_short_endgame_observation(), _short_endgame_legal_actions()[:-1]))
+        for snapshot, candidates in cases:
+            with self.subTest(snapshot=snapshot):
+                context = route_strategy_intent(
+                    snapshot,
+                    candidates,
+                    phase_context=classify_game_phase(snapshot),
+                    hand_evaluation=evaluate_hand(snapshot, candidates),
+                )
+                self.assertFalse(context.short_endgame_minimum_groups)
+                self.assertNotEqual(context.reason_codes, ("short_endgame_minimum_groups",))
+
+    def test_can_finish_now_remains_ahead_of_short_endgame_minimum_groups(self) -> None:
+        observation = _short_endgame_observation()
+        observation["my_info"] = dict(
+            observation["my_info"],
+            hand_cards=["6S", "6H", "6C"],
+            hand_count=3,
+        )
+        actions = [
+            {"action_id": 1, "declared_pattern": "single", "declared_cards": ["6"], "carrier_cards": ["6S"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:6"},
+            {"action_id": 2, "declared_pattern": "single", "declared_cards": ["6"], "carrier_cards": ["6H"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:6"},
+            {"action_id": 3, "declared_pattern": "single", "declared_cards": ["6"], "carrier_cards": ["6C"], "wildcard_count": 0, "wildcard_info": [], "display_text": "single:6"},
+            {"action_id": 4, "declared_pattern": "pair", "declared_cards": ["6", "6"], "carrier_cards": ["6S", "6H"], "wildcard_count": 0, "wildcard_info": [], "display_text": "pair:6,6"},
+            {"action_id": 5, "declared_pattern": "pair", "declared_cards": ["6", "6"], "carrier_cards": ["6S", "6C"], "wildcard_count": 0, "wildcard_info": [], "display_text": "pair:6,6"},
+            {"action_id": 6, "declared_pattern": "pair", "declared_cards": ["6", "6"], "carrier_cards": ["6H", "6C"], "wildcard_count": 0, "wildcard_info": [], "display_text": "pair:6,6"},
+            {"action_id": 7, "declared_pattern": "triple", "declared_cards": ["6", "6", "6"], "carrier_cards": ["6S", "6H", "6C"], "wildcard_count": 0, "wildcard_info": [], "display_text": "triple:6,6,6"},
+        ]
+        context = route_strategy_intent(
+            observation,
+            actions,
+            phase_context=classify_game_phase(observation),
+            hand_evaluation=evaluate_hand(observation, actions),
+        )
+        self.assertTrue(context.short_endgame_minimum_groups)
+        self.assertEqual((context.intent, context.reason_codes), (RUN_OUT, ("can_finish_now",)))
 
     def test_big_joker_teammate_control_is_a_specific_public_reason(self) -> None:
         observation = _teammate_joker_observation()

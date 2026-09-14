@@ -26,6 +26,7 @@ def _context(
 ) -> StrategyIntentContext:
     intent_by_reason = {
         "can_finish_now": "run_out",
+        "short_endgame_minimum_groups": "run_out",
         "weak_hand": "run_out",
         "stable_control": "control",
         "teammate_controls_table": "support_teammate",
@@ -61,6 +62,7 @@ def _context(
         "diagnostics": (),
         "opponents_all_active": False,
         "teammate_big_joker_opportunity": False,
+        "short_endgame_minimum_groups": False,
     }
     if reason == "teammate_controls_table":
         values.update(is_free_lead=False, table_leader_player_id=3, table_leader_relation="teammate")
@@ -91,6 +93,8 @@ def _context(
         values.update(minimum_opponent_hand_count=2, urgent_opponent_ids=(2,))
     elif reason == "teammate_urgent":
         values.update(teammate_hand_count=2, minimum_opponent_hand_count=5)
+    elif reason == "short_endgame_minimum_groups":
+        values.update(my_hand_count=4, short_endgame_minimum_groups=True)
     return StrategyIntentContext(**values)  # type: ignore[arg-type]
 
 
@@ -174,6 +178,11 @@ class TestStrategyIntentPrompt(unittest.TestCase):
     def test_all_locked_intent_reason_pairs_have_exact_ready_text(self) -> None:
         expected = {
             "can_finish_now": ("run_out", "加速走牌", "本次可直接出完"),
+            "short_endgame_minimum_groups": (
+                "run_out",
+                "加速走牌",
+                "本家仅1–4张且当前自由出牌，完整canonical动作证明不同首手会导致不同的最少剩余分组数；优先选择使全部手牌所需分组数最少的首手，避免无谓拆散已有组合",
+            ),
             "weak_hand": ("run_out", "加速走牌", "手牌偏弱，优先减少手数"),
             "stable_control": ("control", "控制牌权", "手牌控制力稳定"),
             "teammate_controls_table": ("support_teammate", "支援队友", "队友当前控桌"),
@@ -213,6 +222,7 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             "teammate_big_joker_preservation": (131, 131, 141, 140),
             "teammate_urgent": (74, 74, 84, 83),
             "can_finish_now": (75, 75, 85, 84),
+            "short_endgame_minimum_groups": (146, 146, 156, 155),
             "opponent_more_urgent": (75, 75, 85, 84),
             "stable_control": (75, 75, 85, 84),
             "teammate_more_urgent": (75, 75, 85, 84),
@@ -227,16 +237,16 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             "critical_endgame",
         )
         payload_envelopes = {
-            "midgame": (74, 131),
-            "endgame": (74, 131),
-            "near_open_endgame": (84, 141),
-            "critical_endgame": (83, 140),
+            "midgame": (74, 146),
+            "endgame": (74, 146),
+            "near_open_endgame": (84, 156),
+            "critical_endgame": (83, 155),
         }
         delta_envelopes = {
-            "midgame": (83, 140),
-            "endgame": (83, 140),
-            "near_open_endgame": (93, 150),
-            "critical_endgame": (92, 149),
+            "midgame": (83, 155),
+            "endgame": (83, 155),
+            "near_open_endgame": (93, 165),
+            "critical_endgame": (92, 164),
         }
 
         observed_reasons: dict[str, set[str]] = {phase: set() for phase in phases}
@@ -264,7 +274,7 @@ class TestStrategyIntentPrompt(unittest.TestCase):
                 self.assertEqual(len(lengths), len(expected_reasons))
                 self.assertEqual(
                     max(lengths),
-                    expected_lengths["teammate_big_joker_preservation"][phases.index(phase)],
+                    expected_lengths["short_endgame_minimum_groups"][phases.index(phase)],
                 )
                 self.assertEqual((min(lengths), max(lengths)), payload_envelopes[phase])
                 self.assertEqual(
@@ -376,6 +386,7 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             replace(base, table_leader_is_urgent=1),  # type: ignore[arg-type]
             replace(base, opponents_all_active=1),  # type: ignore[arg-type]
             replace(base, teammate_big_joker_opportunity=1),  # type: ignore[arg-type]
+            replace(base, short_endgame_minimum_groups=1),  # type: ignore[arg-type]
             replace(base, table_leader_relation="opponent", table_leader_player_id=None),
             replace(base, table_leader_relation=[]),  # type: ignore[arg-type]
             replace(base, is_free_lead=True, table_leader_relation="opponent", table_leader_player_id=2),
@@ -420,6 +431,10 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             (replace(_context("urgent_opponent_controls_table"), minimum_opponent_hand_count=5, urgent_opponent_ids=()), "invalid_context_fields"),
             (replace(_context("weak_hand"), hand_total_score=50), "invalid_context_fields"),
             (replace(_context("stable_control"), hand_total_score=30), "invalid_context_fields"),
+            (replace(_context("short_endgame_minimum_groups"), short_endgame_minimum_groups=False), "invalid_intent_reason"),
+            (replace(_context("short_endgame_minimum_groups"), is_free_lead=False), "invalid_context_fields"),
+            (replace(_context("short_endgame_minimum_groups"), my_hand_count=5), "invalid_context_fields"),
+            (replace(_context("short_endgame_minimum_groups"), reason_codes=("stable_control",)), "invalid_intent_reason"),
             (replace(_context(), hand_control_score=51), "invalid_context_fields"),
             (replace(_context("teammate_more_urgent"), is_free_lead=False, table_leader_player_id=3, table_leader_relation="teammate", table_leader_is_urgent=True), "invalid_intent_reason"),
         )

@@ -323,6 +323,22 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
         self.assertLess(prompt.index("【记牌信息】"), prompt.index("【策略意图】"))
         self.assertLess(prompt.index("【策略意图】"), prompt.index("【场景标签】"))
 
+        short_endgame = build_strategy_intent_prompt_payload(
+            replace(
+                _intent(),
+                intent="run_out",
+                reason_codes=("short_endgame_minimum_groups",),
+                my_hand_count=4,
+                short_endgame_minimum_groups=True,
+            )
+        )
+        short_prompt = DeepSeekClient._build_structured_prompt(
+            **kwargs,
+            strategy_intent_prompt=short_endgame,
+        )
+        self.assertIn("最少剩余分组", short_prompt)
+        self.assertIn("避免无谓拆散已有组合", short_prompt)
+
         malformed = (
             object(),
             replace(payload, status="omitted"),
