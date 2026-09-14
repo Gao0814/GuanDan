@@ -15,6 +15,7 @@ from evaluation.botzone_policy_benchmark import (
     build_paired_schedule,
     build_selected_paired_schedule,
 )
+from integrations.botzone.agent_observability import SUCCESSFUL_MODEL_DECISION_SOURCES
 from integrations.botzone.run_provenance import TOKEN_AUDIT_VERSION
 
 
@@ -37,7 +38,7 @@ def _audit(
     else:
         source = source or "model"
         sources = [[source, 1]]
-        if source == "model":
+        if source in SUCCESSFUL_MODEL_DECISION_SOURCES:
             outcomes = [[model_outcome or "success", 1]]
             model_attempts = 1
             fallback_count = 0
@@ -106,6 +107,91 @@ def _tokenized_audit(audit: dict[str, object], run_token: str) -> dict[str, obje
 
 
 class BotzonePolicyBenchmarkTests(unittest.TestCase):
+    def test_successful_model_rewrite_sources_are_accepted_and_aggregated(self) -> None:
+        for source in (
+            "teammate_control_block",
+            "danger_opponent_block",
+            "short_endgame_plan",
+        ):
+            with self.subTest(source=source):
+                schedule = build_selected_paired_schedule((31,), (0,), _conditions())
+                report = aggregate_policy_audits(
+                    schedule,
+                    (
+                        _submission(31, 0, "rule", _audit("rule", "loss", "score_0")),
+                        _submission(31, 0, "deepseek", _audit("deepseek", "win", "score_1", source=source)),
+                    ),
+                    _conditions(),
+                )
+                self.assertEqual((report.valid_pair_count, report.invalid_pair_count), (1, 0))
+                self.assertEqual(report.deepseek_model_attempt_count, 1)
+                self.assertEqual(report.deepseek_decision_source_counts, ((source, 1),))
+
+    def test_legacy_teammate_control_v8_audit_remains_read_compatible(self) -> None:
+        conditions = BenchmarkConditions(PROFILE_VERSION, True, True, run_provenance_required=True)
+        schedule = build_selected_paired_schedule((37,), (0,), conditions)
+        report = aggregate_policy_audits(
+            schedule,
+            (
+                _submission(
+                    37,
+                    0,
+                    "rule",
+                    _tokenized_audit(_audit("rule", "loss", "score_0"), "3" * 32),
+                    "3" * 32,
+                ),
+                _submission(
+                    37,
+                    0,
+                    "deepseek",
+                    _tokenized_audit(
+                        _audit("deepseek", "win", "score_1", source="teammate_control_block"),
+                        "4" * 32,
+                    ),
+                    "4" * 32,
+                ),
+            ),
+            conditions,
+        )
+        self.assertEqual((report.valid_pair_count, report.invalid_pair_count), (1, 0))
+
+    def test_successful_model_rewrite_sources_fail_closed_on_count_or_outcome_mismatch(self) -> None:
+        schedule = build_selected_paired_schedule((41,), (0,), _conditions())
+        for label, mutate in (
+            ("missing_attempt", lambda audit: audit.update(model_attempt_count=0)),
+            ("extra_attempt", lambda audit: audit.update(model_attempt_count=2, model_outcome_counts=[["success", 2]])),
+            ("non_success_outcome", lambda audit: audit.update(model_outcome_counts=[["timeout", 1]])),
+        ):
+            with self.subTest(label=label):
+                deepseek = _audit("deepseek", "win", "score_1", source="teammate_control_block")
+                mutate(deepseek)
+                report = aggregate_policy_audits(
+                    schedule,
+                    (
+                        _submission(41, 0, "rule", _audit("rule", "loss", "score_0")),
+                        _submission(41, 0, "deepseek", deepseek),
+                    ),
+                    _conditions(),
+                )
+                self.assertEqual((report.valid_pair_count, report.invalid_pair_count), (0, 1))
+
+    def test_nonformal_or_unknown_sources_remain_rejected(self) -> None:
+        schedule = build_selected_paired_schedule((43,), (0,), _conditions())
+        for source in ("conditional_pressure_pass", "unknown_source"):
+            with self.subTest(source=source):
+                deepseek = _audit("deepseek", "win", "score_1")
+                deepseek["decision_source_counts"] = [[source, 1]]
+                deepseek["model_attempt_count"] = 0
+                deepseek["model_outcome_counts"] = []
+                report = aggregate_policy_audits(
+                    schedule,
+                    (
+                        _submission(43, 0, "rule", _audit("rule", "loss", "score_0")),
+                        _submission(43, 0, "deepseek", deepseek),
+                    ),
+                    _conditions(),
+                )
+                self.assertEqual((report.valid_pair_count, report.invalid_pair_count), (0, 1))
     def test_opt_in_conditional_audit_is_not_admitted_to_rule_deepseek_formal_comparison(self) -> None:
         audit = _audit("deepseek", "win", "score_2")
         audit["agent_mode"] = "conditional_pressure_pass"

@@ -253,6 +253,17 @@ class BotzoneAgentObservabilityTests(unittest.TestCase):
         )
         self.assertEqual(snapshot.to_json()["decision_source_counts"], [["teammate_control_block", 1]])
 
+    def test_successful_model_rewrite_source_requires_success_outcome(self) -> None:
+        with self.assertRaisesRegex(AgentObservabilityError, "^deepseek_model_outcome_mismatch$"):
+            AgentObservabilitySnapshot(
+                "deepseek",
+                1,
+                (("teammate_control_block", 1),),
+                1,
+                (("timeout", 1),),
+                0,
+            )
+
     def test_conditional_agent_uses_public_projection_and_distinguishes_both_sources(self) -> None:
         recorder = AgentObservabilityRecorder()
         handler = NoTributeRuleBasedHandler(

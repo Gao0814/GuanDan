@@ -274,8 +274,8 @@ def teammate_big_joker_opportunity(
     """Return original pass/big-joker IDs for the proved teammate-control opportunity.
 
     This deliberately does not inspect a model selection.  It is the shared
-    public predicate for both the post-model guard and strategy-intent prompt
-    context; callers still decide whether and how to use the evidence.
+    public predicate for the strategy router and dedicated prompt context;
+    callers still decide whether and how to use the evidence.
     """
 
     context = _pressure_pass_context(observation, legal_actions, expected_player_id)

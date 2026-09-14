@@ -236,7 +236,7 @@ class TestDeepSeekStepE(unittest.TestCase):
                 self.assertEqual(agent.last_decision_source, "model")
                 self.assertEqual(client.calls, 1)
 
-    def test_teammate_joker_guard_does_not_block_model_pass_or_low_value_action(self) -> None:
+    def test_teammate_joker_context_preserves_model_pass_or_low_value_action(self) -> None:
         class FixedClient:
             def __init__(self, action_id: int) -> None:
                 self.action_id = action_id

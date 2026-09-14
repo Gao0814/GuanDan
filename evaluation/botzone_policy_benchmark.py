@@ -8,6 +8,12 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from types import MappingProxyType
 
+from integrations.botzone.agent_observability import (
+    FORMAL_POLICY_DECISION_SOURCES,
+    MODEL_ATTEMPT_DECISION_SOURCES,
+    MODEL_OUTCOMES,
+    SUCCESSFUL_MODEL_DECISION_SOURCES,
+)
 from integrations.botzone.run_provenance import TOKEN_AUDIT_VERSION, RunProvenanceError, validate_run_token
 
 
@@ -15,10 +21,7 @@ POLICIES = frozenset({"rule", "deepseek"})
 PROFILE_VERSION = "botzone_no_tribute_level_2/v1"
 PREVIOUS_RANK_PROFILE = "same_previous_rank_profile"
 
-DECISION_SOURCES = frozenset(
-    {"rule_primary", "local_shortcut", "model", "deepseek_rule_fallback", "adapter_rule_fallback"}
-)
-MODEL_OUTCOMES = frozenset({"success", "timeout", "exception", "invalid_suggestion"})
+DECISION_SOURCES = FORMAL_POLICY_DECISION_SOURCES
 RESULT_CATEGORIES = frozenset(
     {"local_team_win", "local_team_loss", "platform_error", "invalid_score_shape"}
 )
@@ -412,8 +415,16 @@ def _validate_audit(
     if expected_strategy == "rule":
         if scalars["model_attempt_count"] or outcomes or scalars["rule_fallback_count"] or any(name != "rule_primary" for name, _ in sources):
             raise PolicyBenchmarkError("invalid_audit")
-    elif scalars["model_attempt_count"] != source_map.get("model", 0) + source_map.get("deepseek_rule_fallback", 0):
-        raise PolicyBenchmarkError("invalid_audit")
+    else:
+        successful_model_decisions = sum(
+            source_map.get(name, 0) for name in SUCCESSFUL_MODEL_DECISION_SOURCES
+        )
+        if (
+            scalars["model_attempt_count"]
+            != sum(source_map.get(name, 0) for name in MODEL_ATTEMPT_DECISION_SOURCES)
+            or dict(outcomes).get("success", 0) != successful_model_decisions
+        ):
+            raise PolicyBenchmarkError("invalid_audit")
 
     categories = _pairs(value["result_category_counts"], RESULT_CATEGORIES)
     buckets = _pairs(value["local_team_score_counts"], SCORE_BUCKETS)
@@ -609,7 +620,9 @@ class PolicyBenchmarkReport:
             or _count(self.deepseek_rule_fallback_count)
             != dict(sources).get("deepseek_rule_fallback", 0) + dict(sources).get("adapter_rule_fallback", 0)
             or self.deepseek_model_attempt_count
-            != dict(sources).get("model", 0) + dict(sources).get("deepseek_rule_fallback", 0)
+            != sum(dict(sources).get(name, 0) for name in MODEL_ATTEMPT_DECISION_SOURCES)
+            or dict(outcomes).get("success", 0)
+            != sum(dict(sources).get(name, 0) for name in SUCCESSFUL_MODEL_DECISION_SOURCES)
         ):
             raise PolicyBenchmarkError("invalid_report")
         diagnostics = _snapshot_pairs(self.diagnostics, BENCHMARK_DIAGNOSTICS)

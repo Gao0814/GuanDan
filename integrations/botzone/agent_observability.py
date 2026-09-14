@@ -15,6 +15,19 @@ LEGACY_DECISION_SOURCES = frozenset(
     }
 )
 
+SUCCESSFUL_MODEL_DECISION_SOURCES = frozenset(
+    {
+        "model",
+        "danger_opponent_block",
+        "short_endgame_plan",
+    }
+) | LEGACY_DECISION_SOURCES
+MODEL_ATTEMPT_DECISION_SOURCES = SUCCESSFUL_MODEL_DECISION_SOURCES | frozenset(
+    {
+        "deepseek_rule_fallback",
+    }
+)
+
 DECISION_SOURCES = frozenset(
     {
         "rule_primary",
@@ -28,6 +41,12 @@ DECISION_SOURCES = frozenset(
         "conditional_rule_based",
     }
 ) | LEGACY_DECISION_SOURCES
+FORMAL_POLICY_DECISION_SOURCES = DECISION_SOURCES - frozenset(
+    {
+        "conditional_pressure_pass",
+        "conditional_rule_based",
+    }
+)
 MODEL_OUTCOMES = frozenset({"success", "timeout", "exception", "invalid_suggestion"})
 AGENT_MODES = frozenset({"rule", "deepseek", "conditional_pressure_pass"})
 
@@ -100,14 +119,15 @@ class AgentObservabilitySnapshot:
             if self.model_attempt_count or outcomes or any(name != "rule_primary" for name, _ in decisions):
                 raise AgentObservabilityError("rule_mode_model_activity")
         elif self.agent_mode == "deepseek":
-            if self.model_attempt_count != (
-                sources.get("model", 0)
-                + sources.get("danger_opponent_block", 0)
-                + sources.get("short_endgame_plan", 0)
-                + sources.get("teammate_control_block", 0)
-                + sources.get("deepseek_rule_fallback", 0)
+            successful_model_decisions = sum(
+                sources.get(name, 0) for name in SUCCESSFUL_MODEL_DECISION_SOURCES
+            )
+            if self.model_attempt_count != sum(
+                sources.get(name, 0) for name in MODEL_ATTEMPT_DECISION_SOURCES
             ):
                 raise AgentObservabilityError("deepseek_model_conservation_failed")
+            if dict(outcomes).get("success", 0) != successful_model_decisions:
+                raise AgentObservabilityError("deepseek_model_outcome_mismatch")
         elif (
             self.model_attempt_count
             or outcomes
