@@ -20,7 +20,7 @@
 - 仓库级Skills位于 `.agents/skills/`：`botzone-manual-live` 封装单局人工连接、建桌、监测和evidence验收；`botzone-workspace-recycle` 封装已审计artifact的精确回收站清理。run-specific seed、Agent、预算、文件allowlist与hash仍只放在当前任务Prompt。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
-- 最新业务提交为 `7499ccc`：已从DeepSeek成功模型路径退役`danger_opponent_block`主动改写，删除无消费者helper；原始合法pass/9/J均保持`model` source，危险对手router/prompt/RAG和`short_endgame_plan`未变。该source仅保留legacy读取兼容；规划Codex独立复跑132项定向、39项主规则和718项全量均通过。
+- 最新业务提交为 `c32259d`：已为短残局最少分组增加共享公开机会函数和`run_out / short_endgame_minimum_groups`专用prompt；固定fixture由通用`stable_control`转为专用提示，DeepSeek最终输入验证与Botzone factory接线通过。后置`short_endgame_plan`保持原行为；规划Codex独立复跑92项定向、39项主规则和721项全量均通过。
 - canonical危险对手fixture的受约束真实模型检查已判定`danger_opponent_prompt_raw_model_ready`：唯一请求成功、重试0，模型在后置守卫前自行返回固定候选集内的`ordinary`动作；现有`block_opponent / urgent_opponent_controls_table`输入已足以支持退役强制pass阻断。该结果以低敏执行报告为证据，不是整体胜率结论。
 - 项目所有者长期授权单个明确诊断/评测任务中严格少于10次的预注册真实DeepSeek请求，无需另行申请；10次及以上仍须事先授权，范围、重试、密钥和自由文本保密边界不变。
 - 固定4张自由出牌fixture的守卫前真实模型检查判定为`short_endgame_prompt_raw_model_not_ready`：最少分组集合为`{1,2,5}`，但唯一成功请求的原始动作落在严格更差的单J集合`{3,4}`。当前`ready / control / stable_control`提示未提供最少剩余分组语义；该低敏单点证据支持补充专用prompt，不支持删除或扩大守卫，也不是胜率结论。
@@ -28,7 +28,7 @@
 上述实现检查点：
 
 ```text
-7499ccc
+c32259d
 ```
 
 当前分支：`cao`。提交数量会随规划检查点继续变化；读取者应以实际 `git rev-list --left-right --count origin/cao...HEAD` 为准，不使用本文中的历史 ahead 数字。
@@ -279,7 +279,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前718项全量基线、132项危险覆盖退役定向和本轮78项短残局前提复核均通过。短残局原始模型仍选择严格更差的拆J对动作，因此`short_endgame_plan`暂不能退役。下一任务按`docs/NEXT_PROMPT.md`只增加共享最少分组机会真值与专用strategy-intent/prompt，不改后置动作、RAG、engine或Botzone协议。
+当前721项全量、92项短残局专用提示定向和39项主规则回归均通过。共享最少分组真值、router、prompt与最终输入校验已接通，后置`short_endgame_plan`仍未退役。下一任务按`docs/NEXT_PROMPT.md`只在新版专用prompt下做一次同fixture守卫前真实模型复放，不修改代码或运行Botzone。
 
 ## 12. Working Tree Status
 
@@ -297,6 +297,7 @@ git diff --check
 - 最新动作自主性检查点：`e30362f feat: retire teammate control action override`；核心退役路径经113/39/713项回归通过，但legacy v7/v8 audit的policy benchmark读取兼容尚未达成。
 - 最新audit兼容检查点：`3ee6e0e fix: read legacy DeepSeek audit sources`；规划Codex独立复跑109/39/718项，legacy v7/v8正例可读且错误outcome反例fail closed。
 - 最新危险对手覆盖退役检查点：`7499ccc feat: retire danger opponent action override`；规划Codex独立复跑132/39/718项，确认原始pass/9/J保留、旧source只读兼容且`short_endgame_plan`无漂移。
+- 最新短残局专用提示检查点：`c32259d feat: prompt short endgame grouping`；规划Codex独立复跑92/39/721项，确认共享分组真值、专用prompt和最终输入验证生效，后置planner/source无漂移。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex负责提交其业务代码、tests及任务直接相关修改；规划Codex独立复核结果，只提交自己产生的 `AGENTS.md`、项目Skills和docs上下文修改，不代为提交未完成或未经复核的业务改动。
 
@@ -311,4 +312,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`为短残局最少分组补充专用strategy-intent：抽取独立于模型选择的共享机会函数，router在严格公开证据成立时输出`run_out / short_endgame_minimum_groups`，prompt解释优先最少剩余分组、避免无谓拆组。保持`short_endgame_plan`生产行为与source不变，不运行真实模型或Botzone。
+按`docs/NEXT_PROMPT.md`在同一5候选短残局fixture上执行一次新版专用prompt守卫前真实模型复放。先确认最优集合`{1,2,5}`、新intent/prompt及RAG场景，再精确请求1次、重试0；只用原始ID分组决定后续退役或继续保留`short_endgame_plan`，不修改代码或运行Botzone。

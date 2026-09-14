@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：算法优化与短残局专用 strategy-intent 补强（2026-09-14）
+## 当前阶段：算法优化与短残局专用 prompt 守卫前复放（2026-09-14）
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
@@ -54,6 +54,9 @@
 - 受约束执行报告将该检查判定为`short_endgame_prompt_raw_model_not_ready`：全部离线前提通过，唯一真实请求成功、重试0，但守卫前原始动作属于固定候选集内的`strictly_worse_single_jack`，即action 3/4而非最少分组集合`{1,2,5}`。代码/文件未改，HEAD为`acf5af1`且请求前后clean；模型自由文本未持久化，因此原始动作结果以该低敏报告为证据。规划Codex独立复跑当前相关78项并复算分组结果一致。
 - 该结果证明当前泛化`control / stable_control`提示不足以承担短残局分组策略，不授权删除或扩大`short_endgame_plan`。下一项Coding任务只从公开observation、完整canonical动作和本家手牌提取共享“存在严格更差首手/最少剩余分组动作”机会，在router/prompt新增专用`run_out / short_endgame_minimum_groups`意图；现有后置守卫、source、RAG、engine和Botzone协议保持不变。
 - 专用prompt完成后仍须对同一fixture做一次守卫前真实模型复放；只有原始动作进入`{1,2,5}`才规划退役`short_endgame_plan`。一次模型结果不构成整局或胜率结论。
+- 短残局专用公开输入已由`c32259d`完成：共享`minimum_group_free_lead_action_ids()`复用唯一分组求解并在存在严格差异时返回最优原始ID；router新增布尔机会字段与`run_out / short_endgame_minimum_groups`，prompt及DeepSeek最终验证层加入“优先最少剩余分组、避免无谓拆组”的公开说明。Botzone factory自然复用既有strategy-intent接线。
+- 规划Codex独立检查提交精确为4个生产AI文件和5个测试文件，确认`_plan_short_free_lead()`、冻结selector、`short_endgame_plan` source、adapter/audit、RAG和engine无行为变化；独立复跑92项定向、39项主规则与721项全量全部通过，`git show --check`、工作树`git diff --check`及clean状态通过。当前范围内无已知实现剩余风险。
+- 下一步只在新版专用prompt下对相同5候选fixture执行一次零重试真实模型请求，并在`_plan_short_free_lead()`之前读取原始ID。原始动作进入`{1,2,5}`才支持规划退役；仍落在`{3,4}`则保持守卫并单独分析提示消费，不追加覆盖或自动重试。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审

@@ -2230,3 +2230,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 唯一真实DeepSeek请求成功、重试0；守卫前原始动作属于固定候选集，但类别为`strictly_worse_single_jack`，即落在action 3/4。代码/文件修改0，HEAD为`acf5af11e0236bcf8d24cf599114227452b12e99`，请求前后Git clean。
 - 模型response/reasoning按隐私约束未持久化，因此动作结果以低敏执行报告为证据，不能从仓库独立重演。规划Codex运行`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_short_endgame_planner tests.test_deepseek_step_e tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime -q`，78项通过；另逐一复算得到`{1: None, 2: None, 3: (1,2,5), 4: (1,2,5), 5: None}`。
 - 该结果不授权退役`short_endgame_plan`；下一步只补充共享公开机会判定和专用最少分组strategy-intent/prompt，守卫保持不变，之后再做同fixture复放。
+
+## 2026-09-14 `c32259d` 短残局专用 strategy-intent 复审
+
+- 提交精确修改`agents/short_endgame_planner.py`、`agents/strategy_router.py`、`agents/strategy_intent_prompt.py`、`agents/deepseek_client.py`和5个对应测试文件；`agents/deepseek_ai.py`、adapter/audit、RAG与engine无diff。
+- 独立定向命令：`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_short_endgame_planner tests.test_deepseek_step_e tests.test_strategy_router tests.test_strategy_router_benchmark tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime -q`，92项通过，用时1.560秒。
+- 独立主规则集合39项通过，用时0.163秒；显式禁用dotenv后全量721项通过，用时40.611秒；`git show --check`、工作树`git diff --check`和最终clean状态均通过。
+- 共享公开函数只在完整1–4张自由出牌证据存在严格分组差异时返回最优原始IDs，现有selected-action helper复用同一分析；固定fixture保持`(1,2,5)`，并列/畸形/范围外继续fail closed。
+- router与prompt严格校验的优先级一致，固定fixture得到`available / run_out / short_endgame_minimum_groups`与`ready / run_out`；最终DeepSeek prompt只接受白名单内的精确公开说明。现有后置planner、冻结selector、source、adapter/audit和RAG场景未变。当前范围内无已知实现剩余风险。

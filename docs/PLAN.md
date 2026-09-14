@@ -53,6 +53,10 @@
 
 下一项Coding任务在不改变后置动作的前提下补充专用prompt输入：从`agents/short_endgame_planner.py`抽出独立于模型选择的共享最少分组机会函数，只有完整公开free-lead/1–4张/canonical证据证明至少一个首手严格更差时才成立；router新增`run_out / short_endgame_minimum_groups`，prompt解释优先最少剩余分组并避免无谓拆组。`short_endgame_plan`继续复用同一真值且行为、source和顺序不变，完成后再对同一fixture做一次真实模型复放。
 
+22. `c32259d`已实现短残局专用公开输入：共享机会函数与后置守卫复用同一分组求解，固定fixture输出`(1,2,5)`；router/prompt变为`ready / run_out / short_endgame_minimum_groups`，DeepSeek最终输入验证接受且RAG场景不变。规划Codex独立复跑92/39/721项，确认后置动作、source、adapter/audit均无漂移，提交验收封板。
+
+下一步只对同一fixture执行一次新版prompt下的守卫前真实模型复放，请求上限1、重试0。若原始ID属于`{1,2,5}`，再规划把`short_endgame_plan`转为legacy读取并退役生产改写；若仍属于`{3,4}`，保持现有守卫并单独分析prompt消费或候选摘要，不扩大动作覆盖。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度
