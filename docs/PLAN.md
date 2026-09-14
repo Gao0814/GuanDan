@@ -59,6 +59,10 @@
 
 下一项Coding任务退役生产DeepSeek成功路径的`short_endgame_plan`改写，保留`minimum_group_free_lead_action_ids()`、专用router/prompt与Botzone factory接线。`short_endgame_plan`转为与另外两个已退役覆盖相同的legacy read-compatible source；新DeepSeek/adapter路径只保留原始合法ID并记录`model`，旧v7/v8 audit、session/decision trace和正式benchmark继续执行成功outcome及计数守恒校验。
 
+24. `f426693`已退役最后一个成功模型后置策略覆盖`short_endgame_plan`：固定短残局的五个合法模型action均保留原始ID与`model` source；共享最少分组机会、`run_out / short_endgame_minimum_groups` router/prompt和Botzone factory接线保持。三个旧改写source现统一为legacy read-compatible，adapter归一为`model`，错误outcome/count继续fail closed。规划Codex独立复跑134项定向、39项主规则和718项全量，提交与工作树格式检查及生产路径扫描均通过，无复审发现。
+
+当前成功模型动作后的策略覆盖技术债已清零，没有证据支持立即制造新的Coding改动。下一阶段先按`docs/NEXT_PROMPT.md`在独立任务中回收已完成审计的seed `47003`六份evidence，仅保留固定workspace及三个空目录；之后再单独规划使用最新HEAD的人工单局DeepSeek采样，以新decision trace寻找可复现策略输入缺口。清理和live不得合并。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度

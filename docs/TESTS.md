@@ -2245,3 +2245,11 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 唯一真实DeepSeek请求成功、重试0；`_plan_short_free_lead()`前的原始动作属于固定候选且类别为`minimum_group`。文件修改0，HEAD为`88ae94d74440bb7af4169b944d4c794ca3defebf`，请求前后Git clean。模型response/reasoning未持久化，故该低敏结果不能从仓库独立重演，也不作为胜率结论。
 - 规划Codex独立运行`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_short_endgame_planner tests.test_deepseek_step_e tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime tests.test_botzone_agent_observability tests.test_botzone_decision_trace tests.test_botzone_policy_benchmark -q`，126项通过，用时1.082秒；同时确认生产主动分支仍只剩`short_endgame_plan`，另两个退役source保持legacy读取。
 - 该结果满足预注册退役门槛。下一任务移除`short_endgame_plan`的生产改写和adapter主动分支，保留共享机会/router/prompt，并将旧source纳入legacy v7/v8 audit、session/decision trace和benchmark兼容及fail-closed守恒回归。
+
+## 2026-09-14 `f426693` 短残局动作覆盖退役复审
+
+- 提交精确修改`agents/deepseek_ai.py`、`agents/short_endgame_planner.py`、`integrations/botzone/agent_observability.py`、`integrations/botzone/play_adapter.py`和6个对应测试文件；engine、RAG、策略router/prompt、DeepSeek最终输入验证、Botzone协议及audit schema/version无diff。
+- 独立定向命令：`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_short_endgame_planner tests.test_deepseek_step_e tests.test_strategy_router tests.test_strategy_router_benchmark tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime tests.test_botzone_agent_observability tests.test_botzone_decision_trace tests.test_botzone_policy_benchmark -q`，134项通过，用时2.283秒。
+- 独立主规则集合39项通过，用时0.168秒；显式禁用dotenv后全量718项通过，用时41.039秒。全量输出中的9条`configuration_error`和1条`instrumented_preflight_audit_error`为既有测试预期，最终结果为OK。
+- fake client在固定短残局返回action 1–5时均保持原始合法ID与`model` source；共享`minimum_group_free_lead_action_ids()`及专用strategy-intent/factory测试继续通过。生产扫描确认`short_endgame_plan`只存在于集中legacy常量和兼容测试，`_plan_short_free_lead`与selected-action helper无生产定义或调用。
+- legacy v7/v8 audit、session/ack decision trace和policy benchmark覆盖三种退役source的读取正例及outcome/count反例；adapter把残留legacy source成功决策归一为`model`。`git show --check`、提交/工作树`git diff --check`和最终clean状态通过。复审无发现，当前范围内无已知剩余风险。

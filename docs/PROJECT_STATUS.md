@@ -59,6 +59,10 @@
 - 新版专用prompt下的同fixture复放已判定`short_endgame_dedicated_prompt_raw_model_ready`：全部前提通过，最少分组集合为`{1,2,5}`，intent/prompt为`available / run_out / short_endgame_minimum_groups`与`ready / run_out`，两项关键语义存在，RAG仍为`endgame / near_open_endgame / endgame`。唯一请求成功、重试0，守卫前原始动作属于固定候选且类别为`minimum_group`；HEAD为`88ae94d`，请求前后clean、文件修改0。
 - 模型response/reasoning按隐私约束未持久化，因此原始动作只能作为受约束低敏执行报告证据，不能从仓库独立重演。规划Codex已核对HEAD/clean与生产/source消费者，并独立运行短残局、DeepSeek、strategy-intent、Botzone runtime/observability/trace/benchmark共126项测试，全部通过。
 - 下一项Coding任务退役最后一个成功模型后置策略覆盖`short_endgame_plan`：所有合法成功模型ID均原样保留并记录`model`；共享最少分组机会及专用router/prompt继续存在。旧source转为legacy read-compatible并保持成功outcome/计数守恒；在该业务提交完成复审前，退役工作仍属待完成。一次模型结果不构成整局或胜率结论。
+- 最后一个后置覆盖已由`f426693`退役：`_plan_short_free_lead()`、selected-action helper和成功路径`short_endgame_plan` source均删除，固定fixture的action 1–5全部保持模型原始合法ID并记录`model`。`minimum_group_free_lead_action_ids()`、专用router/prompt、最终输入验证和Botzone factory接线保留。
+- `short_endgame_plan`现与`teammate_control_block`、`danger_opponent_block`同属legacy read-compatible source；当前adapter遇到三者且模型outcome成功时统一归一为`model`。旧v7/v8 audit、session/ack decision trace和benchmark仍可读，错误outcome/count继续fail closed；新生产DeepSeek/adapter路径不再产生三种旧source。
+- 规划Codex确认提交只含4个生产文件与6个测试文件，独立复跑134项定向、39项主规则和718项全量均通过，`git show --check`、提交/工作树`git diff --check`及生产路径扫描通过。复审无发现，当前范围内无已知剩余风险。
+- 三项成功模型后置策略覆盖技术债至此清零；目前没有明确的新Coding任务。下一阶段先独立回收已审计的seed `47003` workspace evidence，再另行执行最新HEAD的人工单局DeepSeek采样以获取新decision trace；清理与live严格分开。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审

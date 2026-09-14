@@ -1,39 +1,38 @@
-# 给 Coding Codex 的下一任务 Prompt
+# 给执行 Codex 的下一任务 Prompt
 
-退役 DeepSeek 成功模型路径中的 `short_endgame_plan` 主动动作改写，同时保留短残局最少分组的专用公开策略输入，并把旧 source 转为只读兼容。完成实现、测试和一个独立业务 commit。
+使用项目 Skill `botzone-workspace-recycle`，把已经完成审计并写入项目状态的 seed `47003` evidence 从固定 workspace 逐文件移入 Windows 回收站，为后续最新 HEAD 的单局 DeepSeek 采样准备空 workspace。本任务只清理，不运行 preflight、connector、Botzone、浏览器或模型，不修改仓库文件，不创建 commit。
 
-## 【事实与目标】
+## 【开始前与硬边界】
 
-- 起始 HEAD 必须包含 `c32259d`、`7499ccc`、`3ee6e0e` 和 `e30362f`；开始前确认工作树 clean，并阅读 `AGENTS.md`、适用项目 Skill、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md` 以及相关生产代码和测试。
-- 固定 5 候选短残局 fixture 已两次执行守卫前真实模型检查：通用 prompt 曾选严格更差的单 J；`c32259d` 加入 `run_out / short_endgame_minimum_groups` 专用公开提示后，唯一零重试请求成功且原始动作进入最少分组集合 `{1,2,5}`，判定 `short_endgame_dedicated_prompt_raw_model_ready`。该单点证据只授权退役既有覆盖，不代表整局或胜率优势。
-- 本任务不调用真实 DeepSeek，不运行 Botzone/connector，不触碰 `D:\VsCodeProject\BotzoneWorkspace`，不修改 engine、RAG 语料、Botzone 协议或 audit schema/version。
+1. 完整阅读并遵守 `AGENTS.md`、`.agents/skills/botzone-workspace-recycle/SKILL.md`、`docs/CLEAN_HANDOFF.md` 和 `docs/PROJECT_STATUS.md`。
+2. 记录 Git HEAD/status；工作树必须 clean。确认 `D:\VsCodeProject` 的直属 `Botzone*` 集合精确为普通非链接目录 `D:\VsCodeProject\BotzoneWorkspace`。
+3. 确认 workspace root、保留目录和下列六个目标都是普通非链接对象，递归 inventory 与 allowlist 精确相等；确认没有可安全归因的项目 connector 在运行，但不得输出进程命令行或任何敏感参数。
+4. 任一名称、类型、大小、SHA-256、目录集合、Git 状态或运行状态不符，执行零清理并报告差异。不得猜测新 hash、扩大 allowlist 或处理未知文件。
 
-## 【实现范围】
+## 【精确文件 allowlist】
 
-1. 从 `agents/deepseek_ai.py` 的成功模型路径移除 `_plan_short_free_lead()` 调用、`short_endgame_plan` source 赋值以及无剩余用途的该函数和 import。合法模型 suggestion 经原始 `legal_actions` 校验后必须直接返回同一 action ID，source 为 `model`；不要改变非法 suggestion/异常 fallback、local shortcut、verbose 输出或合法性校验。
-2. 保留 `agents/short_endgame_planner.py` 的 `minimum_group_free_lead_action_ids()` 及其 fail-closed 公开 payload/分组求解，继续供 strategy router 和专用 prompt 使用。先用 `rg` 确认消费者；若 `strictly_better_free_lead_action_ids()` 已无生产消费者，则删除该 selected-action 后置规划 API 及只服务它的测试，不做无关重构。
-3. 完整保留 `short_endgame_minimum_groups` 布尔机会、`run_out / short_endgame_minimum_groups` router reason、专用 prompt 文案、DeepSeek 最终 prompt 白名单验证及 Botzone factory 接线。保持既有 router 优先级、RAG scene/phase/action_context 和其他策略 intent 行为。
-4. 将 `short_endgame_plan` 从当前主动 source 转入与 `teammate_control_block`、`danger_opponent_block`相同的 `LEGACY_DECISION_SOURCES`。旧 v7/v8 audit、session/acknowledged decision trace 和 policy benchmark 必须仍可读取，并继续要求它与成功模型 outcome、model-attempt/decision 计数精确守恒；错误 outcome/count、conditional 和未知 source 仍 fail closed。
-5. 删除 `integrations/botzone/play_adapter.py` 对 `short_endgame_plan` 的主动识别分支。若旧或自定义 agent 残留该 source，当前 adapter 在模型 outcome 为 `success` 时应像另外两个退役 source 一样归一为 `model`，不得继续产生新的 `short_endgame_plan` 聚合记录。
-6. 不恢复或改变 `teammate_control_block`、`danger_opponent_block` 的任何生产路径；不改变对应专用 router/prompt，也不新增 shadow/替代后置 source。
+按以下顺序逐个处理：
 
-## 【测试要求】
+1. `D:\VsCodeProject\BotzoneWorkspace\audit\completion-audit.json` — 787 bytes — SHA-256 `a9376fa5d0a4aaaf7383cbdffd62964689105a93ea9da3e7522f68d598caf4cc`
+2. `D:\VsCodeProject\BotzoneWorkspace\decision-trace.json` — 88983 bytes — SHA-256 `4ba2ea88a13046f8f7907df6dd124175dceee3a88e9723be88c6581a28bc3512`
+3. `D:\VsCodeProject\BotzoneWorkspace\history.txt` — 7108 bytes — SHA-256 `b41585b48b43ae34bcd4a85984d6efb45c3dbed2fc9df737ced285f568a5e884`
+4. `D:\VsCodeProject\BotzoneWorkspace\state\8bec80eb3ec277378dc9e537c95f908b6268d91a453f09e916cd76f1dac62355.json` — 115 bytes — SHA-256 `0d896426c2e72aa2267034838d8efb3afb2b37f88cce52cc46a8f0e4f7e9b9e9`
+5. `D:\VsCodeProject\BotzoneWorkspace\streams\stderr.txt` — 0 bytes — SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+6. `D:\VsCodeProject\BotzoneWorkspace\streams\stdout.txt` — 76 bytes — SHA-256 `7a8c855dfcbc5b6b7218991d2e2caeb7479bc2dc9ae87787434572af78d399dc`
 
-- 更新 fake-client 回归，使固定短残局模型返回 action 1、2、3、4、5 时都保持原始合法 ID，source 均为 `model`；尤其单 J 3/4 不再被替换。
-- 锁定 `minimum_group_free_lead_action_ids()` 对固定 fixture 仍为 `(1,2,5)`，畸形、不完整、非自由出牌、超过 4 张或无严格差异时继续 fail closed；router、prompt、最终输入验证和 Botzone factory 的专用输入不削弱。
-- 把 `short_endgame_plan` 纳入 legacy audit/session/decision-trace 正反例，与另外两个 retired source 一并验证：合法历史 evidence 可读，非 success outcome 或计数不守恒仍被拒绝；adapter 的残留 source 回归期望为 `model`。
-- 加入生产路径扫描/回归，确保 `agents/deepseek_ai.py` 与 `integrations/botzone/play_adapter.py` 不再包含 `short_endgame_plan` 主动分支、`_plan_short_free_lead` 或 selected-action helper 调用；允许该字符串只存在于集中 legacy 常量、历史兼容测试和文档。
-- 至少运行：
+## 【回收方式】
 
-```powershell
-$env:PYTHON_DOTENV_DISABLED='1'
-.\.venv\Scripts\python.exe -m unittest tests.test_short_endgame_planner tests.test_deepseek_step_e tests.test_strategy_router tests.test_strategy_router_benchmark tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime tests.test_botzone_agent_observability tests.test_botzone_decision_trace tests.test_botzone_policy_benchmark -q
-.\.venv\Scripts\python.exe -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q
-.\.venv\Scripts\python.exe -m unittest discover -q
-git diff --check
-```
+- 只能通过 Windows 回收站 API（例如 `Microsoft.VisualBasic.FileIO.FileSystem::DeleteFile(..., SendToRecycleBin)`）按 allowlist 顺序逐个回收文件。
+- 禁止永久删除、递归删除、通配符、目录删除、跨 shell 拼接路径、清空回收站或改用其他删除机制。
+- 若某一文件回收失败，立即停止，精确报告已完成和未处理目标；不得继续或切换方法。
 
-## 【提交与报告】
+## 【必须保留与最终状态】
 
-- 修改前后检查 Git status/diff，只提交本任务业务代码和 tests；不得混入 docs、日志、环境文件或外部修改。提交信息可用 `feat: retire short endgame action override`。
-- 最终报告：精确 commit SHA、修改文件、各测试命令/数量/结果、生产 source 扫描结果、专用公开输入保留情况、legacy v7/v8/session/trace 兼容与 fail-closed 结果、最终 Git status，以及任何保留的外部修改。
+- 保留普通非链接 workspace root：`D:\VsCodeProject\BotzoneWorkspace`。
+- 保留三个普通非链接空目录：`audit`、`state`、`streams`。
+- 成功后的递归 inventory 必须只含上述三个空目录，文件数为 0；`D:\VsCodeProject` 直属 `Botzone*` 集合仍只含固定 workspace。
+- Git HEAD/status 必须与任务开始时一致；永久删除数为 0；不得产生仓库、workspace 或其他位置的新文件。
+
+## 【完成报告】
+
+报告前提是否全部通过、六个目标的低敏路径/大小/hash、逐项回收结果、最终目录与文件计数、顶层 `Botzone*` 集合、connector/live/model/preflight/browser 是否均为 0、永久删除数、Git HEAD/status，以及是否存在任何未处理或外部修改。完成清理后结束任务，不继续下一次 live。
