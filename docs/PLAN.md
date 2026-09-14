@@ -63,6 +63,10 @@
 
 当前成功模型动作后的策略覆盖技术债已清零，没有证据支持立即制造新的Coding改动。下一阶段先按`docs/NEXT_PROMPT.md`在独立任务中回收已完成审计的seed `47003`六份evidence，仅保留固定workspace及三个空目录；之后再单独规划使用最新HEAD的人工单局DeepSeek采样，以新decision trace寻找可复现策略输入缺口。清理和live不得合并。
 
+25. seed `47003` workspace回收在前三项成功后按失败即停规则中止：completion audit、decision trace、history已进入Windows回收站；第四项在回收前因执行脚本误抄预期hash而校验失败，state与两份stream文件均未处理。规划Codex独立确认前三条路径不存在，后三项的类型、115/0/76 bytes及完整SHA-256仍与原allowlist一致，固定root/三个目录、顶层目录集合、Git和无connector状态均未漂移。永久删除为0。
+
+下一步仍是独立清理任务，不进入live：按`docs/NEXT_PROMPT.md`只回收剩余state、stderr、stdout三个精确文件，继续失败即停，并保留空`audit/state/streams`目录。只有规划Codex复审最终文件数为0后，才另行安排最新HEAD的人工单局DeepSeek采样。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度

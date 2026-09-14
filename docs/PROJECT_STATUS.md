@@ -63,6 +63,9 @@
 - `short_endgame_plan`现与`teammate_control_block`、`danger_opponent_block`同属legacy read-compatible source；当前adapter遇到三者且模型outcome成功时统一归一为`model`。旧v7/v8 audit、session/ack decision trace和benchmark仍可读，错误outcome/count继续fail closed；新生产DeepSeek/adapter路径不再产生三种旧source。
 - 规划Codex确认提交只含4个生产文件与6个测试文件，独立复跑134项定向、39项主规则和718项全量均通过，`git show --check`、提交/工作树`git diff --check`及生产路径扫描通过。复审无发现，当前范围内无已知剩余风险。
 - 三项成功模型后置策略覆盖技术债至此清零；目前没有明确的新Coding任务。下一阶段先独立回收已审计的seed `47003` workspace evidence，再另行执行最新HEAD的人工单局DeepSeek采样以获取新decision trace；清理与live严格分开。
+- seed `47003`旧evidence回收首次执行只完成前三项：completion audit、decision trace和history已逐项移入Windows回收站。第四项在实际回收前因执行脚本误抄预期hash而安全停止；未尝试修正或重试，state、空stderr和stdout仍在原位，永久删除及connector/live/model/preflight/browser均为0。
+- 规划Codex独立复核确认前三条路径已不存在；剩余三个文件仍为普通非链接对象，大小依次115/0/76 bytes，完整SHA-256与原任务一致。固定workspace及`audit/state/streams`三个普通目录、唯一顶层`Botzone*`集合、无项目connector和Git clean状态均保持。当前workspace文件数为3，尚不能用于下一次live。
+- 下一任务是新的独立恢复清理，只允许处理剩余三个精确文件并继续失败即停；达到文件数0后仍须结束任务，由规划Codex复审后再安排live。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审

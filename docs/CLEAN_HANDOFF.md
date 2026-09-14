@@ -280,7 +280,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前718项全量、134项动作覆盖退役定向和39项主规则回归均通过。三项成功模型后置策略覆盖已全部退役，专用公开strategy-intent仍保留；下一任务按`docs/NEXT_PROMPT.md`只回收已审计的seed `47003` workspace evidence，不运行preflight、connector、模型或Botzone。
+当前718项全量、134项动作覆盖退役定向和39项主规则回归均通过。三项成功模型后置策略覆盖已全部退役，专用公开strategy-intent仍保留。seed `47003` evidence回收已完成前三项，因执行脚本误抄第四项预期hash而安全停止；当前只剩已复核的state、stderr、stdout三个文件。下一任务按`docs/NEXT_PROMPT.md`仅恢复回收这三项，不运行preflight、connector、模型或Botzone。
 
 ## 12. Working Tree Status
 
@@ -314,4 +314,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`使用`botzone-workspace-recycle` Skill，将已完成审计的seed `47003`六个固定evidence逐文件移入Windows回收站，只保留固定workspace与`audit/state/streams`三个空目录。清理任务结束后再单独规划最新HEAD的人工单局DeepSeek采样，不合并live。
+按`docs/NEXT_PROMPT.md`使用`botzone-workspace-recycle` Skill，只将seed `47003`仍存在的state、stderr、stdout三个精确文件逐项移入Windows回收站；前三个已回收路径必须继续不存在。只保留固定workspace与`audit/state/streams`三个空目录，恢复清理结束后再单独规划最新HEAD的人工单局DeepSeek采样。
