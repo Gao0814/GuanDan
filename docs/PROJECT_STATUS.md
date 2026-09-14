@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：算法优化与 legacy audit 兼容补漏（2026-09-12）
+## 当前阶段：算法优化与危险对手 override 的 prompt-first 复核（2026-09-14）
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
@@ -40,6 +40,10 @@
 - 规划Codex独立复跑指定DeepSeek/strategy/Botzone集合113项、主规则39项和全量713项，全部通过；`git diff --check`通过，起始工作树clean。
 - 但`e30362f`尚不能按完整验收封板：当前`evaluation/botzone_policy_benchmark.py`使用独立的旧source allowlist和模型守恒公式，规划Codex构造的合法legacy v7/v8 `teammate_control_block`审计均被`invalid_pairs`拒绝。session/decision trace和`AgentObservabilitySnapshot`的legacy读取回归已通过，缺口仅在正式audit离线消费器；同一消费器也尚未识别当前活跃的`danger_opponent_block`与`short_endgame_plan`。
 - 下一步是一个纯离线、最小的audit reader兼容修正：不恢复任何动作改写，不改schema/version，新生产路径仍不得产生`teammate_control_block`。
+- 离线audit兼容已由`3ee6e0e`修正：`SUCCESSFUL_MODEL_DECISION_SOURCES`、`MODEL_ATTEMPT_DECISION_SOURCES`和`FORMAL_POLICY_DECISION_SOURCES`集中定义读取语义，policy benchmark现可消费legacy `teammate_control_block`及当前`danger_opponent_block`/`short_endgame_plan`，并严格要求它们与`success`模型outcome守恒。conditional与未知source仍fail closed，audit schema/version未变。
+- 规划Codex独立复跑指定109项、主规则39项和全量718项全部通过；额外反例确认legacy v7/v8 audit均可读，把`success`改为`timeout`则继续被`invalid_audit`拒绝。生产source扫描仅见`model`、`danger_opponent_block`、`short_endgame_plan`等赋值，无`teammate_control_block`赋值或辅助调用。
+- `e30362f` + `3ee6e0e`组合验收封板：队友小王→大王的主动覆盖已退役，专用prompt和历史证据兼容均保留。当前范围内无已知实现剩余风险。
+- 剩余的`danger_opponent_block`和`short_endgame_plan`仍是成功模型动作后的策略覆盖，继续作为DeepSeek自主性技术债，但不在没有prompt-first证据时直接删除。规划Codex已证明危险对手fixture中9/J均可合法压单张8，且Botzone factory给出`ready / block_opponent / urgent_opponent_controls_table`；下一步只做一次守卫前真实模型原始动作检查。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审

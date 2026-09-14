@@ -2,7 +2,7 @@
 
 当前进度与风险见 `docs/PROJECT_STATUS.md`。下一步实施任务见 `docs/NEXT_PROMPT.md`。
 
-## 当前优先级（2026-09-10）
+## 当前优先级（2026-09-14）
 
 1. 当前主线是算法优化，不恢复8对/16局或百局capacity，也不扩展到其他级牌、贡还或多局升级；固定profile为四人、级牌2、无需进贡的单局。
 2. 已完成并提交五项窄策略修正：默认RuleBased的对手压力保牌、队友控桌保炸弹，DeepSeek的危险对手pass阻断、1–4张自由出牌短序列规划和队友小王后保留大王。最新算法检查点为 `295b9b5`。
@@ -38,6 +38,10 @@
 17. `e30362f`已移除生产DeepSeek成功路径的`teammate_control_block`改写，fake pass/大王均保留原始ID与`model` source；共享机会判定、router、专用prompt以及`danger_opponent_block`→`short_endgame_plan`相对顺序保持。独立113/39/713项测试通过。
 
 本提交的完整验收仍有一个可复现缺口：正式policy benchmark的独立source allowlist/守恒公式拒绝legacy v7/v8 `teammate_control_block` audit，而session/trace与observability snapshot兼容已通过。下一步只修正这个离线audit消费边界，并一并锁定当前活跃的`danger_opponent_block`和`short_endgame_plan`可被正式消费器按成功模型动作计数。不改生产Agent选择、source产生、audit schema或任何Botzone/live路径。
+
+18. `3ee6e0e`已完成该兼容补漏：legacy v7/v8 `teammate_control_block`、活跃`danger_opponent_block`和`short_endgame_plan`均按成功模型动作被正式benchmark消费，outcome/count不守恒、conditional或未知source仍拒绝。独立109/39/718项通过，生产DeepSeek/adapter未恢复legacy source。`e30362f` + `3ee6e0e`组合验收封板。
+
+下一项业务修改尚未获得证据授权。按DeepSeek自主性技术债顺序，先对`danger_opponent_block`做prompt-first检查：现有canonical fixture中对手以单张8领牌且剩余1张，本家pass/9/J均符合规则，factory已生成`ready / block_opponent / urgent_opponent_controls_table`。只允许一次零重试真实模型请求，并在任何后置守卫前读取原始action ID；该结果决定是否才能安排退役或prompt补强。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
