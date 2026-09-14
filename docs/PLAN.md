@@ -41,7 +41,9 @@
 
 18. `3ee6e0e`已完成该兼容补漏：legacy v7/v8 `teammate_control_block`、活跃`danger_opponent_block`和`short_endgame_plan`均按成功模型动作被正式benchmark消费，outcome/count不守恒、conditional或未知source仍拒绝。独立109/39/718项通过，生产DeepSeek/adapter未恢复legacy source。`e30362f` + `3ee6e0e`组合验收封板。
 
-下一项业务修改尚未获得证据授权。按DeepSeek自主性技术债顺序，先对`danger_opponent_block`做prompt-first检查：现有canonical fixture中对手以单张8领牌且剩余1张，本家pass/9/J均符合规则，factory已生成`ready / block_opponent / urgent_opponent_controls_table`。只允许一次零重试真实模型请求，并在任何后置守卫前读取原始action ID；该结果决定是否才能安排退役或prompt补强。
+19. canonical危险对手fixture的受约束真实模型检查判定为`danger_opponent_prompt_raw_model_ready`：pass/9/J均为原始合法候选，intent为`ready / block_opponent / urgent_opponent_controls_table`，RAG scene为`endgame`；唯一请求成功、重试0，守卫前原始动作类别为`ordinary`且ID属于候选集。Git前后clean，模型自由文本未持久化；规划Codex独立复跑当前相关95项通过。该证据只支持退役既有动作覆盖，不外推为整体胜率。
+
+下一项Coding任务从生产DeepSeek成功路径移除`danger_opponent_block`改写，并在确认无其他生产消费者后删除`_block_dangerous_opponent_pass()`与`dangerous_opponent_pass_id()`。保留现有`block_opponent / urgent_opponent_controls_table` router/prompt与RAG输入，使真实模型继续获得危险对手策略依据；`short_endgame_plan`的范围和行为不得改变。`danger_opponent_block`转为与`teammate_control_block`同类的legacy read-compatible source，新生产DeepSeek/adapter不得产生或主动接受它。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 

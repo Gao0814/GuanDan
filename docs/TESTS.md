@@ -2208,3 +2208,10 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 独立最小反例已翻绿：legacy v7和v8 `teammate_control_block`均返回accepted，source/attempt/outcome分别为1/1/1；把outcome改为`timeout`后以`invalid_audit`拒绝。
 - 集中source分类同时被`AgentObservabilitySnapshot`、policy audit validator和report validator消费；成功模型source与`success`数量必须精确对齐，deepseek fallback仍单独计入model attempt。
 - 生产source扫描只显示`model`、`danger_opponent_block`、`short_endgame_plan`等现行赋值，无`teammate_control_block`赋值、旧helper或调用链。当前范围内无已知实现剩余风险。
+
+## 2026-09-14 危险对手守卫前真实模型检查复审
+
+- 受约束执行报告判定`danger_opponent_prompt_raw_model_ready`：canonical候选数3，9/J均可压单张8；intent为`ready / block_opponent / urgent_opponent_controls_table`，RAG scene为`endgame`。
+- 唯一真实DeepSeek请求成功、重试0；守卫前原始action ID属于固定候选集且类别为`ordinary`。危险对手守卫仅在内存中临时绕过，`short_endgame_plan`未触发，代码/文件修改为0，HEAD为`c772f8194c535bcf8d24cf599114227452b12e99`，Git请求前后clean。
+- 模型response/reasoning按既定隐私约束未持久化，故上述原始动作属于低敏执行报告证据，不能从仓库独立重演。规划Codex独立确认HEAD/clean状态、生产调用顺序及fixture/prompt前提，并运行`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_deepseek_step_e tests.test_conditional_pressure_pass tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_botzone_agent_observability tests.test_botzone_policy_benchmark -q`，95项通过，用时1.609秒。
+- 该单点结果满足预注册的动作覆盖退役门槛，不构成整体胜率证据；下一任务移除生产`danger_opponent_block`，同时保留历史source读取兼容和危险对手专用prompt。

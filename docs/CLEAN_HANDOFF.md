@@ -21,6 +21,8 @@
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
 - 最新业务提交为 `3ee6e0e`：已集中DeepSeek成功模型source/尝试source/正式benchmark source分类，修复legacy v7/v8 `teammate_control_block`及活跃`danger_opponent_block`/`short_endgame_plan`的audit读取和outcome守恒。规划Codex独立复跑109项定向、39项主规则和718项全量均通过；`e30362f` + `3ee6e0e`组合验收已封板。
+- canonical危险对手fixture的受约束真实模型检查已判定`danger_opponent_prompt_raw_model_ready`：唯一请求成功、重试0，模型在后置守卫前自行返回固定候选集内的`ordinary`动作；现有`block_opponent / urgent_opponent_controls_table`输入已足以支持退役强制pass阻断。该结果以低敏执行报告为证据，不是整体胜率结论。
+- 项目所有者长期授权单个明确诊断/评测任务中严格少于10次的预注册真实DeepSeek请求，无需另行申请；10次及以上仍须事先授权，范围、重试、密钥和自由文本保密边界不变。
 
 上述实现检查点：
 
@@ -276,7 +278,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前718项本地单测全部通过。legacy v7/v8 `teammate_control_block` audit现可正常读取，错误outcome/count仍fail closed；新生产DeepSeek/adapter路径仍无legacy source赋值或调用链。当前没有失败的本地单测或已知实现风险。下一任务按`docs/NEXT_PROMPT.md`只对canonical危险对手fixture做一次守卫前真实模型原始动作检查，不运行Botzone或修改代码。
+当前718项全量基线和本轮95项相关复核均通过。危险对手守卫前真实模型检查已经得到合法`ordinary`原始动作，满足预注册的退役门槛。下一任务按`docs/NEXT_PROMPT.md`移除生产`danger_opponent_block`动作改写，把该source转为只读legacy兼容；不改危险对手router/prompt、RAG、engine或`short_endgame_plan`。
 
 ## 12. Working Tree Status
 
@@ -307,4 +309,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`对现有canonical危险对手fixture执行一次真实DeepSeek守卫前原始动作检查。fixture已证明pass/9/J为原始合法候选，strategy intent为`ready / block_opponent / urgent_opponent_controls_table`。不修改代码、不运行Botzone，模型外部请求上限1且重试0；只使用原始action类别决定之后是否有证据退役或补强`danger_opponent_block`。
+按`docs/NEXT_PROMPT.md`退役`danger_opponent_block`生产动作覆盖：模型成功返回任一合法action ID后保持原始选择，随后仅保留既有`short_endgame_plan`检查。删除无消费者的危险pass helper，保留`block_opponent / urgent_opponent_controls_table` router/prompt和历史audit/session/trace读取兼容；不运行真实模型或Botzone。
