@@ -24,6 +24,7 @@
 - canonical危险对手fixture的受约束真实模型检查已判定`danger_opponent_prompt_raw_model_ready`：唯一请求成功、重试0，模型在后置守卫前自行返回固定候选集内的`ordinary`动作；现有`block_opponent / urgent_opponent_controls_table`输入已足以支持退役强制pass阻断。该结果以低敏执行报告为证据，不是整体胜率结论。
 - 项目所有者长期授权单个明确诊断/评测任务中严格少于10次的预注册真实DeepSeek请求，无需另行申请；10次及以上仍须事先授权，范围、重试、密钥和自由文本保密边界不变。
 - 固定4张自由出牌fixture的守卫前真实模型检查判定为`short_endgame_prompt_raw_model_not_ready`：最少分组集合为`{1,2,5}`，但唯一成功请求的原始动作落在严格更差的单J集合`{3,4}`。当前`ready / control / stable_control`提示未提供最少剩余分组语义；该低敏单点证据支持补充专用prompt，不支持删除或扩大守卫，也不是胜率结论。
+- `c32259d`后的同fixture专用prompt复放已判定`short_endgame_dedicated_prompt_raw_model_ready`：唯一请求成功、重试0，原始动作进入最少分组集合`{1,2,5}`；`run_out / short_endgame_minimum_groups`、两项关键语义和RAG低基数字段均符合前提。规划Codex独立复跑126项相关测试；该低敏单点证据支持下一任务退役`short_endgame_plan`生产改写，但不构成整局或胜率结论。
 
 上述实现检查点：
 
@@ -279,7 +280,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前721项全量、92项短残局专用提示定向和39项主规则回归均通过。共享最少分组真值、router、prompt与最终输入校验已接通，后置`short_endgame_plan`仍未退役。下一任务按`docs/NEXT_PROMPT.md`只在新版专用prompt下做一次同fixture守卫前真实模型复放，不修改代码或运行Botzone。
+当前721项全量、92项短残局专用提示定向、39项主规则回归以及本轮126项相关复审测试均通过。专用prompt下的一次守卫前真实模型复放已进入最少分组集合，后置`short_endgame_plan`仍未退役；下一任务按`docs/NEXT_PROMPT.md`完成生产改写退役和legacy source兼容，不运行真实模型或Botzone。
 
 ## 12. Working Tree Status
 
@@ -312,4 +313,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-按`docs/NEXT_PROMPT.md`在同一5候选短残局fixture上执行一次新版专用prompt守卫前真实模型复放。先确认最优集合`{1,2,5}`、新intent/prompt及RAG场景，再精确请求1次、重试0；只用原始ID分组决定后续退役或继续保留`short_endgame_plan`，不修改代码或运行Botzone。
+按`docs/NEXT_PROMPT.md`退役生产DeepSeek成功路径中的`short_endgame_plan`主动动作改写：保留共享机会和`run_out / short_endgame_minimum_groups`专用输入，新模型动作保持原始合法ID与`model` source，旧source仅作legacy audit/session/decision-trace读取兼容并继续严格守恒。

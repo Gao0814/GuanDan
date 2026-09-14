@@ -55,7 +55,9 @@
 
 22. `c32259d`已实现短残局专用公开输入：共享机会函数与后置守卫复用同一分组求解，固定fixture输出`(1,2,5)`；router/prompt变为`ready / run_out / short_endgame_minimum_groups`，DeepSeek最终输入验证接受且RAG场景不变。规划Codex独立复跑92/39/721项，确认后置动作、source、adapter/audit均无漂移，提交验收封板。
 
-下一步只对同一fixture执行一次新版prompt下的守卫前真实模型复放，请求上限1、重试0。若原始ID属于`{1,2,5}`，再规划把`short_endgame_plan`转为legacy读取并退役生产改写；若仍属于`{3,4}`，保持现有守卫并单独分析prompt消费或候选摘要，不扩大动作覆盖。
+23. 新版专用prompt下的同fixture守卫前真实模型复放判定为`short_endgame_dedicated_prompt_raw_model_ready`：全部离线前提通过，intent为`available / run_out / short_endgame_minimum_groups`，prompt为`ready / run_out`且包含两项关键语义，RAG保持`endgame / near_open_endgame / endgame`；唯一请求成功、重试0，原始动作属于固定候选和最少分组集合`{1,2,5}`。规划Codex独立复跑126项相关测试并核对生产/source边界；模型自由文本未持久化，结果不外推为整局或胜率结论。
+
+下一项Coding任务退役生产DeepSeek成功路径的`short_endgame_plan`改写，保留`minimum_group_free_lead_action_ids()`、专用router/prompt与Botzone factory接线。`short_endgame_plan`转为与另外两个已退役覆盖相同的legacy read-compatible source；新DeepSeek/adapter路径只保留原始合法ID并记录`model`，旧v7/v8 audit、session/decision trace和正式benchmark继续执行成功outcome及计数守恒校验。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 

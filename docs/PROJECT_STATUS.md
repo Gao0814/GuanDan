@@ -56,7 +56,9 @@
 - 专用prompt完成后仍须对同一fixture做一次守卫前真实模型复放；只有原始动作进入`{1,2,5}`才规划退役`short_endgame_plan`。一次模型结果不构成整局或胜率结论。
 - 短残局专用公开输入已由`c32259d`完成：共享`minimum_group_free_lead_action_ids()`复用唯一分组求解并在存在严格差异时返回最优原始ID；router新增布尔机会字段与`run_out / short_endgame_minimum_groups`，prompt及DeepSeek最终验证层加入“优先最少剩余分组、避免无谓拆组”的公开说明。Botzone factory自然复用既有strategy-intent接线。
 - 规划Codex独立检查提交精确为4个生产AI文件和5个测试文件，确认`_plan_short_free_lead()`、冻结selector、`short_endgame_plan` source、adapter/audit、RAG和engine无行为变化；独立复跑92项定向、39项主规则与721项全量全部通过，`git show --check`、工作树`git diff --check`及clean状态通过。当前范围内无已知实现剩余风险。
-- 下一步只在新版专用prompt下对相同5候选fixture执行一次零重试真实模型请求，并在`_plan_short_free_lead()`之前读取原始ID。原始动作进入`{1,2,5}`才支持规划退役；仍落在`{3,4}`则保持守卫并单独分析提示消费，不追加覆盖或自动重试。
+- 新版专用prompt下的同fixture复放已判定`short_endgame_dedicated_prompt_raw_model_ready`：全部前提通过，最少分组集合为`{1,2,5}`，intent/prompt为`available / run_out / short_endgame_minimum_groups`与`ready / run_out`，两项关键语义存在，RAG仍为`endgame / near_open_endgame / endgame`。唯一请求成功、重试0，守卫前原始动作属于固定候选且类别为`minimum_group`；HEAD为`88ae94d`，请求前后clean、文件修改0。
+- 模型response/reasoning按隐私约束未持久化，因此原始动作只能作为受约束低敏执行报告证据，不能从仓库独立重演。规划Codex已核对HEAD/clean与生产/source消费者，并独立运行短残局、DeepSeek、strategy-intent、Botzone runtime/observability/trace/benchmark共126项测试，全部通过。
+- 下一项Coding任务退役最后一个成功模型后置策略覆盖`short_endgame_plan`：所有合法成功模型ID均原样保留并记录`model`；共享最少分组机会及专用router/prompt继续存在。旧source转为legacy read-compatible并保持成功outcome/计数守恒；在该业务提交完成复审前，退役工作仍属待完成。一次模型结果不构成整局或胜率结论。
 - 项目上下文已分层：长期硬约束与Git所有权保留在 `AGENTS.md`；重复的人工live和workspace回收流程分别进入项目Skills `botzone-manual-live`、`botzone-workspace-recycle`；`NEXT_PROMPT.md` 只保留当前任务事实、目标、特殊约束和验收，避免继续复制稳定流程。
 
 ### Connector-observed 牌谱实现与加固复审

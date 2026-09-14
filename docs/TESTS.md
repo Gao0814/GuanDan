@@ -2238,3 +2238,10 @@ L5-A4f8 不新增代码回归。执行验收覆盖两局条件相等、独立 re
 - 独立主规则集合39项通过，用时0.163秒；显式禁用dotenv后全量721项通过，用时40.611秒；`git show --check`、工作树`git diff --check`和最终clean状态均通过。
 - 共享公开函数只在完整1–4张自由出牌证据存在严格分组差异时返回最优原始IDs，现有selected-action helper复用同一分析；固定fixture保持`(1,2,5)`，并列/畸形/范围外继续fail closed。
 - router与prompt严格校验的优先级一致，固定fixture得到`available / run_out / short_endgame_minimum_groups`与`ready / run_out`；最终DeepSeek prompt只接受白名单内的精确公开说明。现有后置planner、冻结selector、source、adapter/audit和RAG场景未变。当前范围内无已知实现剩余风险。
+
+## 2026-09-14 短残局专用 prompt 守卫前真实模型复放复审
+
+- 受约束执行报告判定`short_endgame_dedicated_prompt_raw_model_ready`：固定fixture候选数5，最少分组集合`{1,2,5}`；intent为`available / run_out / short_endgame_minimum_groups`且机会为true，prompt为`ready / run_out`并包含“最少剩余分组”和“避免无谓拆散已有组合”，RAG scene/phase/action_context为`endgame / near_open_endgame / endgame`。
+- 唯一真实DeepSeek请求成功、重试0；`_plan_short_free_lead()`前的原始动作属于固定候选且类别为`minimum_group`。文件修改0，HEAD为`88ae94d74440bb7af4169b944d4c794ca3defebf`，请求前后Git clean。模型response/reasoning未持久化，故该低敏结果不能从仓库独立重演，也不作为胜率结论。
+- 规划Codex独立运行`$env:PYTHON_DOTENV_DISABLED='1'; .\.venv\Scripts\python.exe -m unittest tests.test_short_endgame_planner tests.test_deepseek_step_e tests.test_strategy_router tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime tests.test_botzone_agent_observability tests.test_botzone_decision_trace tests.test_botzone_policy_benchmark -q`，126项通过，用时1.082秒；同时确认生产主动分支仍只剩`short_endgame_plan`，另两个退役source保持legacy读取。
+- 该结果满足预注册退役门槛。下一任务移除`short_endgame_plan`的生产改写和adapter主动分支，保留共享机会/router/prompt，并将旧source纳入legacy v7/v8 audit、session/decision trace和benchmark兼容及fail-closed守恒回归。

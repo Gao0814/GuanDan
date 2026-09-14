@@ -1,36 +1,39 @@
-# 给执行 Codex 的下一任务 Prompt
+# 给 Coding Codex 的下一任务 Prompt
 
-对现有固定短残局fixture执行一次新版`short_endgame_minimum_groups`专用prompt下的守卫前真实DeepSeek原始动作复放。本任务只取得是否可退役`short_endgame_plan`的证据，不修改或提交代码、tests或docs。
+退役 DeepSeek 成功模型路径中的 `short_endgame_plan` 主动动作改写，同时保留短残局最少分组的专用公开策略输入，并把旧 source 转为只读兼容。完成实现、测试和一个独立业务 commit。
 
-项目所有者已在`AGENTS.md`长期授权单个明确任务中严格少于10次的预注册真实DeepSeek请求；本任务请求上限精确为1，无需另行申请。
+## 【事实与目标】
 
-## 【开始前】
+- 起始 HEAD 必须包含 `c32259d`、`7499ccc`、`3ee6e0e` 和 `e30362f`；开始前确认工作树 clean，并阅读 `AGENTS.md`、适用项目 Skill、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md` 以及相关生产代码和测试。
+- 固定 5 候选短残局 fixture 已两次执行守卫前真实模型检查：通用 prompt 曾选严格更差的单 J；`c32259d` 加入 `run_out / short_endgame_minimum_groups` 专用公开提示后，唯一零重试请求成功且原始动作进入最少分组集合 `{1,2,5}`，判定 `short_endgame_dedicated_prompt_raw_model_ready`。该单点证据只授权退役既有覆盖，不代表整局或胜率优势。
+- 本任务不调用真实 DeepSeek，不运行 Botzone/connector，不触碰 `D:\VsCodeProject\BotzoneWorkspace`，不修改 engine、RAG 语料、Botzone 协议或 audit schema/version。
 
-1. 阅读并遵守`AGENTS.md`，检查适用项目Skills；本任务没有适用的Botzone live或workspace-cleanup Skill。
-2. 阅读`docs/CLEAN_HANDOFF.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、`agents/short_endgame_planner.py`、`agents/deepseek_ai.py`、`agents/strategy_router.py`、`agents/strategy_intent_prompt.py`、`agents/deepseek_client.py`、`integrations/botzone/agent_runtime.py`和`tests/test_deepseek_step_e.py`中短残局fixture/回归。
-3. 检查Git工作树必须clean，HEAD必须包含`c32259d`与`7499ccc`。不触碰`D:\VsCodeProject\BotzoneWorkspace`。
+## 【实现范围】
 
-## 【固定输入与离线前提】
+1. 从 `agents/deepseek_ai.py` 的成功模型路径移除 `_plan_short_free_lead()` 调用、`short_endgame_plan` source 赋值以及无剩余用途的该函数和 import。合法模型 suggestion 经原始 `legal_actions` 校验后必须直接返回同一 action ID，source 为 `model`；不要改变非法 suggestion/异常 fallback、local shortcut、verbose 输出或合法性校验。
+2. 保留 `agents/short_endgame_planner.py` 的 `minimum_group_free_lead_action_ids()` 及其 fail-closed 公开 payload/分组求解，继续供 strategy router 和专用 prompt 使用。先用 `rg` 确认消费者；若 `strictly_better_free_lead_action_ids()` 已无生产消费者，则删除该 selected-action 后置规划 API 及只服务它的测试，不做无关重构。
+3. 完整保留 `short_endgame_minimum_groups` 布尔机会、`run_out / short_endgame_minimum_groups` router reason、专用 prompt 文案、DeepSeek 最终 prompt 白名单验证及 Botzone factory 接线。保持既有 router 优先级、RAG scene/phase/action_context 和其他策略 intent 行为。
+4. 将 `short_endgame_plan` 从当前主动 source 转入与 `teammate_control_block`、`danger_opponent_block`相同的 `LEGACY_DECISION_SOURCES`。旧 v7/v8 audit、session/acknowledged decision trace 和 policy benchmark 必须仍可读取，并继续要求它与成功模型 outcome、model-attempt/decision 计数精确守恒；错误 outcome/count、conditional 和未知 source 仍 fail closed。
+5. 删除 `integrations/botzone/play_adapter.py` 对 `short_endgame_plan` 的主动识别分支。若旧或自定义 agent 残留该 source，当前 adapter 在模型 outcome 为 `success` 时应像另外两个退役 source 一样归一为 `model`，不得继续产生新的 `short_endgame_plan` 聚合记录。
+6. 不恢复或改变 `teammate_control_block`、`danger_opponent_block` 的任何生产路径；不改变对应专用 router/prompt，也不新增 shadow/替代后置 source。
 
-- 只使用`tests/test_deepseek_step_e.py::_short_endgame_observation()`与`_short_endgame_legal_actions()`：本家自由出牌，手牌精确为`6S,7S,JH,JD`，canonical候选精确为单6、单7、两张实体J各自的单J及J对，共5个原始action ID。不得替换、增删或改写fixture。
-- 请求前确认`minimum_group_free_lead_action_ids()`精确返回`(1,2,5)`；`strictly_better_free_lead_action_ids()`对selected 1/2/5返回`None`，对3/4返回`(1,2,5)`。任一前提不符就零请求停止。
-- 用Botzone DeepSeek factory的现行接线做零网络fake检查，确认strategy intent为`available / run_out / short_endgame_minimum_groups`且布尔机会为true，prompt为`ready / run_out`并包含“最少剩余分组”和“避免无谓拆散已有组合”；RAG低基数scene/phase/action_context仍为`endgame / near_open_endgame / endgame`。
-- fake模型返回单J时，现有守卫仍改为原始最优ID并记录`short_endgame_plan`；fake返回1/2/5时仍保持原始ID与`model` source。任一接线或行为不符就零请求停止。
+## 【测试要求】
 
-## 【请求边界】
+- 更新 fake-client 回归，使固定短残局模型返回 action 1、2、3、4、5 时都保持原始合法 ID，source 均为 `model`；尤其单 J 3/4 不再被替换。
+- 锁定 `minimum_group_free_lead_action_ids()` 对固定 fixture 仍为 `(1,2,5)`，畸形、不完整、非自由出牌、超过 4 张或无严格差异时继续 fail closed；router、prompt、最终输入验证和 Botzone factory 的专用输入不削弱。
+- 把 `short_endgame_plan` 纳入 legacy audit/session/decision-trace 正反例，与另外两个 retired source 一并验证：合法历史 evidence 可读，非 success outcome 或计数不守恒仍被拒绝；adapter 的残留 source 回归期望为 `model`。
+- 加入生产路径扫描/回归，确保 `agents/deepseek_ai.py` 与 `integrations/botzone/play_adapter.py` 不再包含 `short_endgame_plan` 主动分支、`_plan_short_free_lead` 或 selected-action helper 调用；允许该字符串只存在于集中 legacy 常量、历史兼容测试和文档。
+- 至少运行：
 
-- 外部模型请求上限精确为1，`max_retries=0`，温度及其他生产prompt参数保持现状。不运行Botzone、connector、Edge、整局或第二个模型请求。
-- 必须在`_plan_short_free_lead()`之前取得模型原始action ID。可在单一进程内临时mock该函数使其返回原始选择与`False`；不得改写工作树或用后置最终动作伪装模型原始选择。
-- 不输出、写入或提交API key、base URL、完整prompt、模型response、reasoning或异常正文。不新建artifact或日志。
+```powershell
+$env:PYTHON_DOTENV_DISABLED='1'
+.\.venv\Scripts\python.exe -m unittest tests.test_short_endgame_planner tests.test_deepseek_step_e tests.test_strategy_router tests.test_strategy_router_benchmark tests.test_strategy_intent_prompt tests.test_strategy_intent_prompt_wiring tests.test_botzone_deepseek_agent_runtime tests.test_botzone_agent_observability tests.test_botzone_decision_trace tests.test_botzone_policy_benchmark -q
+.\.venv\Scripts\python.exe -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q
+.\.venv\Scripts\python.exe -m unittest discover -q
+git diff --check
+```
 
-## 【判定】
+## 【提交与报告】
 
-- 唯一请求成功，原始action ID属于`{1,2,5}`：判定`short_endgame_dedicated_prompt_raw_model_ready`。这只支持下一任务规划退役`short_endgame_plan`，本任务不删除它。
-- 唯一请求成功，原始action ID属于`{3,4}`：判定`short_endgame_dedicated_prompt_raw_model_not_ready`。保持现有守卫；下一步只分析专用prompt消费与候选动作摘要，不新增或扩大后置覆盖，也不自动重试。
-- timeout、exception、invalid suggestion、前提失败、原始ID不属于5个候选或请求计数不是1：判定`short_endgame_dedicated_prompt_raw_model_inconclusive`，不授权代码修改或自动重试。
-
-## 【完成报告】
-
-最终只报告固定低敏字段：全部前提是否通过、候选数5、最少分组ID集合是否为`{1,2,5}`、intent status/intent/reason/机会布尔值、prompt status/intent/关键语义是否存在、RAG scene/phase/action_context、请求数、重试数、模型结果类别、原始动作类别`minimum_group|strictly_worse_single_jack`、原始action ID是否属于固定候选集，以及代码/文件修改数、Git HEAD和请求前后是否clean。
-
-当前任务不创建commit；不把一次模型结果外推为整局或胜率结论。
+- 修改前后检查 Git status/diff，只提交本任务业务代码和 tests；不得混入 docs、日志、环境文件或外部修改。提交信息可用 `feat: retire short endgame action override`。
+- 最终报告：精确 commit SHA、修改文件、各测试命令/数量/结果、生产 source 扫描结果、专用公开输入保留情况、legacy v7/v8/session/trace 兼容与 fail-closed 结果、最终 Git status，以及任何保留的外部修改。
