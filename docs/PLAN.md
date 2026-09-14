@@ -69,7 +69,9 @@
 
 26. 恢复清理已完成：剩余state、stderr、stdout按新allowlist逐项进入Windows回收站，前三条旧路径继续不存在；永久删除、回收站清空、connector/live/model/preflight/browser和仓库修改均为0。规划Codex独立确认固定workspace为普通非链接目录，递归精确只含空`audit/state/streams`三个普通目录，文件数0；`D:\VsCodeProject`顶层`Botzone*`仍只有固定workspace，Git与项目connector均无漂移。
 
-技术上的下一候选任务是一局最新HEAD的人工`deepseek` decision-trace采样，但完整单局可能达到或超过10次真实模型请求。依据`AGENTS.md`，当前先进入授权门槛：拟使用seed `47004`、seat 0、级牌2、无贡、单局，进程级`DEEPSEEK_MAX_RETRIES=0`，以`max-cycles=100`给出真实模型请求硬上限100。未取得项目所有者明确授权前不得下发可执行live Prompt或启动任何外部步骤。
+27. seed `47004` 人工 `deepseek` decision-trace 采样已完成且未重开：26 cycles，25/25/25 request/response/Header，qualified finish=1，24条ACK决策与audit守恒；15次模型请求全部success、重试0、fallback 0，另有9次local shortcut。规划Codex独立验证v8 audit、v4 tombstone、trace binding/序号/selected action/source、history、stream和运行provenance，复跑Botzone/策略输入相关123项通过。平台结果为`local_team_loss`，只作结果分类，不作为策略质量结论。
+
+本局形成三个可复现且原因不同的策略输入问题。其一，模型在同时看到同点数四张/五张炸弹时选择四张，现有prompt未表达残余孤张和炸弹层级的联合代价；其二，自由首出Q来自`OpeningFormulaStrategy`本地短路，高点普通单张奖励压过清理孤张小牌，随后的2则是在跟A约束下由模型合法选择，不能混作同一原因；其三，原始legal actions存在对3，但free-lead transition剪枝因已有single而删除全部pair，模型根本不可见。下一项Coding任务按`docs/NEXT_PROMPT.md`只修正公开输入、剪枝和开局公式，不新增任何成功模型后置覆盖。
 
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 

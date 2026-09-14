@@ -25,6 +25,7 @@
 - 项目所有者长期授权单个明确诊断/评测任务中严格少于10次的预注册真实DeepSeek请求，无需另行申请；10次及以上仍须事先授权，范围、重试、密钥和自由文本保密边界不变。
 - 固定4张自由出牌fixture的守卫前真实模型检查判定为`short_endgame_prompt_raw_model_not_ready`：最少分组集合为`{1,2,5}`，但唯一成功请求的原始动作落在严格更差的单J集合`{3,4}`。当前`ready / control / stable_control`提示未提供最少剩余分组语义；该低敏单点证据支持补充专用prompt，不支持删除或扩大守卫，也不是胜率结论。
 - `c32259d`后的同fixture专用prompt复放已判定`short_endgame_dedicated_prompt_raw_model_ready`：唯一请求成功、重试0，原始动作进入最少分组集合`{1,2,5}`；`run_out / short_endgame_minimum_groups`、两项关键语义和RAG低基数字段均符合前提。规划Codex独立复跑126项相关测试；该低敏单点证据支持下一任务退役`short_endgame_plan`生产改写，但不构成整局或胜率结论。
+- seed `47004` 的最新HEAD人工DeepSeek采样已形成有效ACK decision trace：25/25/25 request/response/Header、qualified finish=1、24条决策与audit守恒，15次模型success、9次local shortcut、0 fallback、0 transport failure，v8 audit/v4 tombstone provenance一致。平台分类`local_team_loss`不作为策略优劣证据；六份evidence保留在固定workspace。
 
 上述实现检查点：
 
@@ -132,6 +133,8 @@ seed `47002`也已使用且不得复用。页面连接门槛先通过，对局�
 seed `47002` 后续只读策略审计确认：16次决策中14次可按公开语义重建，9次pass均只有pass合法；两个可精确比较的自由出牌点不存在严格更优的残余分组。第1、6次缺少足以唯一恢复canonical动作的声明/载体细节。结论是现有evidence不足以支持下一项算法修改，不得据此猜测新规则。
 
 决策证据实现已最终提交为 `045fb75`。五个历史反例全部转绿：fresh输出前置拒绝、跨recorder随机持久binding、Agent深隔离、observation/top-level legal actions强一致，以及history-only direct CLI旧路径兼容。规划复跑88项定向、39项主规则和707项全量通过；当前范围内无已知剩余风险。
+
+seed `47004` 的三处策略观察已经由规划Codex从trace和生产代码独立分因：同点数四/五张炸弹均对模型可见但现有prompt没有残余孤张取舍；自由首出Q来自开局公式local shortcut而非模型，其后跟A时小牌不合法；对3存在于原始合法集合，却因free-lead transition剪枝在有single时完全不保留pair而对模型不可见。下一任务只修剪枝、开局公式和公开残余结构输入，不恢复任何后置策略改写。
 
 ## 6. Confirmed Symptoms
 
@@ -280,7 +283,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前718项全量、134项动作覆盖退役定向和39项主规则回归均通过。三项成功模型后置策略覆盖已全部退役，专用公开strategy-intent仍保留。seed `47003` evidence已全部回收且workspace独立复核为空；下一候选为最新HEAD的人工单局DeepSeek decision-trace采样，但须先取得10+真实模型请求的明确授权。
+当前718项全量、134项动作覆盖退役定向和39项主规则回归均通过。三项成功模型后置策略覆盖已全部退役，专用公开strategy-intent仍保留。seed `47004` live evidence经规划Codex完成结构、守恒、provenance和策略输入复审；另独立运行Botzone evidence及opening/pruning相关123项测试通过。当前失败状态不是规则或协议测试失败，而是三个可复现的AI输入/本地公式策略缺口。
 
 ## 12. Working Tree Status
 
@@ -314,4 +317,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-当前先取得项目所有者对seed `47004`人工单局DeepSeek采样的明确授权：真实模型请求硬上限100、重试0。授权前保持空workspace，不启动preflight、connector、浏览器、建桌或模型；授权后再依据`botzone-manual-live` Skill生成完整可执行Prompt。
+直接执行 `docs/NEXT_PROMPT.md` 的Coding任务：用synthetic fixture修正free-lead pair剪枝、强控制开局孤张取舍和同点数不同长度炸弹的残余结构提示。不得清理或改写seed `47004` evidence，不得新增成功模型后的动作覆盖；实现完成后交回规划Codex独立复审。
