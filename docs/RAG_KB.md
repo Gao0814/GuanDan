@@ -26,7 +26,7 @@ RAG 只提供受限知识上下文：
 
 规则、经验和当前代码口径必须一致。未实现能力不能通过知识库提前激活。策略来源的等级、已核对材料和使用限制见 `docs/STRATEGY_SOURCE_AUDIT.md`。
 
-规则条目与经验条目必须区分来源性质。规则条目只能使用项目规则真值或已核对的规则口径；经验条目不得仅因正文语气像“口诀”就称为人类经验。每条可激活经验至少记录来源 ID、来源等级、作者或机构、公开定位、适用范围、证据状态和可追溯链接/书目。只有目录或商品介绍时只能登记来源，不能推导未读正文中的具体技巧。
+规则条目与经验条目必须区分来源性质。规则条目只能使用项目规则真值或已核对的规则口径；经验条目不得仅因正文语气像“口诀”就称为人类经验。知识正文与运行时语义标签构成“知识平面”，作者、机构、书目、URL、来源等级和审核状态构成独立“治理平面”。两者只通过现有稳定条目 `id` 关联；治理字段不得参与检索评分、冲突扫描或模型 prompt。只有目录或商品介绍时只能在治理 registry 登记来源，不能推导未读正文中的具体技巧。
 
 ## 3. 条目格式
 
@@ -42,14 +42,6 @@ action_context:
 topic:
 priority:
 keywords_cn:
-source_id:
-source_tier:
-claim_type:
-source_author:
-source_url:
-source_locator:
-applicability:
-evidence_status:
 ```
 
 允许逐步增加：
@@ -64,7 +56,9 @@ belief_confidence:
 
 新增标签必须是 ASCII 枚举值，正文可以使用中文。
 
-`evidence_status` 至少区分可激活、待验证和仅登记。检索器只能把可激活条目送入模型；项目自身的合法动作边界可以标为内部约束，但不能冒充外部专家经验。
+独立 provenance registry 至少按条目 `id` 记录 `source_tier`、`claim_type`、作者/机构、URL/书目、locator、适用范围和 `evidence_status`。`evidence_status` 至少区分可激活、待验证和仅登记；加载阶段只允许治理平面判定为可激活的经验进入检索。项目自身的合法动作边界可以在 registry 标为内部约束，但不能冒充外部专家经验。
+
+运行时只允许正文及 `scene`、`phase`、`hand_strength`、`action_context`、`topic`、`priority`、`keywords_cn` 等语义标签参与匹配。即使 registry 中的作者、标题或 URL 改变，只要激活状态未变，检索排序和发送给模型的 prompt 必须逐字节不变。opaque 条目 ID 可以留在内部审计结果中，但不得作为检索特征，也不应进入模型的策略正文。
 
 ## 4. 统一阶段
 

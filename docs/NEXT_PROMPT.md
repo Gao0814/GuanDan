@@ -21,14 +21,23 @@
 
 ## 目标：H3-A0 策略来源与开局公式重建
 
-### 1. 经验来源契约
+### 1. 知识平面与治理平面分离
 
-为经验 corpus 建立最小、严格、可测试的 provenance 与激活状态契约。每条会进入模型的策略经验至少应能表达：稳定 source ID、来源等级、claim 类型、作者/机构、公开定位、适用范围、locator 和 evidence status。字段命名可以根据现有 loader 风格设计，但必须满足：
+为经验 corpus 建立最小、严格、可测试的 provenance 与激活状态契约，但不得把作者、标题、出版社、URL、来源等级或审核状态塞进会参与检索和 prompt 的知识 metadata。当前 `RAGAdvisor._keyword_score()` 会扫描全部 `metadata.values()`，`_tag_score_document()` 会把 metadata 纳入冲突检查，`_pack()` 会把 metadata 发给模型；直接扩充 front matter 会真实污染检索和 prompt。
 
-- `active` 经验才可检索；`candidate` 与 `registry_only` 只登记，不进入模型。
-- 项目内部的合法动作边界可标为 `project_boundary`，不能冒充外部专家经验。
-- 缺字段、未知枚举、矛盾范围或不受支持来源应 fail closed；不得阻断无 RAG 的合法决策 fallback。
-- source URL/书目信息用于审计，不要求塞入模型 prompt；不得复制大段受版权保护正文。
+实现必须明确分成：
+
+- **知识平面**：经验正文和运行时真正需要的语义路由标签，例如 scene、phase、hand strength、action context、topic、priority、keywords。内容保持纯策略知识。
+- **治理平面**：独立、不会进入 RAG 文本的 provenance registry，通过现有稳定条目 `id` 映射来源等级、claim 类型、作者/机构、公开定位、URL/书目、locator、适用范围和 evidence status。
+
+具体文件格式可以根据现有标准库与 loader 风格设计，但必须满足：
+
+- 只有 registry 判定为 `active` 的经验条目才可检索；`candidate` 与 `registry_only` 只登记，不进入模型。
+- 项目内部的合法动作边界可在 registry 标为 `project_boundary`，不能冒充外部专家经验。
+- 缺映射、缺字段、未知枚举、矛盾范围或不受支持来源应使对应经验 fail closed；不得阻断无 RAG 的合法决策 fallback。
+- 作者、标题、出版社、URL、locator、来源等级与审核状态不得参与正文/metadata token 评分、冲突词扫描或 prompt packing。
+- 修改 registry 的作者、标题或 URL，但不改变条目激活状态时，检索顺序与最终模型 prompt 必须逐字节不变。
+- opaque 条目 ID 可用于内部关联和审计，但不得被当作策略特征；不得复制大段受版权保护正文。
 
 按 `docs/STRATEGY_SOURCE_AUDIT.md` 处理现有条目：只有已核对公开正文实际支持的有限原则可改写为短量转述并激活；正规出版物只有目录/商品介绍时只能登记，不能推导具体打法；旧转载“宝典”只能是 candidate。删除或停用无来源的“弱牌只出较高单张”等确定性偏好。
 
@@ -54,7 +63,7 @@
 
 - 不得修改 `engine/` 规则真值、Botzone 协议/session/audit schema、固定项目范围或现有 evidence。
 - 不得新增或恢复成功模型后的 action override、selector、guard 或 legacy decision source。
-- 不得把未经核对的网络口诀写成 `active`，不得声称某本书内容已经读取，除非仓库中存在合法提供且可定位的正文。
+- 不得把未经核对的网络口诀写成 `active`，不得声称某本书内容已经读取，除非仓库中存在合法提供且可定位的正文；不得把 provenance 治理字段混入知识文本、检索特征或模型 prompt。
 - 不得运行 live、connector、浏览器、真实 DeepSeek 请求或 workspace 清理。
 - 不得把 seed `47004` 的完整手牌、完整 observation/action 列表、binding、token 或其他私密 evidence 复制进仓库或报告；测试使用独立构造的最小 synthetic fixtures。
 
@@ -62,7 +71,8 @@
 
 至少覆盖：
 
-- provenance 完整 active 条目可检索；缺字段、未知等级/状态、candidate、registry-only 和矛盾范围均不进入模型，输入不变且异常降级。
+- registry 完整且 active 的条目可检索；缺映射/字段、未知等级/状态、candidate、registry-only 和矛盾范围均不进入模型，输入不变且异常降级。
+- author/title/URL/locator/tier/status 不出现在检索语料或模型 prompt；仅改这些审计值且不改 active 状态时，排名、snippet 和 prompt 逐字节不变。
 - 强控制、存在回手资源且有结构安全小单的合成开局命中新定式；较高普通单张、王/级牌、部分拆对/三张/四张以上、wildcard 候选不因新定式被误选。
 - 模糊或来源未覆盖的 opening fixture 返回 `None` 并实际进入现有 RAG + fake DeepSeek；模型合法 ID/source 原样保留。
 - free-lead singles+pairs 的剪枝和最终 prompt 均保留代表性自然 pair，预算和原始 ID 不漂移。
