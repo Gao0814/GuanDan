@@ -11,7 +11,7 @@ from collections import Counter
 from dataclasses import dataclass
 import json
 import time
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 from urllib import request as urllib_request
 
 from agents.action_structure import FreeLeadResidualStructure, summarize_free_lead_residual_structures
@@ -616,32 +616,92 @@ class DeepSeekClient:
         constraint: str,
         hand_count: int | None,
     ) -> list[dict[str, object]]:
-        """Bound ordinary prompt candidates while retaining every critical action."""
+        """Return a bounded, representative prompt view of canonical actions.
 
-        if len(actions) <= PROMPT_MAX_CANDIDATE_ACTIONS:
-            return list(actions)
+        The final display layer has a stricter contract than first-pass pruning:
+        it never exceeds the prompt budget.  Free leads reserve the smallest
+        natural single and pair before allocating the remaining budget.  This
+        prevents a large run, pressure, or wildcard group from hiding the
+        transition choices that the model needs to compare.  The remaining
+        slots are allocated deterministically by category: finishing actions,
+        pressure actions, wildcard actions, then ordinary actions.  A category
+        may therefore be represented rather than copied in full during an
+        overflow; source order is retained in the returned view.
+        """
 
-        critical_indexes = {
-            index
-            for index, action in enumerate(actions)
-            if DeepSeekClient._is_finishing_action(action, hand_count)
-            or DeepSeekClient._is_pressure_action(action)
-            or DeepSeekClient._has_wildcard(action)
-            or (constraint != "free" and DeepSeekClient._is_pass_action(action))
-        }
-        if len(critical_indexes) >= PROMPT_MAX_CANDIDATE_ACTIONS:
-            return [action for index, action in enumerate(actions) if index in critical_indexes]
+        unique_actions = DeepSeekClient._unique_actions_by_signature(actions)
+        if len(unique_actions) <= PROMPT_MAX_CANDIDATE_ACTIONS:
+            return unique_actions
 
-        ordinary_budget = PROMPT_MAX_CANDIDATE_ACTIONS - len(critical_indexes)
-        selected_indexes = set(critical_indexes)
-        for index in range(len(actions)):
-            if index in selected_indexes:
-                continue
-            selected_indexes.add(index)
-            ordinary_budget -= 1
-            if ordinary_budget == 0:
-                break
-        return [action for index, action in enumerate(actions) if index in selected_indexes]
+        selected: set[tuple[object, ...]] = set()
+
+        def reserve(action: dict[str, object]) -> None:
+            if len(selected) < PROMPT_MAX_CANDIDATE_ACTIONS:
+                selected.add(DeepSeekClient._action_signature(action))
+
+        # Keep the first-pass transition recall meaningful in the final prompt.
+        # These are representatives, not a new legality or strategy selector.
+        if constraint == "free":
+            natural_singles = sorted(
+                [
+                    action
+                    for action in unique_actions
+                    if str(action.get("declared_pattern", "")) == "single"
+                    and not DeepSeekClient._has_wildcard(action)
+                ],
+                key=DeepSeekClient._prune_sort_key,
+            )
+            natural_pairs = sorted(
+                [
+                    action
+                    for action in unique_actions
+                    if str(action.get("declared_pattern", "")) == "pair"
+                    and not DeepSeekClient._has_wildcard(action)
+                ],
+                key=DeepSeekClient._prune_sort_key,
+            )
+            if natural_singles:
+                reserve(natural_singles[0])
+            if natural_pairs:
+                reserve(natural_pairs[0])
+        else:
+            passes = sorted(
+                [action for action in unique_actions if DeepSeekClient._is_pass_action(action)],
+                key=DeepSeekClient._prune_sort_key,
+            )
+            if passes:
+                reserve(passes[0])
+
+        def add_category(predicate: Callable[[dict[str, object]], bool]) -> None:
+            for action in sorted(unique_actions, key=DeepSeekClient._prune_sort_key):
+                if len(selected) >= PROMPT_MAX_CANDIDATE_ACTIONS:
+                    return
+                if predicate(action):
+                    reserve(action)
+
+        # The predicates are mutually exclusive so each slot has one auditable
+        # priority.  Representatives reserved above remain protected.
+        add_category(lambda action: DeepSeekClient._is_finishing_action(action, hand_count))
+        add_category(
+            lambda action: not DeepSeekClient._is_finishing_action(action, hand_count)
+            and DeepSeekClient._is_pressure_action(action)
+        )
+        add_category(
+            lambda action: not DeepSeekClient._is_finishing_action(action, hand_count)
+            and not DeepSeekClient._is_pressure_action(action)
+            and DeepSeekClient._has_wildcard(action)
+        )
+        add_category(
+            lambda action: not DeepSeekClient._is_finishing_action(action, hand_count)
+            and not DeepSeekClient._is_pressure_action(action)
+            and not DeepSeekClient._has_wildcard(action)
+        )
+
+        return [
+            action
+            for action in unique_actions
+            if DeepSeekClient._action_signature(action) in selected
+        ]
 
     @staticmethod
     def _lead_pruned_actions(legal_actions: list[dict[str, object]], phase: str) -> list[dict[str, object]]:

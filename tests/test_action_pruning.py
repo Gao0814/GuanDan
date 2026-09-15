@@ -3,7 +3,7 @@ import unittest
 from unittest import mock
 
 from agents.deepseek_ai import DeepSeekAIAgent
-from agents.deepseek_client import DeepSeekClient
+from agents.deepseek_client import DeepSeekClient, PROMPT_MAX_CANDIDATE_ACTIONS
 
 
 def _action(
@@ -229,6 +229,127 @@ class TestActionPruning(unittest.TestCase):
         self.assertIn("action_id=1", prompt)
         self.assertIn("action_id=2", prompt)
         self.assertIn("action_id=4", prompt)
+
+    def test_final_free_lead_limit_preserves_natural_transition_representatives(self) -> None:
+        runs = [
+            _action(index, "straight", [f"run-{index}"], [f"run-{index}S"])
+            for index in range(1, PROMPT_MAX_CANDIDATE_ACTIONS + 21)
+        ]
+        legal_actions = runs + [
+            _action(1001, "single", ["3"], ["3S"]),
+            _action(1002, "single", ["K"], ["KS"]),
+            _action(1003, "pair", ["9", "9"], ["9S", "9H"]),
+            _action(1004, "pair", ["4", "4"], ["4S", "4H"]),
+            _action(1005, "pair", ["4", "4"], ["4S", "4H"]),
+        ]
+
+        first_pass = DeepSeekClient._prune_legal_actions(
+            legal_actions,
+            "free",
+            step_no=8,
+            hand_count=20,
+        )
+        final_one = DeepSeekClient._limit_prompt_actions(
+            first_pass,
+            constraint="free",
+            hand_count=20,
+        )
+        final_two = DeepSeekClient._limit_prompt_actions(
+            first_pass,
+            constraint="free",
+            hand_count=20,
+        )
+        final_ids = [action["action_id"] for action in final_one]
+
+        self.assertGreater(len(first_pass), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertLessEqual(len(final_one), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertIn(1001, final_ids)
+        self.assertIn(1004, final_ids)
+        self.assertEqual(final_ids, [action["action_id"] for action in final_two])
+        self.assertTrue(set(final_ids).issubset({action["action_id"] for action in legal_actions}))
+        signatures = [DeepSeekClient._action_signature(action) for action in final_one]
+        self.assertEqual(len(signatures), len(set(signatures)))
+        observation = _observation()
+        prompt = DeepSeekClient._build_structured_prompt(
+            my_info=observation["my_info"],
+            current_round=observation["current_round"],
+            other_players=observation["other_players"],
+            history=observation["history"],
+            legal_actions=first_pass,
+        )
+        candidate_section = prompt.split("【候选动作】", 1)[1].split("【规则库依据】", 1)[0]
+        self.assertEqual(candidate_section.count("action_id="), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertIn("action_id=1001", candidate_section)
+        self.assertIn("action_id=1004", candidate_section)
+
+    def test_final_limit_bounds_wildcard_overflow_without_evicting_free_lead_pair(self) -> None:
+        legal_actions = [
+            _action(1, "single", ["3"], ["3S"]),
+            _action(2, "pair", ["4", "4"], ["4S", "4H"]),
+        ]
+        legal_actions.extend(
+            _action(
+                100 + index,
+                "single",
+                [f"wild-{index}"],
+                [f"2H-{index}"],
+                wildcard_count=1,
+                wildcard_info=[{"carrier_card": f"2H-{index}", "declared_as": f"wild-{index}"}],
+            )
+            for index in range(PROMPT_MAX_CANDIDATE_ACTIONS + 10)
+        )
+
+        final_actions = DeepSeekClient._limit_prompt_actions(
+            legal_actions,
+            constraint="free",
+            hand_count=20,
+        )
+        final_ids = {action["action_id"] for action in final_actions}
+
+        self.assertLessEqual(len(final_actions), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertTrue({1, 2}.issubset(final_ids))
+        self.assertEqual(
+            sum(int(action["wildcard_count"]) for action in final_actions),
+            PROMPT_MAX_CANDIDATE_ACTIONS - 2,
+        )
+
+    def test_final_limit_prioritizes_finishing_then_pressure_before_wildcard_overflow(self) -> None:
+        legal_actions = [
+            _action(1, "single", ["3"], ["3S"]),
+            _action(2, "pair", ["4", "4"], ["4S", "4H"]),
+        ]
+        legal_actions.extend(
+            _action(10 + index, "straight", [f"finish-{index}"] * 5, [f"finish-{index}S"] * 5)
+            for index in range(8)
+        )
+        legal_actions.extend(
+            _action(100 + index, "bomb", [f"pressure-{index}"] * 4, [f"pressure-{index}S"] * 4)
+            for index in range(20)
+        )
+        legal_actions.extend(
+            _action(
+                200 + index,
+                "single",
+                [f"wild-{index}"],
+                [f"2H-{index}"],
+                wildcard_count=1,
+                wildcard_info=[{"carrier_card": f"2H-{index}", "declared_as": f"wild-{index}"}],
+            )
+            for index in range(PROMPT_MAX_CANDIDATE_ACTIONS)
+        )
+
+        final_actions = DeepSeekClient._limit_prompt_actions(
+            legal_actions,
+            constraint="free",
+            hand_count=5,
+        )
+        final_ids = {action["action_id"] for action in final_actions}
+
+        self.assertLessEqual(len(final_actions), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertTrue({1, 2}.issubset(final_ids))
+        self.assertTrue(set(range(10, 18)).issubset(final_ids))
+        self.assertTrue(set(range(100, 120)).issubset(final_ids))
+        self.assertEqual(len(final_ids & set(range(200, 280))), 50)
 
     def test_pruned_action_ids_all_come_from_original_legal_actions(self) -> None:
         legal_actions = [
