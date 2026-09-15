@@ -140,6 +140,8 @@ seed `47004` 的三处策略观察已经由规划Codex从trace和生产代码独
 
 `5dbdd2c` 已完成上述 H3-A0 主体，但规划复审发现 pair 修复只停留在第一层剪枝。最终 `_limit_prompt_actions()` 在 critical 数量达到 80 时会返回全部 critical，真实引擎初始局面可同时出现最终候选超过 80 且自然 pair 全部消失；已知 seed `47004` 同样复现该低敏结论。因此知识/治理隔离、窄开局定式和炸弹结构输入可以保留，H3-A0 整体仍需 H3-A0a 修复最终预算与 pair 召回后才能封板。
 
+项目所有者随后批准 H3-A1 的 DeepSeek 中心策略方向：本地层负责候选、公开结构、场景/目标、来源经验和模型前推荐，DeepSeek 保持最终策略裁决；开局公式只作为延迟约束下的窄高置信快速路径及可供模型验证的推荐，不扩张成第二套完整策略 AI。H3-A1 将以十个策略域批量覆盖开局、结构、控制、牌权、协同、阻断、炸弹/通配、残局和不确定性，不再按单个现场动作追加神秘分数。provenance 治理字段继续与知识平面隔离。
+
 ## 6. Confirmed Symptoms
 
 ### Historical formal batch summary
@@ -322,4 +324,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-直接执行 `docs/NEXT_PROMPT.md` 的 H3-A0a Coding任务：统一最终模型候选的硬预算和代表性召回，确保大候选/critical overflow 时仍保留自然single与最小自然pair，并维持四/五张炸弹、原始ID和模型自主权。不得读取或改写seed `47004` evidence，不得新增成功模型后的动作覆盖；实现完成后交回规划Codex独立复审。
+直接执行 `docs/NEXT_PROMPT.md` 的 H3-A0a Coding任务：统一最终模型候选的硬预算和代表性召回，确保大候选/critical overflow 时仍保留自然single与最小自然pair，并维持四/五张炸弹、原始ID和模型自主权。不得读取或改写seed `47004` evidence，不得新增成功模型后的动作覆盖；实现完成后交回规划Codex独立复审。H3-A0a 通过后再把下一执行任务切换为已批准的 H3-A1 完整策略投影，不应在候选召回仍失真的状态下提前堆叠 RAG 或 prompt。
