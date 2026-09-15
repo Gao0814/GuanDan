@@ -1,54 +1,77 @@
 # Coding Codex 执行 Prompt
 
-这是一个新的 Coding Codex 任务。不要依赖其他对话的隐含上下文，请从当前仓库和保留的 seed `47004` evidence 重新建立事实。
+这是一个新的 Coding Codex 任务。不要依赖其他对话的隐含上下文，请从当前仓库重新建立事实。
 
 你的职责是实现和测试业务代码；项目规划文档由规划 Codex 维护。开始前依次：
 
 1. 阅读并遵守根目录及适用范围内的 `AGENTS.md`。
 2. 检查 `.agents/skills/`；本任务不是 live 或 workspace 清理，不得执行这两个 Skill 的现场动作。
-3. 阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`。
+3. 阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/STRATEGY_SOURCE_AUDIT.md`、`docs/RAG_KB.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`。
 4. 检查 Git status、HEAD 和最近提交；起点必须能解释，不能把外部修改混入提交。
-5. 只读检查 `D:\VsCodeProject\BotzoneWorkspace\decision-trace.json` 中 seed `47004` 的三类目标决策。不得在报告、日志、测试或仓库文件中复制完整手牌、完整 observation/action 列表、binding、run token、模型文本或其他私密内容；测试应使用独立构造、语义等价但不复制现场身份/花色/ID的最小 synthetic fixture。
+5. 只读核对现有经验 corpus、loader/retriever、`OpeningFormulaStrategy`、DeepSeek free-lead 剪枝、structured prompt 与相关测试。不得联网、不得读取 `.env`，也不得清理或改写 `D:\VsCodeProject\BotzoneWorkspace` 的 seed `47004` evidence。
 
-## 已复审事实
+## 已复审根因
 
-规划 Codex 已按当前 schema 验证该局 24 条 ACK trace 与 v8 audit 守恒。以下是需要由你从文件和生产代码再次确认的低敏结论，不得直接当作未经核对的真值：
+以下是规划 Codex 的结论，必须由你从当前代码再次确认：
 
-- 五张同点数牌的跟牌点由 `model` 选择四张炸弹；四张和五张炸弹均存在于原始、剪枝后及最终 prompt 候选。当前 `control / stable_control` 与 bomb RAG 只表达一般控牌/炸弹时机，没有明确比较“较短同点数炸弹留下孤张”与“较长炸弹清空该点数、减少手数并提高本次压制层级”。
-- 自由首出 Q 的决策 source 为 `local_shortcut`，实际来自 `OpeningFormulaStrategy`，没有调用模型。这里要修的是 Q 这个首攻选择本身，不能用后续动作解释它：若目标是减少低价值孤张，应优先考虑不拆结构的 4；若目标是低成本试探或逼出对方大牌，也应优先考虑 10 或更低的可牺牲普通单张，避免先消耗 Q 这类更可能在残局争夺牌权的资源。当前强牌/高控制分支反而对较高普通单张加分、对 8 以下单张扣分，缺少“清理累赘”和“低成本试探”两种目标下的控制牌机会成本。
-- 自由首出单张 3 的点位中，原始 canonical actions 同时包含单 3 和对 3，但 `_select_transition_actions()` 在存在任意 single 时不保留 pair；对 3 因而不在剪枝后或最终 prompt 候选，模型没有选择它的机会。
+- `rag/experience_corpus/basic_human_experience.md` 的策略条目没有作者、出版物、链接、规则版本、定位、适用范围或证据等级；它们目前是项目自拟启发式，不是已经验证的“人类经验”。
+- `agents/opening_strategy.py` 的点数阈值及固定加减分没有来源或校准。seed `47004` 的强控制开局因此由 local shortcut 选择 Q：若目标是清理低价值孤张，结构安全的小牌更合理；若目标是低成本试探，也不应无理由先消耗更高普通单张。
+- free-lead transition 剪枝在存在 single 时完全不保留 pair；原始合法对 3 因而对模型不可见。这是候选召回缺陷，不应等待某条打法口诀证明。
+- 四/五张同点数炸弹都对模型可见，但 prompt 只给一般炸弹时机，没有把可计算的剩余手数与残余孤张事实送给模型。
 
-## 目标
+## 目标：H3-A0 策略来源与开局公式重建
 
-以公开 observation 和原始 canonical legal actions 为唯一输入，修正这三类策略输入缺口，同时保持 DeepSeek 对合法模型动作的自主权：
+### 1. 经验来源契约
 
-1. 自由首出 transition 剪枝必须在 singles 存在时仍保留有代表性的自然 pair，至少保证最小自然对子不会因存在单张而全部消失；继续遵守候选预算、稳定顺序、去重、wildcard/pressure/finishing 保留和原始 action ID 追溯。
-2. 调整开局公式的结构取舍，使“强牌且控制资源充足”的自由首攻显式计入普通高单的残局牌权机会成本，而不是把“试探”实现成固定奖励更高点数。存在不拆组合的低价值孤张时，清理目标应优先考虑该孤张；需要用有一定逼牌能力的普通单张低成本试探时，应优先考虑 10 或更低的可牺牲候选，而不是无理由先消耗 Q/J/K/A 等更高单张。必须以通用等级、残余结构和公开控制资源表达，不能针对 Q、4、10 或 seed 写死；精确限制在适用的强控制开局，保留王/级牌、炸弹、对子及其他成组结构保护和 weak/medium 既有语义，并基于真实 `carrier_cards` 计算残余结构，不得读取 engine 私有状态。
-3. 给模型一个通用、有限、可验证的残余结构提示，覆盖同点数不同长度炸弹候选：明确提示较短动作若只留下同点数孤张，不能被误称为“保留炸弹”，并要求同时比较剩余手数、残余组合价值和当前压制层级。优先在现有 structured prompt/候选摘要中增加由公开 hand 与 canonical actions 推导的低预算信息；只有确有必要才改 RAG。不得直接替模型选择动作。
+为经验 corpus 建立最小、严格、可测试的 provenance 与激活状态契约。每条会进入模型的策略经验至少应能表达：稳定 source ID、来源等级、claim 类型、作者/机构、公开定位、适用范围、locator 和 evidence status。字段命名可以根据现有 loader 风格设计，但必须满足：
 
-实现应寻找一个最小、共享且 fail-closed 的 AI 层残余结构表示，避免为三个现场动作各写硬编码规则。Malformed payload 应退化为旧安全行为，不得阻断合法动作选择。
+- `active` 经验才可检索；`candidate` 与 `registry_only` 只登记，不进入模型。
+- 项目内部的合法动作边界可标为 `project_boundary`，不能冒充外部专家经验。
+- 缺字段、未知枚举、矛盾范围或不受支持来源应 fail closed；不得阻断无 RAG 的合法决策 fallback。
+- source URL/书目信息用于审计，不要求塞入模型 prompt；不得复制大段受版权保护正文。
+
+按 `docs/STRATEGY_SOURCE_AUDIT.md` 处理现有条目：只有已核对公开正文实际支持的有限原则可改写为短量转述并激活；正规出版物只有目录/商品介绍时只能登记，不能推导具体打法；旧转载“宝典”只能是 candidate。删除或停用无来源的“弱牌只出较高单张”等确定性偏好。
+
+### 2. 公式化开局边界
+
+把 `OpeningFormulaStrategy` 从通用神秘打分器收敛为少数有依据、边界清楚的开局定式：
+
+- 继续只读取公开 observation 与原始 canonical legal actions，只返回原始 ID。
+- 强牌/高控制且具有回手资源时，若存在不拆对子/三张/炸弹/顺子等结构的自然小单，可把它作为强牌小单首攻定式；不得针对 Q、4、10、花色或 seed 写死。
+- 王、级牌、炸弹、逢人配和成组结构仍应受保护。
+- 来源不一致、payload malformed、无法判断定式或多个目标冲突时返回 `None`，让现有 RAG + DeepSeek 路径选择；不要用更多固定分数假装确定。
+- 保持 only-pass、一次出完、phase、fallback、原始 action ID 和 decision source 契约。
+
+不要把整本“宝典”硬编码成一个选择器，也不要把 opening formula 放到成功模型之后。
+
+### 3. 剪枝与公开结构输入
+
+- free-lead transition 候选必须在 singles 存在时仍保留代表性自然 pair，至少保留最小自然对子；遵守候选预算、稳定顺序、去重、wildcard/pressure/finishing 保留和原始 ID 追溯。
+- 用公开 hand 与 canonical carrier 计算最小、共享、fail-closed 的残余结构摘要。它可以告诉模型某动作是否清空点数组、留下孤张及估计剩余分组/手数，但不能直接选动作。
+- 同点数四张/五张炸弹均合法时，最终 prompt 必须保留两个原始 ID并呈现上述可计算差异；fake client 返回任一合法 ID时都原样保留并记录 `model`。
 
 ## 禁止事项
 
-- 不得新增或恢复任何成功模型后的 action override、selector、guard 或 decision source；新生产路径仍不得产生 `teammate_control_block`、`danger_opponent_block`、`short_endgame_plan`。
-- 不得把 RuleBased 或 opening formula 的选择作为模型成功后的强制结果。
-- 不得修改 `engine/` 规则真值、Botzone 协议/session/audit schema、legacy source 读取兼容或固定项目范围。
-- 不得联网运行 Botzone、启动 connector、创建桌、清理或改写现有 evidence。
-- 不得读取或输出 `.env`、URL、密钥、token、prompt、模型 response/reasoning。
+- 不得修改 `engine/` 规则真值、Botzone 协议/session/audit schema、固定项目范围或现有 evidence。
+- 不得新增或恢复成功模型后的 action override、selector、guard 或 legacy decision source。
+- 不得把未经核对的网络口诀写成 `active`，不得声称某本书内容已经读取，除非仓库中存在合法提供且可定位的正文。
+- 不得运行 live、connector、浏览器、真实 DeepSeek 请求或 workspace 清理。
+- 不得把 seed `47004` 的完整手牌、完整 observation/action 列表、binding、token 或其他私密 evidence 复制进仓库或报告；测试使用独立构造的最小 synthetic fixtures。
 
 ## 必须新增的回归
 
 至少覆盖：
 
-- free-lead 同时存在 singles 与自然 pairs 时，剪枝和最终 prompt 均保留代表性 pair；输入不变、ID来自原始 actions、候选预算不失控。
-- 语义等价、但不复制现场牌面的强控制开局 fixture 至少分开证明两点：不拆结构的低孤张与 Q 类较高普通孤张并存时选择前者；可牺牲的 10 类中低普通单张与 Q 类较高普通孤张并存时，低成本试探不选择后者。测试断言应针对通用等级/结构关系而非 seed 或固定花色；对子、三张、四张以上的部分拆分保护，王/级牌保护及既有 medium/weak fixture 不回归。
-- 同点数四张/五张炸弹均合法时，prompt 同时保留两个原始 ID，并包含可测试的残余孤张/清空点数组语义；fake client 返回任一合法 ID 时都必须原样保留并记录 `model`。
-- malformed observation、hand/card token、carrier 或候选不一致时 fail closed，不生成伪造结构结论，不改变合法动作集合。
-- 三个 legacy source 仍只读兼容，生产 DeepSeek/adapter 路径扫描无主动产生分支。
+- provenance 完整 active 条目可检索；缺字段、未知等级/状态、candidate、registry-only 和矛盾范围均不进入模型，输入不变且异常降级。
+- 强控制、存在回手资源且有结构安全小单的合成开局命中新定式；较高普通单张、王/级牌、部分拆对/三张/四张以上、wildcard 候选不因新定式被误选。
+- 模糊或来源未覆盖的 opening fixture 返回 `None` 并实际进入现有 RAG + fake DeepSeek；模型合法 ID/source 原样保留。
+- free-lead singles+pairs 的剪枝和最终 prompt 均保留代表性自然 pair，预算和原始 ID 不漂移。
+- 四/五张同点数炸弹 prompt 显示清空点数组与残余孤张的差异，fake model 可自由返回任一 ID。
+- malformed hand/card/carrier/source metadata fail closed；三个 legacy source 仍只读兼容，生产路径不产生它们。
 
-## 验证顺序
+## 验证
 
-1. 先运行新增和直接相关的 opening/pruning/prompt/DeepSeek 测试。
+1. 运行新增及直接相关的 RAG、opening、pruning、prompt、DeepSeek 测试。
 2. 运行主规则回归：
 
    `python -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tests.test_cli_debug_output -q`
@@ -57,18 +80,16 @@
 
    `python -m unittest discover -q`
 
-4. 运行 `git diff --check`，并扫描生产路径确认没有旧 source 的主动分支或新的 post-model override。
-5. 仅在全部离线测试通过后，可使用 synthetic fixture 做最多 2 次真实 DeepSeek prompt-first 诊断：一例比较四/五张同点数炸弹，一例比较单 3/对 3；总外部模型请求硬上限 2、每例最多 1 次、`DEEPSEEK_MAX_RETRIES=0`。这属于 `AGENTS.md` 已授权的严格少于 10 次诊断。不得保存或输出模型文本，只报告前提、候选可见性、source、原始动作类别和 success/failure。若模型结果仍不理想，报告 `not_ready` 并停止，不得增加后置覆盖或追加请求。
+4. 运行 `git diff --check`，扫描生产路径确认没有旧 source 主动分支、新 post-model override、现场点数/seed 硬编码或未经来源激活的经验。
 
 ## 提交与报告
 
-只提交本任务的业务代码和 tests，不修改规划 docs。提交前后检查 status/diff，只显式暂存自有文件。
+只提交本任务的业务代码、RAG corpus 和 tests；不要修改规划 docs。提交前后检查 status/diff，只显式暂存自有文件。
 
 报告必须包含：
 
-- 三处根因的独立结论，尤其区分 local shortcut、模型选择和剪枝不可见；
-- 修改文件与设计边界；
-- 每组测试的命令和通过数量；
-- 若执行真实模型诊断，报告实际请求数、重试数与低敏分类；
+- 对无来源经验、开局打分、pair 剪枝和炸弹结构输入的独立根因结论；
+- 实际激活/降级/仅登记的来源条目及理由；
+- 修改文件、设计边界与每组测试通过数量；
 - commit hash、最终 Git status、保留的外部修改/evidence；
 - 当前范围内尚未解决的真实风险。固定级牌 `2`、四人、无贡、单局是既定范围，不列为风险。

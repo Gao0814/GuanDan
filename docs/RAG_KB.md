@@ -24,7 +24,9 @@ RAG 只提供受限知识上下文：
 - `rag/rule_corpus/guandan_rules.md`
 - `rag/experience_corpus/basic_human_experience.md`
 
-规则、经验和当前代码口径必须一致。未实现能力不能通过知识库提前激活。
+规则、经验和当前代码口径必须一致。未实现能力不能通过知识库提前激活。策略来源的等级、已核对材料和使用限制见 `docs/STRATEGY_SOURCE_AUDIT.md`。
+
+规则条目与经验条目必须区分来源性质。规则条目只能使用项目规则真值或已核对的规则口径；经验条目不得仅因正文语气像“口诀”就称为人类经验。每条可激活经验至少记录来源 ID、来源等级、作者或机构、公开定位、适用范围、证据状态和可追溯链接/书目。只有目录或商品介绍时只能登记来源，不能推导未读正文中的具体技巧。
 
 ## 3. 条目格式
 
@@ -40,6 +42,14 @@ action_context:
 topic:
 priority:
 keywords_cn:
+source_id:
+source_tier:
+claim_type:
+source_author:
+source_url:
+source_locator:
+applicability:
+evidence_status:
 ```
 
 允许逐步增加：
@@ -53,6 +63,8 @@ belief_confidence:
 ```
 
 新增标签必须是 ASCII 枚举值，正文可以使用中文。
+
+`evidence_status` 至少区分可激活、待验证和仅登记。检索器只能把可激活条目送入模型；项目自身的合法动作边界可以标为内部约束，但不能冒充外部专家经验。
 
 ## 4. 统一阶段
 
