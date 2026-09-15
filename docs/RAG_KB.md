@@ -48,6 +48,8 @@ keywords_cn:
 
 ```yaml
 strategy_intent:
+strategy_domain:
+guidance_mode:
 threat_source:
 opponent_count_bucket:
 teammate_count_bucket:
@@ -56,7 +58,9 @@ belief_confidence:
 
 新增标签必须是 ASCII 枚举值，正文可以使用中文。
 
-独立 provenance registry 至少按条目 `id` 记录 `source_tier`、`claim_type`、作者/机构、URL/书目、locator、适用范围和 `evidence_status`。`evidence_status` 至少区分可激活、待验证和仅登记；加载阶段只允许治理平面判定为可激活的经验进入检索。项目自身的合法动作边界可以在 registry 标为内部约束，但不能冒充外部专家经验。
+H3-A1 的经验正文统一使用紧凑的“适用条件 / 策略目标 / 建议倾向 / 反例与调整”结构。`strategy_domain` 与 `guidance_mode` 属于影响运行时选择的语义标签，可以参与匹配；推荐的 `guidance_mode` 至少区分 `source_principle` 与 `soft_hypothesis`。它们不能包含作者或来源等级。来源等级和 `evidence_status` 仍只属于 registry。
+
+独立 provenance registry 至少按条目 `id` 记录 `source_tier`、`claim_type`、作者/机构、URL/书目、locator、适用范围和 `evidence_status`。`evidence_status` 至少区分可激活、待验证和仅登记；加载阶段只允许治理平面判定为可激活的经验进入检索。经项目所有者批准的 C 级定性策略可以 active，但知识标签必须同时标为 `soft_hypothesis`，且不得被本地快速路径消费。项目自身的合法动作边界可以在 registry 标为内部约束，但不能冒充外部专家经验。
 
 运行时只允许正文及 `scene`、`phase`、`hand_strength`、`action_context`、`topic`、`priority`、`keywords_cn` 等语义标签参与匹配。即使 registry 中的作者、标题或 URL 改变，只要激活状态未变，检索排序和发送给模型的 prompt 必须逐字节不变。opaque 条目 ID 可以留在内部审计结果中，但不得作为检索特征，也不应进入模型的策略正文。
 

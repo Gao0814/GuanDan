@@ -20,7 +20,7 @@
 - 仓库级Skills位于 `.agents/skills/`：`botzone-manual-live` 封装单局人工连接、建桌、监测和evidence验收；`botzone-workspace-recycle` 封装已审计artifact的精确回收站清理。run-specific seed、Agent、预算、文件allowlist与hash仍只放在当前任务Prompt。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
-- 最新业务提交为 `5dbdd2c`：知识/治理双平面、有限来源经验、窄开局定式、第一层自然pair召回和公开残余结构提示已实现。规划Codex独立复跑197项定向、39项主规则和717项全量；主体边界通过，但最终prompt limiter仍可能突破80项并重新丢失自然pair，因此该提交尚未整体封板。
+- 最新业务提交为 `66009fc`：最终 prompt 候选硬限制为 80，自由首出保留稳定最小自然 single/pair，overflow 对 finishing/pressure/wildcard/ordinary 做有界代表保留并按签名去重。规划 Codex 独立复跑230项相关、39项主规则、720项全量及500个真实引擎初始局面性质检查；H3-A0/H3-A0a 已封板。
 - canonical危险对手fixture的受约束真实模型检查已判定`danger_opponent_prompt_raw_model_ready`：唯一请求成功、重试0，模型在后置守卫前自行返回固定候选集内的`ordinary`动作；现有`block_opponent / urgent_opponent_controls_table`输入已足以支持退役强制pass阻断。该结果以低敏执行报告为证据，不是整体胜率结论。
 - 项目所有者长期授权单个明确诊断/评测任务中严格少于10次的预注册真实DeepSeek请求，无需另行申请；10次及以上仍须事先授权，范围、重试、密钥和自由文本保密边界不变。
 - 固定4张自由出牌fixture的守卫前真实模型检查判定为`short_endgame_prompt_raw_model_not_ready`：最少分组集合为`{1,2,5}`，但唯一成功请求的原始动作落在严格更差的单J集合`{3,4}`。当前`ready / control / stable_control`提示未提供最少剩余分组语义；该低敏单点证据支持补充专用prompt，不支持删除或扩大守卫，也不是胜率结论。
@@ -30,7 +30,7 @@
 上述实现检查点：
 
 ```text
-5dbdd2c
+66009fc
 ```
 
 当前分支：`cao`。提交数量会随规划检查点继续变化；读取者应以实际 `git rev-list --left-right --count origin/cao...HEAD` 为准，不使用本文中的历史 ahead 数字。
@@ -291,6 +291,8 @@ git diff --check
 
 当前 H3-A0 业务检查点为 `5dbdd2c`。规划复审运行197项相关定向、39项主规则和717项全量均通过；知识/治理隔离、来源激活、开局窄定式、炸弹结构摘要及模型动作保真未发现回归。当前失败状态不是规则或协议测试失败，而是最终候选层仍可能突破80项并重新移除全部自然pair。
 
+H3-A0a 已由 `66009fc` 修复并独立复审：原6个真实引擎复现样本的第一层候选为132–243项，最终均为80项且保留natural single和稳定最小natural pair；500个独立初始局面性质检查同样通过。相关230项、主规则39项、全量720项均通过。当前不再存在已知候选预算/pair召回阻塞。
+
 ## 12. Working Tree Status
 
 - 分支：`cao`。
@@ -310,6 +312,7 @@ git diff --check
 - 最新短残局专用提示检查点：`c32259d feat: prompt short endgame grouping`；规划Codex独立复跑92/39/721项，确认共享分组真值、专用prompt和最终输入验证生效，后置planner/source无漂移。
 - 最新动作自主性封板检查点：`f426693 feat: retire short endgame action override`；规划Codex独立复跑134/39/718项，确认所有合法模型ID保真、三个旧source仅legacy可读且专用短残局输入未削弱。
 - 最新策略来源重建检查点：`5dbdd2c feat: rebuild sourced opening strategy`；主体边界通过复审，但最终 prompt limiter 的硬预算和 natural pair 召回未通过，尚未封板。
+- 最新候选召回封板检查点：`66009fc fix: bound DeepSeek prompt candidates`；规划 Codex 独立确认最终硬上限、natural single/pair、原始 ID、签名去重、稳定顺序及模型自主权，H3-A0/H3-A0a 封板。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex负责提交其业务代码、tests及任务直接相关修改；规划Codex独立复核结果，只提交自己产生的 `AGENTS.md`、项目Skills和docs上下文修改，不代为提交未完成或未经复核的业务改动。
 
@@ -324,4 +327,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-直接执行 `docs/NEXT_PROMPT.md` 的 H3-A0a Coding任务：统一最终模型候选的硬预算和代表性召回，确保大候选/critical overflow 时仍保留自然single与最小自然pair，并维持四/五张炸弹、原始ID和模型自主权。不得读取或改写seed `47004` evidence，不得新增成功模型后的动作覆盖；实现完成后交回规划Codex独立复审。H3-A0a 通过后再把下一执行任务切换为已批准的 H3-A1 完整策略投影，不应在候选召回仍失真的状态下提前堆叠 RAG 或 prompt。
+直接执行 `docs/NEXT_PROMPT.md` 的 H3-A1 Coding任务：在已封板的候选预算与模型自主权基础上，用一个连贯批次建立来源策略目录、公开候选结构比较、开局模型前推荐、strategy router/RAG/prompt 投影和合成场景评测。不得从书目目录臆造打法，不得新增成功模型后的动作覆盖；实现完成后交回规划Codex独立复审。

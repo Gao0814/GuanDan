@@ -1,12 +1,14 @@
 # 项目状态看板
 
-## 当前阶段：H3-A0 最终候选召回恢复（2026-09-15）
+## 当前阶段：H3-A1 DeepSeek 模型前策略投影（2026-09-15）
 
 - 项目所有者已确认后续策略主线：DeepSeek 是合法候选空间内的主要策略裁决者；本地层负责完整且有界的候选召回、公开局面结构化、人类经验检索、场景/目标识别和模型前推荐。不得把策略质量问题重新实现为成功模型动作后的强制覆盖。
 - 开局公式的定位已收敛为延迟约束下的窄、高置信本地快速路径，以及可提供给 DeepSeek 验证的模型前推荐。它不是第二套完整规则 AI；命中条件存在结构、协同、阻断或控制资源歧义时，应退出快速路径交给 DeepSeek。
 - H3-A1 已批准采用较完整、条件化的来源策略吸收，不再每次 live 暴露一个动作就追加一个局部神秘分数。策略目录统一覆盖：总体目标与冲突、开局/自由领牌、拆牌成本、控制与回手、跟牌争权、队友协同、危险对手、炸弹/通配、残局规划、不确定性与试探成本。
 - H3-A1 的目标链路固定为：`公开局面特征 -> 场景与目标 -> 人类经验 -> 候选结构比较 -> 定式推荐及反例 -> DeepSeek 原始选择`。作者、书目、URL、来源等级和激活状态继续只属于 provenance 治理平面，不参与检索评分、冲突扫描或模型 prompt。
-- 当前立即执行项仍是 H3-A0a：先修复最终候选硬预算与 natural pair 召回。若模型最终看不到关键牌型，后续策略知识和 prompt 无法可靠验收；H3-A0a 通过独立复审后，再将 `docs/NEXT_PROMPT.md` 切换为完整 H3-A1 Coding 任务。
+- H3-A0a 已由 `66009fc fix: bound DeepSeek prompt candidates` 完成并通过规划复审：最终集合硬上限 80，自由首出预留稳定最小自然 single/pair，overflow 依次有界保留 finishing、pressure、wildcard 和 ordinary，签名去重后按原始展示顺序返回。
+- 规划 Codex 在原 Coding worktree 独立复跑相关 230 项、主规则 39 项和全量 720 项；另对 500 个真实引擎初始局面做性质检查，全部满足预算、natural single/pair 召回、原始 ID 子集、签名唯一和重复顺序一致，第一层候选最大 247。提交已 fast-forward 到 `cao`，H3-A0/H3-A0a 封板。
+- 当前直接执行 `docs/NEXT_PROMPT.md` 的 H3-A1：用一个连贯实现批次把已审计公开材料较完整地投影到策略目录、公开候选特征、router/decision chain、RAG、模型前推荐和 prompt；不再按单个现场动作拆成零散补丁。
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
@@ -87,6 +89,7 @@
 - H3-A0 尚未封板：第一层 `_select_transition_actions()` 虽保留最小自然 pair，最终 `_limit_prompt_actions()` 在 critical 数量达到 80 时会无上限返回全部 critical；大量 run 动作又排在 transition 之前。真实引擎多个独立初始局面均复现最终集合超过 80 且不含任何自然 pair，已知 seed `47004` 同样复现该低敏事实。因此原“对 3 对模型不可见”缺口仍可能发生。
 - 下一项 H3-A0a 只修最终候选预算与 pair 召回：最终模型集合必须硬性 `<= 80`，同时保留代表性自然 single、最小自然 pair、四/五张同点数炸弹及有界的 finishing/pressure/wildcard 代表。不得提高常量、针对现场硬编码、修改 opening/RAG/provenance 或新增模型后置覆盖。
 - 新开局定式虽然不再自行按点数打分，但“strong”门槛仍来自既有项目手牌评分器的固定权重。它不阻断 H3-A0a 的候选修复，但在新的来源或离线校准前，只能称为保守启发式边界，不能宣称已证明的人类定式或策略增益。
+- `66009fc` 随后修复最终层：真实引擎原复现局面现在均压到 80 项并保留 natural single/pair；规划扩展复核覆盖 500 个独立初始局面、230/39/720 项测试。该提交不改变 opening、RAG、provenance、模型 source 或 Botzone 路径，H3-A0a 无复审发现。
 
 ### Connector-observed 牌谱实现与加固复审
 
