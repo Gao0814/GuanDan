@@ -410,6 +410,7 @@ class DeepSeekAIAgent(BaseAgent):
     card_confidence_prompt_enabled: bool = False
     strategy_router_shadow_enabled: bool = False
     strategy_intent_prompt_enabled: bool = False
+    strategy_recommendation_enabled: bool = True
     last_decision_source: str | None = field(default=None, init=False, repr=False)
     card_tracker: object | None = field(default=None, init=False, repr=False)
     last_card_confidence: "CardConfidenceState | None" = field(
@@ -432,6 +433,7 @@ class DeepSeekAIAgent(BaseAgent):
         init=False,
         repr=False,
     )
+    last_strategy_recommendation: object | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.card_confidence_shadow_enabled, bool):
@@ -444,6 +446,8 @@ class DeepSeekAIAgent(BaseAgent):
             raise ValueError("strategy_router_shadow_enabled must be a bool")
         if type(self.strategy_intent_prompt_enabled) is not bool:
             raise ValueError("strategy_intent_prompt_enabled must be a bool")
+        if type(self.strategy_recommendation_enabled) is not bool:
+            raise ValueError("strategy_recommendation_enabled must be a bool")
         if self.strategy_intent_prompt_enabled and not self.strategy_router_shadow_enabled:
             raise ValueError("strategy_intent_prompt_enabled requires strategy router shadow mode")
         config = AppConfig.from_env()
@@ -464,6 +468,7 @@ class DeepSeekAIAgent(BaseAgent):
         self.last_card_confidence_prompt = None
         self.last_strategy_intent = None
         self.last_strategy_intent_prompt = None
+        self.last_strategy_recommendation = None
         if not legal_actions:
             raise ValueError("legal_actions must not be empty")
 
@@ -582,6 +587,19 @@ class DeepSeekAIAgent(BaseAgent):
                     except Exception:
                         self.last_strategy_intent_prompt = None
 
+        strategy_recommendation: object | None = None
+        if self.strategy_recommendation_enabled:
+            try:
+                from agents.strategy_recommendation import build_strategy_recommendation
+                strategy_recommendation = build_strategy_recommendation(
+                    observation, legal_actions, strategy_context=self.last_strategy_intent,
+                )
+                self.last_strategy_recommendation = strategy_recommendation
+                if getattr(strategy_recommendation, "status", None) != "ready":
+                    strategy_recommendation = None
+            except Exception:
+                self.last_strategy_recommendation = None
+
         history = dict(observation.get("history", {}))
         card_tracking_summary: str | None = None
         if AppConfig.from_env().card_tracking_enabled:
@@ -672,6 +690,7 @@ class DeepSeekAIAgent(BaseAgent):
                         hand_eval=hand_evaluation,
                         top_k=self.rag_top_k,
                         phase_context=phase_context,
+                        strategy_context=self.last_strategy_intent,
                     )
                 else:
                     query = _rag_query_from_observation(observation)
@@ -709,6 +728,7 @@ class DeepSeekAIAgent(BaseAgent):
                 phase_context=phase_context,
                 card_confidence_prompt=card_confidence_prompt,
                 strategy_intent_prompt=strategy_intent_prompt,
+                strategy_recommendation=strategy_recommendation,
             )
             payload = {
                 "model": self.client._model,
@@ -750,6 +770,8 @@ class DeepSeekAIAgent(BaseAgent):
                 suggestion_kwargs["card_confidence_prompt"] = card_confidence_prompt
             if strategy_intent_prompt is not None:
                 suggestion_kwargs["strategy_intent_prompt"] = strategy_intent_prompt
+            if strategy_recommendation is not None:
+                suggestion_kwargs["strategy_recommendation"] = strategy_recommendation
             suggestion = self.client.suggest_action_id(
                 **suggestion_kwargs,
             )

@@ -30,7 +30,6 @@ _DIAGNOSTIC_ORDER = (
     "invalid_legal_actions",
     "invalid_phase_context",
     "phase_mismatch",
-    "opening_not_routed",
     "invalid_player_id",
     "invalid_team",
     "player_set_mismatch",
@@ -276,8 +275,6 @@ def route_strategy_intent(
         diagnostics.append("invalid_legal_actions" if not isinstance(legal_actions, list) or not legal_actions else "malformed_action")
     if not isinstance(observation, dict):
         return _unavailable(phase, *diagnostics, "invalid_observation")
-    if phase_is_valid and phase == OPENING:
-        return _unavailable(phase, *diagnostics, "opening_not_routed")
 
     my_info = observation.get("my_info")
     other_players = observation.get("other_players")

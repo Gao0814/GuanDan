@@ -226,7 +226,13 @@ class TestExperienceProvenance(unittest.TestCase):
                 "exp_lead_opening_strong_001",
                 "exp_lead_opening_medium_001",
                 "exp_lead_opening_weak_001",
+                "exp_midgame_control_001",
+                "exp_midgame_teammate_001",
+                "exp_midgame_block_001",
+                "exp_bomb_wildcard_001",
                 "exp_endgame_run_out_001",
+                "exp_card_memory_001",
+                "exp_soft_pair_probe_001",
             },
         )
         for doc in loaded:
@@ -234,6 +240,25 @@ class TestExperienceProvenance(unittest.TestCase):
                 {"author_or_institution", "title", "publication", "url_or_bibliography", "locator", "source_tier", "evidence_status"}
                 & set(doc.metadata)
             )
+
+    def test_active_corpus_covers_ten_domains_and_marks_soft_hypothesis(self) -> None:
+        loaded = KnowledgeBaseLoader(Path("rag")).load_experience_documents()
+        domains = {
+            domain
+            for doc in loaded
+            for domain in doc.metadata.get("strategy_domain", "").split(",")
+            if domain
+        }
+        self.assertEqual(
+            domains,
+            {
+                "overall_priority", "opening_free_lead", "hand_structure", "control_return_resource",
+                "follow_control", "teammate_coordination", "danger_opponent_block",
+                "bomb_wildcard_management", "endgame_planning", "uncertainty_probe",
+            },
+        )
+        soft = [doc for doc in loaded if doc.metadata.get("guidance_mode") == "soft_hypothesis"]
+        self.assertEqual([doc.doc_id for doc in soft], ["exp_soft_pair_probe_001"])
 
 
 if __name__ == "__main__":

@@ -75,6 +75,48 @@
       "evidence_status": "candidate"
     },
     {
+      "entry_id": "exp_soft_pair_probe_001",
+      "source_tier": "C", "claim_type": "strategy", "author_or_institution": "唐人游转载，原作者未确认",
+      "title": "掼蛋宝典－最权威的掼蛋技巧", "publication": "唐人游公开网页转载",
+      "url_or_bibliography": "https://guandan.uc55.com/Rule/Detail/201009_000206.html", "locator": "对子、三带二、顺子和炸弹的定性段落；无统计方法",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening", "lead", "follow_response"]}, "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_midgame_control_001",
+      "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
+      "title": "如何打好一把掼蛋的前半程", "publication": "京报体育, 2024-02-22",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml", "locator": "正文关于前半程权衡与观察的段落",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response"]}, "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_midgame_teammate_001",
+      "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
+      "title": "如何打好一把掼蛋的前半程", "publication": "京报体育, 2024-02-22",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml", "locator": "正文关于搭档协同与让牌的段落",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response"]}, "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_midgame_block_001",
+      "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
+      "title": "如何打好一把掼蛋的前半程", "publication": "京报体育, 2024-02-22",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml", "locator": "正文关于自己难以走完时限制对手的段落",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response"]}, "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_bomb_wildcard_001",
+      "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
+      "title": "如何打好一把掼蛋的前半程", "publication": "京报体育, 2024-02-22",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml", "locator": "正文关于局势变化时调整组牌的段落",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response", "endgame"]}, "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_card_memory_001",
+      "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
+      "title": "掼蛋需记牌", "publication": "京报体育, 2024-02-21",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/21/10706126.shtml", "locator": "正文关于王、级牌、A、10、5与断张的段落",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]}, "evidence_status": "active"
+    },
+    {
       "entry_id": "registry_book_wang_xiong_2024",
       "source_tier": "B",
       "claim_type": "publication_record",

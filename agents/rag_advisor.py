@@ -48,6 +48,8 @@ _KNOWLEDGE_METADATA_KEYS = frozenset(
         "opponent_count_bucket",
         "teammate_count_bucket",
         "belief_confidence",
+        "strategy_domain",
+        "guidance_mode",
     }
 )
 
@@ -194,6 +196,11 @@ class RAGAdvisor:
             topics.add("wildcard")
         if bool(scene_tags.get("has_joker_control")):
             topics.update({"joker", "joker_bomb", "control"})
+        intent = str(scene_tags.get("strategy_intent", ""))
+        if intent == "support_teammate":
+            topics.update({"teammate", "support"})
+        elif intent == "block_opponent":
+            topics.update({"opponent_pressure", "block"})
         return topics
 
     @staticmethod
@@ -450,8 +457,12 @@ class RAGAdvisor:
         hand_eval: dict[str, object] | None = None,
         top_k: int = 3,
         phase_context: GamePhaseContext | None = None,
+        strategy_context: object = None,
     ) -> dict[str, object]:
         scene_tags = self._scene_tags(observation, legal_actions, hand_eval, phase_context)
+        intent = getattr(strategy_context, "intent", None)
+        if isinstance(intent, str) and intent in {"run_out", "control", "support_teammate", "block_opponent"}:
+            scene_tags["strategy_intent"] = intent
         query = self.build_query(scene_tags)
 
         try:
