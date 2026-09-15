@@ -2101,3 +2101,14 @@ L5-A2b4 唯一 live 再次在新桌开始前 fail-closed，现已定位到 `enve
 - H3-A1 的核心验收不是宣称每条经验绝对正确，而是验证关键候选可见、场景/目标正确、策略及反例进入模型输入、结构比较可追溯、模型动作保持自主，并能将偏差定位到候选、特征、路由、知识、prompt 或模型选择中的具体一层。
 - 实施顺序固定为：先完成并独立复审 H3-A0a 最终候选硬预算/pair 召回；再用一个连贯 H3-A1 Coding 任务完成策略目录、来源内容、公开特征、router、RAG 与 prompt 投影及合成场景评测；最后用严格少于 10 次的预注册真实 DeepSeek 探针验证代表场景，是否 live 另行规划。
 - H3-A0a 现已通过；`docs/NEXT_PROMPT.md` 已切换为 H3-A1。H3-A1 允许把已审计 C 级转载中的定性打法作为明确标识的软策略假设接入 RAG/prompt，但不得采用其未披露方法的统计数字、不得形成本地直接动作，也不得覆盖 B 级正文或引擎真值。书目/商品介绍仍保持 registry-only。
+
+### H3-A1 纠错门槛（2026-09-15）
+
+首次实现 `d20dba3` 不并入主线。进入真实模型诊断前必须在同一 Coding worktree 完成一次纠错提交，并由规划 Codex 重新复审组合 diff。纠错门槛为：
+
+- 每个 active 经验条目必须有 loader→tagged retrieval→prompt 的可达证据；冲突扫描不得因“不能升级为暗牌事实”这类否定语境误杀记牌原则，同时仍拒绝真正的多局升级/贡还内容。
+- 十个 `strategy_domain` 必须由公开局面派生并实际参与 RAG 与模型前输入，不能只作为 corpus 标签并集；有序目标、反例检查与可选 shortlist 分离，证据不足时可以不给 shortlist，但不能虚构本地决策。
+- recommendation/candidate facts 只接受完整 canonical payload；所有枚举、ID、字符串、条数和字符预算严格 fail closed，调用方自由文本不得直接进入 prompt。
+- 有界代表选择必须覆盖当前局面的关键关系，而不是任取原顺序前 12 项；四/五炸、natural single/pair、控制资源、wildcard、finisher 与 fragmentation 均须有关系型 fixture。
+- B/C 来源映射不得升级证据等级；C 级炸弹等原则保持 `soft_hypothesis`，书目与统计内容不激活。
+- 完成原 H3-A1 九组关系型 fixture、相关/主规则/全量回归和真实引擎多状态可达性离线探针后，才允许规划下一阶段严格少于 10 次的真实 DeepSeek 请求。

@@ -327,4 +327,6 @@ H3-A0a 已由 `66009fc` 修复并独立复审：原6个真实引擎复现样本�
 
 ## 14. Recommended Starting Point
 
-直接执行 `docs/NEXT_PROMPT.md` 的 H3-A1 Coding任务：在已封板的候选预算与模型自主权基础上，用一个连贯批次建立来源策略目录、公开候选结构比较、开局模型前推荐、strategy router/RAG/prompt 投影和合成场景评测。不得从书目目录臆造打法，不得新增成功模型后的动作覆盖；实现完成后交回规划Codex独立复审。
+`d20dba3` 是 H3-A1 的首次业务实现，但规划复审未通过，主线仍停在其父提交 `90f321e`。旧回归 194/39/724 全部通过，然而真实运行路径仍有三类阻塞：记牌条目被“升级”子串冲突扫描误拒；十域 metadata 未形成 domain-driven RAG/prompt；candidate/recommendation 对非 canonical 输入、未知 domain 和无界文案未 fail closed。新增测试也未覆盖原九组关系 fixture。
+
+直接在 `d20dba3` 的原 Coding worktree 执行 `docs/NEXT_PROMPT.md` 的 H3-A1 纠错续作。完成前不得运行真实 DeepSeek 或 live；修复后交回规划 Codex 对 `90f321e..新提交` 的组合 diff 重新复审。

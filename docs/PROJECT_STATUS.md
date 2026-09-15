@@ -2116,3 +2116,14 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 独立只读复核确认 manifest 公开字段与 `44001`/seat 0/rule/profile/budget/HEAD 一致且含一个未输出 token 字段；workspace 仅有 `audit/`、`state/`、manifest，state/audit 文件为 0/0，summary/completion 均不存在。
 - 未请求人工建桌或启动 connector，故当前为 `precondition_failed: formal_preflight_validation_failed`，不是 pilot invalid；`44001` 继续有效，manifest 不得重写。
 - `tests/test_botzone_preflight_output.py` 明确允许 ready stdout 使用 LF 或 CRLF；规划复跑该文件 5 项通过。当前进入 L5-A4h11b：先用相同二进制捕获契约做 workspace 外诊断，通过后才允许一次 formal recovery preflight，并在成功后继续人工建桌流程。
+
+### 2026-09-15 H3-A1 首次实现复审未通过
+
+- Coding 提交 `d20dba3` 是规划基线 `90f321e` 的直接子提交，独立 worktree clean；主线没有合并该提交。
+- 规划 Codex 独立复跑 194 项 H3/DeepSeek/Botzone 相关测试、39 项主规则与 724 项全量，全部通过；`git show --check` 和生产 source 扫描也通过，未发现新的模型后动作覆盖、decision source、seed 特判或治理字段直接泄漏。
+- 这些旧回归不足以满足 H3-A1。新增测试净增只有 4 项，没有实现原 Prompt 要求的九组关系型 fixture。
+- 已复现实际运行缺陷：`exp_card_memory_001` 中“不能升级为炸弹”的“升级”被范围冲突子串扫描误判，导致条目 loader 可见但 tagged retrieval 永远拒绝。30 个真实引擎固定初始局、2677 个后续公开状态的离线遍历中该条目命中 0 次。
+- `strategy_domains` 当前只存在于 corpus metadata 与 recommendation 对象，未进入 RAG scene/query 匹配或最终 prompt；十域测试只验证 metadata 并集。非 finishing 跟牌与仅有四/五炸的自由领牌 recommendation 均为 `unavailable`，因此不能判定十域决策链已完成。
+- 新候选派生器仍可接受缺 `declared_cards`、`wildcard_info`、`display_text` 的非 canonical action；推荐验证器也接受未知 domain 和任意 5000 字符文案并写入 prompt，违反 fail-closed 与固定预算不变量。
+- 来源映射还需收口：炸弹保留的具体定性原则只能来自已批准的 C 级 soft hypothesis，不能借 B 级“动态调整组牌”的宽泛表述升级为 B 级具体打法。
+- 当前阶段保持 H3-A1 未完成，不进入真实 DeepSeek 探针或 live。下一任务是 `docs/NEXT_PROMPT.md` 的 H3-A1 纠错续作；修复提交必须建立在 `d20dba3` 上，之后由规划 Codex 对组合 diff 重新完整复审。
