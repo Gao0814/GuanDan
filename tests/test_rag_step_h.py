@@ -148,7 +148,7 @@ class TestRAGStepH(unittest.TestCase):
         )
 
         self.assertIn("exp_lead_opening_weak_001", _hit_ids(lead_context, "experience_hits"))
-        self.assertIn("exp_follow_response_basic_001", _hit_ids(follow_context, "experience_hits"))
+        self.assertNotIn("exp_follow_response_basic_001", _hit_ids(follow_context, "experience_hits"))
         self.assertIn("exp_endgame_run_out_001", _hit_ids(endgame_context, "experience_hits"))
 
     def test_rule_topics_hit_wildcard_bomb_and_pass(self) -> None:
@@ -385,19 +385,6 @@ class TestRAGStepH(unittest.TestCase):
         )
         self.assertEqual(chosen, 2)
 
-        opening_agent = DeepSeekAIAgent(
-            player_id=1,
-            client=client,
-            rag_advisor=rag,
-            hand_evaluation_enabled=False,
-            opening_formula_enabled=True,
-        )
-        chosen = opening_agent.select_action(
-            _observation(hand_count=20),
-            [_action(1, "single", ["9"], ["9S"]), _action(2, "pair", ["7", "7"], ["7S", "7H"])],
-        )
-        self.assertEqual(chosen, 2)
-
         self.assertEqual(rag.calls, 0)
         self.assertEqual(client.calls, 0)
 
@@ -552,9 +539,9 @@ class TestRAGStepH(unittest.TestCase):
         self.assertIn("【场景标签】", prompt)
         self.assertIn("scene: follow_response", prompt)
         self.assertIn("【规则库依据】", prompt)
-        self.assertIn("rule_pass_follow_001", prompt)
+        self.assertNotIn("rule_pass_follow_001", prompt)
         self.assertIn("【经验库依据】", prompt)
-        self.assertIn("exp_follow_response_basic_001", prompt)
+        self.assertNotIn("exp_follow_response_basic_001", prompt)
         self.assertIn("不能替代 legal_actions", prompt)
 
 

@@ -14,6 +14,7 @@ import time
 from typing import TYPE_CHECKING, Protocol
 from urllib import request as urllib_request
 
+from agents.action_structure import FreeLeadResidualStructure, summarize_free_lead_residual_structures
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
 
 if TYPE_CHECKING:
@@ -356,7 +357,11 @@ class DeepSeekClient:
         return pattern
 
     @staticmethod
-    def _action_summary_entry(action: dict[str, object], current_level_rank: str) -> str:
+    def _action_summary_entry(
+        action: dict[str, object],
+        current_level_rank: str,
+        residual_structure: FreeLeadResidualStructure | None = None,
+    ) -> str:
         action_id = action.get("action_id")
         brief = DeepSeekClient._compact_action_text(
             action,
@@ -389,6 +394,14 @@ class DeepSeekClient:
                     DeepSeekClient._compact_json(wildcard_info),
                     PROMPT_MAX_WILDCARD_INFO_CHARS,
                 )
+            )
+        if residual_structure is not None:
+            clears = "是" if residual_structure.clears_played_rank_groups else "否"
+            fields.append(
+                "残余结构="
+                f"清空所出点数组:{clears},"
+                f"残余孤张点数:{residual_structure.residual_singleton_rank_count},"
+                f"估计剩余点数组:{residual_structure.estimated_remaining_rank_groups}"
             )
         prefix = f"#{action_id} " if action_id is not None else ""
         return prefix + " | ".join(fields)
@@ -509,6 +522,10 @@ class DeepSeekClient:
             if len(pairs) > 1:
                 add_candidate(pairs[-1])
 
+        natural_pairs = [action for action in pairs if not DeepSeekClient._has_wildcard(action)]
+        if singles and natural_pairs:
+            add_candidate(natural_pairs[0])
+
         if constraint != "free" and passes:
             add_candidate(passes[0])
 
@@ -531,6 +548,7 @@ class DeepSeekClient:
         step_no: int,
         hand_count: int | None,
         current_level_rank: str,
+        residual_structures: dict[int, FreeLeadResidualStructure] | None = None,
     ) -> list[str]:
         scene = "lead" if constraint == "free" else "follow"
         buckets: dict[str, list[dict[str, object]]] = {
@@ -572,7 +590,21 @@ class DeepSeekClient:
             unique_actions = DeepSeekClient._unique_actions_by_signature(actions)
             if not unique_actions:
                 continue
-            items = [DeepSeekClient._action_summary_entry(action, current_level_rank) for action in unique_actions]
+            items = []
+            for action in unique_actions:
+                action_id = action.get("action_id")
+                residual_structure = (
+                    residual_structures.get(action_id)
+                    if residual_structures is not None and isinstance(action_id, int)
+                    else None
+                )
+                items.append(
+                    DeepSeekClient._action_summary_entry(
+                        action,
+                        current_level_rank,
+                        residual_structure,
+                    )
+                )
             lines.append(f"{label}：{'、'.join(items)}")
 
         return lines
@@ -790,7 +822,6 @@ class DeepSeekClient:
 
     @staticmethod
     def _rag_title_and_body(item: dict[str, object]) -> tuple[str, str]:
-        source = str(item.get("source_id", "unknown"))
         snippet_lines = str(item.get("snippet", "")).splitlines()
         title = ""
         body_lines: list[str] = []
@@ -802,7 +833,7 @@ class DeepSeekClient:
                 title = line.lstrip("#").strip()
                 continue
             body_lines.append(line)
-        title = DeepSeekClient._bounded_text(title or source, PROMPT_MAX_RAG_TITLE_CHARS)
+        title = DeepSeekClient._bounded_text(title or "知识条目", PROMPT_MAX_RAG_TITLE_CHARS)
         body = DeepSeekClient._bounded_text(" ".join(body_lines), PROMPT_MAX_RAG_BODY_CHARS)
         return title, body
 
@@ -812,7 +843,6 @@ class DeepSeekClient:
             return ["（无）"]
         lines: list[str] = []
         for item in items[:PROMPT_MAX_RAG_HITS_PER_LAYER]:
-            source = str(item.get("source_id", "unknown"))
             metadata = item.get("metadata", {})
             if not isinstance(metadata, dict):
                 metadata = {}
@@ -820,7 +850,8 @@ class DeepSeekClient:
             title, body = DeepSeekClient._rag_title_and_body(item)
             topic_text = f"；topic={topic}" if topic else ""
             body_text = f"：{body}" if body else ""
-            lines.append(f"- {title}（id={source}{topic_text}）{body_text}")
+            suffix = f"（{topic_text.lstrip('；')}）" if topic_text else ""
+            lines.append(f"- {title}{suffix}{body_text}")
         return lines
 
     @staticmethod
@@ -953,6 +984,7 @@ class DeepSeekClient:
         phase_context: GamePhaseContext | None = None,
         card_confidence_prompt: "CardConfidencePromptPayload | None" = None,
         strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None,
+        residual_structure_source_actions: list[dict[str, object]] | None = None,
     ) -> str:
         """Build the final Step-H structured prompt from public payloads."""
         lines: list[str] = []
@@ -968,6 +1000,17 @@ class DeepSeekClient:
             legal_actions,
             constraint=constraint,
             hand_count=hand_count,
+        )
+        residual_facts = summarize_free_lead_residual_structures(
+            {"my_info": my_info, "current_round": current_round},
+            residual_structure_source_actions
+            if residual_structure_source_actions is not None
+            else prompt_actions,
+        )
+        residual_structures = (
+            {item.action_id: item for item in residual_facts}
+            if residual_facts is not None
+            else None
         )
 
         lines.append("【任务与硬约束】")
@@ -1049,6 +1092,10 @@ class DeepSeekClient:
         lines.append("")
 
         lines.append("【候选动作】")
+        if residual_structures is not None:
+            lines.append(
+                "残余结构只按公开手牌与carrier计算；估计剩余点数组不是动作指令，也不保证后续牌权。"
+            )
         if len(prompt_actions) < len(legal_actions):
             lines.append(
                 f"剪枝结果共{len(legal_actions)}个；按展示上限保留{len(prompt_actions)}个，关键动作优先保留。"
@@ -1060,6 +1107,7 @@ class DeepSeekClient:
                 step_no=step_no,
                 hand_count=hand_count,
                 current_level_rank=current_level_rank,
+                residual_structures=residual_structures,
             )
         )
         lines.append("")
@@ -1183,6 +1231,7 @@ class DeepSeekClient:
             phase_context=phase_context,
             card_confidence_prompt=card_confidence_prompt,
             strategy_intent_prompt=strategy_intent_prompt,
+            residual_structure_source_actions=legal_actions,
         )
 
         if verbose:

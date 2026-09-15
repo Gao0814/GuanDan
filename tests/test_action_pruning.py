@@ -191,6 +191,45 @@ class TestActionPruning(unittest.TestCase):
         self.assertNotIn(3, {action["action_id"] for action in lead})
         self.assertIn(3, {action["action_id"] for action in follow})
 
+    def test_free_lead_singles_still_keep_smallest_natural_pair(self) -> None:
+        legal_actions = [
+            _action(1, "single", ["3"], ["3S"]),
+            _action(2, "single", ["K"], ["KS"]),
+            _action(3, "pair", ["9", "9"], ["9S", "9H"]),
+            _action(4, "pair", ["4", "4"], ["4S", "4H"]),
+            _action(
+                5,
+                "pair",
+                ["3", "3"],
+                ["3H", "2H"],
+                wildcard_count=1,
+                wildcard_info=[{"carrier_card": "2H", "declared_as": "3H"}],
+            ),
+        ]
+
+        pruned = DeepSeekClient._prune_legal_actions(
+            legal_actions,
+            "free",
+            step_no=8,
+            hand_count=20,
+        )
+        ids = [action["action_id"] for action in pruned]
+
+        self.assertEqual(ids[:3], [1, 2, 4])
+        self.assertIn(5, ids)
+        self.assertNotIn(3, ids)
+        self.assertTrue(set(ids).issubset({1, 2, 3, 4, 5}))
+        prompt = DeepSeekClient._build_structured_prompt(
+            my_info=_observation()["my_info"],
+            current_round=_observation()["current_round"],
+            other_players=_observation()["other_players"],
+            history=_observation()["history"],
+            legal_actions=pruned,
+        )
+        self.assertIn("action_id=1", prompt)
+        self.assertIn("action_id=2", prompt)
+        self.assertIn("action_id=4", prompt)
+
     def test_pruned_action_ids_all_come_from_original_legal_actions(self) -> None:
         legal_actions = [
             _action(1, "single", ["3"], ["3S"]),
@@ -204,9 +243,15 @@ class TestActionPruning(unittest.TestCase):
 
     def test_opening_formula_uses_raw_legal_actions_even_if_prune_hides_action(self) -> None:
         observation = _observation(hand_count=20)
+        observation["my_info"]["hand_cards"] = ["3S", "9S", "SJ", "BJ"] + [
+            card
+            for rank in ("4", "5", "6", "7", "8", "10", "J", "Q")
+            for card in (f"{rank}S", f"{rank}H")
+        ]
         legal_actions = [
-            _action(1, "single", ["9"], ["9S"]),
-            _action(2, "pair", ["7", "7"], ["7S", "7H"]),
+            _action(1, "single", ["3"], ["3S"]),
+            _action(2, "single", ["9"], ["9S"]),
+            _action(3, "single", ["SJ"], ["SJ"]),
         ]
         client = RaisingClient()
         rag = CountingRAGAdvisor()
@@ -218,10 +263,17 @@ class TestActionPruning(unittest.TestCase):
             opening_formula_enabled=True,
         )
 
-        with mock.patch.object(DeepSeekClient, "_prune_legal_actions", return_value=[legal_actions[0]]) as prune_mock:
+        with mock.patch.object(
+            DeepSeekClient,
+            "_prune_legal_actions",
+            return_value=[legal_actions[1]],
+        ) as prune_mock, mock.patch(
+            "agents.deepseek_ai.evaluate_hand",
+            return_value={"label": "strong", "control_score": 24},
+        ):
             chosen = agent.select_action(observation, legal_actions)
 
-        self.assertEqual(chosen, 2)
+        self.assertEqual(chosen, 1)
         self.assertEqual(agent.last_decision_source, "local_opening_formula")
         prune_mock.assert_not_called()
         self.assertEqual(client.calls, 0)

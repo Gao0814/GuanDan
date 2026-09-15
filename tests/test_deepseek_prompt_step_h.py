@@ -212,9 +212,9 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
         )
 
         self.assertIn("scene: follow_response", prompt)
-        self.assertIn("rule:1", prompt)
+        self.assertNotIn("rule:1", prompt)
         self.assertIn("跟牌只能同型压制", prompt)
-        self.assertIn("exp:1", prompt)
+        self.assertNotIn("exp:1", prompt)
         self.assertIn("跟牌时要看压制收益", prompt)
         self.assertLess(prompt.index("【规则库依据】"), prompt.index("【经验库依据】"))
 
@@ -514,15 +514,6 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
                 2,
             )
 
-            opening_agent = DeepSeekAIAgent(1, client, rag_advisor=rag, hand_evaluation_enabled=False, opening_formula_enabled=True)
-            self.assertEqual(
-                opening_agent.select_action(
-                    _observation(hand_count=20, step_no=0),
-                    [_action(1, "single", ["9"], ["9S"]), _action(2, "pair", ["7", "7"], ["7S", "7H"])],
-                ),
-                2,
-            )
-
         self.assertEqual(client.calls, 0)
         self.assertEqual(rag.calls, 0)
 
@@ -688,13 +679,27 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
                 ),
                 2,
             )
-            self.assertEqual(
-                agent.select_action(
-                    _observation(hand_count=20, step_no=0),
-                    [_action(1, "single", ["3"], ["3S"]), _action(2, "single", ["9"], ["9S"])],
-                ),
-                2,
-            )
+            opening_observation = _observation(hand_count=20, step_no=0)
+            opening_observation["my_info"]["hand_cards"] = ["3S", "9S", "SJ", "BJ"] + [
+                card
+                for rank in ("4", "5", "6", "7", "8", "10", "J", "Q")
+                for card in (f"{rank}S", f"{rank}H")
+            ]
+            with mock.patch(
+                "agents.deepseek_ai.evaluate_hand",
+                return_value={"label": "strong", "control_score": 24},
+            ):
+                self.assertEqual(
+                    agent.select_action(
+                        opening_observation,
+                        [
+                            _action(1, "single", ["3"], ["3S"]),
+                            _action(2, "single", ["9"], ["9S"]),
+                            _action(3, "single", ["SJ"], ["SJ"]),
+                        ],
+                    ),
+                    1,
+                )
 
         pipeline.assert_not_called()
         formatter.assert_not_called()

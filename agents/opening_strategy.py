@@ -1,21 +1,32 @@
-"""Formula-based early lead strategy for DeepSeek-free opening decisions.
-
-This module only consumes public observation and legal_actions payloads.  It
-never constructs actions and never decides legality.
-"""
+"""Narrow, source-backed opening conventions over public canonical actions."""
 
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping, Sequence
 
 from agents.game_phase import GamePhaseContext, OPENING, classify_game_phase
 
-HIGH_RISK_PATTERNS = {"bomb", "straight_flush", "joker_bomb"}
-RUN_PATTERNS = {"triple_with_pair", "pair_straight", "straight", "steel_plate"}
-CONTROL_RANKS = {"A", "2", "SJ", "BJ"}
-NORMAL_RANKS = {"3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"}
-SUITS = {"S", "H", "C", "D"}
-RANK_ORDER = {
+
+_NORMAL_RANKS = frozenset({"3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"})
+_SUITS = frozenset({"S", "H", "C", "D"})
+_CONTROL_RANKS = frozenset({"A", "2", "SJ", "BJ"})
+_PRESSURE_PATTERNS = frozenset({"bomb", "straight_flush", "joker_bomb"})
+_PATTERNS = frozenset(
+    {
+        "single",
+        "pair",
+        "triple",
+        "triple_with_pair",
+        "straight",
+        "pair_straight",
+        "steel_plate",
+        "bomb",
+        "straight_flush",
+        "joker_bomb",
+    }
+)
+_RANK_ORDER = {
     "3": 3,
     "4": 4,
     "5": 5,
@@ -32,60 +43,10 @@ RANK_ORDER = {
     "SJ": 16,
     "BJ": 17,
 }
-PATTERN_BASE_SCORE = {
-    "single": 10,
-    "pair": 24,
-    "triple": 20,
-    "triple_with_pair": 32,
-    "straight": 28,
-    "pair_straight": 30,
-    "steel_plate": 34,
-    "bomb": -60,
-    "straight_flush": -55,
-    "joker_bomb": -80,
-}
-
-_MALFORMED_CARRIER_COST = 80
-_PARTIAL_PAIR_COST = 24
-_PARTIAL_TRIPLE_COST = 32
-_PARTIAL_FOUR_PLUS_COST = 48
 
 
-def _token_list(value: object) -> list[object]:
-    """Copy only the public list/tuple token payload shape."""
-    if isinstance(value, (list, tuple)):
-        return list(value)
-    return []
-
-
-def _is_valid_token(token: object) -> bool:
-    """Validate the public token grammar without consulting the engine."""
-    if not isinstance(token, str):
-        return False
-    if token in {"SJ", "BJ"}:
-        return True
-    return len(token) >= 2 and token[-1] in SUITS and token[:-1] in NORMAL_RANKS
-
-
-def normalize_hand_strength(hand_eval: dict[str, object] | None) -> str:
-    """Map hand-evaluation payloads to stable strategy roles."""
-    if not isinstance(hand_eval, dict):
-        return "medium"
-
-    label = str(hand_eval.get("label", "")).strip().lower()
-    if label in {"极强", "较强", "strong", "very_strong", "rather_strong"}:
-        return "strong"
-    if label in {"偏弱", "极弱", "weak", "very_weak", "rather_weak"}:
-        return "weak"
-    if label in {"中等", "medium", "average", "fair"}:
-        return "medium"
-
-    score = _coerce_int(hand_eval.get("total_score"), default=-1)
-    if score >= 60:
-        return "strong"
-    if score >= 0 and score < 40:
-        return "weak"
-    return "medium"
+def _is_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _coerce_int(value: object, default: int = 0) -> int:
@@ -95,56 +56,42 @@ def _coerce_int(value: object, default: int = 0) -> int:
         return default
 
 
-def _rank_of(token: object) -> str:
-    value = str(token)
-    if value in {"SJ", "BJ"}:
-        return value
-    if len(value) >= 2 and value[-1] in {"S", "H", "C", "D"}:
-        return value[:-1]
-    return value
+def _rank_of(token: str) -> str:
+    if token in {"SJ", "BJ"}:
+        return token
+    return token[:-1]
 
 
-def _action_id_sort_value(action: dict[str, object]) -> int:
-    return _coerce_int(action.get("action_id"), default=10**9)
+def _is_valid_token(token: object) -> bool:
+    if not isinstance(token, str):
+        return False
+    if token in {"SJ", "BJ"}:
+        return True
+    return len(token) >= 2 and token[-1] in _SUITS and token[:-1] in _NORMAL_RANKS
+
+
+def normalize_hand_strength(hand_eval: dict[str, object] | None) -> str:
+    """Map the existing public hand evaluation to stable strategy roles."""
+
+    if not isinstance(hand_eval, dict):
+        return "medium"
+    label = str(hand_eval.get("label", "")).strip().lower()
+    if label in {"极强", "较强", "strong", "very_strong", "rather_strong"}:
+        return "strong"
+    if label in {"偏弱", "极弱", "weak", "very_weak", "rather_weak"}:
+        return "weak"
+    if label in {"中等", "medium", "average", "fair"}:
+        return "medium"
+    score = _coerce_int(hand_eval.get("total_score"), default=-1)
+    if score >= 60:
+        return "strong"
+    if 0 <= score < 40:
+        return "weak"
+    return "medium"
 
 
 class OpeningFormulaStrategy:
-    """Select an early free-lead action from original legal_actions."""
-
-    def select_action(
-        self,
-        observation: dict[str, object],
-        legal_actions: list[dict[str, object]],
-        hand_eval: dict[str, object] | None = None,
-        phase_context: GamePhaseContext | None = None,
-    ) -> object | None:
-        if not self._is_applicable(observation, legal_actions, phase_context=phase_context):
-            return None
-
-        candidates = [
-            action
-            for action in legal_actions
-            if str(action.get("declared_pattern")) != "pass"
-        ]
-        if not candidates:
-            return None
-
-        non_risk = [
-            action
-            for action in candidates
-            if str(action.get("declared_pattern")) not in HIGH_RISK_PATTERNS
-        ]
-        scorable = non_risk or candidates
-        if not scorable:
-            return None
-
-        context = self._context(observation, legal_actions, hand_eval)
-        scored = [
-            (self._score_action(action, context, bool(non_risk)), self._tie_break(action), action)
-            for action in scorable
-        ]
-        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-        return scored[0][2].get("action_id")
+    """Apply only the strong-control natural-small-single opening convention."""
 
     def _is_applicable(
         self,
@@ -153,203 +100,169 @@ class OpeningFormulaStrategy:
         *,
         phase_context: GamePhaseContext | None = None,
     ) -> bool:
-        if not legal_actions:
-            return False
-        if all(str(action.get("declared_pattern")) == "pass" for action in legal_actions):
-            return False
+        """Report only the shared phase/lead gate; selection remains stricter."""
 
-        current_round = dict(observation.get("current_round", {}))
-        if current_round.get("table_action") is not None:
+        if not legal_actions or not isinstance(observation, Mapping):
             return False
-        constraint = str(current_round.get("constraint", "free"))
-        if constraint != "free":
+        current_round = observation.get("current_round")
+        if not isinstance(current_round, Mapping):
             return False
+        try:
+            computed = classify_game_phase(observation)
+        except Exception:
+            return False
+        return (
+            current_round.get("constraint") == "free"
+            and current_round.get("table_action") is None
+            and computed.phase == OPENING
+            and (phase_context is None or phase_context == computed)
+        )
 
-        context = phase_context or classify_game_phase(observation)
-        return context.phase == OPENING
-
-    def _context(
+    def select_action(
         self,
         observation: dict[str, object],
         legal_actions: list[dict[str, object]],
-        hand_eval: dict[str, object] | None,
-    ) -> dict[str, object]:
-        my_info = dict(observation.get("my_info", {}))
-        current_round = dict(observation.get("current_round", {}))
-        hand_tokens = _token_list(my_info.get("hand_cards", []))
-        hand_tokens_valid = bool(hand_tokens) and all(_is_valid_token(token) for token in hand_tokens)
-        hand_cards = [token for token in hand_tokens if isinstance(token, str)]
-        ranks = [_rank_of(card) for card in hand_cards]
-        current_level_rank = str(current_round.get("current_level_rank", ""))
-        strength_role = normalize_hand_strength(hand_eval)
-        control_score = _coerce_int(hand_eval.get("control_score"), default=0) if isinstance(hand_eval, dict) else 0
-        remaining_singles = _coerce_int(my_info.get("remaining_single_card_count"), default=0)
-        has_control = bool({"SJ", "BJ"} & set(ranks)) or control_score >= 18
-        has_natural_triple_with_pair = any(
-            str(action.get("declared_pattern")) == "triple_with_pair"
-            and _coerce_int(action.get("wildcard_count"), default=0) == 0
+        hand_eval: dict[str, object] | None = None,
+        phase_context: GamePhaseContext | None = None,
+    ) -> object | None:
+        validated = self._validated_context(observation, legal_actions, phase_context)
+        if validated is None:
+            return None
+        hand, level_rank = validated
+        strength = normalize_hand_strength(hand_eval)
+        if strength != "strong":
+            return None
+
+        rank_counts = Counter(_rank_of(card) for card in hand.elements())
+        structured_tokens = {
+            str(card)
+            for action in legal_actions
+            if action["wildcard_count"] == 0
+            and len(action["carrier_cards"]) > 1
+            for card in action["carrier_cards"]
+        }
+        safe_singles: list[tuple[int, dict[str, object]]] = []
+        for action in legal_actions:
+            if action["declared_pattern"] != "single" or action["wildcard_count"] != 0:
+                continue
+            carriers = action["carrier_cards"]
+            declared = action["declared_cards"]
+            assert isinstance(carriers, list) and isinstance(declared, list)
+            if len(carriers) != 1 or len(declared) != 1:
+                continue
+            carrier_rank = _rank_of(str(carriers[0]))
+            declared_rank = str(declared[0])
+            if _is_valid_token(declared_rank):
+                declared_rank = _rank_of(declared_rank)
+            if (
+                declared_rank != carrier_rank
+                or carrier_rank in _CONTROL_RANKS
+                or carrier_rank == level_rank
+                or rank_counts.get(carrier_rank) != 1
+                or str(carriers[0]) in structured_tokens
+            ):
+                continue
+            safe_singles.append((_RANK_ORDER[carrier_rank], action))
+
+        distinct_ranks = {rank_value for rank_value, _ in safe_singles}
+        if len(distinct_ranks) < 2:
+            return None
+        lowest = min(distinct_ranks)
+        targets = [action for rank_value, action in safe_singles if rank_value == lowest]
+        if len(targets) != 1 or not self._has_return_resource(hand, legal_actions, level_rank):
+            return None
+        return targets[0]["action_id"]
+
+    @staticmethod
+    def _has_return_resource(
+        hand: Counter[str],
+        legal_actions: list[dict[str, object]],
+        level_rank: str,
+    ) -> bool:
+        if any(_rank_of(card) in _CONTROL_RANKS | {level_rank} for card in hand):
+            return True
+        return any(
+            action["declared_pattern"] in _PRESSURE_PATTERNS
+            and action["wildcard_count"] == 0
             for action in legal_actions
         )
-        return {
-            "strength_role": strength_role,
-            "control_score": control_score,
-            "remaining_singles": remaining_singles,
-            "has_control": has_control,
-            "has_joker": bool({"SJ", "BJ"} & set(ranks)),
-            "current_level_rank": current_level_rank,
-            "has_natural_triple_with_pair": has_natural_triple_with_pair,
-            "hand_token_counts": Counter(hand_cards),
-            "hand_rank_counts": Counter(ranks),
-            "hand_tokens_valid": hand_tokens_valid,
-        }
 
-    def _score_action(
-        self,
-        action: dict[str, object],
-        context: dict[str, object],
-        has_non_risk_option: bool,
-    ) -> int:
-        pattern = str(action.get("declared_pattern"))
-        declared_cards = _token_list(action.get("declared_cards", []))
-        carrier_cards = _token_list(action.get("carrier_cards", []))
-        declared_ranks = [_rank_of(token) for token in declared_cards]
-        carrier_ranks = [_rank_of(token) for token in carrier_cards]
-        wildcard_count = _coerce_int(action.get("wildcard_count"), default=0)
-        carrier_count = len(carrier_cards)
-        main_rank = declared_ranks[0] if declared_ranks else ""
-        main_value = RANK_ORDER.get(main_rank, 0)
-        strength_role = str(context.get("strength_role", "medium"))
-        control_score = _coerce_int(context.get("control_score"), default=0)
-        has_control = bool(context.get("has_control", False))
-        current_level_rank = str(context.get("current_level_rank", ""))
-        is_risk = pattern in HIGH_RISK_PATTERNS
-        is_natural = wildcard_count == 0
-        is_joker_single = pattern == "single" and main_rank in {"SJ", "BJ"}
-        is_control_single = pattern == "single" and (
-            main_rank in CONTROL_RANKS or main_rank == current_level_rank
-        )
-
-        score = PATTERN_BASE_SCORE.get(pattern, 0)
-        score += carrier_count * 5
-        score -= wildcard_count * 16
-        if is_natural:
-            score += 8
-        if is_risk:
-            score -= 70 if has_non_risk_option else 20
-
-        if strength_role == "strong" or control_score >= 20:
-            score += self._strong_hand_adjustment(pattern, main_value, is_joker_single, is_control_single)
-        elif strength_role == "medium":
-            score += self._medium_hand_adjustment(pattern, is_natural)
-        elif strength_role == "weak":
-            score += self._weak_hand_adjustment(pattern, main_value, is_natural)
-
-        if pattern == "single" and has_control and not is_control_single:
-            score += 18
-        if pattern == "single" and is_joker_single:
-            score -= 45
-        if pattern == "single" and main_value <= RANK_ORDER["8"]:
-            score -= 25
-        if pattern == "single" and main_value >= RANK_ORDER["9"]:
-            score += 12
-        if pattern == "triple_with_pair" and is_natural and not bool(context.get("has_joker", False)):
-            score += 18
-        if pattern in RUN_PATTERNS and is_natural:
-            score += 6
-        if any(rank in {"SJ", "BJ"} for rank in carrier_ranks) and pattern != "single":
-            score -= 30
-        return score - self._residual_structure_cost(action, context)
-
-    def _residual_structure_cost(
-        self,
-        action: dict[str, object],
-        context: dict[str, object],
-    ) -> int:
-        """Penalize partial rank groups actually consumed by carrier cards."""
-        carrier_cards = _token_list(action.get("carrier_cards", []))
-        if not carrier_cards:
-            return _MALFORMED_CARRIER_COST
-
-        token_counts = context.get("hand_token_counts")
-        rank_counts = context.get("hand_rank_counts")
+    @staticmethod
+    def _validated_context(
+        observation: object,
+        legal_actions: object,
+        phase_context: GamePhaseContext | None,
+    ) -> tuple[Counter[str], str] | None:
+        if not isinstance(observation, Mapping):
+            return None
+        my_info = observation.get("my_info")
+        current_round = observation.get("current_round")
+        if not isinstance(my_info, Mapping) or not isinstance(current_round, Mapping):
+            return None
+        player_id = my_info.get("player_id")
+        hand_count = my_info.get("hand_count")
+        hand_cards = my_info.get("hand_cards")
+        level_rank = current_round.get("current_level_rank")
+        try:
+            computed_phase = classify_game_phase(dict(observation))
+        except Exception:
+            return None
+        hand_token_counts = Counter(hand_cards) if isinstance(hand_cards, list) else Counter()
         if (
-            context.get("hand_tokens_valid") is not True
-            or not isinstance(token_counts, Counter)
-            or not isinstance(rank_counts, Counter)
-            or any(not _is_valid_token(token) for token in carrier_cards)
+            not _is_int(player_id)
+            or not _is_int(hand_count)
+            or hand_count <= 0
+            or not isinstance(hand_cards, list)
+            or len(hand_cards) != hand_count
+            or any(not _is_valid_token(card) for card in hand_cards)
+            or any(count > 2 for count in hand_token_counts.values())
+            or type(level_rank) is not str
+            or level_rank not in _NORMAL_RANKS
+            or current_round.get("current_player_id") != player_id
+            or current_round.get("constraint") != "free"
+            or current_round.get("table_action") is not None
+            or computed_phase.phase != OPENING
+            or (phase_context is not None and phase_context != computed_phase)
+            or not isinstance(legal_actions, Sequence)
+            or isinstance(legal_actions, (str, bytes))
+            or len(legal_actions) < 2
         ):
-            return _MALFORMED_CARRIER_COST
+            return None
 
-        removed_tokens = Counter(carrier_cards)
-        if any(count <= 0 or count > token_counts.get(token, 0) for token, count in removed_tokens.items()):
-            return _MALFORMED_CARRIER_COST
-
-        removed_ranks = Counter(_rank_of(token) for token in removed_tokens.elements())
-        cost = 0
-        for rank, removed_count in removed_ranks.items():
-            before_count = rank_counts.get(rank, 0)
-            if before_count <= 0 or removed_count <= 0 or removed_count > before_count:
-                return _MALFORMED_CARRIER_COST
-            if removed_count == before_count:
-                continue
-            if before_count == 2:
-                cost += _PARTIAL_PAIR_COST
-            elif before_count == 3:
-                cost += _PARTIAL_TRIPLE_COST
-            elif before_count >= 4:
-                cost += _PARTIAL_FOUR_PLUS_COST
-        return cost
-
-    def _strong_hand_adjustment(
-        self,
-        pattern: str,
-        main_value: int,
-        is_joker_single: bool,
-        is_control_single: bool,
-    ) -> int:
-        if pattern == "single":
-            if is_joker_single:
-                return -30
-            if is_control_single:
-                return -12
-            return 24 + min(main_value, 12)
-        if pattern == "pair":
-            return 12
-        if pattern in RUN_PATTERNS:
-            return -6
-        if pattern in HIGH_RISK_PATTERNS:
-            return -80
-        return 0
-
-    def _medium_hand_adjustment(self, pattern: str, is_natural: bool) -> int:
-        if pattern == "pair":
-            return 40
-        if pattern in RUN_PATTERNS:
-            return 12 if is_natural else 4
-        if pattern == "single":
-            return -8
-        return 0
-
-    def _weak_hand_adjustment(self, pattern: str, main_value: int, is_natural: bool) -> int:
-        if pattern in RUN_PATTERNS:
-            return 28 if is_natural else 12
-        if pattern == "pair":
-            return 24
-        if pattern == "triple":
-            return 12
-        if pattern == "single":
-            return 14 if main_value >= RANK_ORDER["9"] else -35
-        return 0
-
-    def _tie_break(self, action: dict[str, object]) -> tuple[int, int, int, int, int]:
-        wildcard_count = _coerce_int(action.get("wildcard_count"), default=0)
-        pattern = str(action.get("declared_pattern"))
-        is_risk = pattern in HIGH_RISK_PATTERNS
-        carrier_count = len(_token_list(action.get("carrier_cards", [])))
-        return (
-            -wildcard_count,
-            0 if is_risk else 1,
-            carrier_count,
-            1 if wildcard_count == 0 else 0,
-            -_action_id_sort_value(action),
-        )
+        hand = hand_token_counts
+        action_ids: set[int] = set()
+        for action in legal_actions:
+            if not isinstance(action, Mapping):
+                return None
+            action_id = action.get("action_id")
+            pattern = action.get("declared_pattern")
+            declared = action.get("declared_cards")
+            carriers = action.get("carrier_cards")
+            wildcard_count = action.get("wildcard_count")
+            wildcard_info = action.get("wildcard_info")
+            if (
+                not _is_int(action_id)
+                or action_id in action_ids
+                or pattern not in _PATTERNS
+                or not isinstance(declared, list)
+                or not declared
+                or any(not isinstance(card, str) or not card for card in declared)
+                or not isinstance(carriers, list)
+                or not carriers
+                or len(declared) != len(carriers)
+                or any(not _is_valid_token(card) for card in carriers)
+                or not _is_int(wildcard_count)
+                or wildcard_count < 0
+                or wildcard_count > len(carriers)
+                or not isinstance(wildcard_info, list)
+                or len(wildcard_info) != wildcard_count
+                or any(not isinstance(item, Mapping) for item in wildcard_info)
+                or not isinstance(action.get("display_text"), str)
+                or not action.get("display_text")
+            ):
+                return None
+            used = Counter(carriers)
+            if any(count <= 0 or count > hand.get(card, 0) for card, count in used.items()):
+                return None
+            action_ids.add(action_id)
+        return hand, level_rank

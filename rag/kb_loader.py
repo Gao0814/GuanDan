@@ -1,11 +1,65 @@
-"""Knowledge-base loading interfaces for phase-1."""
+"""Knowledge-base loading with an isolated experience-governance plane."""
 
+from collections import Counter
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
+from typing import Mapping
 
 
 _RULE_REL_PATH = Path("rule_corpus/guandan_rules.md")
 _EXP_REL_PATH = Path("experience_corpus/basic_human_experience.md")
+_EXP_PROVENANCE_REL_PATH = Path("experience_provenance.json")
+
+_EXPERIENCE_REQUIRED_METADATA = frozenset(
+    {
+        "id",
+        "corpus",
+        "scene",
+        "phase",
+        "hand_strength",
+        "action_context",
+        "topic",
+        "priority",
+        "keywords_cn",
+    }
+)
+_EXPERIENCE_OPTIONAL_METADATA = frozenset(
+    {
+        "strategy_intent",
+        "threat_source",
+        "opponent_count_bucket",
+        "teammate_count_bucket",
+        "belief_confidence",
+    }
+)
+_PROVENANCE_REQUIRED_FIELDS = frozenset(
+    {
+        "entry_id",
+        "source_tier",
+        "claim_type",
+        "author_or_institution",
+        "title",
+        "publication",
+        "url_or_bibliography",
+        "locator",
+        "scope",
+        "evidence_status",
+    }
+)
+_SCOPE_REQUIRED_FIELDS = frozenset(
+    {"game_scope", "player_count", "tribute", "level_rank", "scenes"}
+)
+_SOURCE_TIERS = frozenset({"A", "B", "C", "R", "project_boundary"})
+_CLAIM_TYPES = frozenset(
+    {"strategy", "project_boundary", "rule_reference", "publication_record", "system_design"}
+)
+_EVIDENCE_STATUSES = frozenset({"active", "candidate", "registry_only"})
+_SCENES = frozenset({"any", "lead_opening", "lead", "follow_response", "endgame"})
+_PHASES = frozenset({"any", "opening", "midgame", "endgame"})
+_HAND_STRENGTHS = frozenset({"any", "strong", "medium", "weak"})
+_ACTION_CONTEXTS = frozenset({"any", "free_lead", "follow", "endgame"})
+_PRIORITIES = frozenset({"high", "medium", "low"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +187,133 @@ class KnowledgeBaseLoader:
             )
         return self._load_line_documents(layer=layer, rel_path=rel_path, prefix=prefix, lines=lines)
 
+    @staticmethod
+    def _valid_scope(scope: object) -> bool:
+        if not isinstance(scope, Mapping) or set(scope) != _SCOPE_REQUIRED_FIELDS:
+            return False
+        scenes = scope.get("scenes")
+        return (
+            scope.get("game_scope") == "single_game"
+            and scope.get("player_count") == 4
+            and scope.get("tribute") == "none"
+            and scope.get("level_rank") in {"2", "any"}
+            and isinstance(scenes, list)
+            and bool(scenes)
+            and all(type(scene) is str and scene in _SCENES for scene in scenes)
+        )
+
+    @classmethod
+    def _valid_provenance_record(cls, record: object) -> bool:
+        if not isinstance(record, Mapping) or set(record) != _PROVENANCE_REQUIRED_FIELDS:
+            return False
+        if any(
+            type(record.get(field)) is not str or not str(record.get(field)).strip()
+            for field in _PROVENANCE_REQUIRED_FIELDS - {"scope"}
+        ):
+            return False
+        source_tier = record.get("source_tier")
+        claim_type = record.get("claim_type")
+        evidence_status = record.get("evidence_status")
+        if (
+            source_tier not in _SOURCE_TIERS
+            or claim_type not in _CLAIM_TYPES
+            or evidence_status not in _EVIDENCE_STATUSES
+            or not cls._valid_scope(record.get("scope"))
+        ):
+            return False
+        if evidence_status == "active":
+            return (source_tier, claim_type) in {
+                ("B", "strategy"),
+                ("project_boundary", "project_boundary"),
+            }
+        if evidence_status == "candidate":
+            return source_tier in {"B", "C"} and claim_type == "strategy"
+        return claim_type in {"rule_reference", "publication_record", "system_design"}
+
+    def _load_experience_provenance(self) -> dict[str, Mapping[str, object]]:
+        registry_path = (self._rag_root / _EXP_PROVENANCE_REL_PATH).resolve()
+        try:
+            payload = json.loads(registry_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return {}
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema") != "guandan_experience_provenance"
+            or payload.get("version") != 1
+            or not isinstance(payload.get("records"), list)
+        ):
+            return {}
+
+        records: dict[str, Mapping[str, object]] = {}
+        invalid_ids: set[str] = set()
+        for raw_record in payload["records"]:
+            entry_id = raw_record.get("entry_id") if isinstance(raw_record, Mapping) else None
+            if type(entry_id) is not str or not entry_id or entry_id in records:
+                if type(entry_id) is str and entry_id:
+                    invalid_ids.add(entry_id)
+                continue
+            if not self._valid_provenance_record(raw_record):
+                invalid_ids.add(entry_id)
+                continue
+            records[entry_id] = raw_record
+        for entry_id in invalid_ids:
+            records.pop(entry_id, None)
+        return records
+
+    @staticmethod
+    def _experience_document_is_active(
+        doc: KnowledgeDocument,
+        registry: Mapping[str, Mapping[str, object]],
+    ) -> bool:
+        metadata_keys = set(doc.metadata) - {"line"}
+        if (
+            metadata_keys - (_EXPERIENCE_REQUIRED_METADATA | _EXPERIENCE_OPTIONAL_METADATA)
+            or not _EXPERIENCE_REQUIRED_METADATA.issubset(metadata_keys)
+            or any(
+                type(doc.metadata.get(key)) is not str
+                or not doc.metadata.get(key, "").strip()
+                for key in metadata_keys
+            )
+            or doc.metadata.get("id") != doc.doc_id
+            or doc.metadata.get("corpus") != "experience"
+        ):
+            return False
+
+        def values(key: str) -> set[str]:
+            return {value.strip() for value in doc.metadata[key].split(",") if value.strip()}
+
+        scenes = values("scene")
+        phases = values("phase")
+        strengths = values("hand_strength")
+        action_contexts = values("action_context")
+        if (
+            not scenes
+            or not scenes.issubset(_SCENES)
+            or not phases
+            or not phases.issubset(_PHASES)
+            or not strengths
+            or not strengths.issubset(_HAND_STRENGTHS)
+            or not action_contexts
+            or not action_contexts.issubset(_ACTION_CONTEXTS)
+            or doc.metadata["priority"] not in _PRIORITIES
+            or not values("topic")
+            or not values("keywords_cn")
+        ):
+            return False
+        record = registry.get(doc.doc_id)
+        if record is None or record.get("evidence_status") != "active":
+            return False
+        scope = record.get("scope")
+        if not isinstance(scope, Mapping):
+            return False
+        registry_scenes = scope.get("scenes")
+        doc_scenes = scenes
+        return (
+            isinstance(registry_scenes, list)
+            and bool(doc_scenes)
+            and ("any" in registry_scenes or doc_scenes.issubset(set(registry_scenes)))
+        )
+
     def load_rule_documents(self) -> tuple[KnowledgeDocument, ...]:
         return self._load_file_documents(
             layer="rule",
@@ -141,10 +322,20 @@ class KnowledgeBaseLoader:
         )
 
     def load_experience_documents(self) -> tuple[KnowledgeDocument, ...]:
-        return self._load_file_documents(
+        registry = self._load_experience_provenance()
+        if not registry:
+            return ()
+        documents = self._load_file_documents(
             layer="experience",
             rel_path=_EXP_REL_PATH,
             prefix="exp",
+        )
+        id_counts = Counter(doc.doc_id for doc in documents)
+        return tuple(
+            doc
+            for doc in documents
+            if id_counts[doc.doc_id] == 1
+            and self._experience_document_is_active(doc, registry)
         )
 
     def load_all_documents(self) -> tuple[KnowledgeDocument, ...]:

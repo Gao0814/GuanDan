@@ -1,0 +1,138 @@
+{
+  "schema": "guandan_experience_provenance",
+  "version": 1,
+  "records": [
+    {
+      "entry_id": "exp_general_boundary_001",
+      "source_tier": "project_boundary",
+      "claim_type": "project_boundary",
+      "author_or_institution": "GuanDan project",
+      "title": "AI legal-action boundary",
+      "publication": "repository contract",
+      "url_or_bibliography": "AGENTS.md and docs/INVARIANTS.md",
+      "locator": "AI decision and RAG invariants",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "2", "scenes": ["any"]},
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_lead_opening_strong_001",
+      "source_tier": "B",
+      "claim_type": "strategy",
+      "author_or_institution": "王春国",
+      "title": "如何打好一把掼蛋的前半程",
+      "publication": "京报体育, 2024-02-22",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml",
+      "locator": "正文关于定位、组牌目标及强牌小单首攻的段落",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening"]},
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_lead_opening_medium_001",
+      "source_tier": "B",
+      "claim_type": "strategy",
+      "author_or_institution": "王春国",
+      "title": "如何打好一把掼蛋的前半程",
+      "publication": "京报体育, 2024-02-22",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml",
+      "locator": "正文关于对子或三张首攻所表达牌力的段落",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening"]},
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_lead_opening_weak_001",
+      "source_tier": "B",
+      "claim_type": "strategy",
+      "author_or_institution": "王春国",
+      "title": "如何打好一把掼蛋的前半程",
+      "publication": "京报体育, 2024-02-22",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml",
+      "locator": "正文关于减少总手数、改善牌型和减少单牌的段落",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening"]},
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_endgame_run_out_001",
+      "source_tier": "B",
+      "claim_type": "strategy",
+      "author_or_institution": "王春国",
+      "title": "如何打好一把掼蛋的后半程",
+      "publication": "京报体育, 2024-02-25",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/25/10708459.shtml",
+      "locator": "正文关于剩余张数、回手牌及参考而非绝对规则的段落",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["endgame"]},
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "candidate_reposted_bible_001",
+      "source_tier": "C",
+      "claim_type": "strategy",
+      "author_or_institution": "唐人游转载，原作者未确认",
+      "title": "掼蛋宝典－最权威的掼蛋技巧",
+      "publication": "唐人游公开网页转载",
+      "url_or_bibliography": "https://guandan.uc55.com/Rule/Detail/201009_000206.html",
+      "locator": "情况不明时的首攻口诀及未披露方法的统计",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening"]},
+      "evidence_status": "candidate"
+    },
+    {
+      "entry_id": "registry_book_wang_xiong_2024",
+      "source_tier": "B",
+      "claim_type": "publication_record",
+      "author_or_institution": "王雄",
+      "title": "掼蛋技巧秘籍：高水平玩家的制胜技巧与心得",
+      "publication": "人民邮电出版社, 2024-02, ISBN 9787115633309",
+      "url_or_bibliography": "https://detail.youzan.com/show/goods?alias=2xbicocy3z6u93n&from_source=gbox_seo",
+      "locator": "公开目录和商品介绍；未取得完整正文",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]},
+      "evidence_status": "registry_only"
+    },
+    {
+      "entry_id": "registry_book_liu_xingcang_2024",
+      "source_tier": "B",
+      "claim_type": "publication_record",
+      "author_or_institution": "刘行苍",
+      "title": "如何成为掼蛋高手：掼蛋宝典",
+      "publication": "人民体育出版社, 2024-01, ISBN 9787500964193",
+      "url_or_bibliography": "https://m.bookschina.com/9264924.htm",
+      "locator": "公开书目信息；未取得完整正文",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]},
+      "evidence_status": "registry_only"
+    },
+    {
+      "entry_id": "registry_book_zhou_gao",
+      "source_tier": "B",
+      "claim_type": "publication_record",
+      "author_or_institution": "周高",
+      "title": "掼蛋技巧与文化",
+      "publication": "苏州大学出版社",
+      "url_or_bibliography": "https://www.sport.gov.cn/n20001280/n20745751/n20767277/c21347709/content.html",
+      "locator": "公开作者与内容范围介绍；未取得完整战术正文",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]},
+      "evidence_status": "registry_only"
+    },
+    {
+      "entry_id": "registry_rules_2022",
+      "source_tier": "A",
+      "claim_type": "rule_reference",
+      "author_or_institution": "国家体育总局棋牌运动管理中心",
+      "title": "竞技掼蛋竞赛规则（试行）公开材料",
+      "publication": "国家体育总局公开材料",
+      "url_or_bibliography": "https://www.sport.gov.cn/n14471/n14481/n14518/c25903605/content.html",
+      "locator": "2022版竞赛规则口径；不支持具体打法",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]},
+      "evidence_status": "registry_only"
+    },
+    {
+      "entry_id": "registry_research_abl_2025",
+      "source_tier": "R",
+      "claim_type": "system_design",
+      "author_or_institution": "陈仲石等",
+      "title": "基于反绎学习的掼蛋扑克游戏博弈求解",
+      "publication": "CCFAI 2025",
+      "url_or_bibliography": "https://www.lamda.nju.edu.cn/zhangsq/papers/Guandan_ABL%20_CCFAI2025.pdf",
+      "locator": "专家知识、动作约简、数据和消融评测的系统设计",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]},
+      "evidence_status": "registry_only"
+    }
+  ]
+}

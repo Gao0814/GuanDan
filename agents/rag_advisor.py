@@ -34,6 +34,22 @@ _TAG_WEIGHTS = {
     "phase": (10.0, 2.0),
 }
 _PRIORITY_WEIGHTS = {"high": 1.5, "medium": 0.75, "low": 0.25}
+_KNOWLEDGE_METADATA_KEYS = frozenset(
+    {
+        "scene",
+        "phase",
+        "hand_strength",
+        "action_context",
+        "topic",
+        "priority",
+        "keywords_cn",
+        "strategy_intent",
+        "threat_source",
+        "opponent_count_bucket",
+        "teammate_count_bucket",
+        "belief_confidence",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,7 +241,11 @@ class RAGAdvisor:
     @staticmethod
     def _keyword_score(doc: KnowledgeDocument, query: str, desired_topics: set[str]) -> float:
         score = 0.0
-        metadata = dict(doc.metadata)
+        metadata = {
+            key: value
+            for key, value in doc.metadata.items()
+            if key in _KNOWLEDGE_METADATA_KEYS
+        }
         doc_topics = RAGAdvisor._metadata_values(metadata, "topic")
         topic_overlap = desired_topics & doc_topics
         score += len(topic_overlap) * 3.0
@@ -258,7 +278,12 @@ class RAGAdvisor:
         query: str,
         desired_topics: set[str],
     ) -> tuple[float, str, str] | None:
-        combined_text = f"{doc.content} {' '.join(doc.metadata.values())}"
+        semantic_metadata = " ".join(
+            value
+            for key, value in doc.metadata.items()
+            if key in _KNOWLEDGE_METADATA_KEYS
+        )
+        combined_text = f"{doc.content} {semantic_metadata}"
         status, reason = cls._mark_conflict(combined_text)
         if status != "accepted":
             return None
@@ -331,11 +356,16 @@ class RAGAdvisor:
 
     @staticmethod
     def _pack(evidence: RAGEvidence) -> dict[str, object]:
+        metadata = {
+            key: value
+            for key, value in evidence.metadata.items()
+            if key in _KNOWLEDGE_METADATA_KEYS | {"source_path", "status", "score", "reason"}
+        }
         return {
             "source_id": evidence.source_id,
             "layer": evidence.layer,
             "snippet": RAGAdvisor._clip(evidence.snippet),
-            "metadata": dict(evidence.metadata),
+            "metadata": metadata,
         }
 
     @staticmethod
@@ -350,12 +380,23 @@ class RAGAdvisor:
         hits = self._retriever.retrieve(query=query, layer="rule", top_k=top_k)
         evidence: list[RAGEvidence] = []
         for hit in hits:
-            status, reason = self._mark_conflict(f"{hit.snippet} {' '.join(hit.metadata.values())}")
+            semantic_metadata = " ".join(
+                value
+                for key, value in hit.metadata.items()
+                if key in _KNOWLEDGE_METADATA_KEYS
+            )
+            status, reason = self._mark_conflict(f"{hit.snippet} {semantic_metadata}")
             metadata = {
                 "source_path": hit.source_path,
                 "status": status,
             }
-            metadata.update(hit.metadata)
+            metadata.update(
+                {
+                    key: value
+                    for key, value in hit.metadata.items()
+                    if key in _KNOWLEDGE_METADATA_KEYS
+                }
+            )
             if reason:
                 metadata["reason"] = reason
             evidence.append(
@@ -372,12 +413,23 @@ class RAGAdvisor:
         hits = self._retriever.retrieve(query=query, layer="experience", top_k=top_k)
         evidence: list[RAGEvidence] = []
         for hit in hits:
-            status, reason = self._mark_conflict(f"{hit.snippet} {' '.join(hit.metadata.values())}")
+            semantic_metadata = " ".join(
+                value
+                for key, value in hit.metadata.items()
+                if key in _KNOWLEDGE_METADATA_KEYS
+            )
+            status, reason = self._mark_conflict(f"{hit.snippet} {semantic_metadata}")
             metadata = {
                 "source_path": hit.source_path,
                 "status": status,
             }
-            metadata.update(hit.metadata)
+            metadata.update(
+                {
+                    key: value
+                    for key, value in hit.metadata.items()
+                    if key in _KNOWLEDGE_METADATA_KEYS
+                }
+            )
             if reason:
                 metadata["reason"] = reason
             evidence.append(
