@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：策略知识来源重建（2026-09-15）
+## 当前阶段：H3-A0 最终候选召回恢复（2026-09-15）
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
@@ -76,6 +76,11 @@
 - 上述任务现已上提到来源层复审：`basic_human_experience.md` 的经验条目没有作者、出版物、链接、规则版本、适用范围或证据等级；`OpeningFormulaStrategy` 的点数阈值和固定加减分也没有外部来源或校准记录。当前不能继续把单局反例转成新权重。
 - `docs/STRATEGY_SOURCE_AUDIT.md` 已建立首版来源层级。国家体育总局材料只作为规则基线；王春国具名专家系列可支持角色定位、减少手数、强牌小单首攻和非僵化调整等有限原则；王雄、刘行苍、周高的正规出版物先登记，未取得合法完整正文前不从目录推导具体技巧；旧转载“宝典”因作者/样本/方法不明只作候选。CCFAI 2025 的 ABL-GD 只支持“专家知识、数据、动作约简和消融要分层验证”的架构方向。
 - 下一项Coding任务改为先建立知识/治理双平面：经验正文与语义标签保持纯知识，作者、书目、URL、来源等级和激活状态进入独立registry，只在加载过滤和离线审计中使用，绝不参与评分、冲突扫描或prompt；随后停用无来源偏好，把开局公式收敛为少数有依据的定式、证据不足时退出给RAG+DeepSeek，并修复free-lead剪枝的牌型代表性。四/五张炸弹残余结构只使用已有“减少手数”来源和可计算公开事实，不写死动作。完成离线验证前不做新live。
+- `5dbdd2c feat: rebuild sourced opening strategy` 已完成知识/治理双平面、来源激活过滤、窄开局定式、free-lead 第一层 pair 召回和四/五张炸弹残余结构输入。规划 Codex 核对完整 diff、生产/RAG/测试路径及公开来源正文；治理字段未进入正常 tagged 检索、冲突扫描或模型 prompt，candidate/registry-only 未激活，fake model 的合法 ID 与 `model` source 保真，三个 legacy source 仍只有读取兼容。
+- 独立定向 197 项、主规则 39 项和全量 717 项全部通过，`git diff --check` 与生产 source/seed 扫描通过；工作树在复审前保持 clean。公开来源只支持有限经验原则，不形成策略收益或胜率结论。
+- H3-A0 尚未封板：第一层 `_select_transition_actions()` 虽保留最小自然 pair，最终 `_limit_prompt_actions()` 在 critical 数量达到 80 时会无上限返回全部 critical；大量 run 动作又排在 transition 之前。真实引擎多个独立初始局面均复现最终集合超过 80 且不含任何自然 pair，已知 seed `47004` 同样复现该低敏事实。因此原“对 3 对模型不可见”缺口仍可能发生。
+- 下一项 H3-A0a 只修最终候选预算与 pair 召回：最终模型集合必须硬性 `<= 80`，同时保留代表性自然 single、最小自然 pair、四/五张同点数炸弹及有界的 finishing/pressure/wildcard 代表。不得提高常量、针对现场硬编码、修改 opening/RAG/provenance 或新增模型后置覆盖。
+- 新开局定式虽然不再自行按点数打分，但“strong”门槛仍来自既有项目手牌评分器的固定权重。它不阻断 H3-A0a 的候选修复，但在新的来源或离线校准前，只能称为保守启发式边界，不能宣称已证明的人类定式或策略增益。
 
 ### Connector-observed 牌谱实现与加固复审
 

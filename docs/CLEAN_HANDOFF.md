@@ -20,7 +20,7 @@
 - 仓库级Skills位于 `.agents/skills/`：`botzone-manual-live` 封装单局人工连接、建桌、监测和evidence验收；`botzone-workspace-recycle` 封装已审计artifact的精确回收站清理。run-specific seed、Agent、预算、文件allowlist与hash仍只放在当前任务Prompt。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
-- 最新业务提交为 `f426693`：已退役最后一个成功模型后置策略覆盖`short_endgame_plan`，五个固定短残局合法action均保持原始ID与`model` source；共享最少分组机会和专用router/prompt/factory接线保留。三个旧改写source统一为legacy read-compatible，adapter归一成功残留source为`model`。规划Codex独立复跑134项定向、39项主规则和718项全量，复审无发现。
+- 最新业务提交为 `5dbdd2c`：知识/治理双平面、有限来源经验、窄开局定式、第一层自然pair召回和公开残余结构提示已实现。规划Codex独立复跑197项定向、39项主规则和717项全量；主体边界通过，但最终prompt limiter仍可能突破80项并重新丢失自然pair，因此该提交尚未整体封板。
 - canonical危险对手fixture的受约束真实模型检查已判定`danger_opponent_prompt_raw_model_ready`：唯一请求成功、重试0，模型在后置守卫前自行返回固定候选集内的`ordinary`动作；现有`block_opponent / urgent_opponent_controls_table`输入已足以支持退役强制pass阻断。该结果以低敏执行报告为证据，不是整体胜率结论。
 - 项目所有者长期授权单个明确诊断/评测任务中严格少于10次的预注册真实DeepSeek请求，无需另行申请；10次及以上仍须事先授权，范围、重试、密钥和自由文本保密边界不变。
 - 固定4张自由出牌fixture的守卫前真实模型检查判定为`short_endgame_prompt_raw_model_not_ready`：最少分组集合为`{1,2,5}`，但唯一成功请求的原始动作落在严格更差的单J集合`{3,4}`。当前`ready / control / stable_control`提示未提供最少剩余分组语义；该低敏单点证据支持补充专用prompt，不支持删除或扩大守卫，也不是胜率结论。
@@ -30,7 +30,7 @@
 上述实现检查点：
 
 ```text
-f426693
+5dbdd2c
 ```
 
 当前分支：`cao`。提交数量会随规划检查点继续变化；读取者应以实际 `git rev-list --left-right --count origin/cao...HEAD` 为准，不使用本文中的历史 ahead 数字。
@@ -137,6 +137,8 @@ seed `47002` 后续只读策略审计确认：16次决策中14次可按公开语
 seed `47004` 的三处策略观察已经由规划Codex从trace和生产代码独立分因：同点数四/五张炸弹均对模型可见但现有prompt没有残余孤张取舍；自由首出Q来自开局公式local shortcut而非模型，缺陷就是Q这一首攻自身——清理孤张应优先不拆结构的低牌，低成本试探也应优先10或更低的可牺牲普通单张，并保留更高单张的残局牌权机会；对3存在于原始合法集合，却因free-lead transition剪枝在有single时完全不保留pair而对模型不可见。下一任务只修剪枝、开局公式和公开残余结构输入，不恢复任何后置策略改写。
 
 该修正方向随后上提为策略来源重建。规划Codex确认现有经验RAG与开局公式没有可追溯的人类经验来源或权重校准；`docs/STRATEGY_SOURCE_AUDIT.md` 已将官方规则、具名专家/正规出版物、弱来源转载和学术架构资料分层。后续不再按Q、4、10等单点动作追加神秘分数：确定性公式只承载来源清楚、范围明确、fixture稳定的少数定式，证据不足时退出给RAG+DeepSeek；剪枝保持牌型高召回。经验正文只保留纯策略知识和语义标签，作者、书目、URL、来源等级与激活状态由独立治理registry关联，不得参与检索或进入模型prompt。
+
+`5dbdd2c` 已完成上述 H3-A0 主体，但规划复审发现 pair 修复只停留在第一层剪枝。最终 `_limit_prompt_actions()` 在 critical 数量达到 80 时会返回全部 critical，真实引擎初始局面可同时出现最终候选超过 80 且自然 pair 全部消失；已知 seed `47004` 同样复现该低敏结论。因此知识/治理隔离、窄开局定式和炸弹结构输入可以保留，H3-A0 整体仍需 H3-A0a 修复最终预算与 pair 召回后才能封板。
 
 ## 6. Confirmed Symptoms
 
@@ -285,7 +287,7 @@ git diff --check
 
 当前问题不是一个失败的本地单元测试。旧 batch 原始路径已被清理，历史结果只能从本交接及 `docs/PROJECT_STATUS.md`、`docs/PLAN.md` 的低敏摘要复核。
 
-当前718项全量、134项动作覆盖退役定向和39项主规则回归均通过。三项成功模型后置策略覆盖已全部退役，专用公开strategy-intent仍保留。seed `47004` live evidence经规划Codex完成结构、守恒、provenance和策略输入复审；另独立运行Botzone evidence及opening/pruning相关123项测试通过。当前失败状态不是规则或协议测试失败，而是三个可复现的AI输入/本地公式策略缺口。
+当前 H3-A0 业务检查点为 `5dbdd2c`。规划复审运行197项相关定向、39项主规则和717项全量均通过；知识/治理隔离、来源激活、开局窄定式、炸弹结构摘要及模型动作保真未发现回归。当前失败状态不是规则或协议测试失败，而是最终候选层仍可能突破80项并重新移除全部自然pair。
 
 ## 12. Working Tree Status
 
@@ -305,6 +307,7 @@ git diff --check
 - 最新危险对手覆盖退役检查点：`7499ccc feat: retire danger opponent action override`；规划Codex独立复跑132/39/718项，确认原始pass/9/J保留、旧source只读兼容且`short_endgame_plan`无漂移。
 - 最新短残局专用提示检查点：`c32259d feat: prompt short endgame grouping`；规划Codex独立复跑92/39/721项，确认共享分组真值、专用prompt和最终输入验证生效，后置planner/source无漂移。
 - 最新动作自主性封板检查点：`f426693 feat: retire short endgame action override`；规划Codex独立复跑134/39/718项，确认所有合法模型ID保真、三个旧source仅legacy可读且专用短残局输入未削弱。
+- 最新策略来源重建检查点：`5dbdd2c feat: rebuild sourced opening strategy`；主体边界通过复审，但最终 prompt limiter 的硬预算和 natural pair 召回未通过，尚未封板。
 - 本交接及其他Markdown由随后独立规划文档检查点封存。读取者应以实际 `git status --short` 判断现场，不使用历史静态清单推断未提交文件。
 - Coding Codex负责提交其业务代码、tests及任务直接相关修改；规划Codex独立复核结果，只提交自己产生的 `AGENTS.md`、项目Skills和docs上下文修改，不代为提交未完成或未经复核的业务改动。
 
@@ -319,4 +322,4 @@ git diff --check
 
 ## 14. Recommended Starting Point
 
-直接执行 `docs/NEXT_PROMPT.md` 的Coding任务：用synthetic fixture修正free-lead pair剪枝、强控制开局孤张取舍和同点数不同长度炸弹的残余结构提示。不得清理或改写seed `47004` evidence，不得新增成功模型后的动作覆盖；实现完成后交回规划Codex独立复审。
+直接执行 `docs/NEXT_PROMPT.md` 的 H3-A0a Coding任务：统一最终模型候选的硬预算和代表性召回，确保大候选/critical overflow 时仍保留自然single与最小自然pair，并维持四/五张炸弹、原始ID和模型自主权。不得读取或改写seed `47004` evidence，不得新增成功模型后的动作覆盖；实现完成后交回规划Codex独立复审。
