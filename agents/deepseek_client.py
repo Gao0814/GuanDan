@@ -455,6 +455,123 @@ class DeepSeekClient:
         return unique
 
     @staticmethod
+    def _protected_actions_by_id(
+        legal_actions: list[dict[str, object]],
+        protected_action_ids: tuple[int, ...],
+    ) -> tuple[dict[str, object], ...]:
+        """Resolve a small, exact canonical protection set or fail closed.
+
+        A recommendation may name only original action IDs.  This helper is
+        deliberately stricter than the display limiter: malformed IDs, a
+        duplicate canonical ID, or a missing action disable protection rather
+        than allowing a caller to smuggle a replacement action into the prompt.
+        """
+        if (
+            type(protected_action_ids) is not tuple
+            or len(protected_action_ids) > 3
+            or len(set(protected_action_ids)) != len(protected_action_ids)
+            or any(type(action_id) is not int for action_id in protected_action_ids)
+        ):
+            return ()
+        by_id: dict[int, dict[str, object]] = {}
+        for action in legal_actions:
+            if not isinstance(action, dict) or type(action.get("action_id")) is not int:
+                return ()
+            action_id = int(action["action_id"])
+            if action_id in by_id:
+                return ()
+            by_id[action_id] = action
+        try:
+            return tuple(by_id[action_id] for action_id in protected_action_ids)
+        except KeyError:
+            return ()
+
+    @staticmethod
+    def _prefer_protected_actions(
+        actions: list[dict[str, object]],
+        protected_actions: tuple[dict[str, object], ...],
+    ) -> list[dict[str, object]]:
+        """Deduplicate signatures while preserving an explicitly protected ID."""
+        if not protected_actions:
+            return DeepSeekClient._unique_actions_by_signature(actions)
+        protected_ids = {int(action["action_id"]) for action in protected_actions}
+        selected: dict[tuple[object, ...], dict[str, object]] = {}
+        for action in actions:
+            signature = DeepSeekClient._action_signature(action)
+            existing = selected.get(signature)
+            if existing is None:
+                selected[signature] = action
+                continue
+            if (
+                type(action.get("action_id")) is int
+                and int(action["action_id"]) in protected_ids
+                and int(existing.get("action_id", -1)) not in protected_ids
+            ):
+                selected[signature] = action
+        return [
+            action
+            for action in actions
+            if selected.get(DeepSeekClient._action_signature(action)) is action
+        ]
+
+    @staticmethod
+    def _ensure_protected_actions(
+        actions: list[dict[str, object]],
+        canonical_actions: list[dict[str, object]],
+        protected_action_ids: tuple[int, ...],
+    ) -> list[dict[str, object]]:
+        """Keep protected original actions through an unbounded first pass."""
+        protected = DeepSeekClient._protected_actions_by_id(
+            canonical_actions,
+            protected_action_ids,
+        )
+        if not protected:
+            return actions
+        protected_ids = {int(action["action_id"]) for action in protected}
+        by_signature: dict[tuple[object, ...], dict[str, object]] = {}
+        ordered_signatures: list[tuple[object, ...]] = []
+        for action in actions + list(protected):
+            signature = DeepSeekClient._action_signature(action)
+            existing = by_signature.get(signature)
+            if existing is None:
+                by_signature[signature] = action
+                ordered_signatures.append(signature)
+            elif (
+                type(action.get("action_id")) is int
+                and int(action["action_id"]) in protected_ids
+                and int(existing.get("action_id", -1)) not in protected_ids
+            ):
+                by_signature[signature] = action
+        return [by_signature[signature] for signature in ordered_signatures]
+
+    @staticmethod
+    def _canonical_subset_actions(
+        canonical_actions: list[dict[str, object]],
+        candidate_actions: list[dict[str, object]],
+    ) -> list[dict[str, object]] | None:
+        """Return canonical originals for an exact candidate subset or None."""
+        by_id: dict[int, dict[str, object]] = {}
+        for action in canonical_actions:
+            if not isinstance(action, dict) or type(action.get("action_id")) is not int:
+                return None
+            action_id = int(action["action_id"])
+            if action_id in by_id:
+                return None
+            by_id[action_id] = action
+        result: list[dict[str, object]] = []
+        seen_ids: set[int] = set()
+        for action in candidate_actions:
+            if not isinstance(action, dict) or type(action.get("action_id")) is not int:
+                return None
+            action_id = int(action["action_id"])
+            canonical = by_id.get(action_id)
+            if canonical is None or action_id in seen_ids or action != canonical:
+                return None
+            seen_ids.add(action_id)
+            result.append(canonical)
+        return result
+
+    @staticmethod
     def _is_pass_action(action: dict[str, object]) -> bool:
         return str(action.get("declared_pattern", "")) == "pass"
 
@@ -618,6 +735,7 @@ class DeepSeekClient:
         *,
         constraint: str,
         hand_count: int | None,
+        protected_action_ids: tuple[int, ...] = (),
     ) -> list[dict[str, object]]:
         """Return a bounded, representative prompt view of canonical actions.
 
@@ -632,7 +750,14 @@ class DeepSeekClient:
         overflow; source order is retained in the returned view.
         """
 
-        unique_actions = DeepSeekClient._unique_actions_by_signature(actions)
+        protected_actions = DeepSeekClient._protected_actions_by_id(
+            actions,
+            protected_action_ids,
+        )
+        unique_actions = DeepSeekClient._prefer_protected_actions(
+            actions,
+            protected_actions,
+        )
         if len(unique_actions) <= PROMPT_MAX_CANDIDATE_ACTIONS:
             return unique_actions
 
@@ -674,6 +799,13 @@ class DeepSeekClient:
             )
             if passes:
                 reserve(passes[0])
+
+        # A validated model-before recommendation names at most three original
+        # canonical actions.  Reserve those exact IDs before the established
+        # bounded category fill, without changing the overall 80-action cap.
+        # This is a candidate-visibility guarantee, not an action selector.
+        for action in protected_actions:
+            reserve(action)
 
         def add_category(predicate: Callable[[dict[str, object]], bool]) -> None:
             for action in sorted(unique_actions, key=DeepSeekClient._prune_sort_key):
@@ -780,6 +912,7 @@ class DeepSeekClient:
         step_no: int = 0,
         hand_count: int | None = None,
         phase_context: GamePhaseContext | None = None,
+        protected_action_ids: tuple[int, ...] = (),
     ) -> list[dict[str, object]]:
         """Prune redundant actions to reduce context size for the model.
 
@@ -806,7 +939,49 @@ class DeepSeekClient:
             ):
                 DeepSeekClient._append_unique(kept, seen, action)
 
-        return kept or list(legal_actions)
+        kept = kept or list(legal_actions)
+        return DeepSeekClient._ensure_protected_actions(
+            kept,
+            legal_actions,
+            protected_action_ids,
+        )
+
+    @staticmethod
+    def prepare_prompt_actions(
+        legal_actions: list[dict[str, object]],
+        *,
+        constraint: str,
+        step_no: int,
+        hand_count: int | None,
+        phase_context: GamePhaseContext | None = None,
+        strategy_recommendation: "StrategyRecommendation | None" = None,
+    ) -> list[dict[str, object]]:
+        """Build the one bounded canonical candidate set used by the model.
+
+        Strategy knowledge is derived from the full action set elsewhere.  If
+        that derived payload validates against the same full canonical set, its
+        exact original IDs survive both display pruning stages.  Invalid advice
+        receives no protection and cannot alter the candidate set.
+        """
+        validated = DeepSeekClient._validated_strategy_recommendation(
+            strategy_recommendation,
+            legal_actions,
+        )
+        protected_ids = validated.action_ids if validated is not None else ()
+        first_pass = DeepSeekClient._prune_legal_actions(
+            legal_actions,
+            constraint,
+            step_no=step_no,
+            hand_count=hand_count,
+            phase_context=phase_context,
+            protected_action_ids=protected_ids,
+        )
+        return DeepSeekClient._limit_prompt_actions(
+            first_pass,
+            constraint=constraint,
+            hand_count=hand_count,
+            protected_action_ids=protected_ids,
+        )
 
     @staticmethod
     def _compact_action_text(
@@ -1049,7 +1224,21 @@ class DeepSeekClient:
             return None
         if type(payload) is not StrategyRecommendation or payload.status != "ready" or payload.source != "public_strategy_recommendation_v2":
             return None
-        legal_ids = {action.get("action_id") for action in legal_actions if type(action.get("action_id")) is int}
+        if (
+            type(payload.action_ids) is not tuple
+            or type(payload.objective_codes) is not tuple
+            or type(payload.countercheck_codes) is not tuple
+            or type(payload.strategy_domains) is not tuple
+        ):
+            return None
+        legal_ids: set[int] = set()
+        for action in legal_actions:
+            if not isinstance(action, dict) or type(action.get("action_id")) is not int:
+                return None
+            action_id = int(action["action_id"])
+            if action_id in legal_ids:
+                return None
+            legal_ids.add(action_id)
         try:
             from agents.strategy_recommendation import COUNTERCHECK_CODES, OBJECTIVE_CODES, STRATEGY_DOMAINS
         except Exception:
@@ -1091,10 +1280,19 @@ class DeepSeekClient:
         table_action = current_round.get("table_action")
         round_no = current_round.get("round_no", 0)
         constraint = str(current_round.get("constraint", "free"))
+        raw_validated_recommendation = DeepSeekClient._validated_strategy_recommendation(
+            strategy_recommendation,
+            legal_actions,
+        )
         prompt_actions = DeepSeekClient._limit_prompt_actions(
             legal_actions,
             constraint=constraint,
             hand_count=hand_count,
+            protected_action_ids=(
+                raw_validated_recommendation.action_ids
+                if raw_validated_recommendation is not None
+                else ()
+            ),
         )
         residual_facts = summarize_free_lead_residual_structures(
             {"my_info": my_info, "current_round": current_round},
@@ -1354,15 +1552,45 @@ class DeepSeekClient:
 
         constraint = str(current_round.get("constraint", "free"))
         if prompt_actions is None:
-            pruned_actions = self._prune_legal_actions(
+            pruned_actions = self.prepare_prompt_actions(
                 legal_actions,
-                constraint,
+                constraint=constraint,
                 step_no=step_no,
                 hand_count=hand_count,
                 phase_context=phase_context,
+                strategy_recommendation=strategy_recommendation,
             )
         else:
-            pruned_actions = list(prompt_actions)
+            supplied_actions = self._canonical_subset_actions(
+                legal_actions,
+                list(prompt_actions),
+            )
+            if supplied_actions is None:
+                return DeepSeekSuggestion(action_id=None, reasoning=None)
+            validated_recommendation = self._validated_strategy_recommendation(
+                strategy_recommendation,
+                legal_actions,
+            )
+            protected_ids = (
+                validated_recommendation.action_ids
+                if validated_recommendation is not None
+                else ()
+            )
+            protected_actions = self._protected_actions_by_id(
+                legal_actions,
+                protected_ids,
+            )
+            present_ids = {int(action["action_id"]) for action in supplied_actions}
+            candidate_actions = supplied_actions + [
+                action for action in protected_actions
+                if int(action["action_id"]) not in present_ids
+            ]
+            pruned_actions = self._limit_prompt_actions(
+                candidate_actions,
+                constraint=constraint,
+                hand_count=hand_count,
+                protected_action_ids=protected_ids,
+            )
 
         user_message = self._build_structured_prompt(
             my_info=my_info,
@@ -1488,11 +1716,11 @@ class DeepSeekClient:
 
         legal_ids = {
             self._coerce_int(action.get("action_id"), default=-1)
-            for action in legal_actions
+            for action in pruned_actions
         }
         if int(action_id) not in legal_ids:
             if verbose:
-                print(f"{debug_prefix} action_id={action_id} 不在 legal_actions 中，忽略", flush=True)
+                print(f"{debug_prefix} action_id={action_id} 不在 prompt candidates 中，忽略", flush=True)
             return DeepSeekSuggestion(action_id=None, reasoning=reasoning_text)
 
         if verbose:

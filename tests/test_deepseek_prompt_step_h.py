@@ -464,7 +464,7 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
         self.assertIn("#1", prompt)
         self.assertIn("#5", prompt)
         self.assertNotIn("#3 ", prompt)
-        self.assertEqual(suggestion.action_id, 3)
+        self.assertIsNone(suggestion.action_id)
 
     def test_client_uses_supplied_prompt_actions_without_repruning(self) -> None:
         captured: dict[str, object] = {}
@@ -579,7 +579,7 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
 
         config = mock.Mock(card_tracking_enabled=False)
 
-        def prune(actions, _constraint, *, step_no, hand_count, phase_context):
+        def prune(actions, _constraint, *, step_no, hand_count, phase_context, protected_action_ids=()):
             events.append("prune")
             return list(actions)
 
@@ -602,7 +602,7 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
             chosen = agent.select_action(observation, legal_actions)
 
         self.assertEqual(chosen, 1)
-        self.assertEqual(events, ["prune", "evaluate", "rag", "client"])
+        self.assertEqual(events, ["evaluate", "prune", "rag", "client"])
 
     def test_invalid_model_action_id_still_falls_back(self) -> None:
         client = CountingClient(action_id=999)

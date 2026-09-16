@@ -534,18 +534,6 @@ class DeepSeekAIAgent(BaseAgent):
                 except Exception:
                     self.last_card_confidence_prompt = None
 
-        current_round = dict(observation.get("current_round", {}))
-        display_constraint = str(current_round.get("constraint", "free"))
-        step_no = _coerce_int(current_round.get("step_no"), default=0)
-        current_level_rank = str(current_round.get("current_level_rank", ""))
-        pruned = DeepSeekClient._prune_legal_actions(
-            legal_actions,
-            display_constraint,
-            step_no=step_no,
-            hand_count=hand_count,
-            phase_context=phase_context,
-        )
-
         hand_evaluation: dict[str, object] | None = None
         if self.hand_evaluation_enabled:
             hand_evaluation = opening_evaluation or evaluate_hand(observation, legal_actions)
@@ -599,6 +587,19 @@ class DeepSeekAIAgent(BaseAgent):
                     strategy_recommendation = None
             except Exception:
                 self.last_strategy_recommendation = None
+
+        current_round = dict(observation.get("current_round", {}))
+        display_constraint = str(current_round.get("constraint", "free"))
+        step_no = _coerce_int(current_round.get("step_no"), default=0)
+        current_level_rank = str(current_round.get("current_level_rank", ""))
+        pruned = DeepSeekClient.prepare_prompt_actions(
+            legal_actions,
+            constraint=display_constraint,
+            step_no=step_no,
+            hand_count=hand_count,
+            phase_context=phase_context,
+            strategy_recommendation=strategy_recommendation,
+        )
 
         history = dict(observation.get("history", {}))
         card_tracking_summary: str | None = None

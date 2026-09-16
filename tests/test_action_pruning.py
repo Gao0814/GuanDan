@@ -4,6 +4,7 @@ from unittest import mock
 
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient, PROMPT_MAX_CANDIDATE_ACTIONS
+from agents.strategy_recommendation import StrategyRecommendation
 
 
 def _action(
@@ -351,6 +352,55 @@ class TestActionPruning(unittest.TestCase):
         self.assertTrue(set(range(100, 120)).issubset(final_ids))
         self.assertEqual(len(final_ids & set(range(200, 280))), 50)
 
+    def test_valid_recommendation_reserves_exact_original_ids_within_existing_budget(self) -> None:
+        legal_actions = [
+            _action(1, "single", ["3"], ["3S"]),
+            _action(2, "pair", ["4", "4"], ["4S", "4H"]),
+        ]
+        legal_actions.extend(
+            _action(10 + index, "straight", [f"finish-{index}"] * 5, [f"finish-{index}S"] * 5)
+            for index in range(8)
+        )
+        legal_actions.extend(
+            _action(100 + index, "bomb", [f"pressure-{index}"] * 4, [f"pressure-{index}S"] * 4)
+            for index in range(30)
+        )
+        legal_actions.extend(
+            _action(
+                200 + index, "single", [f"wild-{index}"], [f"2H-{index}"],
+                wildcard_count=1,
+                wildcard_info=[{"carrier_card": f"2H-{index}", "declared_as": f"wild-{index}"}],
+            )
+            for index in range(PROMPT_MAX_CANDIDATE_ACTIONS)
+        )
+        legal_actions.append(_action(999, "triple", ["9", "9", "9"], ["9S", "9H", "9C"]))
+        recommendation = StrategyRecommendation(
+            "ready", "public_strategy_recommendation_v2", (999,),
+            ("protect_structure",), ("check_public_urgency",), ("overall_priority",),
+        )
+
+        final_actions = DeepSeekClient.prepare_prompt_actions(
+            legal_actions,
+            constraint="free",
+            step_no=0,
+            hand_count=5,
+            strategy_recommendation=recommendation,
+        )
+        final_ids = {int(action["action_id"]) for action in final_actions}
+
+        self.assertLessEqual(len(final_actions), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertTrue({1, 2, 999}.issubset(final_ids))
+        self.assertTrue(set(range(10, 18)).issubset(final_ids))
+        self.assertTrue(set(range(100, 130)).issubset(final_ids))
+        self.assertTrue(final_ids & set(range(200, 280)))
+        self.assertEqual(
+            [action["action_id"] for action in final_actions],
+            [action["action_id"] for action in DeepSeekClient.prepare_prompt_actions(
+                legal_actions, constraint="free", step_no=0, hand_count=5,
+                strategy_recommendation=recommendation,
+            )],
+        )
+
     def test_pruned_action_ids_all_come_from_original_legal_actions(self) -> None:
         legal_actions = [
             _action(1, "single", ["3"], ["3S"]),
@@ -401,7 +451,7 @@ class TestActionPruning(unittest.TestCase):
         self.assertEqual(rag.rule_calls, 0)
         self.assertEqual(rag.experience_calls, 0)
 
-    def test_deepseek_prompt_uses_pruned_candidates_but_validation_uses_raw_actions(self) -> None:
+    def test_deepseek_response_must_use_the_prompt_candidate_subset(self) -> None:
         captured: dict[str, object] = {}
 
         def transport(request, timeout: float) -> str:
@@ -435,7 +485,7 @@ class TestActionPruning(unittest.TestCase):
         messages = body["messages"]
         prompt = messages[1]["content"]
         self.assertNotIn("#3 ", prompt)
-        self.assertEqual(suggestion.action_id, 3)
+        self.assertIsNone(suggestion.action_id)
 
 
 if __name__ == "__main__":
