@@ -70,7 +70,7 @@ def build_strategy_recommendation(
     checks = {"check_public_urgency", "check_structure_loss", "check_control_cost"}
     is_free = bool(facts and facts[0].is_free_lead)
     if is_free:
-        domains.add("opening_free_lead"); objectives.add("low_cost_probe")
+        domains.add("opening_free_lead")
     else:
         domains.add("follow_control"); objectives.add("contest_follow"); checks.add("check_rule_pressure")
     if any(fact.fragments_played_rank_group for fact in facts):
@@ -83,7 +83,7 @@ def build_strategy_recommendation(
     if any(fact.finishes_hand for fact in facts) or (type(hand_count) is int and 0 < hand_count <= 4):
         domains.add("endgame_planning"); objectives.add("plan_endgame")
     intent = getattr(strategy_context, "intent", None)
-    if intent == "support_teammate" or any(fact.teammate_hand_count is not None and fact.teammate_hand_count <= 2 for fact in facts):
+    if intent == "support_teammate" or any(fact.teammate_active and fact.teammate_hand_count is not None and fact.teammate_hand_count <= 2 for fact in facts):
         domains.add("teammate_coordination"); objectives.add("support_teammate")
     if intent == "block_opponent" or any(fact.minimum_opponent_hand_count is not None and fact.minimum_opponent_hand_count <= 2 for fact in facts):
         domains.add("danger_opponent_block"); objectives.add("block_opponent")
@@ -97,6 +97,8 @@ def build_strategy_recommendation(
          and fact.natural_single_rank_value is not None),
         key=lambda fact: (fact.natural_single_rank_value or 99, fact.action_id),
     )
+    if safe_singles:
+        objectives.add("low_cost_probe")
     pairs = sorted(
         (fact for fact in facts if is_free and fact.pattern == "pair" and not fact.fragments_played_rank_group),
         key=lambda fact: (fact.residual_singleton_rank_count, fact.action_id),

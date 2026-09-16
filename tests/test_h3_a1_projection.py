@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
-from agents.action_structure import summarize_candidate_structures
+from agents.action_structure import CandidateStructure, select_candidate_structure_representatives, summarize_candidate_structures
 from agents.deepseek_client import DeepSeekClient
 from agents.rag_advisor import RAGAdvisor
 from agents.strategy_recommendation import build_strategy_recommendation
@@ -26,7 +26,7 @@ def _observation(cards: list[str], *, follow: bool = False) -> dict[str, object]
         "my_info": {"player_id": 1, "team": "team_13", "hand_count": len(cards), "hand_cards": cards},
         "current_round": {
             "step_no": 1, "round_no": 1, "current_player_id": 1, "current_level_rank": "2",
-            "constraint": "single" if follow else "free", "table_action": table,
+            "constraint": table["display_text"] if follow else "free", "table_action": table,
         },
         "other_players": [
             {"player_id": 2, "team": "team_24", "hand_count": 6, "finished": False, "finish_rank": None},
@@ -47,6 +47,64 @@ class H3A1ProjectionTests(unittest.TestCase):
             self.assertIsNone(summarize_candidate_structures(observation, [malformed]))
         malformed_pass = _action(2, "pass", ["3S"])
         self.assertIsNone(summarize_candidate_structures(observation, [malformed_pass]))
+
+    def test_noncanonical_payloads_fail_closed_and_finished_teammate_does_not_trigger_support(self) -> None:
+        observation = _observation(["2H", "3S", "3H"])
+        valid = _action(1, "pair", ["2H", "3S"], wildcard_count=1)
+        valid["declared_cards"] = ["3", "3"]
+        valid["wildcard_info"] = [{"carrier_card": "2H", "declared_as": "3"}]
+        bad_payloads = []
+        free_pass = _action(2, "pass", [])
+        bad_payloads.append((observation, [free_pass]))
+        bad_wildcard = dict(valid); bad_wildcard["wildcard_info"] = [{}]
+        bad_payloads.append((observation, [bad_wildcard]))
+        bad_declared = dict(valid); bad_declared["declared_cards"] = ["not-a-card", "3"]
+        bad_payloads.append((observation, [bad_declared]))
+        follow = _observation(["4S", "5S"], follow=True)
+        follow["current_round"]["constraint"] = "unrelated"
+        bad_payloads.append((follow, [_action(3, "single", ["4S"])]))
+        bad_player = _observation(["3S", "4S"])
+        bad_player["other_players"][0]["player_id"] = 99
+        bad_payloads.append((bad_player, [_action(4, "single", ["3S"])]))
+        for malformed_observation, actions in bad_payloads:
+            self.assertIsNone(summarize_candidate_structures(malformed_observation, actions))
+            self.assertEqual(build_strategy_recommendation(malformed_observation, actions).status, "unavailable")
+
+        finished_teammate = _observation(["3S", "4S", "5S", "6S", "7S"])
+        finished_teammate["other_players"][1].update({"finished": True, "hand_count": 0, "finish_rank": 1})
+        recommendation = build_strategy_recommendation(
+            finished_teammate, [_action(5, "single", ["3S"])], strategy_context=SimpleNamespace(intent="run_out")
+        )
+        self.assertNotIn("teammate_coordination", recommendation.strategy_domains)
+        self.assertNotIn("support_teammate", recommendation.objective_codes)
+
+    def test_bomb_only_lead_has_no_low_cost_probe_and_representatives_survive_overflow(self) -> None:
+        observation = _observation(["7S", "7H", "7C", "7D", "7S", "9S"])
+        recommendation = build_strategy_recommendation(observation, [
+            _action(4, "bomb", ["7S", "7H", "7C", "7D"]),
+            _action(5, "bomb", ["7S", "7H", "7C", "7D", "7S"]),
+        ])
+        self.assertEqual(recommendation.status, "ready")
+        self.assertIn("bomb_wildcard_management", recommendation.strategy_domains)
+        self.assertNotIn("low_cost_probe", recommendation.objective_codes)
+
+        def fact(action_id: int, **kwargs: object) -> CandidateStructure:
+            base = dict(pattern="triple", carrier_count=3, uses_wildcard=False, finishes_hand=False,
+                        clears_played_rank_groups=True, residual_singleton_rank_count=1,
+                        estimated_remaining_rank_groups=4, fragments_played_rank_group=False,
+                        natural_single_rank_value=None, consumes_control_resource=False,
+                        bomb_length=None, leaves_bomb_rank_singleton=None, teammate_hand_count=5,
+                        teammate_active=True, minimum_opponent_hand_count=5, is_free_lead=True)
+            base.update(kwargs)
+            return CandidateStructure(action_id=action_id, **base)
+        facts = tuple(fact(index) for index in range(1, 15)) + (
+            fact(99), fact(100, finishes_hand=True), fact(20, pattern="single", natural_single_rank_value=3),
+            fact(21, pattern="pair"), fact(22, consumes_control_resource=True), fact(23, uses_wildcard=True),
+            fact(24, fragments_played_rank_group=True), fact(25, pattern="bomb", bomb_length=4),
+            fact(26, pattern="bomb", bomb_length=5),
+        )
+        selected = select_candidate_structure_representatives(facts, recommended_ids=(99,))
+        self.assertTrue({99, 100, 20, 21, 22, 23, 24, 25, 26}.issubset({item.action_id for item in selected}))
 
     def test_domains_drive_rag_query_and_reach_final_prompt(self) -> None:
         cases = [

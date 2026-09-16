@@ -58,6 +58,7 @@ class CandidateStructure:
     bomb_length: int | None
     leaves_bomb_rank_singleton: bool | None
     teammate_hand_count: int | None
+    teammate_active: bool
     minimum_opponent_hand_count: int | None
     is_free_lead: bool
 
@@ -67,6 +68,7 @@ _RANK_VALUES = {
     "10": 10, "J": 11, "Q": 12, "K": 13, "A": 14, "2": 15,
     "SJ": 16, "BJ": 17,
 }
+_TEAM_BY_PLAYER = {1: "team_13", 2: "team_24", 3: "team_13", 4: "team_24"}
 
 
 def _is_int(value: object) -> bool:
@@ -85,6 +87,10 @@ def _valid_token(token: object) -> bool:
     if token in {"SJ", "BJ"}:
         return True
     return len(token) >= 2 and token[-1] in _SUITS and token[:-1] in _NORMAL_RANKS
+
+
+def _valid_declared(token: object) -> bool:
+    return isinstance(token, str) and (token in _NORMAL_RANKS | {"SJ", "BJ"} or _valid_token(token))
 
 
 def summarize_free_lead_residual_structures(
@@ -207,6 +213,8 @@ def summarize_candidate_structures(
             or not isinstance(hand_cards, list) or len(hand_cards) != hand_count
             or any(not _valid_token(card) for card in hand_cards)
             or type(level_rank) is not str or level_rank not in _NORMAL_RANKS
+            or player_id not in _TEAM_BY_PLAYER
+            or my_info.get("team") != _TEAM_BY_PLAYER.get(player_id)
             or current_round.get("current_player_id") != player_id
             or not isinstance(current_round.get("constraint"), str)):
         return None
@@ -223,27 +231,29 @@ def summarize_candidate_structures(
         if (table_pattern not in _PATTERNS or not isinstance(table_declared, list) or not table_declared
                 or not isinstance(table_carrier, list) or not table_carrier
                 or len(table_declared) != len(table_carrier)
-                or any(not isinstance(card, str) or not card for card in table_declared)
+                or any(not _valid_declared(card) for card in table_declared)
                 or any(not _valid_token(card) for card in table_carrier)
                 or not _is_int(table_wildcard_count) or table_wildcard_count < 0
                 or table_wildcard_count > len(table_carrier)
                 or not isinstance(table_wildcard_info, list) or len(table_wildcard_info) != table_wildcard_count
                 or any(not isinstance(item, Mapping) for item in table_wildcard_info)
-                or not isinstance(table_action.get("display_text"), str) or not table_action.get("display_text")):
+                or not isinstance(table_action.get("display_text"), str) or not table_action.get("display_text")
+                or constraint != table_action.get("display_text")):
             return None
     hand = Counter(hand_cards)
     if any(count > 2 for count in hand.values()):
         return None
     team = my_info.get("team")
     teammate_count: int | None = None
+    teammate_active = False
     opponent_counts: list[int] = []
-    if isinstance(team, str) and team:
+    if isinstance(team, str) and team == _TEAM_BY_PLAYER[player_id]:
         other_ids: set[int] = set()
         for other in other_players:
             other_id = other.get("player_id") if isinstance(other, Mapping) else None
             other_team = other.get("team") if isinstance(other, Mapping) else None
             if (not isinstance(other, Mapping) or not _is_int(other_id) or other_id == player_id or other_id in other_ids
-                    or not isinstance(other_team, str) or not other_team
+                    or other_id not in _TEAM_BY_PLAYER or other_team != _TEAM_BY_PLAYER[other_id]
                     or not _is_int(other.get("hand_count")) or other.get("hand_count") < 0
                     or type(other.get("finished")) is not bool):
                 return None
@@ -252,11 +262,16 @@ def summarize_candidate_structures(
                 if teammate_count is not None:
                     return None
                 teammate_count = int(other["hand_count"])
+                teammate_active = not other["finished"]
             elif not other["finished"]:
                 opponent_counts.append(int(other["hand_count"]))
+            if other["finished"] and other["hand_count"] != 0:
+                return None
+            if not other["finished"] and other["hand_count"] <= 0:
+                return None
     else:
         return None
-    if teammate_count is None or len(other_ids) != 3 or len(opponent_counts) > 2:
+    if teammate_count is None or other_ids != (set(_TEAM_BY_PLAYER) - {player_id}) or len(opponent_counts) > 2:
         return None
     seen: set[int] = set()
     results: list[CandidateStructure] = []
@@ -276,22 +291,36 @@ def summarize_candidate_structures(
                 or not isinstance(wildcard_info, list)):
             return None
         if pattern == "pass":
-            if declared or carrier or wildcard_count != 0 or wildcard_info:
+            if constraint == "free" or declared or carrier or wildcard_count != 0 or wildcard_info:
                 return None
             results.append(CandidateStructure(
                 action_id, pattern, 0, False, False, False, 0, len({_rank_of(card) for card in hand}),
-                False, None, False, None, None, teammate_count,
+                False, None, False, None, None, teammate_count, teammate_active,
                 min(opponent_counts) if opponent_counts else None,
                 current_round.get("constraint") == "free",
             ))
             seen.add(action_id)
             continue
         if (not carrier or len(declared) != len(carrier)
-                or any(not isinstance(card, str) or not card for card in declared)
+                or any(not _valid_declared(card) for card in declared)
                 or any(not _valid_token(card) for card in carrier)
                 or wildcard_count > len(carrier) or len(wildcard_info) != wildcard_count
                 or any(not isinstance(item, Mapping) for item in wildcard_info)):
             return None
+        wildcard_token = f"{level_rank}H"
+        if wildcard_count:
+            declared_counts = Counter(declared)
+            info_carriers = Counter()
+            for item in wildcard_info:
+                carrier_card = item.get("carrier_card")
+                declared_as = item.get("declared_as")
+                if carrier_card != wildcard_token or carrier_card not in carrier or not _valid_declared(declared_as):
+                    return None
+                info_carriers[carrier_card] += 1
+                if declared_counts.get(declared_as, 0) <= 0:
+                    return None
+            if info_carriers[wildcard_token] != wildcard_count or Counter(carrier).get(wildcard_token, 0) < wildcard_count:
+                return None
         used = Counter(carrier)
         if any(count > hand.get(card, 0) for card, count in used.items()):
             return None
@@ -310,7 +339,7 @@ def summarize_candidate_structures(
             int(action_id), pattern, len(carrier), wildcard_count > 0, len(carrier) == hand_count,
             not fragments, sum(1 for count in remaining_ranks.values() if count == 1), len(remaining_ranks),
             fragments, natural_single_value, control, bomb_length, leaves_bomb_singleton,
-            teammate_count, min(opponent_counts) if opponent_counts else None,
+            teammate_count, teammate_active, min(opponent_counts) if opponent_counts else None,
             current_round.get("constraint") == "free",
         ))
         seen.add(action_id)
