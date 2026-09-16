@@ -93,6 +93,109 @@ def _valid_declared(token: object) -> bool:
     return isinstance(token, str) and (token in _NORMAL_RANKS | {"SJ", "BJ"} or _valid_token(token))
 
 
+def _declared_multiset_key(token: str, pattern: str) -> str:
+    """Return the public declaration identity relevant to one pattern.
+
+    Most public declarations are rank-only even when their carrier has a
+    suit.  Straight flushes are the exception: their public declaration is
+    deliberately suit-specific.
+    """
+    if pattern == "straight_flush" or token in _NORMAL_RANKS | {"SJ", "BJ"}:
+        return token
+    return _rank_of(token)
+
+
+def _validate_public_action_schema(
+    action: object,
+    *,
+    level_rank: str,
+    allow_missing_action_id: bool,
+    allow_pass: bool,
+) -> tuple[int | None, str, list[str], list[str], int] | None:
+    """Validate public action shape and declared/carrier multiset conservation.
+
+    This intentionally stops before pattern legality or trick comparison.  It
+    is shared by table and candidate actions so the two public projections
+    cannot drift; ownership of carriers remains a candidate-only check.
+    """
+    if not isinstance(action, Mapping):
+        return None
+    action_id = action.get("action_id")
+    pattern = action.get("declared_pattern")
+    declared = action.get("declared_cards")
+    carrier = action.get("carrier_cards")
+    wildcard_count = action.get("wildcard_count")
+    wildcard_info = action.get("wildcard_info")
+    display = action.get("display_text")
+    if (
+        (not allow_missing_action_id and not _is_int(action_id))
+        or (allow_missing_action_id and action_id is not None and not _is_int(action_id))
+        or not isinstance(pattern, str)
+        or not isinstance(declared, list)
+        or not isinstance(carrier, list)
+        or not _is_int(wildcard_count)
+        or wildcard_count < 0
+        or not isinstance(wildcard_info, list)
+        or not isinstance(display, str)
+        or not display
+    ):
+        return None
+    if pattern == "pass":
+        if not allow_pass or declared or carrier or wildcard_count != 0 or wildcard_info:
+            return None
+        return action_id, pattern, declared, carrier, wildcard_count
+    if (
+        pattern not in _PATTERNS
+        or not declared
+        or not carrier
+        or len(declared) != len(carrier)
+        or any(not _valid_declared(card) for card in declared)
+        or any(not _valid_token(card) for card in carrier)
+        or wildcard_count > len(carrier)
+        or len(wildcard_info) != wildcard_count
+    ):
+        return None
+    if pattern == "straight_flush" and any(not _valid_token(card) or card in {"SJ", "BJ"} for card in declared):
+        return None
+
+    declared_counts = Counter(_declared_multiset_key(card, pattern) for card in declared)
+    wildcard_token = f"{level_rank}H"
+    wildcard_carriers = Counter(carrier).get(wildcard_token, 0)
+    if wildcard_carriers < wildcard_count:
+        return None
+    for item in wildcard_info:
+        if not isinstance(item, Mapping):
+            return None
+        carrier_card = item.get("carrier_card")
+        declared_as = item.get("declared_as")
+        if carrier_card != wildcard_token or not _valid_declared(declared_as):
+            return None
+        if pattern == "straight_flush" and (not _valid_token(declared_as) or declared_as in {"SJ", "BJ"}):
+            return None
+        key = _declared_multiset_key(declared_as, pattern)
+        if declared_counts.get(key, 0) <= 0:
+            return None
+        declared_counts[key] -= 1
+
+    natural_wildcard_carriers = wildcard_carriers - wildcard_count
+    for card in carrier:
+        if card == wildcard_token and natural_wildcard_carriers > 0:
+            natural_wildcard_carriers -= 1
+            key = _declared_multiset_key(card, pattern)
+            if declared_counts.get(key, 0) <= 0:
+                return None
+            declared_counts[key] -= 1
+        elif card != wildcard_token:
+            key = _declared_multiset_key(card, pattern)
+            if declared_counts.get(key, 0) <= 0:
+                return None
+            declared_counts[key] -= 1
+        else:
+            # This instance is represented by one wildcard_info entry above.
+            continue
+    return (action_id, pattern, declared, carrier, wildcard_count) if not any(declared_counts.values()) else None
+
+
 def summarize_free_lead_residual_structures(
     observation: object,
     legal_actions: object,
@@ -223,22 +326,15 @@ def summarize_candidate_structures(
     if (constraint == "free" and table_action is not None) or (constraint != "free" and not isinstance(table_action, Mapping)):
         return None
     if isinstance(table_action, Mapping):
-        table_pattern = table_action.get("declared_pattern")
-        table_declared = table_action.get("declared_cards")
-        table_carrier = table_action.get("carrier_cards")
-        table_wildcard_count = table_action.get("wildcard_count")
-        table_wildcard_info = table_action.get("wildcard_info")
-        if (table_pattern not in _PATTERNS or not isinstance(table_declared, list) or not table_declared
-                or not isinstance(table_carrier, list) or not table_carrier
-                or len(table_declared) != len(table_carrier)
-                or any(not _valid_declared(card) for card in table_declared)
-                or any(not _valid_token(card) for card in table_carrier)
-                or not _is_int(table_wildcard_count) or table_wildcard_count < 0
-                or table_wildcard_count > len(table_carrier)
-                or not isinstance(table_wildcard_info, list) or len(table_wildcard_info) != table_wildcard_count
-                or any(not isinstance(item, Mapping) for item in table_wildcard_info)
-                or not isinstance(table_action.get("display_text"), str) or not table_action.get("display_text")
-                or constraint != table_action.get("display_text")):
+        if (
+            _validate_public_action_schema(
+                table_action,
+                level_rank=level_rank,
+                allow_missing_action_id=True,
+                allow_pass=False,
+            ) is None
+            or constraint != table_action.get("display_text")
+        ):
             return None
     hand = Counter(hand_cards)
     if any(count > 2 for count in hand.values()):
@@ -276,22 +372,19 @@ def summarize_candidate_structures(
     seen: set[int] = set()
     results: list[CandidateStructure] = []
     for action in legal_actions:
-        if not isinstance(action, Mapping):
+        validated = _validate_public_action_schema(
+            action,
+            level_rank=level_rank,
+            allow_missing_action_id=False,
+            allow_pass=True,
+        )
+        if validated is None:
             return None
-        action_id, pattern = action.get("action_id"), action.get("declared_pattern")
-        declared = action.get("declared_cards")
-        carrier = action.get("carrier_cards")
-        wildcard_count = action.get("wildcard_count")
-        wildcard_info = action.get("wildcard_info")
-        display = action.get("display_text")
-        if (not _is_int(action_id) or action_id in seen or not isinstance(pattern, str)
-                or pattern not in (_PATTERNS | {"pass"}) or not isinstance(carrier, list)
-                or not isinstance(declared, list) or not isinstance(display, str) or not display
-                or not _is_int(wildcard_count) or wildcard_count < 0
-                or not isinstance(wildcard_info, list)):
+        action_id, pattern, declared, carrier, wildcard_count = validated
+        if action_id is None or action_id in seen:
             return None
         if pattern == "pass":
-            if constraint == "free" or declared or carrier or wildcard_count != 0 or wildcard_info:
+            if constraint == "free":
                 return None
             results.append(CandidateStructure(
                 action_id, pattern, 0, False, False, False, 0, len({_rank_of(card) for card in hand}),
@@ -301,26 +394,6 @@ def summarize_candidate_structures(
             ))
             seen.add(action_id)
             continue
-        if (not carrier or len(declared) != len(carrier)
-                or any(not _valid_declared(card) for card in declared)
-                or any(not _valid_token(card) for card in carrier)
-                or wildcard_count > len(carrier) or len(wildcard_info) != wildcard_count
-                or any(not isinstance(item, Mapping) for item in wildcard_info)):
-            return None
-        wildcard_token = f"{level_rank}H"
-        if wildcard_count:
-            declared_counts = Counter(declared)
-            info_carriers = Counter()
-            for item in wildcard_info:
-                carrier_card = item.get("carrier_card")
-                declared_as = item.get("declared_as")
-                if carrier_card != wildcard_token or carrier_card not in carrier or not _valid_declared(declared_as):
-                    return None
-                info_carriers[carrier_card] += 1
-                if declared_counts.get(declared_as, 0) <= 0:
-                    return None
-            if info_carriers[wildcard_token] != wildcard_count or Counter(carrier).get(wildcard_token, 0) < wildcard_count:
-                return None
         used = Counter(carrier)
         if any(count > hand.get(card, 0) for card, count in used.items()):
             return None

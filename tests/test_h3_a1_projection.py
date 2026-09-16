@@ -7,6 +7,8 @@ from agents.action_structure import CandidateStructure, select_candidate_structu
 from agents.deepseek_client import DeepSeekClient
 from agents.rag_advisor import RAGAdvisor
 from agents.strategy_recommendation import build_strategy_recommendation
+from engine.cards import Card
+from engine.game import GuanDanGame
 from rag.kb_loader import KnowledgeBaseLoader
 from rag.retriever import KnowledgeRetriever
 
@@ -77,6 +79,58 @@ class H3A1ProjectionTests(unittest.TestCase):
         )
         self.assertNotIn("teammate_coordination", recommendation.strategy_domains)
         self.assertNotIn("support_teammate", recommendation.objective_codes)
+
+    def test_candidate_and_table_actions_conserve_canonical_declarations(self) -> None:
+        table_observation = _observation(["4S", "5S"], follow=True)
+        table = table_observation["current_round"]["table_action"]
+        assert isinstance(table, dict)
+        table.update({
+            "declared_cards": ["3"], "carrier_cards": ["2H"], "wildcard_count": 1,
+            "wildcard_info": [{}], "display_text": "single:3",
+        })
+        table_observation["current_round"]["constraint"] = "single:3"
+        self.assertIsNone(summarize_candidate_structures(table_observation, [_action(10, "single", ["4S"])]))
+
+        duplicate_wildcard = _action(11, "pair", ["2H", "2H"], wildcard_count=2)
+        duplicate_wildcard["declared_cards"] = ["3", "4"]
+        duplicate_wildcard["wildcard_info"] = [
+            {"carrier_card": "2H", "declared_as": "3"},
+            {"carrier_card": "2H", "declared_as": "3"},
+        ]
+        self.assertIsNone(summarize_candidate_structures(_observation(["2H", "2H", "3S", "4S"]), [duplicate_wildcard]))
+
+        non_wildcard = _action(12, "single", ["3S"])
+        non_wildcard["declared_cards"] = ["4"]
+        self.assertIsNone(summarize_candidate_structures(_observation(["3S"]), [non_wildcard]))
+
+        natural_level_card = _action(13, "single", ["2H"])
+        natural_level_card["declared_cards"] = ["4"]
+        self.assertIsNone(summarize_candidate_structures(_observation(["2H"]), [natural_level_card]))
+
+    def test_real_engine_canonical_actions_pass_schema_conservation(self) -> None:
+        for seed in (3, 7, 11):
+            game = GuanDanGame(seed=seed, current_level_rank="2")
+            game.reset()
+            for _ in range(12):
+                observation = game.observe()
+                actions = game.legal_actions()
+                self.assertIsNotNone(summarize_candidate_structures(observation, actions))
+                game.step(int(actions[0]["action_id"]))
+
+        straight_flush_game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands={
+                1: tuple(Card(rank=rank, suit="S") for rank in ("3", "4", "5", "6")) + (Card(rank="2", suit="H"),),
+                2: (Card(rank="8", suit="S"),),
+                3: (Card(rank="9", suit="S"),),
+                4: (Card(rank="10", suit="S"),),
+            },
+        )
+        observation = straight_flush_game.reset()
+        actions = straight_flush_game.legal_actions()
+        self.assertTrue(any(action["declared_pattern"] == "straight_flush" for action in actions))
+        self.assertTrue(any(action["wildcard_count"] for action in actions))
+        self.assertIsNotNone(summarize_candidate_structures(observation, actions))
 
     def test_bomb_only_lead_has_no_low_cost_probe_and_representatives_survive_overflow(self) -> None:
         observation = _observation(["7S", "7H", "7C", "7D", "7S", "9S"])
