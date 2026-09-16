@@ -31,6 +31,8 @@ _EXPERIENCE_OPTIONAL_METADATA = frozenset(
         "opponent_count_bucket",
         "teammate_count_bucket",
         "belief_confidence",
+        "strategy_domain",
+        "guidance_mode",
     }
 )
 _PROVENANCE_REQUIRED_FIELDS = frozenset(
@@ -60,6 +62,13 @@ _PHASES = frozenset({"any", "opening", "midgame", "endgame"})
 _HAND_STRENGTHS = frozenset({"any", "strong", "medium", "weak"})
 _ACTION_CONTEXTS = frozenset({"any", "free_lead", "follow", "endgame"})
 _PRIORITIES = frozenset({"high", "medium", "low"})
+_STRATEGY_DOMAINS = frozenset({
+    "overall_priority", "opening_free_lead", "hand_structure",
+    "control_return_resource", "follow_control", "teammate_coordination",
+    "danger_opponent_block", "bomb_wildcard_management", "endgame_planning",
+    "uncertainty_probe",
+})
+_GUIDANCE_MODES = frozenset({"source_principle", "soft_hypothesis"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +233,7 @@ class KnowledgeBaseLoader:
         if evidence_status == "active":
             return (source_tier, claim_type) in {
                 ("B", "strategy"),
+                ("C", "strategy"),
                 ("project_boundary", "project_boundary"),
             }
         if evidence_status == "candidate":
@@ -280,7 +290,7 @@ class KnowledgeBaseLoader:
             return False
 
         def values(key: str) -> set[str]:
-            return {value.strip() for value in doc.metadata[key].split(",") if value.strip()}
+            return {value.strip() for value in doc.metadata.get(key, "").split(",") if value.strip()}
 
         scenes = values("scene")
         phases = values("phase")
@@ -300,6 +310,11 @@ class KnowledgeBaseLoader:
             or not values("keywords_cn")
         ):
             return False
+        if "strategy_domain" in doc.metadata and not values("strategy_domain").issubset(_STRATEGY_DOMAINS):
+            return False
+        guidance_modes = values("guidance_mode")
+        if guidance_modes and not guidance_modes.issubset(_GUIDANCE_MODES):
+            return False
         record = registry.get(doc.doc_id)
         if record is None or record.get("evidence_status") != "active":
             return False
@@ -308,6 +323,13 @@ class KnowledgeBaseLoader:
             return False
         registry_scenes = scope.get("scenes")
         doc_scenes = scenes
+        if record.get("source_tier") == "C":
+            # C-tier material is deliberately visible only as an explicitly
+            # reversible soft hypothesis, never as a local-action convention.
+            if guidance_modes != {"soft_hypothesis"}:
+                return False
+        elif guidance_modes and guidance_modes != {"source_principle"}:
+            return False
         return (
             isinstance(registry_scenes, list)
             and bool(doc_scenes)

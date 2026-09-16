@@ -134,10 +134,10 @@ class TestStrategyRouter(unittest.TestCase):
         with self.assertRaises(FrozenInstanceError):
             context.intent = CONTROL  # type: ignore[misc]
 
-    def test_opening_is_unavailable_and_other_four_phases_route(self) -> None:
+    def test_all_phases_including_opening_route(self) -> None:
         observation = _observation()
         opening = self._route(observation, phase=OPENING)
-        self.assertEqual((opening.status, opening.intent, opening.diagnostics), ("unavailable", None, ("opening_not_routed",)))
+        self.assertEqual((opening.status, opening.intent, opening.diagnostics), ("available", CONTROL, ()))
         for phase in (MIDGAME, ENDGAME, NEAR_OPEN_ENDGAME, CRITICAL_ENDGAME):
             with self.subTest(phase=phase):
                 self.assertEqual(self._route(observation, phase=phase).status, "available")

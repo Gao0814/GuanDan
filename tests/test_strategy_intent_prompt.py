@@ -334,7 +334,7 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             (derived, "invalid_context_type"),
             (replace(base, status="unavailable", diagnostics=("untrusted: detail",)), "context_unavailable"),
             (replace(base, source="untrusted-source"), "invalid_router_source"),
-            (replace(base, phase="opening"), "invalid_phase"),
+            (replace(base, phase="not-a-phase"), "invalid_phase"),
             (replace(base, diagnostics=("unknown: injected",)), "invalid_context_fields"),
             (replace(base, diagnostics=["not-a-tuple"]), "invalid_context_fields"),  # type: ignore[arg-type]
         )
@@ -396,7 +396,7 @@ class TestStrategyIntentPrompt(unittest.TestCase):
                 payload = build_strategy_intent_prompt_payload(context)
                 self.assertEqual((payload.status, payload.diagnostics), ("omitted", ("invalid_context_fields",)))
 
-    def test_opening_unavailable_and_budget_are_fail_closed(self) -> None:
+    def test_opening_and_budget_are_bounded(self) -> None:
         context = _context()
         ready = build_strategy_intent_prompt_payload(context)
         self.assertEqual(build_strategy_intent_prompt_payload(context, max_chars=len(ready.text)).status, "ready")
@@ -408,10 +408,7 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             with self.subTest(max_chars=bad_max):
                 with self.assertRaises(ValueError):
                     build_strategy_intent_prompt_payload(context, max_chars=bad_max)  # type: ignore[arg-type]
-        self.assertEqual(
-            build_strategy_intent_prompt_payload(replace(context, phase="opening")).diagnostics,
-            ("invalid_phase",),
-        )
+        self.assertEqual(build_strategy_intent_prompt_payload(replace(context, phase="opening")).status, "ready")
         special = _context("teammate_big_joker_preservation")
         special_ready = build_strategy_intent_prompt_payload(special)
         self.assertEqual(

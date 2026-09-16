@@ -9,7 +9,7 @@ from agents.strategy_router import StrategyIntentContext
 
 _SOURCE = "strategy_intent_prompt_v1"
 _ROUTER_SOURCE = "public_strategy_router_v1"
-_PHASES = ("midgame", "endgame", "near_open_endgame", "critical_endgame")
+_PHASES = ("opening", "midgame", "endgame", "near_open_endgame", "critical_endgame")
 _INTENT_TEXT = {
     "run_out": "加速走牌",
     "block_opponent": "阻断对手",

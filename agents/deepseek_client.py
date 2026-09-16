@@ -14,17 +14,18 @@ import time
 from typing import TYPE_CHECKING, Callable, Protocol
 from urllib import request as urllib_request
 
-from agents.action_structure import FreeLeadResidualStructure, summarize_free_lead_residual_structures
+from agents.action_structure import FreeLeadResidualStructure, select_candidate_structure_representatives, summarize_candidate_structures, summarize_free_lead_residual_structures
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
 
 if TYPE_CHECKING:
     from agents.card_confidence_prompt import CardConfidencePromptPayload
     from agents.strategy_intent_prompt import StrategyIntentPromptPayload
+    from agents.strategy_recommendation import StrategyRecommendation
 
 
 _STRATEGY_INTENT_PROMPT_SOURCE = "strategy_intent_prompt_v1"
 _STRATEGY_INTENT_ROUTER_SOURCE = "public_strategy_router_v1"
-_STRATEGY_INTENT_PHASES = ("midgame", "endgame", "near_open_endgame", "critical_endgame")
+_STRATEGY_INTENT_PHASES = ("opening", "midgame", "endgame", "near_open_endgame", "critical_endgame")
 _STRATEGY_INTENT_TEXT = {
     "run_out": "加速走牌",
     "block_opponent": "阻断对手",
@@ -98,6 +99,8 @@ _SCENE_TAG_ORDER = (
     "can_play_out_all",
     "can_bomb_response",
     "wildcard_action_present",
+    "strategy_intent",
+    "strategy_domains",
 )
 
 
@@ -907,11 +910,16 @@ class DeepSeekClient:
             if not isinstance(metadata, dict):
                 metadata = {}
             topic = str(metadata.get("topic", ""))
+            domain = str(metadata.get("strategy_domain", ""))
+            guidance_mode = str(metadata.get("guidance_mode", ""))
             title, body = DeepSeekClient._rag_title_and_body(item)
             topic_text = f"；topic={topic}" if topic else ""
+            domain_text = f"；domain={domain}" if domain else ""
             body_text = f"：{body}" if body else ""
-            suffix = f"（{topic_text.lstrip('；')}）" if topic_text else ""
-            lines.append(f"- {title}{suffix}{body_text}")
+            suffix_parts = (topic_text + domain_text).lstrip("；")
+            suffix = f"（{suffix_parts}）" if suffix_parts else ""
+            prefix = "- 可撤回软假设：" if guidance_mode == "soft_hypothesis" else "- "
+            lines.append(f"{prefix}{title}{suffix}{body_text}")
         return lines
 
     @staticmethod
@@ -1032,6 +1040,32 @@ class DeepSeekClient:
         return payload
 
     @staticmethod
+    def _validated_strategy_recommendation(payload: object, legal_actions: list[dict[str, object]]) -> "StrategyRecommendation | None":
+        if payload is None:
+            return None
+        try:
+            from agents.strategy_recommendation import StrategyRecommendation
+        except Exception:
+            return None
+        if type(payload) is not StrategyRecommendation or payload.status != "ready" or payload.source != "public_strategy_recommendation_v2":
+            return None
+        legal_ids = {action.get("action_id") for action in legal_actions if type(action.get("action_id")) is int}
+        try:
+            from agents.strategy_recommendation import COUNTERCHECK_CODES, OBJECTIVE_CODES, STRATEGY_DOMAINS
+        except Exception:
+            return None
+        if (len(payload.action_ids) > 3 or len(set(payload.action_ids)) != len(payload.action_ids)
+                or any(type(action_id) is not int or action_id not in legal_ids for action_id in payload.action_ids)
+                or not payload.objective_codes or len(payload.objective_codes) > 4
+                or not payload.countercheck_codes or len(payload.countercheck_codes) > 5
+                or not payload.strategy_domains or len(payload.strategy_domains) > len(STRATEGY_DOMAINS)
+                or tuple(item for item in OBJECTIVE_CODES if item in payload.objective_codes) != payload.objective_codes
+                or tuple(item for item in COUNTERCHECK_CODES if item in payload.countercheck_codes) != payload.countercheck_codes
+                or tuple(item for item in STRATEGY_DOMAINS if item in payload.strategy_domains) != payload.strategy_domains):
+            return None
+        return payload
+
+    @staticmethod
     def _build_structured_prompt(
         my_info: dict[str, object],
         current_round: dict[str, object],
@@ -1044,6 +1078,7 @@ class DeepSeekClient:
         phase_context: GamePhaseContext | None = None,
         card_confidence_prompt: "CardConfidencePromptPayload | None" = None,
         strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None,
+        strategy_recommendation: "StrategyRecommendation | None" = None,
         residual_structure_source_actions: list[dict[str, object]] | None = None,
     ) -> str:
         """Build the final Step-H structured prompt from public payloads."""
@@ -1071,6 +1106,10 @@ class DeepSeekClient:
             {item.action_id: item for item in residual_facts}
             if residual_facts is not None
             else None
+        )
+        candidate_facts = summarize_candidate_structures(
+            {"my_info": my_info, "current_round": current_round, "other_players": other_players},
+            prompt_actions,
         )
 
         lines.append("【任务与硬约束】")
@@ -1147,6 +1186,34 @@ class DeepSeekClient:
             lines.append(validated_strategy_intent.text)
             lines.append("")
 
+        validated_recommendation = DeepSeekClient._validated_strategy_recommendation(
+            strategy_recommendation, prompt_actions,
+        )
+        candidate_representatives = select_candidate_structure_representatives(
+            candidate_facts,
+            recommended_ids=validated_recommendation.action_ids if validated_recommendation is not None else (),
+        ) if candidate_facts is not None else ()
+        if validated_recommendation is not None:
+            lines.append("【模型前建议】")
+            if validated_recommendation.action_ids:
+                lines.append("优先核验候选 action_id：" + ", ".join(str(item) for item in validated_recommendation.action_ids))
+            lines.append("策略域：" + "、".join(validated_recommendation.strategy_domains))
+            objective_text = {
+                "finish_now": "核对一次出完", "protect_structure": "减少结构拆分",
+                "low_cost_probe": "降低试探成本", "preserve_control": "保留控制资源",
+                "contest_follow": "比较跟牌牌权", "support_teammate": "支援队友",
+                "block_opponent": "阻断危险对手", "manage_bomb_wildcard": "管理炸弹与通配",
+                "plan_endgame": "规划残局分组",
+            }
+            check_text = {
+                "check_public_urgency": "公开剩余张数和紧急性", "check_trick_ownership": "牌权计划",
+                "check_structure_loss": "组合与拆分损失", "check_control_cost": "控制资源消耗",
+                "check_rule_pressure": "规则压制关系",
+            }
+            lines.append("目标：" + "；".join(objective_text[item] for item in validated_recommendation.objective_codes))
+            lines.append("反例检查：" + "；".join(check_text[item] for item in validated_recommendation.countercheck_codes))
+            lines.append("")
+
         lines.append("【场景标签】")
         lines.extend(DeepSeekClient._format_scene_tags(rag_context))
         lines.append("")
@@ -1170,6 +1237,23 @@ class DeepSeekClient:
                 residual_structures=residual_structures,
             )
         )
+        if candidate_facts is not None:
+            compact_facts: list[str] = []
+            for fact in candidate_representatives:
+                if fact.pattern == "pass":
+                    continue
+                parts = [f"id={fact.action_id}", f"张数={fact.carrier_count}", f"余组≈{fact.estimated_remaining_rank_groups}", f"孤张={fact.residual_singleton_rank_count}"]
+                if fact.finishes_hand:
+                    parts.append("一次出完")
+                if fact.fragments_played_rank_group:
+                    parts.append("同点拆分")
+                if fact.consumes_control_resource:
+                    parts.append("消耗控制")
+                if fact.bomb_length is not None:
+                    parts.append(f"炸弹长度={fact.bomb_length}")
+                compact_facts.append("；".join(parts))
+            if compact_facts:
+                lines.append("候选公开结构：" + " | ".join(compact_facts))
         lines.append("")
 
         rule_hits = DeepSeekClient._rag_items(rag_context, "rule_hits")
@@ -1255,6 +1339,7 @@ class DeepSeekClient:
         debug_prefix: str = "[DeepSeek]",
         card_confidence_prompt: "CardConfidencePromptPayload | None" = None,
         strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None,
+        strategy_recommendation: "StrategyRecommendation | None" = None,
     ) -> DeepSeekSuggestion:
         current_round = dict(observation.get("current_round", {}))
         step_no = self._coerce_int(current_round.get("step_no"), default=0)
@@ -1291,6 +1376,7 @@ class DeepSeekClient:
             phase_context=phase_context,
             card_confidence_prompt=card_confidence_prompt,
             strategy_intent_prompt=strategy_intent_prompt,
+            strategy_recommendation=strategy_recommendation,
             residual_structure_source_actions=legal_actions,
         )
 
