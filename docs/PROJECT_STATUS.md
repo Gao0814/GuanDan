@@ -1,14 +1,15 @@
 # 项目状态看板
 
-## 当前阶段：H3-A1 DeepSeek 模型前策略投影（2026-09-15）
+## 当前阶段：H3-A1.1 recommendation 与最终候选闭环（2026-09-16）
 
 - 项目所有者已确认后续策略主线：DeepSeek 是合法候选空间内的主要策略裁决者；本地层负责完整且有界的候选召回、公开局面结构化、人类经验检索、场景/目标识别和模型前推荐。不得把策略质量问题重新实现为成功模型动作后的强制覆盖。
 - 开局公式的定位已收敛为延迟约束下的窄、高置信本地快速路径，以及可提供给 DeepSeek 验证的模型前推荐。它不是第二套完整规则 AI；命中条件存在结构、协同、阻断或控制资源歧义时，应退出快速路径交给 DeepSeek。
 - H3-A1 已批准采用较完整、条件化的来源策略吸收，不再每次 live 暴露一个动作就追加一个局部神秘分数。策略目录统一覆盖：总体目标与冲突、开局/自由领牌、拆牌成本、控制与回手、跟牌争权、队友协同、危险对手、炸弹/通配、残局规划、不确定性与试探成本。
 - H3-A1 的目标链路固定为：`公开局面特征 -> 场景与目标 -> 人类经验 -> 候选结构比较 -> 定式推荐及反例 -> DeepSeek 原始选择`。作者、书目、URL、来源等级和激活状态继续只属于 provenance 治理平面，不参与检索评分、冲突扫描或模型 prompt。
-- H3-A0a 已由 `66009fc fix: bound DeepSeek prompt candidates` 完成并通过规划复审：最终集合硬上限 80，自由首出预留稳定最小自然 single/pair，overflow 依次有界保留 finishing、pressure、wildcard 和 ordinary，签名去重后按原始展示顺序返回。
-- 规划 Codex 在原 Coding worktree 独立复跑相关 230 项、主规则 39 项和全量 720 项；另对 500 个真实引擎初始局面做性质检查，全部满足预算、natural single/pair 召回、原始 ID 子集、签名唯一和重复顺序一致，第一层候选最大 247。提交已 fast-forward 到 `cao`，H3-A0/H3-A0a 封板。
-- 当前直接执行 `docs/NEXT_PROMPT.md` 的 H3-A1：用一个连贯实现批次把已审计公开材料较完整地投影到策略目录、公开候选特征、router/decision chain、RAG、模型前推荐和 prompt；不再按单个现场动作拆成零散补丁。
+- H3-A0/H3-A0a 的来源治理、窄开局快速路径和最终候选硬上限 80 已封板；H3-A1 的十域公开特征、router、RAG、模型前 recommendation 与 prompt 投影也已由 `d20dba3`、`7020b35`、`da2fd6b`、`caa1cc0` 完成基础离线验收并由 `7494897` 合入主线。
+- H3-A2 在首个真实请求前按门槛停止，真实 DeepSeek 请求与重试均为 0。八个 engine-backed fixture 的 canonical、router、RAG 与软假设路径可达，但其中五个场景的 recommendation shortlist ID 没有全部进入最终 prompt candidates，导致严格验证丢弃整个 `【模型前建议】` 区块。
+- 规划 Codex 独立核对生产顺序：`DeepSeekAIAgent` 从完整 `legal_actions` 生成 recommendation，却先独立剪出 `pruned`；`DeepSeekClient` 再对该集合限额，并用最终集合校验 recommendation。真实引擎 seed `0..9` 的初始局面均复现至少一个推荐 ID 缺席、recommendation 验证失败；既有 16 项 H3-A1 定向测试仍通过，确认缺口是跨阶段集合守恒而非单元 canonical 校验失败。
+- 当前 `docs/NEXT_PROMPT.md` 改为纯离线 H3-A1.1 修复：完整 canonical 动作仍负责派生策略知识，但模型前 shortlist、最终候选与 prompt 必须共享同一组原始 ID；最终候选继续 `<=80`，不得恢复模型后覆盖或按现场牌面特判。修复复审通过后，H3-A2 才从八场完整资格检查重新开始。
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
