@@ -1,61 +1,53 @@
 # Coding Codex 执行 Prompt
 
-这是 H3-A1.1：修复 strategy recommendation、prompt shortlist 与最终模型候选的原始 ID 闭环。不要依赖其他对话的隐含上下文，请从当前仓库重新建立事实。
+这是 H3-A1.1a：修复 `ba449f5` 后仍存在的 strategy recommendation builder/validator 预算漂移。不要依赖其他对话的隐含上下文，请从当前仓库重新建立事实。
 
-本任务只修改与该闭环直接相关的 AI 生产代码和 tests；不修改 `engine/`、RAG corpus/provenance、docs、Botzone 协议/connector、配置或仓库外 evidence。不得发起真实 DeepSeek 请求，不运行 Botzone、live、browser、connector 或 preflight，不读取或改写 seed `47004` evidence。
+本任务只做纯离线最小纠错，修改直接相关的 AI 生产代码和 tests；不修改 `engine/`、RAG corpus/provenance、docs、Botzone 协议/connector、配置或仓库外 evidence。不得发起真实 DeepSeek 请求，不运行 Botzone、live、browser、connector 或 preflight，不读取或改写 seed `47004` evidence。
 
 ## 开始前
 
-1. 阅读并遵守根目录及适用范围内的 `AGENTS.md`，检查 `.agents/skills/`。本任务不是 Botzone live 或 workspace 清理，不执行两个项目 Skill。
+1. 阅读并遵守根目录及适用范围内的 `AGENTS.md`，检查 `.agents/skills/`；本任务不执行两个 Botzone 项目 Skill。
 2. 阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/STRATEGY_SOURCE_AUDIT.md`、`docs/RAG_KB.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`。
-3. 检查 Git status、HEAD 和最近提交。HEAD 必须包含 `caa1cc09e91ea8ad9a56e8eefacee21cb10a24e2`，工作树必须 clean；否则失败即停并报告，不处理外部修改。
-4. 阅读完整调用链和相关测试，至少包括：
-   - `agents/deepseek_ai.py`
-   - `agents/deepseek_client.py`
-   - `agents/strategy_recommendation.py`
-   - `agents/action_structure.py`
-   - `agents/rag_advisor.py`
-   - `tests/test_action_pruning.py`
-   - `tests/test_action_structure.py`
-   - `tests/test_strategy_recommendation.py`
-   - `tests/test_h3_a1_projection.py`
-5. 先独立复现：recommendation 从完整 canonical `legal_actions` 生成，但第一层 `_prune_legal_actions()` 和最终 `_limit_prompt_actions()` 未保护 recommendation ID；最终 `_validated_strategy_recommendation()` 发现任一 ID 不在 prompt candidates 时返回 `None`，连同策略域、目标和反例一起不进入 prompt。不得把该问题归因于模型或用放宽 H3-A2 marker 绕过。
+3. 检查 Git status、HEAD 和最近提交。HEAD 必须包含 `ba449f5d173a4e2a4da8d6aa1c98f4ab0e3c7f27`，工作树必须 clean；否则失败即停，不处理外部修改。
+4. 阅读 `ba449f5` 完整 diff、`agents/strategy_recommendation.py`、`agents/deepseek_client.py`、`agents/deepseek_ai.py` 和全部相关测试。保留该提交已经正确建立的 recommendation-ID 两层保护、最终80项上限及 prompt-candidate 响应边界。
 
-## 实现目标
+## 必须先复现的反例
 
-建立一个确定、可测试、fail-closed 的模型前候选闭环：
+使用真实 `GuanDanGame.observe()` 和完整 canonical `legal_actions()`，由确定性本地合法动作推进整局，而不是手写 observation/action：
 
-1. recommendation 的公开结构、策略域、目标和反例仍从完整、严格 canonical 的原始 `legal_actions` 派生，不得先用剪枝子集改变局面判断。
-2. recommendation 中最多 3 个合法原始 `action_id` 必须在第一层剪枝和最终 prompt 硬预算中获得确定性保护，并实际出现在模型可选候选中；不得改写 ID、生成新动作或用语义相似但未登记的另一个 ID 暗中替换。
-3. 最终传给模型、用于 recommendation 校验、展示在 `【候选动作】`、用于响应允许集合的必须是同一个有界 canonical 子集。输出的 recommendation action IDs 必须全部属于该集合。
-4. 最终候选继续严格 `<= 80`、按签名唯一、保持稳定顺序且全部来自原始 `legal_actions`。为最多 3 个推荐项腾出预算时只能在既有有界优先级内确定性取舍，不能提高上限。
-5. H3-A0a 契约不得回归：自由首出仍保留代表性 natural single 与最小 natural pair；跟牌仍保留 pass；finishing、pressure、wildcard、ordinary 的有界优先级及四/五炸关系可见性保持。
-6. recommendation payload 若类型、source、枚举、顺序、ID、canonical 归属或预算畸形，继续 fail closed；不得把外部自由文本、非 canonical ID 或伪 action 注入候选。
-7. 合法 recommendation 没有 action shortlist 时，策略域、目标和反例仍可按既有 ready 契约进入 prompt；不能为了修 ID 守恒而把知识投影错误绑定为必须存在 shortlist。
-8. RAG 继续只消费允许的语义字段；provenance 作者、机构、书目、URL、来源等级和激活状态不得进入检索评分、冲突扫描或模型 prompt。
-9. DeepSeek 成功返回最终候选内合法原始 ID 后必须原样返回并记录 `model`。不得新增或恢复任何模型后策略覆盖、selector、guard 或 legacy decision source。
+- 某些后续自由领牌状态同时触发 structure、probe、control、teammate、danger/endgame 等目标；`build_strategy_recommendation()` 返回 `status="ready"`，但 `objective_codes` 数量为5。
+- `_validated_strategy_recommendation()` 固定只接受最多4项，因此拒绝该生产 payload。
+- recommendation ID 不获得保护；最终候选缺少部分推荐原始ID，`【模型前建议】`不进入 prompt。
 
-实现方式由你根据现有结构选择，但不得只在 `_validated_strategy_recommendation()` 中静默删除缺席 ID 来伪造闭环：如果完整 recommendation 明确推荐了合法候选，生产 shortlist 应在预算内真正保留它。也不得只修 `_build_structured_prompt()` 的第二层，因为 recommendation ID 可能已被第一层剪枝删除。
+规划复审在40局/3379状态中稳定发现4个此类状态。不得只复现初始局面，也不得以现有测试全绿否认该反例。
+
+## 实现要求
+
+1. 为 recommendation 的 objective 预算建立单一生产真值；builder、validator 和 prompt formatter 不得各自维护会漂移的隐含上限。
+2. 保持现有最多4个 objective 的有界输入契约；不得简单提高或删除上限来绕过失败。
+3. 当公开局面同时命中超过4个目标时，builder 必须以稳定、显式、可测试的优先级选出至多4项。公开紧急目标（例如立即出完、危险对手阻断、明确残局或队友协同）不得被普通低成本试探或泛化资源管理无理由挤出；优先级只影响模型前目标展示，不选择动作。
+4. 每个由生产 `build_strategy_recommendation()` 返回的 `ready` payload，必须能被 `_validated_strategy_recommendation(payload, 同一完整canonical actions)` 接受。若输入证据/canonical本身无效则继续返回 `unavailable`，不得伪造可用 payload。
+5. 通过校验的 recommendation action IDs 必须继续全部进入同一个最终 `<=80` prompt candidate 集合；最终 IDs 是原始 IDs 子集、签名唯一、顺序稳定，模型响应只接受实际 prompt candidates。
+6. 保留无 shortlist 的合法 ready recommendation 语义；不得把 objective 修复误改为必须存在 action IDs。
+7. 外部或畸形 payload 的 type/source/ID/枚举/顺序/预算/canonical 校验继续 fail closed；不得静默截断不可信调用方 payload。只有项目自己的 builder 在构造时执行确定预算选择。
+8. 不改变 RAG corpus、来源等级、provenance 隔离、router/intent、opening shortcut、H3-A0a 候选优先级或 DeepSeek 成功 ID/`model` source 保真；不得新增模型后覆盖或 legacy source 主动分支。
 
 ## 必须补充的回归
 
-1. 用真实 `GuanDanGame.observe()` 与完整 `legal_actions()` 构造 engine-backed 自由首出大候选场景，证明：完整 recommendation 为 ready；它的全部推荐 ID 进入最终 `<=80` 候选；`【模型前建议】`、策略域、目标和反例均进入最终 prompt。
-2. 至少覆盖此前 H3-A2 被阻断的五类关系：
-   - 低成本自然单张试探；
-   - natural pair 与 single 清理；
-   - 中性 pair/triple 的可撤回 soft hypothesis；
-   - 短残局最少分组；
-   - 炸弹/通配资源管理。
-   fixture 必须来自引擎公开 `observe()` 与完整 canonical `legal_actions()`，不得手写伪合法动作、删除合法候选或硬编码现场 action ID。
-3. 覆盖推荐项与既有 finishing/pressure/wildcard/ordinary 溢出竞争的场景，证明硬上限、稳定顺序、签名唯一和代表性保留同时成立。
-4. 覆盖 standalone `DeepSeekClient.suggest_action_id()` 与 `DeepSeekAIAgent.select_action()` 两条生产入口，证明二者使用同一最终候选/推荐闭环；fake client 返回任一最终合法 ID 时 ID 与 `model` source 保真。
-5. 保留并扩展畸形 recommendation/canonical 反例：非原始 ID、重复 ID、超 3 项、未知枚举、错误顺序或与候选不守恒时必须 fail closed，且不能扩大候选集合。
-6. 加一个多 seed 真实引擎性质测试或等价离线探针，至少验证：最终数 `<=80`、推荐 IDs 是最终 IDs 子集、最终 IDs 是原始 IDs 子集、签名唯一、重复运行结果稳定。测试不得依赖 seed `47004`。
+1. 对可同时产生5个原始目标的 engine-backed 后续状态建立回归，证明 builder 最终输出至多4项、validator 接受、公开紧急目标按明确优先级保留、全部 recommendation IDs 位于最终候选且 prompt 包含策略域/目标/反例区块。
+2. 加入真实整局全状态性质测试或等价离线探针，覆盖不少于40个非 `47004` seed；每个状态都验证：
+   - 生产 recommendation 为 `ready` 时自校验通过；
+   - objective 数量在预算内；
+   - recommendation IDs 是最终 IDs 子集；
+   - 最终数 `<=80`，最终 IDs 是原始 IDs 子集，签名唯一；
+   - 相同输入重复运行结果稳定。
+3. 保留 `ba449f5` 的大候选、五类关系、standalone Client、Agent、overflow 竞争、畸形 payload 和未展示模型 ID 拒绝回归。
+4. 新增边界测试证明：外部构造的5项 objective payload仍被 validator拒绝；生产 builder 则在进入 validator 前按确定优先级收敛到预算内。不得让 validator 暗中截断。
 
 ## 验证
 
-1. 先运行新增和直接相关测试。
-2. 运行 H3/DeepSeek/RAG/Botzone observability 相关回归，至少覆盖 action pruning、action structure、strategy recommendation、H3-A1 projection、DeepSeek prompt/agent、strategy router/intent、RAG provenance/投影和 Botzone adapter/observability/decision trace。
+1. 运行新增和直接相关测试。
+2. 运行 H3/DeepSeek/RAG/Botzone observability 相关回归，至少覆盖 action pruning、action structure、strategy recommendation、candidate closure、H3-A1 projection、DeepSeek prompt/agent、strategy router/intent、RAG provenance/投影及 Botzone adapter/observability/decision trace。
 3. 运行主规则回归：
 
 ```powershell
@@ -68,15 +60,11 @@ python -m unittest tests.test_patterns tests.test_rules tests.test_game_flow tes
 python -m unittest discover -q
 ```
 
-5. 运行 `git diff --check`，并做生产扫描，确认：
-   - 无 seed `47004`、Q/4/10 或某组点数/action ID 特判；
-   - 无新模型后策略覆盖或 legacy source 主动分支；
-   - provenance 治理字段未进入模型输入；
-   - H3-A0a 最终预算常量未提高。
+5. 运行 `git diff --check`，扫描确认没有 seed `47004`/现场牌面/固定 action ID 生产特判，没有新模型后覆盖或 legacy source 主动分支，provenance 治理字段未进入模型输入，候选上限仍为80。
 
 ## 提交与报告
 
-1. 只提交本任务的业务代码和 tests，使用单一清晰 commit；不得修改或提交 docs、`.env`、配置、日志、workspace evidence 或其他外部修改。
-2. 报告根因、数据流修复方式、修改文件、关键测试/性质检查结果、commit hash 和最终 Git status。
-3. 明确报告真实 DeepSeek 请求、重试、Botzone/live/connector/browser/preflight 均为 0，seed `47004` workspace evidence 未触碰。
-4. 不声称策略收益、胜率提升或 H3-A2 已完成；H3-A2 必须在规划 Codex 复审本提交后，从原八场完整离线资格检查重新开始。
+1. 只提交本任务直接相关的业务代码和 tests，使用一个清晰 commit；不得修改或提交 docs、`.env`、配置、日志、workspace evidence 或其他外部修改。
+2. 报告反例、统一预算与优先级设计、修改文件、整局全状态性质结果、测试结果、commit hash 和最终 Git status。
+3. 明确报告真实 DeepSeek 请求、重试、Botzone/live/connector/browser/preflight 均为0，seed `47004` evidence 未触碰。
+4. 不声称 H3-A2 已完成、策略收益或胜率提升；纠错提交仍需规划 Codex 独立复审，之后才可恢复原八场 H3-A2 资格检查。

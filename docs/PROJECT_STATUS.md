@@ -9,7 +9,9 @@
 - H3-A0/H3-A0a 的来源治理、窄开局快速路径和最终候选硬上限 80 已封板；H3-A1 的十域公开特征、router、RAG、模型前 recommendation 与 prompt 投影也已由 `d20dba3`、`7020b35`、`da2fd6b`、`caa1cc0` 完成基础离线验收并由 `7494897` 合入主线。
 - H3-A2 在首个真实请求前按门槛停止，真实 DeepSeek 请求与重试均为 0。八个 engine-backed fixture 的 canonical、router、RAG 与软假设路径可达，但其中五个场景的 recommendation shortlist ID 没有全部进入最终 prompt candidates，导致严格验证丢弃整个 `【模型前建议】` 区块。
 - 规划 Codex 独立核对生产顺序：`DeepSeekAIAgent` 从完整 `legal_actions` 生成 recommendation，却先独立剪出 `pruned`；`DeepSeekClient` 再对该集合限额，并用最终集合校验 recommendation。真实引擎 seed `0..9` 的初始局面均复现至少一个推荐 ID 缺席、recommendation 验证失败；既有 16 项 H3-A1 定向测试仍通过，确认缺口是跨阶段集合守恒而非单元 canonical 校验失败。
-- 当前 `docs/NEXT_PROMPT.md` 改为纯离线 H3-A1.1 修复：完整 canonical 动作仍负责派生策略知识，但模型前 shortlist、最终候选与 prompt 必须共享同一组原始 ID；最终候选继续 `<=80`，不得恢复模型后覆盖或按现场牌面特判。修复复审通过后，H3-A2 才从八场完整资格检查重新开始。
+- `ba449f5 fix: close recommendation prompt candidates` 已让通过严格校验的 recommendation ID 穿过两层剪枝，统一模型响应允许集合，并新增 engine-backed 回归；其 64 项直接相关、39 项主规则和 738 项全量测试由规划 Codex 独立复跑通过。
+- 但 `ba449f5` 尚未通过规划复审：40 局/3379 个真实引擎后续状态探针发现 4 个稳定失败状态。生产 builder 可生成 5 个 objective 的 `ready` recommendation，而 validator 固定上限为 4，导致 payload 在保护前被判无效；最小复现中原始动作3、最终动作2、推荐ID 2个仅保留1个，`【模型前建议】`仍缺席。
+- 当前 `docs/NEXT_PROMPT.md` 改为 H3-A1.1a 最小纠错：统一 builder/validator 的 objective 预算和确定优先级，保证生产生成的每个 ready recommendation 可由同一 validator 接受，再重跑整局所有状态的候选闭环性质。纠错复审通过前，H3-A2 继续保持请求0、重试0。
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。

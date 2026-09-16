@@ -91,6 +91,10 @@
 
 H3-A1.1 通过组合复审后，重新执行原 H3-A2 的全部八场离线资格检查；只有八场同时通过才开始最多 8 次、零重试真实 DeepSeek 诊断。此前 0 次调用不形成模型质量结果，也不允许缩减或替换场景。
 
+34. `ba449f5` 完成了候选保护主链：recommendation 在完整 canonical 动作上先生成，通过严格校验后其最多3个原始ID穿过首层剪枝和最终80项 limiter；Client响应只接受实际 prompt candidates。规划 Codex 独立复跑64项直接相关、39项主规则和738项全量均通过，初始多seed回归也通过。
+
+该提交仍有一个阻塞封板的生产契约反例。40局/3379个真实引擎后续状态中4个状态的 builder 生成5项 objective，但 `_validated_strategy_recommendation()` 只接受最多4项；因此“ready”生产 payload 在进入候选保护前被拒绝，推荐ID继续丢失且模型前建议区块消失。下一步 H3-A1.1a 只统一 recommendation 生成预算、validator预算和超额时的确定优先级，确保所有生产 ready payload 自校验通过；不得简单放宽/删除预算、静默丢ID或削弱畸形外部payload的fail-closed。完成后须用真实整局全状态性质检查证明闭环，再由规划 Codex 复审。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度
