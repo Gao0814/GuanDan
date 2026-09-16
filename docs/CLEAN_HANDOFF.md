@@ -20,7 +20,7 @@
 - 仓库级Skills位于 `.agents/skills/`：`botzone-manual-live` 封装单局人工连接、建桌、监测和evidence验收；`botzone-workspace-recycle` 封装已审计artifact的精确回收站清理。run-specific seed、Agent、预算、文件allowlist与hash仍只放在当前任务Prompt。
 - `evaluation/botzone_policy_benchmark.py` 能生成正式四座位成对赛程或显式 selected-seat 赛程，并严格聚合 RuleBased/DeepSeek v7/v8 audit。
 - `botzone_upload_py36/` 是独立的 Python 3.6.5、无贡、自然牌规则 Bot；`botzone_deepseek_probe_py36/` 的 DeepSeek 调用只做探测，不参与动作选择。
-- 最新业务提交为 `66009fc`：最终 prompt 候选硬限制为 80，自由首出保留稳定最小自然 single/pair，overflow 对 finishing/pressure/wildcard/ordinary 做有界代表保留并按签名去重。规划 Codex 独立复跑230项相关、39项主规则、720项全量及500个真实引擎初始局面性质检查；H3-A0/H3-A0a 已封板。
+- 最新业务提交链为 `d20dba3`、`7020b35`、`da2fd6b`、`caa1cc0`，由 `7494897` 合入主线：H3-A1 已完成来源策略、十域决策链、RAG/prompt 投影、canonical/预算 fail-closed 和有界代表选择。规划 Codex 独立通过 212 项相关、39 项主规则、732 项全量及 30 局/2730 状态真实引擎离线探针；H3-A0/H3-A0a/H3-A1 均已封板。
 - canonical危险对手fixture的受约束真实模型检查已判定`danger_opponent_prompt_raw_model_ready`：唯一请求成功、重试0，模型在后置守卫前自行返回固定候选集内的`ordinary`动作；现有`block_opponent / urgent_opponent_controls_table`输入已足以支持退役强制pass阻断。该结果以低敏执行报告为证据，不是整体胜率结论。
 - 项目所有者长期授权单个明确诊断/评测任务中严格少于10次的预注册真实DeepSeek请求，无需另行申请；10次及以上仍须事先授权，范围、重试、密钥和自由文本保密边界不变。
 - 固定4张自由出牌fixture的守卫前真实模型检查判定为`short_endgame_prompt_raw_model_not_ready`：最少分组集合为`{1,2,5}`，但唯一成功请求的原始动作落在严格更差的单J集合`{3,4}`。当前`ready / control / stable_control`提示未提供最少剩余分组语义；该低敏单点证据支持补充专用prompt，不支持删除或扩大守卫，也不是胜率结论。
@@ -327,6 +327,6 @@ H3-A0a 已由 `66009fc` 修复并独立复审：原6个真实引擎复现样本�
 
 ## 14. Recommended Starting Point
 
-`d20dba3` 是 H3-A1 的首次业务实现，但规划复审未通过，主线仍停在其父提交 `90f321e`。旧回归 194/39/724 全部通过，然而真实运行路径仍有三类阻塞：记牌条目被“升级”子串冲突扫描误拒；十域 metadata 未形成 domain-driven RAG/prompt；candidate/recommendation 对非 canonical 输入、未知 domain 和无界文案未 fail closed。新增测试也未覆盖原九组关系 fixture。
+H3-A1 组合实现已通过复审并合入 `cao`。最新独立结果为相关 212 项、主规则 39 项、全量 732 项；30 局真实引擎离线探针覆盖 2730 个状态、零异常，十域与全部 11 条 active 经验均有生产路径可达证据。工作区状态仍必须以实际 `git status --short` 为准。
 
-直接在 `d20dba3` 的原 Coding worktree 执行 `docs/NEXT_PROMPT.md` 的 H3-A1 纠错续作。完成前不得运行真实 DeepSeek 或 live；修复后交回规划 Codex 对 `90f321e..新提交` 的组合 diff 重新复审。
+下一任务直接执行 `docs/NEXT_PROMPT.md` 的 H3-A2 真实 DeepSeek 代表场景诊断：8 个预注册场景、每场恰好 1 次、重试 0，总请求严格少于 10。不得运行 Botzone、connector 或 live，不修改代码/测试/docs，不读取 seed `47004` evidence。结果只用于定位模型前输入是否被正确利用；不能从单次样本声称胜率或普遍策略提升。

@@ -2127,3 +2127,14 @@ L5-A4f7 判定 `botzone_codex_verified_ui_rule_pilot_verified`。两次表单 re
 - 新候选派生器仍可接受缺 `declared_cards`、`wildcard_info`、`display_text` 的非 canonical action；推荐验证器也接受未知 domain 和任意 5000 字符文案并写入 prompt，违反 fail-closed 与固定预算不变量。
 - 来源映射还需收口：炸弹保留的具体定性原则只能来自已批准的 C 级 soft hypothesis，不能借 B 级“动态调整组牌”的宽泛表述升级为 B 级具体打法。
 - 当前阶段保持 H3-A1 未完成，不进入真实 DeepSeek 探针或 live。下一任务是 `docs/NEXT_PROMPT.md` 的 H3-A1 纠错续作；修复提交必须建立在 `d20dba3` 上，之后由规划 Codex 对组合 diff 重新完整复审。
+
+### 2026-09-16 H3-A1 纠错复审通过
+
+- 纠错提交链为 `7020b35`、`da2fd6b`、`caa1cc0`，与首次实现 `d20dba3` 一并由合并提交 `7494897` 纳入 `cao`；Coding worktree 与主工作区在复审/合入边界均为 clean。
+- `exp_card_memory_001` 的否定语境不再被“升级”子串误拒；11 条 active 经验在 30 局、2730 个真实引擎状态的生产默认 top-k=3 探针中均至少命中一次，零派生异常。
+- 十个策略域均由公开 observation、canonical actions 与现有 intent 条件化派生，进入 RAG 排序和最终 prompt；不是 corpus metadata 并集占位。无可靠 shortlist 时仍可只传目标、反例和候选事实。
+- B/C 来源边界已收口：炸弹/通配的具体保留倾向为 C 级 `soft_hypothesis`；作者、标题、出版物、URL、locator、tier、status 等治理字段未进入模型前输入。
+- candidate/recommendation 的 schema、枚举和预算改为 fail closed。规划复现的自由首出 pass、空 wildcard info、非法 declared token、table/constraint 不一致、错误玩家集合、table wildcard、wildcard 声明多重集不守恒和自然 carrier/declared 不一致八类反例均返回不可用；真实引擎 canonical 状态未被误拒。
+- 有界代表选择覆盖推荐 ID、finisher、最小自然 single/pair、控制资源、wildcard、fragmentation 与四/五炸；合法模型动作仍原样返回并记录 `model`，没有新增成功模型后的 selector/guard/source。
+- 独立验证为 H3/DeepSeek/Botzone 定向 212 项、主规则 39 项、全量 732 项全部通过，组合 `diff --check` 与生产扫描通过。H3-A1 离线阶段完成，当前范围内无已知功能性剩余风险。
+- 当前进入 H3-A2：只运行 `docs/NEXT_PROMPT.md` 预注册的 8 个真实 DeepSeek 代表场景，每场 1 次、总数 8、重试 0；不运行 Botzone/live，不修改仓库。结果只作分层诊断，不作胜率或普遍策略收益结论。

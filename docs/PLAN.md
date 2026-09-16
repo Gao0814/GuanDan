@@ -81,6 +81,12 @@
 
 31. `66009fc` 已完成 H3-A0a。最终 prompt action limiter 先按语义签名去重，自由首出预留稳定最小自然 single/pair、跟牌预留 pass，再按 finishing、pressure、wildcard、ordinary 的确定优先级填满且永不超过 80，最终按原始展示顺序返回。规划 Codex 独立复跑相关 230 项、主规则 39 项、全量 720 项，并对 500 个真实引擎初始局面验证预算、召回、签名、原始 ID 与顺序性质全部成立；原 6 个失败样本从 132–243 项收敛为 80 且 pair 恢复。H3-A0/H3-A0a 封板，当前转入 H3-A1。
 
+32. H3-A1 已由 `d20dba3`、`7020b35`、`da2fd6b`、`caa1cc0` 完成，并通过规划 Codex 的组合复审后合入主线。十个策略域现在由公开局面派生，进入 RAG 排序与固定枚举 prompt；B 级来源原则与 C 级可撤回软假设分离，provenance 治理字段仍不进入知识正文或模型输入。candidate/recommendation 对玩家关系、free/follow/table、声明牌、carrier、通配多重集、固定枚举和预算 fail closed；关键代表不再由原顺序前 12 项截断。DeepSeek 成功返回的合法原始 ID 与 `model` source 保持不变，没有新增模型后覆盖。
+
+规划 Codex 独立运行 212 项 H3/DeepSeek/Botzone 定向、39 项主规则和 732 项全量测试；8 类畸形 canonical 反例全部降级为 `unavailable`。30 局真实引擎离线遍历覆盖 2730 个状态、零异常，十域均可达，11 条 active 经验在生产默认 top-k=3 下均至少命中一次。H3-A1 离线阶段封板。
+
+下一步是 H3-A2：按 `docs/NEXT_PROMPT.md` 运行严格少于 10 次、零重试、无 live 的真实 DeepSeek 代表场景诊断。该阶段只验证模型是否正确利用新的模型前输入，不修改代码、不把单次动作外推为胜率；发现偏差后再按候选、特征、路由、知识、prompt 或模型选择分层规划。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度
