@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：H3-A2 真实模型代表场景诊断（2026-09-16）
+## 当前阶段：H3-A2r 真实模型诊断证据恢复（2026-09-16）
 
 - 项目所有者已确认后续策略主线：DeepSeek 是合法候选空间内的主要策略裁决者；本地层负责完整且有界的候选召回、公开局面结构化、人类经验检索、场景/目标识别和模型前推荐。不得把策略质量问题重新实现为成功模型动作后的强制覆盖。
 - 开局公式的定位已收敛为延迟约束下的窄、高置信本地快速路径，以及可提供给 DeepSeek 验证的模型前推荐。它不是第二套完整规则 AI；命中条件存在结构、协同、阻断或控制资源歧义时，应退出快速路径交给 DeepSeek。
@@ -12,7 +12,9 @@
 - `ba449f5 fix: close recommendation prompt candidates` 已让通过严格校验的 recommendation ID 穿过两层剪枝，统一模型响应允许集合，并新增 engine-backed 回归；其 64 项直接相关、39 项主规则和 738 项全量测试由规划 Codex 独立复跑通过。
 - 但 `ba449f5` 尚未通过规划复审：40 局/3379 个真实引擎后续状态探针发现 4 个稳定失败状态。生产 builder 可生成 5 个 objective 的 `ready` recommendation，而 validator 固定上限为 4，导致 payload 在保护前被判无效；最小复现中原始动作3、最终动作2、推荐ID 2个仅保留1个，`【模型前建议】`仍缺席。
 - `8d2146e fix: bound recommendation objectives` 已建立共享的4项目标预算和公开紧急性优先级；生产 builder 在构造时收敛，外部超预算 payload 仍 fail closed。规划 Codex 独立通过66项直接相关、39项主规则、740项全量测试，并用两种推进方式复核80局/9381状态：最大objective为4，ready payload自校验、推荐ID、最终候选、80项预算、签名唯一和稳定顺序全部守恒。
-- H3-A1.1/H3-A1.1a 至此封板，当前范围内无已知功能性剩余风险。`docs/NEXT_PROMPT.md` 已恢复 H3-A2 原八场完整资格检查与最多8次、零重试真实 DeepSeek 诊断；此前请求仍为0，不得缩减场景或跳过调用前门槛。
+- H3-A1.1/H3-A1.1a 至此封板，当前范围内无已知功能性剩余风险。H3-A2 首轮恢复的八场离线资格检查由执行报告判定通过，规划 Codex 独立复跑其指定23项回归也全部通过。
+- 但该任务的真实请求进程最终stdout未被会话捕获，且没有低敏持久审计；真实请求数、逐场provider outcome、动作类别和ready/not_ready/inconclusive汇总均不可审计。该轮真实诊断判定为`inconclusive / evidence_missing`，不得称为H3-A2完成或作为策略修改依据，也不得在同一任务内重试。
+- 当前 `docs/NEXT_PROMPT.md` 改为独立H3-A2r恢复：场景、分类、最多8次和重试0均不变；首个请求前必须创建fresh仓库外低敏JSONL ledger，并在每次调用前后同步写入固定事件。ledger禁止牌面、action ID、prompt、模型文本、URL、token、凭据或异常正文；即使stdout丢失也必须能审计请求计数和结果分类。
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。

@@ -24,6 +24,7 @@
 - H3-A2 首轮在任何网络调用前停止，请求0、重试0。八场 engine-backed fixture 中五场因完整动作集产生的 recommendation ID 未被 prompt shortlist 保留，严格校验进而删除整个模型前建议区块。规划 Codex 在真实引擎 seed `0..9` 的初始局面全部复现同类失败；当前问题不是模型选择、RAG 来源或 fixture 绕过问题。
 - `ba449f5` 已实现通过校验后的 recommendation-ID 两层保护和实际 prompt-candidate 响应边界，但规划复审未封板：40局/3379状态发现4个 builder/validator 预算漂移反例。builder 可产生5个 objective 的 ready payload，而 validator 上限为4，保护随之关闭；当前还需 H3-A1.1a 最小纠错。
 - `8d2146e` 已完成 H3-A1.1a：builder/validator 共用4项目标预算，模型前目标按公开紧急性稳定收敛，外部超预算payload继续fail closed。规划Codex独立通过66/39/740项测试和80局/9381状态双推进探针，ready recommendation、受保护ID、最终候选及prompt闭环零失败；H3-A1.1封板。
+- H3-A2后续执行报告称八场离线资格均通过，但真实请求进程最终stdout未被会话捕获，且未生成低敏持久结果。请求计数、逐场provider outcome与动作分类不可审计，因此真实阶段只记`inconclusive / evidence_missing`，不是策略结果；代码/Git/Botzone workspace均未改。
 - canonical危险对手fixture的受约束真实模型检查已判定`danger_opponent_prompt_raw_model_ready`：唯一请求成功、重试0，模型在后置守卫前自行返回固定候选集内的`ordinary`动作；现有`block_opponent / urgent_opponent_controls_table`输入已足以支持退役强制pass阻断。该结果以低敏执行报告为证据，不是整体胜率结论。
 - 项目所有者长期授权单个明确诊断/评测任务中严格少于10次的预注册真实DeepSeek请求，无需另行申请；10次及以上仍须事先授权，范围、重试、密钥和自由文本保密边界不变。
 - 固定4张自由出牌fixture的守卫前真实模型检查判定为`short_endgame_prompt_raw_model_not_ready`：最少分组集合为`{1,2,5}`，但唯一成功请求的原始动作落在严格更差的单J集合`{3,4}`。当前`ready / control / stable_control`提示未提供最少剩余分组语义；该低敏单点证据支持补充专用prompt，不支持删除或扩大守卫，也不是胜率结论。
@@ -332,4 +333,4 @@ H3-A0a 已由 `66009fc` 修复并独立复审：原6个真实引擎复现样本�
 
 H3-A1 组合实现已通过基础复审并合入 `cao`。最新独立结果为相关 212 项、主规则 39 项、全量 732 项；30 局真实引擎离线探针覆盖 2730 个状态、零异常，十域与全部 11 条 active 经验均有生产路径可达证据。但后续 H3-A2 资格检查证明 recommendation 与实际模型候选未形成闭环，因此不能把“域可达”解释为“建议必然进入最终 prompt”。工作区状态仍必须以实际 `git status --short` 为准。
 
-下一任务直接执行 `docs/NEXT_PROMPT.md` 的 H3-A2 真实DeepSeek代表场景诊断：先从头完成原八场 engine-backed 离线资格检查，全部通过后每场至多1次、总计最多8次、重试0。不得运行Botzone/connector/live或读取seed `47004` evidence；结果只用于分层定位模型前输入消费，不构成胜率结论。
+下一任务直接执行 `docs/NEXT_PROMPT.md` 的H3-A2r证据恢复：重新从头完成原八场资格检查，全部通过后执行新的最多8次、重试0诊断；调用前后只向fresh仓库外低敏JSONL ledger同步写固定事件，避免stdout丢失再次使结果失证。不得运行Botzone/connector/live或读取seed `47004` evidence；结果不构成胜率结论。
