@@ -9,7 +9,13 @@ from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion, PROMPT_MAX_CANDIDATE_ACTIONS
 from agents.game_phase import classify_game_phase
 from agents.rag_advisor import RAGAdvisor
-from agents.strategy_recommendation import StrategyRecommendation, build_strategy_recommendation
+from agents.action_structure import summarize_candidate_structures
+from agents.strategy_recommendation import (
+    MAX_RECOMMENDATION_OBJECTIVES,
+    OBJECTIVE_CODES,
+    StrategyRecommendation,
+    build_strategy_recommendation,
+)
 from engine.cards import Card
 from engine.game import GuanDanGame
 from rag.kb_loader import KnowledgeBaseLoader
@@ -78,7 +84,72 @@ def _prepared(
     return recommendation, final_actions, prompt
 
 
+def _objective_budget_state() -> tuple[dict[str, object], list[dict[str, object]]]:
+    """Find a real later free-lead state with five independently public goals."""
+    for seed in range(40):
+        game = GuanDanGame(seed=seed, current_level_rank="2")
+        game.reset()
+        finished = False
+        while not finished:
+            observation = game.observe()
+            legal_actions = game.legal_actions()
+            facts = summarize_candidate_structures(observation, legal_actions)
+            if facts is not None and facts and facts[0].is_free_lead:
+                safe_natural_single = any(
+                    fact.pattern == "single"
+                    and not fact.uses_wildcard
+                    and not fact.fragments_played_rank_group
+                    and not fact.consumes_control_resource
+                    and fact.natural_single_rank_value is not None
+                    for fact in facts
+                )
+                if (
+                    safe_natural_single
+                    and any(fact.fragments_played_rank_group for fact in facts)
+                    and any(fact.teammate_active and fact.teammate_hand_count is not None and fact.teammate_hand_count <= 2 for fact in facts)
+                    and any(fact.minimum_opponent_hand_count is not None and fact.minimum_opponent_hand_count <= 2 for fact in facts)
+                    and any(fact.finishes_hand for fact in facts) is False
+                    and int(observation["my_info"]["hand_count"]) <= 4
+                ):
+                    return observation, legal_actions
+            result = game.step(int(legal_actions[0]["action_id"]))
+            finished = bool(result.get("game_over", False))
+    raise AssertionError("expected deterministic objective-budget state")
+
+
 class RecommendationCandidateClosureTests(unittest.TestCase):
+    def test_engine_backed_objective_budget_preserves_public_urgency(self) -> None:
+        observation, legal_actions = _objective_budget_state()
+        recommendation, final_actions, prompt = _prepared(observation, legal_actions)
+
+        self.assertEqual(recommendation.status, "ready")
+        self.assertEqual(len(recommendation.objective_codes), MAX_RECOMMENDATION_OBJECTIVES)
+        self.assertEqual(
+            recommendation.objective_codes,
+            ("block_opponent", "plan_endgame", "support_teammate", "protect_structure"),
+        )
+        self.assertNotIn("low_cost_probe", recommendation.objective_codes)
+        self.assertIsNotNone(
+            DeepSeekClient._validated_strategy_recommendation(recommendation, legal_actions)
+        )
+        self.assertTrue(
+            set(recommendation.action_ids).issubset(
+                {int(action["action_id"]) for action in final_actions}
+            )
+        )
+        for marker in ("【模型前建议】", "策略域：", "目标：", "反例检查："):
+            self.assertIn(marker, prompt)
+
+    def test_external_five_objective_payload_is_rejected_without_truncation(self) -> None:
+        game = GuanDanGame(seed=0, current_level_rank="2")
+        observation = game.reset()
+        legal_actions = game.legal_actions()
+        production = build_strategy_recommendation(observation, legal_actions)
+        external = replace(production, objective_codes=OBJECTIVE_CODES[:5])
+
+        self.assertLessEqual(len(production.objective_codes), MAX_RECOMMENDATION_OBJECTIVES)
+        self.assertIsNone(DeepSeekClient._validated_strategy_recommendation(external, legal_actions))
+
     def test_engine_backed_large_free_lead_keeps_recommendations_in_final_prompt(self) -> None:
         game = GuanDanGame(seed=0, current_level_rank="2")
         observation = game.reset()
@@ -172,25 +243,53 @@ class RecommendationCandidateClosureTests(unittest.TestCase):
                     )],
                 )
 
-    def test_multi_seed_engine_properties_are_stable(self) -> None:
-        for seed in range(12):
+    def test_multi_seed_full_game_properties_are_stable(self) -> None:
+        state_count = 0
+        for seed in range(40):
             with self.subTest(seed=seed):
                 game = GuanDanGame(seed=seed, current_level_rank="2")
-                observation = game.reset()
-                legal_actions = game.legal_actions()
-                recommendation, first, _ = _prepared(observation, legal_actions)
-                _, second, _ = _prepared(observation, legal_actions)
-                raw_ids = {int(action["action_id"]) for action in legal_actions}
-                final_ids = {int(action["action_id"]) for action in first}
-                self.assertLessEqual(len(first), PROMPT_MAX_CANDIDATE_ACTIONS)
-                self.assertTrue(set(recommendation.action_ids).issubset(final_ids))
-                self.assertTrue(final_ids.issubset(raw_ids))
-                signatures = [DeepSeekClient._action_signature(action) for action in first]
-                self.assertEqual(len(signatures), len(set(signatures)))
-                self.assertEqual(
-                    [action["action_id"] for action in first],
-                    [action["action_id"] for action in second],
-                )
+                game.reset()
+                finished = False
+                while not finished:
+                    observation = game.observe()
+                    legal_actions = game.legal_actions()
+                    recommendation = build_strategy_recommendation(observation, legal_actions)
+                    current_round = observation["current_round"]
+                    my_info = observation["my_info"]
+                    assert isinstance(current_round, dict)
+                    assert isinstance(my_info, dict)
+                    kwargs = {
+                        "constraint": str(current_round["constraint"]),
+                        "step_no": int(current_round["step_no"]),
+                        "hand_count": int(my_info["hand_count"]),
+                        "phase_context": classify_game_phase(observation),
+                        "strategy_recommendation": recommendation,
+                    }
+                    first = DeepSeekClient.prepare_prompt_actions(legal_actions, **kwargs)
+                    second = DeepSeekClient.prepare_prompt_actions(legal_actions, **kwargs)
+                    raw_ids = {int(action["action_id"]) for action in legal_actions}
+                    final_ids = {int(action["action_id"]) for action in first}
+                    if recommendation.status == "ready":
+                        self.assertIsNotNone(
+                            DeepSeekClient._validated_strategy_recommendation(recommendation, legal_actions)
+                        )
+                        self.assertLessEqual(
+                            len(recommendation.objective_codes),
+                            MAX_RECOMMENDATION_OBJECTIVES,
+                        )
+                        self.assertTrue(set(recommendation.action_ids).issubset(final_ids))
+                    self.assertLessEqual(len(first), PROMPT_MAX_CANDIDATE_ACTIONS)
+                    self.assertTrue(final_ids.issubset(raw_ids))
+                    signatures = [DeepSeekClient._action_signature(action) for action in first]
+                    self.assertEqual(len(signatures), len(set(signatures)))
+                    self.assertEqual(
+                        [action["action_id"] for action in first],
+                        [action["action_id"] for action in second],
+                    )
+                    result = game.step(int(legal_actions[0]["action_id"]))
+                    finished = bool(result.get("game_over", False))
+                    state_count += 1
+        self.assertGreater(state_count, 0)
 
     def test_client_and_agent_share_final_candidates_and_preserve_model_id(self) -> None:
         game = GuanDanGame(seed=0, current_level_rank="2")

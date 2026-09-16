@@ -9,6 +9,7 @@ from agents.action_structure import summarize_candidate_structures
 
 
 _SOURCE = "public_strategy_recommendation_v2"
+MAX_RECOMMENDATION_OBJECTIVES = 4
 STRATEGY_DOMAINS = (
     "overall_priority", "opening_free_lead", "hand_structure",
     "control_return_resource", "follow_control", "teammate_coordination",
@@ -16,9 +17,12 @@ STRATEGY_DOMAINS = (
     "uncertainty_probe",
 )
 OBJECTIVE_CODES = (
-    "finish_now", "protect_structure", "low_cost_probe", "preserve_control",
-    "contest_follow", "support_teammate", "block_opponent", "manage_bomb_wildcard",
-    "plan_endgame",
+    # Publicly urgent objectives take precedence when a dense late-game state
+    # activates more than the prompt budget.  This order only bounds model-
+    # before guidance; it never selects or removes a legal action.
+    "finish_now", "block_opponent", "plan_endgame", "support_teammate",
+    "contest_follow", "protect_structure", "preserve_control",
+    "manage_bomb_wildcard", "low_cost_probe",
 )
 COUNTERCHECK_CODES = (
     "check_public_urgency", "check_trick_ownership", "check_structure_loss",
@@ -47,6 +51,11 @@ class StrategyRecommendation:
 
 def _ordered(values: set[str], order: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(value for value in order if value in values)
+
+
+def _bounded_objectives(values: set[str]) -> tuple[str, ...]:
+    """Produce the sole bounded, priority-ordered objective payload."""
+    return _ordered(values, OBJECTIVE_CODES)[:MAX_RECOMMENDATION_OBJECTIVES]
 
 
 def _unavailable() -> StrategyRecommendation:
@@ -112,6 +121,6 @@ def build_strategy_recommendation(
     if finishers:
         objectives.add("finish_now")
     return StrategyRecommendation(
-        "ready", _SOURCE, tuple(selected), _ordered(objectives, OBJECTIVE_CODES),
+        "ready", _SOURCE, tuple(selected), _bounded_objectives(objectives),
         _ordered(checks, COUNTERCHECK_CODES), _ordered(domains, STRATEGY_DOMAINS),
     )

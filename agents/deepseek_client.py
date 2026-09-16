@@ -1240,12 +1240,17 @@ class DeepSeekClient:
                 return None
             legal_ids.add(action_id)
         try:
-            from agents.strategy_recommendation import COUNTERCHECK_CODES, OBJECTIVE_CODES, STRATEGY_DOMAINS
+            from agents.strategy_recommendation import (
+                COUNTERCHECK_CODES,
+                MAX_RECOMMENDATION_OBJECTIVES,
+                OBJECTIVE_CODES,
+                STRATEGY_DOMAINS,
+            )
         except Exception:
             return None
         if (len(payload.action_ids) > 3 or len(set(payload.action_ids)) != len(payload.action_ids)
                 or any(type(action_id) is not int or action_id not in legal_ids for action_id in payload.action_ids)
-                or not payload.objective_codes or len(payload.objective_codes) > 4
+                or not payload.objective_codes or len(payload.objective_codes) > MAX_RECOMMENDATION_OBJECTIVES
                 or not payload.countercheck_codes or len(payload.countercheck_codes) > 5
                 or not payload.strategy_domains or len(payload.strategy_domains) > len(STRATEGY_DOMAINS)
                 or tuple(item for item in OBJECTIVE_CODES if item in payload.objective_codes) != payload.objective_codes
