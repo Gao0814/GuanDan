@@ -197,7 +197,7 @@ def summarize_candidate_structures(
     my_info = observation.get("my_info")
     current_round = observation.get("current_round")
     other_players = observation.get("other_players")
-    if not isinstance(my_info, Mapping) or not isinstance(current_round, Mapping) or not isinstance(other_players, list):
+    if not isinstance(my_info, Mapping) or not isinstance(current_round, Mapping) or not isinstance(other_players, list) or len(other_players) != 3:
         return None
     hand_cards = my_info.get("hand_cards")
     hand_count = my_info.get("hand_count")
@@ -207,23 +207,56 @@ def summarize_candidate_structures(
             or not isinstance(hand_cards, list) or len(hand_cards) != hand_count
             or any(not _valid_token(card) for card in hand_cards)
             or type(level_rank) is not str or level_rank not in _NORMAL_RANKS
-            or current_round.get("current_player_id") != player_id):
+            or current_round.get("current_player_id") != player_id
+            or not isinstance(current_round.get("constraint"), str)):
         return None
+    constraint = current_round["constraint"]
+    table_action = current_round.get("table_action")
+    if (constraint == "free" and table_action is not None) or (constraint != "free" and not isinstance(table_action, Mapping)):
+        return None
+    if isinstance(table_action, Mapping):
+        table_pattern = table_action.get("declared_pattern")
+        table_declared = table_action.get("declared_cards")
+        table_carrier = table_action.get("carrier_cards")
+        table_wildcard_count = table_action.get("wildcard_count")
+        table_wildcard_info = table_action.get("wildcard_info")
+        if (table_pattern not in _PATTERNS or not isinstance(table_declared, list) or not table_declared
+                or not isinstance(table_carrier, list) or not table_carrier
+                or len(table_declared) != len(table_carrier)
+                or any(not isinstance(card, str) or not card for card in table_declared)
+                or any(not _valid_token(card) for card in table_carrier)
+                or not _is_int(table_wildcard_count) or table_wildcard_count < 0
+                or table_wildcard_count > len(table_carrier)
+                or not isinstance(table_wildcard_info, list) or len(table_wildcard_info) != table_wildcard_count
+                or any(not isinstance(item, Mapping) for item in table_wildcard_info)
+                or not isinstance(table_action.get("display_text"), str) or not table_action.get("display_text")):
+            return None
     hand = Counter(hand_cards)
     if any(count > 2 for count in hand.values()):
         return None
     team = my_info.get("team")
     teammate_count: int | None = None
     opponent_counts: list[int] = []
-    if isinstance(team, str):
+    if isinstance(team, str) and team:
+        other_ids: set[int] = set()
         for other in other_players:
-            if not isinstance(other, Mapping) or not _is_int(other.get("hand_count")) or other.get("hand_count") < 0:
+            other_id = other.get("player_id") if isinstance(other, Mapping) else None
+            other_team = other.get("team") if isinstance(other, Mapping) else None
+            if (not isinstance(other, Mapping) or not _is_int(other_id) or other_id == player_id or other_id in other_ids
+                    or not isinstance(other_team, str) or not other_team
+                    or not _is_int(other.get("hand_count")) or other.get("hand_count") < 0
+                    or type(other.get("finished")) is not bool):
                 return None
-            if other.get("team") == team and other.get("player_id") != player_id:
+            other_ids.add(other_id)
+            if other_team == team:
+                if teammate_count is not None:
+                    return None
                 teammate_count = int(other["hand_count"])
-            elif other.get("team") != team and not bool(other.get("finished", False)):
+            elif not other["finished"]:
                 opponent_counts.append(int(other["hand_count"]))
     else:
+        return None
+    if teammate_count is None or len(other_ids) != 3 or len(opponent_counts) > 2:
         return None
     seen: set[int] = set()
     results: list[CandidateStructure] = []
@@ -231,14 +264,20 @@ def summarize_candidate_structures(
         if not isinstance(action, Mapping):
             return None
         action_id, pattern = action.get("action_id"), action.get("declared_pattern")
+        declared = action.get("declared_cards")
         carrier = action.get("carrier_cards")
         wildcard_count = action.get("wildcard_count")
+        wildcard_info = action.get("wildcard_info")
+        display = action.get("display_text")
         if (not _is_int(action_id) or action_id in seen or not isinstance(pattern, str)
                 or pattern not in (_PATTERNS | {"pass"}) or not isinstance(carrier, list)
-                or (pattern != "pass" and (not carrier or any(not _valid_token(card) for card in carrier)))
-                or not _is_int(wildcard_count) or wildcard_count < 0):
+                or not isinstance(declared, list) or not isinstance(display, str) or not display
+                or not _is_int(wildcard_count) or wildcard_count < 0
+                or not isinstance(wildcard_info, list)):
             return None
         if pattern == "pass":
+            if declared or carrier or wildcard_count != 0 or wildcard_info:
+                return None
             results.append(CandidateStructure(
                 action_id, pattern, 0, False, False, False, 0, len({_rank_of(card) for card in hand}),
                 False, None, False, None, None, teammate_count,
@@ -247,6 +286,12 @@ def summarize_candidate_structures(
             ))
             seen.add(action_id)
             continue
+        if (not carrier or len(declared) != len(carrier)
+                or any(not isinstance(card, str) or not card for card in declared)
+                or any(not _valid_token(card) for card in carrier)
+                or wildcard_count > len(carrier) or len(wildcard_info) != wildcard_count
+                or any(not isinstance(item, Mapping) for item in wildcard_info)):
+            return None
         used = Counter(carrier)
         if any(count > hand.get(card, 0) for card, count in used.items()):
             return None
@@ -270,3 +315,37 @@ def summarize_candidate_structures(
         ))
         seen.add(action_id)
     return tuple(results)
+
+
+def select_candidate_structure_representatives(
+    facts: tuple[CandidateStructure, ...],
+    *,
+    recommended_ids: tuple[int, ...] = (),
+    limit: int = 12,
+) -> tuple[CandidateStructure, ...]:
+    """Select deterministic comparison representatives without changing actions."""
+    if type(limit) is not int or limit <= 0:
+        return ()
+    by_id = {fact.action_id: fact for fact in facts}
+    chosen: list[CandidateStructure] = []
+    def add(fact: CandidateStructure | None) -> None:
+        if fact is not None and fact not in chosen and len(chosen) < limit:
+            chosen.append(fact)
+    for action_id in recommended_ids:
+        add(by_id.get(action_id))
+    ordered = sorted(facts, key=lambda fact: fact.action_id)
+    for predicate, key in (
+        (lambda fact: fact.finishes_hand, lambda fact: fact.action_id),
+        (lambda fact: fact.natural_single_rank_value is not None, lambda fact: (fact.natural_single_rank_value or 99, fact.action_id)),
+        (lambda fact: fact.pattern == "pair" and not fact.fragments_played_rank_group, lambda fact: (fact.residual_singleton_rank_count, fact.action_id)),
+        (lambda fact: fact.consumes_control_resource, lambda fact: fact.action_id),
+        (lambda fact: fact.uses_wildcard, lambda fact: fact.action_id),
+        (lambda fact: fact.fragments_played_rank_group, lambda fact: fact.action_id),
+    ):
+        matches = sorted((fact for fact in ordered if predicate(fact)), key=key)
+        add(matches[0] if matches else None)
+    for length in sorted({fact.bomb_length for fact in facts if fact.bomb_length is not None}):
+        add(next((fact for fact in ordered if fact.bomb_length == length), None))
+    for fact in ordered:
+        add(fact)
+    return tuple(chosen)

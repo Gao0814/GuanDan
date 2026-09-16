@@ -14,7 +14,7 @@ import time
 from typing import TYPE_CHECKING, Callable, Protocol
 from urllib import request as urllib_request
 
-from agents.action_structure import FreeLeadResidualStructure, summarize_candidate_structures, summarize_free_lead_residual_structures
+from agents.action_structure import FreeLeadResidualStructure, select_candidate_structure_representatives, summarize_candidate_structures, summarize_free_lead_residual_structures
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
 
 if TYPE_CHECKING:
@@ -99,6 +99,8 @@ _SCENE_TAG_ORDER = (
     "can_play_out_all",
     "can_bomb_response",
     "wildcard_action_present",
+    "strategy_intent",
+    "strategy_domains",
 )
 
 
@@ -908,11 +910,14 @@ class DeepSeekClient:
             if not isinstance(metadata, dict):
                 metadata = {}
             topic = str(metadata.get("topic", ""))
+            domain = str(metadata.get("strategy_domain", ""))
             guidance_mode = str(metadata.get("guidance_mode", ""))
             title, body = DeepSeekClient._rag_title_and_body(item)
             topic_text = f"；topic={topic}" if topic else ""
+            domain_text = f"；domain={domain}" if domain else ""
             body_text = f"：{body}" if body else ""
-            suffix = f"（{topic_text.lstrip('；')}）" if topic_text else ""
+            suffix_parts = (topic_text + domain_text).lstrip("；")
+            suffix = f"（{suffix_parts}）" if suffix_parts else ""
             prefix = "- 可撤回软假设：" if guidance_mode == "soft_hypothesis" else "- "
             lines.append(f"{prefix}{title}{suffix}{body_text}")
         return lines
@@ -1042,12 +1047,21 @@ class DeepSeekClient:
             from agents.strategy_recommendation import StrategyRecommendation
         except Exception:
             return None
-        if type(payload) is not StrategyRecommendation or payload.status != "ready" or payload.source != "public_strategy_recommendation_v1":
+        if type(payload) is not StrategyRecommendation or payload.status != "ready" or payload.source != "public_strategy_recommendation_v2":
             return None
         legal_ids = {action.get("action_id") for action in legal_actions if type(action.get("action_id")) is int}
-        if (not payload.action_ids or len(payload.action_ids) > 3 or len(set(payload.action_ids)) != len(payload.action_ids)
+        try:
+            from agents.strategy_recommendation import COUNTERCHECK_CODES, OBJECTIVE_CODES, STRATEGY_DOMAINS
+        except Exception:
+            return None
+        if (len(payload.action_ids) > 3 or len(set(payload.action_ids)) != len(payload.action_ids)
                 or any(type(action_id) is not int or action_id not in legal_ids for action_id in payload.action_ids)
-                or not all(isinstance(item, str) and item for item in payload.reasons + payload.counterchecks + payload.strategy_domains)):
+                or not payload.objective_codes or len(payload.objective_codes) > 4
+                or not payload.countercheck_codes or len(payload.countercheck_codes) > 5
+                or not payload.strategy_domains or len(payload.strategy_domains) > len(STRATEGY_DOMAINS)
+                or tuple(item for item in OBJECTIVE_CODES if item in payload.objective_codes) != payload.objective_codes
+                or tuple(item for item in COUNTERCHECK_CODES if item in payload.countercheck_codes) != payload.countercheck_codes
+                or tuple(item for item in STRATEGY_DOMAINS if item in payload.strategy_domains) != payload.strategy_domains):
             return None
         return payload
 
@@ -1175,11 +1189,29 @@ class DeepSeekClient:
         validated_recommendation = DeepSeekClient._validated_strategy_recommendation(
             strategy_recommendation, prompt_actions,
         )
+        candidate_representatives = select_candidate_structure_representatives(
+            candidate_facts,
+            recommended_ids=validated_recommendation.action_ids if validated_recommendation is not None else (),
+        ) if candidate_facts is not None else ()
         if validated_recommendation is not None:
             lines.append("【模型前建议】")
-            lines.append("优先核验候选 action_id：" + ", ".join(str(item) for item in validated_recommendation.action_ids))
-            lines.extend("- " + item for item in validated_recommendation.reasons)
-            lines.extend("- 反例检查：" + item for item in validated_recommendation.counterchecks)
+            if validated_recommendation.action_ids:
+                lines.append("优先核验候选 action_id：" + ", ".join(str(item) for item in validated_recommendation.action_ids))
+            lines.append("策略域：" + "、".join(validated_recommendation.strategy_domains))
+            objective_text = {
+                "finish_now": "核对一次出完", "protect_structure": "减少结构拆分",
+                "low_cost_probe": "降低试探成本", "preserve_control": "保留控制资源",
+                "contest_follow": "比较跟牌牌权", "support_teammate": "支援队友",
+                "block_opponent": "阻断危险对手", "manage_bomb_wildcard": "管理炸弹与通配",
+                "plan_endgame": "规划残局分组",
+            }
+            check_text = {
+                "check_public_urgency": "公开剩余张数和紧急性", "check_trick_ownership": "牌权计划",
+                "check_structure_loss": "组合与拆分损失", "check_control_cost": "控制资源消耗",
+                "check_rule_pressure": "规则压制关系",
+            }
+            lines.append("目标：" + "；".join(objective_text[item] for item in validated_recommendation.objective_codes))
+            lines.append("反例检查：" + "；".join(check_text[item] for item in validated_recommendation.countercheck_codes))
             lines.append("")
 
         lines.append("【场景标签】")
@@ -1207,7 +1239,7 @@ class DeepSeekClient:
         )
         if candidate_facts is not None:
             compact_facts: list[str] = []
-            for fact in candidate_facts[:12]:
+            for fact in candidate_representatives:
                 if fact.pattern == "pass":
                     continue
                 parts = [f"id={fact.action_id}", f"张数={fact.carrier_count}", f"余组≈{fact.estimated_remaining_rank_groups}", f"孤张={fact.residual_singleton_rank_count}"]

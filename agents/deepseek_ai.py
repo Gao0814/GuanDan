@@ -691,6 +691,7 @@ class DeepSeekAIAgent(BaseAgent):
                         top_k=self.rag_top_k,
                         phase_context=phase_context,
                         strategy_context=self.last_strategy_intent,
+                        strategy_recommendation=strategy_recommendation,
                     )
                 else:
                     query = _rag_query_from_observation(observation)

@@ -258,7 +258,9 @@ class TestExperienceProvenance(unittest.TestCase):
             },
         )
         soft = [doc for doc in loaded if doc.metadata.get("guidance_mode") == "soft_hypothesis"]
-        self.assertEqual([doc.doc_id for doc in soft], ["exp_soft_pair_probe_001"])
+        self.assertEqual([doc.doc_id for doc in soft], ["exp_bomb_wildcard_001", "exp_soft_pair_probe_001"])
+        records = {record["entry_id"]: record for record in json.loads((Path("rag") / "experience_provenance.json").read_text(encoding="utf-8"))["records"]}
+        self.assertEqual(records["exp_bomb_wildcard_001"]["source_tier"], "C")
 
 
 if __name__ == "__main__":

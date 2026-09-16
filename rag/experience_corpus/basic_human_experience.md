@@ -57,7 +57,7 @@ id: exp_lead_opening_weak_001
 corpus: experience
 scene: [lead_opening]
 phase: [opening]
-hand_strength: [weak]
+hand_strength: [any]
 action_context: [free_lead]
 topic: [opening, run_out, singles]
 priority: high
@@ -135,12 +135,12 @@ topic: [bomb, wildcard, control]
 priority: medium
 keywords_cn: [炸弹, 逢人配, 通配, 控制]
 strategy_domain: [bomb_wildcard_management]
-guidance_mode: source_principle
+guidance_mode: soft_hypothesis
 ---
 
 # 炸弹与通配牌管理
 
-适用条件：候选涉及炸弹或逢人配。策略目标：在牌权、阻断和后续结构间保存选择权。建议倾向：显示炸弹长度、通配使用及出后同点孤张，以供模型比较。反例与调整：一次出完、公开紧急对手或规则压制关系可使保留资源不再优先。
+适用条件：候选涉及炸弹或逢人配。策略目标：在牌权、阻断和后续结构间保留选择余地。建议倾向：通常比较炸弹长度、通配使用及出后同点孤张。反例与调整：这是可撤回软假设；一次出完、公开紧急对手或规则压制关系可推翻。
 
 ---
 id: exp_endgame_run_out_001
@@ -176,7 +176,7 @@ guidance_mode: source_principle
 
 # 不确定信息与试探成本
 
-适用条件：需要记牌或试探。策略目标：以公开历史降低不确定性而不虚构暗牌。建议倾向：优先关注王、级牌、A、10、5和公开断张，低成本试探应保留后续路线。反例与调整：10/5及断张只是软信号，不能升级为炸弹或持牌事实。
+适用条件：需要记牌或试探。策略目标：以公开历史降低不确定性而不虚构暗牌。建议倾向：优先关注王、级牌、A、10、5和公开断张，低成本试探应保留后续路线。反例与调整：10/5及断张只是软信号，不能当作炸弹或持牌事实。
 
 ---
 id: exp_soft_pair_probe_001

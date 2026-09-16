@@ -308,6 +308,11 @@ class RAGAdvisor:
             score += tag_score
 
         score += cls._keyword_score(doc, query, desired_topics)
+        requested_domains = cls._metadata_values(scene_tags, "strategy_domains")
+        doc_domains = cls._metadata_values(doc.metadata, "strategy_domain")
+        # Domains are public runtime semantics, not provenance.  They provide
+        # a deterministic tie-break/boost without excluding a valid fallback.
+        score += 12.0 * len(requested_domains & doc_domains)
         if score <= 0:
             return None
         return score, status, reason
@@ -458,11 +463,17 @@ class RAGAdvisor:
         top_k: int = 3,
         phase_context: GamePhaseContext | None = None,
         strategy_context: object = None,
+        strategy_recommendation: object = None,
     ) -> dict[str, object]:
         scene_tags = self._scene_tags(observation, legal_actions, hand_eval, phase_context)
         intent = getattr(strategy_context, "intent", None)
         if isinstance(intent, str) and intent in {"run_out", "control", "support_teammate", "block_opponent"}:
             scene_tags["strategy_intent"] = intent
+        domains = getattr(strategy_recommendation, "strategy_domains", None)
+        if isinstance(domains, tuple) and all(type(domain) is str for domain in domains):
+            from agents.strategy_recommendation import STRATEGY_DOMAINS
+            if tuple(domain for domain in STRATEGY_DOMAINS if domain in domains) == domains:
+                scene_tags["strategy_domains"] = ",".join(domains)
         query = self.build_query(scene_tags)
 
         try:

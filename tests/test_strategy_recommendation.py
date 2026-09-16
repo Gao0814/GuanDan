@@ -37,7 +37,8 @@ class StrategyRecommendationTests(unittest.TestCase):
         self.assertEqual(recommendation.status, "ready")
         self.assertIn(1, recommendation.action_ids)
         self.assertTrue(set(recommendation.action_ids).issubset({1, 2, 3}))
-        self.assertIn("请检查队友/对手公开剩余张数、当前牌权与紧急性是否推翻该比较。", recommendation.counterchecks)
+        self.assertIn("check_public_urgency", recommendation.countercheck_codes)
+        self.assertIn("opening_free_lead", recommendation.strategy_domains)
 
     def test_malformed_action_fails_closed(self) -> None:
         observation = _observation()

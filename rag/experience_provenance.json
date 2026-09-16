@@ -104,9 +104,9 @@
     },
     {
       "entry_id": "exp_bomb_wildcard_001",
-      "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
-      "title": "如何打好一把掼蛋的前半程", "publication": "京报体育, 2024-02-22",
-      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml", "locator": "正文关于局势变化时调整组牌的段落",
+      "source_tier": "C", "claim_type": "strategy", "author_or_institution": "唐人游转载，原作者未确认",
+      "title": "掼蛋宝典－最权威的掼蛋技巧", "publication": "唐人游公开网页转载",
+      "url_or_bibliography": "https://guandan.uc55.com/Rule/Detail/201009_000206.html", "locator": "通常保留炸弹的定性段落；无统计方法",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response", "endgame"]}, "evidence_status": "active"
     },
     {
