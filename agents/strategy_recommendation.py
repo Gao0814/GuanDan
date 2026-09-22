@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
-from agents.action_structure import summarize_candidate_structures
+from agents.action_structure import summarize_candidate_contrasts, summarize_candidate_structures
 
 
 _SOURCE = "public_strategy_recommendation_v2"
@@ -74,6 +74,9 @@ def build_strategy_recommendation(
     facts = summarize_candidate_structures(observation, legal_actions)
     if facts is None:
         return _unavailable()
+    contrasts = summarize_candidate_contrasts(observation, legal_actions)
+    if contrasts is None:
+        return _unavailable()
     domains = {"overall_priority"}
     objectives: set[str] = set()
     checks = {"check_public_urgency", "check_structure_loss", "check_control_cost"}
@@ -113,7 +116,31 @@ def build_strategy_recommendation(
         key=lambda fact: (fact.residual_singleton_rank_count, fact.action_id),
     )
     selected: list[int] = []
-    for fact in finishers + safe_singles + pairs:
+    # Immediate finishes remain the highest model-before representative.  A
+    # contrast then reserves both original IDs together, if the three-ID
+    # budget can hold the complete public comparison.  This deliberately puts
+    # a proved pair/single or four/five-bomb comparison ahead of extra natural
+    # singles, which otherwise depend only on list order and can hide the
+    # alternative the model needs to inspect.
+    for fact in finishers:
+        if fact.action_id not in selected:
+            selected.append(fact.action_id)
+        if len(selected) == 3:
+            break
+    contrast_priority = ("natural_pair_single", "bomb_residual")
+    for kind in contrast_priority:
+        for contrast in contrasts:
+            if contrast.kind != kind:
+                continue
+            missing = [action_id for action_id in contrast.action_ids if action_id not in selected]
+            if len(selected) + len(missing) > 3:
+                continue
+            selected.extend(missing)
+            if len(selected) == 3:
+                break
+        if len(selected) == 3:
+            break
+    for fact in safe_singles + pairs:
         if fact.action_id not in selected:
             selected.append(fact.action_id)
         if len(selected) == 3:

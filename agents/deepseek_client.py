@@ -14,7 +14,7 @@ import time
 from typing import TYPE_CHECKING, Callable, Protocol
 from urllib import request as urllib_request
 
-from agents.action_structure import FreeLeadResidualStructure, select_candidate_structure_representatives, summarize_candidate_structures, summarize_free_lead_residual_structures
+from agents.action_structure import FreeLeadResidualStructure, select_candidate_structure_representatives, summarize_candidate_contrasts, summarize_candidate_structures, summarize_free_lead_residual_structures
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
 
 if TYPE_CHECKING:
@@ -1314,6 +1314,36 @@ class DeepSeekClient:
             {"my_info": my_info, "current_round": current_round, "other_players": other_players},
             prompt_actions,
         )
+        contrast_source_actions = (
+            residual_structure_source_actions
+            if residual_structure_source_actions is not None
+            else prompt_actions
+        )
+        all_contrasts = summarize_candidate_contrasts(
+            {"my_info": my_info, "current_round": current_round, "other_players": other_players},
+            contrast_source_actions,
+        )
+        prompt_action_ids = {
+            action.get("action_id")
+            for action in prompt_actions
+            if type(action.get("action_id")) is int
+        }
+        visible_contrasts = []
+        if all_contrasts is not None:
+            # Keep one bounded, complete comparison per relation type.  A
+            # contrast is never described when either original action fell
+            # outside the actual model candidate set.
+            for kind in ("bomb_residual", "natural_pair_single"):
+                contrast = next(
+                    (
+                        item
+                        for item in all_contrasts
+                        if item.kind == kind and set(item.action_ids).issubset(prompt_action_ids)
+                    ),
+                    None,
+                )
+                if contrast is not None:
+                    visible_contrasts.append(contrast)
 
         lines.append("【任务与硬约束】")
         lines.append("- legal_actions 是唯一合法动作来源，只能从【候选动作】中选择一个 action_id。")
@@ -1395,6 +1425,7 @@ class DeepSeekClient:
         candidate_representatives = select_candidate_structure_representatives(
             candidate_facts,
             recommended_ids=validated_recommendation.action_ids if validated_recommendation is not None else (),
+            contrast_action_id_groups=tuple(item.action_ids for item in visible_contrasts),
         ) if candidate_facts is not None else ()
         if validated_recommendation is not None:
             lines.append("【模型前建议】")
@@ -1415,6 +1446,31 @@ class DeepSeekClient:
             }
             lines.append("目标：" + "；".join(objective_text[item] for item in validated_recommendation.objective_codes))
             lines.append("反例检查：" + "；".join(check_text[item] for item in validated_recommendation.countercheck_codes))
+            lines.append("")
+
+        if visible_contrasts:
+            lines.append("【公开关系对照】")
+            for contrast in visible_contrasts:
+                first_id, second_id = contrast.action_ids
+                if contrast.kind == "bomb_residual":
+                    lines.append(
+                        f"四/五炸对照：action_id={first_id} 与 action_id={second_id} 是同点数自然炸弹；"
+                        "四炸少耗一张炸弹资源，五炸清空该点数组、避免残余孤张并可能减少后续分组。"
+                        "一次出完、公开紧急性、牌权或更高价值结构可以推翻这一对照。"
+                    )
+                elif contrast.kind == "natural_pair_single":
+                    teammate_text = (
+                        f"队友公开剩余{contrast.teammate_hand_count}张"
+                        if contrast.teammate_hand_count is not None
+                        else "队友公开剩余张数未知"
+                    )
+                    lines.append(
+                        f"同点数对子/单张对照：action_id={first_id} 的自然对子一次清理两张，"
+                        f"action_id={second_id} 的单张会留下同点孤张；{teammate_text}，"
+                        "结合传递牌型与清理低价值牌的取舍比较，不能推断队友暗牌。"
+                        "立即出完、阻断或回手目标可以推翻这一对照。"
+                    )
+            lines.append("边界：这些是公开条件下的可撤回比较，不是动作指令。")
             lines.append("")
 
         lines.append("【场景标签】")

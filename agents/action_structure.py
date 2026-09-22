@@ -63,6 +63,20 @@ class CandidateStructure:
     is_free_lead: bool
 
 
+@dataclass(frozen=True, slots=True)
+class CandidateContrast:
+    """One strictly established, public comparison between canonical actions.
+
+    The contrast names no preferred action.  It only records the exact
+    original IDs which must be present together before the prompt may state
+    the corresponding trade-off.
+    """
+
+    kind: str
+    action_ids: tuple[int, int]
+    teammate_hand_count: int | None
+
+
 _RANK_VALUES = {
     "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
     "10": 10, "J": 11, "Q": 12, "K": 13, "A": 14, "2": 15,
@@ -419,10 +433,111 @@ def summarize_candidate_structures(
     return tuple(results)
 
 
+def _natural_same_rank(action: Mapping[str, object], *, count: int) -> str | None:
+    """Return the one natural normal rank used by a strict comparison action."""
+
+    carrier = action.get("carrier_cards")
+    declared = action.get("declared_cards")
+    if (
+        action.get("wildcard_count") != 0
+        or not isinstance(carrier, list)
+        or not isinstance(declared, list)
+        or len(carrier) != count
+        or len(declared) != count
+        or any(not isinstance(card, str) for card in carrier + declared)
+    ):
+        return None
+    carrier_ranks = {_rank_of(card) for card in carrier}
+    declared_ranks = {
+        card if card in _NORMAL_RANKS | {"SJ", "BJ"} else _rank_of(card)
+        for card in declared
+    }
+    if len(carrier_ranks) != 1 or carrier_ranks != declared_ranks:
+        return None
+    rank = next(iter(carrier_ranks))
+    return rank if rank in _NORMAL_RANKS else None
+
+
+def summarize_candidate_contrasts(
+    observation: object,
+    legal_actions: object,
+) -> tuple[CandidateContrast, ...] | None:
+    """Return only fully established public action relationships.
+
+    The caller supplies the canonical action set.  A relationship is omitted
+    rather than approximated if either side, the shared natural rank, or the
+    visible before/after residual structure cannot be proven from that set.
+    """
+
+    facts = summarize_candidate_structures(observation, legal_actions)
+    if facts is None or not isinstance(legal_actions, Sequence):
+        return None
+    actions_by_id: dict[int, Mapping[str, object]] = {}
+    for action in legal_actions:
+        if not isinstance(action, Mapping) or type(action.get("action_id")) is not int:
+            return None
+        action_id = int(action["action_id"])
+        if action_id in actions_by_id:
+            return None
+        actions_by_id[action_id] = action
+
+    bombs_by_rank: dict[str, dict[int, CandidateStructure]] = {}
+    pairs_by_rank: dict[str, CandidateStructure] = {}
+    singles_by_rank: dict[str, CandidateStructure] = {}
+    for fact in facts:
+        action = actions_by_id.get(fact.action_id)
+        if action is None or not fact.is_free_lead:
+            continue
+        if fact.pattern == "bomb" and fact.bomb_length in {4, 5}:
+            rank = _natural_same_rank(action, count=fact.bomb_length)
+            if rank is not None:
+                bombs_by_rank.setdefault(rank, {}).setdefault(fact.bomb_length, fact)
+        elif fact.pattern == "pair":
+            rank = _natural_same_rank(action, count=2)
+            if rank is not None:
+                pairs_by_rank.setdefault(rank, fact)
+        elif fact.pattern == "single":
+            rank = _natural_same_rank(action, count=1)
+            if rank is not None:
+                singles_by_rank.setdefault(rank, fact)
+
+    contrasts: list[CandidateContrast] = []
+    for rank in sorted(bombs_by_rank, key=lambda item: _RANK_VALUES[item]):
+        choices = bombs_by_rank[rank]
+        four = choices.get(4)
+        five = choices.get(5)
+        if (
+            four is not None
+            and five is not None
+            and four.leaves_bomb_rank_singleton is True
+            and five.clears_played_rank_groups is True
+        ):
+            contrasts.append(
+                CandidateContrast(
+                    "bomb_residual",
+                    (four.action_id, five.action_id),
+                    four.teammate_hand_count,
+                )
+            )
+    for rank in sorted(set(pairs_by_rank) & set(singles_by_rank), key=lambda item: _RANK_VALUES[item]):
+        pair = pairs_by_rank[rank]
+        single = singles_by_rank[rank]
+        if pair.clears_played_rank_groups and single.fragments_played_rank_group:
+            contrasts.append(
+                CandidateContrast(
+                    "natural_pair_single",
+                    (pair.action_id, single.action_id),
+                    pair.teammate_hand_count,
+                )
+            )
+    return tuple(contrasts)
+
+
 def select_candidate_structure_representatives(
     facts: tuple[CandidateStructure, ...],
     *,
     recommended_ids: tuple[int, ...] = (),
+    contrast_action_id_groups: tuple[tuple[int, int], ...] = (),
     limit: int = 12,
 ) -> tuple[CandidateStructure, ...]:
     """Select deterministic comparison representatives without changing actions."""
@@ -435,6 +550,20 @@ def select_candidate_structure_representatives(
             chosen.append(fact)
     for action_id in recommended_ids:
         add(by_id.get(action_id))
+    # A relationship is useful only if both canonical alternatives can be
+    # inspected together.  Do not retain half of a contrast when the bounded
+    # representative budget cannot accommodate the complete pair.
+    for group in contrast_action_id_groups:
+        if (
+            type(group) is not tuple
+            or len(group) != 2
+            or any(type(action_id) is not int or action_id not in by_id for action_id in group)
+            or len(set(group)) != 2
+            or len(chosen) + sum(1 for action_id in group if by_id[action_id] not in chosen) > limit
+        ):
+            continue
+        for action_id in group:
+            add(by_id[action_id])
     ordered = sorted(facts, key=lambda fact: fact.action_id)
     for predicate, key in (
         (lambda fact: fact.finishes_hand, lambda fact: fact.action_id),

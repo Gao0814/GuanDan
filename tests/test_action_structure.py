@@ -124,8 +124,14 @@ class TestActionStructure(unittest.TestCase):
         self.assertIn("action_id=40", prompt)
         self.assertIn("action_id=50", prompt)
         self.assertIn("不是动作指令，也不保证后续牌权", prompt)
-        line_40 = next(line for line in prompt.splitlines() if "action_id=40" in line)
-        line_50 = next(line for line in prompt.splitlines() if "action_id=50" in line)
+        line_40 = next(
+            line for line in prompt.splitlines()
+            if "action_id=40" in line and "残余结构=" in line
+        )
+        line_50 = next(
+            line for line in prompt.splitlines()
+            if "action_id=50" in line and "残余结构=" in line
+        )
         self.assertIn("清空所出点数组:否", line_40)
         self.assertIn("残余孤张点数:2", line_40)
         self.assertIn("估计剩余点数组:2", line_40)
