@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：H3-A4q 离线资格场景固化（2026-09-22）
+## 当前阶段：H3-A4q1 离线资格门槛纠错（2026-09-22）
 
 - 项目所有者已确认后续策略主线：DeepSeek 是合法候选空间内的主要策略裁决者；本地层负责完整且有界的候选召回、公开局面结构化、人类经验检索、场景/目标识别和模型前推荐。不得把策略质量问题重新实现为成功模型动作后的强制覆盖。
 - 开局公式的定位已收敛为延迟约束下的窄、高置信本地快速路径，以及可提供给 DeepSeek 验证的模型前推荐。它不是第二套完整规则 AI；命中条件存在结构、协同、阻断或控制资源歧义时，应退出快速路径交给 DeepSeek。
@@ -25,6 +25,8 @@
 - H3-A4 原定为独立的最多8次、重试0真实DeepSeek低敏诊断，覆盖原八类代表场景，重点记录炸弹残余、对子清理及低成本单张等对照。其门槛是先完成八场 engine-backed 离线资格，再以fresh仓库外JSONL同步记录请求前后固定事件；结果仅为当前版本的单点选择分布，不作为与H3-A2r严格同fixture配对的因果消融或胜率结论。
 - H3-A4 已按预注册零请求门槛停止，不能判为模型策略结果。规划Codex独立复核新低敏 ledger `D:\VsCodeProject\GuanDanH3A2Audit\h3-a4.jsonl`：普通非链接文件，3209 bytes，SHA-256 `033107dcd2fb1b242a0cf824a4ec453cee77c494920a8101b1acd0b6944dc54a`；11条事件为header、8条失败qualification、`qualification_complete=false`及summary，请求起止事件均为0，重试0。八场均记录`candidate_count=0`、recommendation/intent不可用，但ledger没有分阶段失败原因，故不能将其归因于候选生产、策略回归或模型选择。原H3-A4 ledger封存，不覆盖或补写。
 - 规划Codex独立复跑关系/推荐/候选闭环32项测试通过，并以当前引擎生成的两个合成关系场景观察到非零canonical候选及ready recommendation；这只能排除“当前生产路径普遍无法生成合法动作”的粗略假设，不能替代失败的八场资格。Git在复审前clean，HEAD为`93476a5`。当前范围内待解决的是诊断资格场景不可复现、失败阶段不可定位；下一项H3-A4q只固化八场engine-backed离线fixture与分阶段资格检查，不发起网络请求。经独立复审8/8通过后，再另立fresh-ledger真实模型任务；不沿用本轮失败ledger。
+- `c87defa test: qualify H3 model probe fixtures` 只增加`evaluation/h3_model_probe_fixtures.py`及对应测试，八场均用引擎公开observation与完整canonical动作构造。规划Codex独立复跑35项相关、39项主规则及752项全量测试均通过；八场最终候选数6/5/4/6/3/3/4/25。还用禁网的真实DeepSeekClient请求组装路径逐场对照：当前八场最终prompt与资格工具重建的prompt相等，返回原始候选ID/source=`model`。生产代码、RAG内容和Botzone均未变。
+- H3-A4q尚不能封板：资格API只检查router可用、最终prompt的通用标记和两场软假设文本，未检验RAG上下文实际存在或场景投影。规划Codex将RAG advisor替换为空scene/hits的无网络反例时，八场中六场仍返回`ready`；另外fake client没有执行真实`DeepSeekClient.suggest_action_id()`的最终组装，只由资格工具复制其逻辑重建。当前一次性对照相等不等于未来回归门槛。下一项H3-A4q1仅修补离线资格检查与反例测试，确保RAG/intent/实际最终请求守恒；通过独立复审前不得发起H3-A4真实请求。当前范围内剩余风险是资格门槛存在假阳性，尚无模型质量结论。
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
