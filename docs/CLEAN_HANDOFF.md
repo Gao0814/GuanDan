@@ -333,4 +333,6 @@ H3-A0a 已由 `66009fc` 修复并独立复审：原6个真实引擎复现样本�
 
 H3-A1 组合实现已通过基础复审并合入 `cao`。最新独立结果为相关 212 项、主规则 39 项、全量 732 项；30 局真实引擎离线探针覆盖 2730 个状态、零异常，十域与全部 11 条 active 经验均有生产路径可达证据。但后续 H3-A2 资格检查证明 recommendation 与实际模型候选未形成闭环，因此不能把“域可达”解释为“建议必然进入最终 prompt”。工作区状态仍必须以实际 `git status --short` 为准。
 
-H3-A2r 低敏ledger位于 `D:\VsCodeProject\GuanDanH3A2Audit\h3-a2r.jsonl`，7270 bytes，SHA-256 `32ec0dcbf7709ff30702fc85f5aae0c0c2aabfbb197fb223ebeb4823d9f0a63a`；规划Codex已复核27条事件、请求/结果和汇总守恒，并独立复跑23/23指定回归。当前下一任务是 `docs/NEXT_PROMPT.md` 的H3-A3离线模型前对照纠错，不再重新运行八场真实请求、不运行Botzone/connector/live，也不读取seed `47004` evidence。新实现复审后，再单独规划真实模型消融；现有单点结果不构成胜率结论。
+H3-A2r 低敏ledger位于 `D:\VsCodeProject\GuanDanH3A2Audit\h3-a2r.jsonl`，7270 bytes，SHA-256 `32ec0dcbf7709ff30702fc85f5aae0c0c2aabfbb197fb223ebeb4823d9f0a63a`；规划Codex已复核27条事件、请求/结果和汇总守恒，并独立复跑23/23指定回归。其后进入H3-A3离线模型前对照纠错，不重新运行八场真实请求、不运行Botzone/connector/live，也不读取seed `47004` evidence。现有单点结果不构成胜率结论。
+
+`b40000e` 已实现H3-A3关系识别与prompt对照，规划Codex独立通过30/39/747项测试，合法模型动作ID/source与历史边界未漂移。但30个不同初始局面中30/30将自然对子/单张关系放在推荐最前，其中29个另有安全自然小单；100个初始局面里的18个四/五炸关系虽都在最终候选及prompt可见，0个被完整推荐，因为普通对子关系先占最多3项预算。故H3-A3的模型前范围暂未封板；下一任务改为 `docs/NEXT_PROMPT.md` 的H3-A3a离线推荐优先级收窄，保留已实现关系和提示，修正广泛开局偏移后才单独安排真实模型诊断。仓库外H3-A2r ledger和Coding任务报告的系统Temp流文件均保留，不因本规划复审清理。
