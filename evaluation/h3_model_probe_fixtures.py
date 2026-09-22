@@ -10,13 +10,14 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from enum import StrEnum
+import json
 from pathlib import Path
 from typing import Callable
 from unittest.mock import patch
 
 from agents.action_structure import CandidateContrast, CandidateStructure, summarize_candidate_contrasts, summarize_candidate_structures
 from agents.deepseek_ai import DeepSeekAIAgent
-from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
+from agents.deepseek_client import DeepSeekClient
 from agents.rag_advisor import RAGAdvisor
 from agents.short_endgame_planner import minimum_group_free_lead_action_ids
 from config import AppConfig
@@ -33,6 +34,7 @@ class QualificationStage(StrEnum):
     CATEGORY_PARTITION = "category_partition"
     RECOMMENDATION = "recommendation"
     FINAL_CANDIDATES = "final_candidates"
+    RAG_CONTEXT = "rag_context"
     ROUTER_RAG_PROMPT = "router_rag_prompt"
     LOCAL_SHORTCUT = "local_shortcut"
     MODEL_PASSTHROUGH = "model_passthrough"
@@ -220,21 +222,60 @@ def build_h3_model_probe_fixtures() -> tuple[ProbeFixture, ...]:
     )
 
 
-class _ProjectionClient:
-    """No-network client which preserves a displayed original candidate ID."""
+class _NoNetworkTransport:
+    """Return one displayed ID through the real streaming parser, without I/O."""
 
     def __init__(self) -> None:
         self.calls = 0
-        self.kwargs: dict[str, object] | None = None
+        self.client: _RecordingDeepSeekClient | None = None
 
-    def suggest_action_id(self, **kwargs: object) -> DeepSeekSuggestion:
+    def __call__(self, _request: object, _timeout: float) -> str:
+        self.calls += 1
+        client = self.client
+        if client is None or not client.displayed_actions:
+            raise OSError("probe_client_not_assembled")
+        action_id = client.displayed_actions[0].get("action_id")
+        if type(action_id) is not int:
+            raise OSError("probe_displayed_action_invalid")
+        content = json.dumps({"action_id": action_id}, separators=(",", ":"))
+        chunk = json.dumps({"choices": [{"delta": {"content": content}}]})
+        return f"data: {chunk}\n\ndata: [DONE]\n"
+
+
+class _RecordingDeepSeekClient(DeepSeekClient):
+    """Exercise the production client while retaining only in-memory projections."""
+
+    def __init__(self) -> None:
+        self.transport = _NoNetworkTransport()
+        self.calls = 0
+        self.kwargs: dict[str, object] | None = None
+        self.displayed_actions: list[dict[str, object]] = []
+        self.final_actions: list[dict[str, object]] = []
+        self.final_prompt: str | None = None
+        super().__init__(
+            api_key="offline-probe",
+            base_url="https://offline.invalid",
+            model="offline-probe",
+            timeout_seconds=1.0,
+            max_retries=0,
+            transport=self.transport,
+        )
+        self.transport.client = self
+
+    def suggest_action_id(self, **kwargs: object) -> object:
         self.calls += 1
         self.kwargs = dict(kwargs)
-        actions = kwargs.get("prompt_actions")
-        if not isinstance(actions, list) or not actions:
-            return DeepSeekSuggestion(None, None)
-        action_id = actions[0].get("action_id") if isinstance(actions[0], dict) else None
-        return DeepSeekSuggestion(action_id if type(action_id) is int else None, None)
+        return super().suggest_action_id(**kwargs)
+
+    def _build_structured_prompt(self, **kwargs: object) -> str:
+        actions = kwargs.get("legal_actions")
+        if not isinstance(actions, list) or not all(isinstance(action, dict) for action in actions):
+            raise RuntimeError("probe_final_actions_invalid")
+        self.displayed_actions = [dict(action) for action in actions]
+        self.final_actions = [dict(action) for action in actions]
+        prompt = DeepSeekClient._build_structured_prompt(**kwargs)
+        self.final_prompt = prompt
+        return prompt
 
 
 def _advisor() -> RAGAdvisor:
@@ -242,8 +283,13 @@ def _advisor() -> RAGAdvisor:
     return RAGAdvisor(KnowledgeRetriever(KnowledgeBaseLoader(root).load_all_documents()))
 
 
-def _run_projection(fixture: ProbeFixture, advisor: RAGAdvisor) -> tuple[DeepSeekAIAgent, _ProjectionClient, int | None]:
-    client = _ProjectionClient()
+def _run_projection(
+    fixture: ProbeFixture,
+    advisor: RAGAdvisor,
+    *,
+    client_factory: Callable[[], _RecordingDeepSeekClient] = _RecordingDeepSeekClient,
+) -> tuple[DeepSeekAIAgent, _RecordingDeepSeekClient, int | None]:
+    client = client_factory()
     player_id = fixture.observation.get("my_info", {}).get("player_id") if isinstance(fixture.observation.get("my_info"), dict) else None
     if type(player_id) is not int:
         raise RuntimeError("fixture_player_id_invalid")
@@ -259,58 +305,6 @@ def _run_projection(fixture: ProbeFixture, advisor: RAGAdvisor) -> tuple[DeepSee
         )
         chosen = agent.select_action(fixture.observation, fixture.legal_actions)
     return agent, client, chosen
-
-
-def _final_prompt_actions(
-    fixture: ProbeFixture,
-    captured: dict[str, object],
-    recommendation: object,
-) -> list[dict[str, object]] | None:
-    prompt_actions = captured.get("prompt_actions")
-    if not isinstance(prompt_actions, list):
-        return None
-    supplied = DeepSeekClient._canonical_subset_actions(fixture.legal_actions, prompt_actions)
-    validated = DeepSeekClient._validated_strategy_recommendation(recommendation, fixture.legal_actions)
-    if supplied is None or validated is None:
-        return None
-    protected = DeepSeekClient._protected_actions_by_id(fixture.legal_actions, validated.action_ids)
-    present_ids = {int(action["action_id"]) for action in supplied}
-    candidates = supplied + [action for action in protected if int(action["action_id"]) not in present_ids]
-    current_round = fixture.observation.get("current_round")
-    my_info = fixture.observation.get("my_info")
-    if not isinstance(current_round, dict) or not isinstance(my_info, dict):
-        return None
-    hand_count = my_info.get("hand_count")
-    if type(hand_count) is not int:
-        return None
-    return DeepSeekClient._limit_prompt_actions(
-        candidates,
-        constraint=str(current_round.get("constraint", "")),
-        hand_count=hand_count,
-        protected_action_ids=validated.action_ids,
-    )
-
-
-def _prompt(fixture: ProbeFixture, captured: dict[str, object], final_actions: list[dict[str, object]]) -> str | None:
-    observation = fixture.observation
-    my_info = observation.get("my_info")
-    current_round = observation.get("current_round")
-    other_players = observation.get("other_players")
-    history = observation.get("history")
-    if not isinstance(my_info, dict) or not isinstance(current_round, dict) or not isinstance(other_players, list) or not isinstance(history, dict):
-        return None
-    try:
-        return DeepSeekClient._build_structured_prompt(
-            my_info=my_info, current_round=current_round, other_players=other_players,
-            history=history, legal_actions=final_actions,
-            rag_context=captured.get("rag_context"), hand_evaluation=captured.get("hand_evaluation"),
-            card_tracking_summary=captured.get("card_tracking_summary"), phase_context=captured.get("phase_context"),
-            strategy_intent_prompt=captured.get("strategy_intent_prompt"),
-            strategy_recommendation=captured.get("strategy_recommendation"),
-            residual_structure_source_actions=fixture.legal_actions,
-        )
-    except Exception:
-        return None
 
 
 def _classify(
@@ -393,7 +387,103 @@ def _result(
     )
 
 
-def qualify_h3_model_probe_fixture(fixture: ProbeFixture, *, advisor: RAGAdvisor | None = None) -> QualificationResult:
+def _rag_context_ready(
+    fixture: ProbeFixture,
+    captured: dict[str, object],
+    intent: object,
+) -> bool:
+    """Require the actual, scene-appropriate RAG projection used by the client."""
+    rag_context = captured.get("rag_context")
+    phase_context = captured.get("phase_context")
+    hand_evaluation = captured.get("hand_evaluation")
+    if (
+        not isinstance(rag_context, dict)
+        or phase_context is None
+        or not isinstance(hand_evaluation, dict)
+        or getattr(intent, "status", None) != "available"
+    ):
+        return False
+    tags = rag_context.get("scene_tags")
+    rule_hits = rag_context.get("rule_hits")
+    experience_hits = rag_context.get("experience_hits")
+    if not isinstance(tags, dict) or not isinstance(rule_hits, list) or not isinstance(experience_hits, list):
+        return False
+    expected_tags = RAGAdvisor._scene_tags(
+        fixture.observation,
+        fixture.legal_actions,
+        hand_evaluation,
+        phase_context,
+    )
+    required_tag_keys = ("scene", "phase", "hand_strength", "action_context")
+    if any(tags.get(key) != expected_tags.get(key) for key in required_tag_keys):
+        return False
+    if tags.get("strategy_intent") != getattr(intent, "intent", None):
+        return False
+
+    def accepted_hits(items: list[object]) -> bool:
+        return bool(items) and all(
+            isinstance(item, dict)
+            and isinstance(item.get("source_id"), str)
+            and item.get("source_id")
+            and isinstance(item.get("metadata"), dict)
+            and item["metadata"].get("status") == "accepted"
+            for item in items
+        )
+
+    if not accepted_hits(rule_hits) or not accepted_hits(experience_hits):
+        return False
+
+    def supports_scene(item: object) -> bool:
+        if not isinstance(item, dict) or not isinstance(item.get("metadata"), dict):
+            return False
+        metadata = item["metadata"]
+
+        def contains(key: str, expected: object) -> bool:
+            raw = metadata.get(key)
+            if not isinstance(raw, str) or not raw:
+                return False
+            values = {value.strip() for value in raw.split(",")}
+            if "any" in values or expected in values:
+                return True
+            return key == "phase" and expected in {"near_open_endgame", "critical_endgame"} and "endgame" in values
+
+        return all(contains(key, tags.get(key)) for key in ("scene", "phase", "action_context"))
+
+    return any(supports_scene(item) for item in experience_hits)
+
+
+def _soft_evidence_ready(
+    captured: dict[str, object],
+    prompt: str | None,
+) -> bool:
+    """Tie the rendered soft marker to an accepted RAG hit, not free text."""
+    rag_context = captured.get("rag_context")
+    if not isinstance(rag_context, dict) or not isinstance(prompt, str):
+        return False
+    hits = rag_context.get("experience_hits")
+    if not isinstance(hits, list):
+        return False
+    for hit in hits:
+        if not isinstance(hit, dict) or not isinstance(hit.get("metadata"), dict):
+            continue
+        if hit["metadata"].get("status") != "accepted" or hit["metadata"].get("guidance_mode") != "soft_hypothesis":
+            continue
+        rendered = DeepSeekClient._format_rag_hits([hit])
+        if len(rendered) == 1 and rendered[0].startswith("- 可撤回软假设：") and rendered[0] in prompt:
+            return True
+    return False
+
+
+def _same_action_ids(left: list[dict[str, object]], right: list[dict[str, object]]) -> bool:
+    return [item.get("action_id") for item in left] == [item.get("action_id") for item in right]
+
+
+def qualify_h3_model_probe_fixture(
+    fixture: ProbeFixture,
+    *,
+    advisor: RAGAdvisor | None = None,
+    client_factory: Callable[[], _RecordingDeepSeekClient] = _RecordingDeepSeekClient,
+) -> QualificationResult:
     """Run the frozen, no-network production projection stage by stage."""
     if fixture.name not in SCENARIO_NAMES or not isinstance(fixture.observation, dict) or not isinstance(fixture.legal_actions, list):
         return _result(fixture, QualificationStage.SCENARIO_CONSTRUCTION)
@@ -404,7 +494,11 @@ def qualify_h3_model_probe_fixture(fixture: ProbeFixture, *, advisor: RAGAdvisor
         return _result(fixture, QualificationStage.PUBLIC_CANONICAL, candidate_count=candidate_count)
     facts = {item.action_id: item for item in facts_tuple}
     try:
-        agent, client, chosen = _run_projection(fixture, advisor or _advisor())
+        agent, client, chosen = _run_projection(
+            fixture,
+            advisor or _advisor(),
+            client_factory=client_factory,
+        )
     except Exception:
         return _result(fixture, QualificationStage.ROUTER_RAG_PROMPT, candidate_count=candidate_count)
     if client.calls != 1 or client.kwargs is None or agent.last_decision_source != "model":
@@ -413,9 +507,14 @@ def qualify_h3_model_probe_fixture(fixture: ProbeFixture, *, advisor: RAGAdvisor
     validated = DeepSeekClient._validated_strategy_recommendation(recommendation, fixture.legal_actions)
     if validated is None or len(validated.action_ids) > 3 or len(validated.objective_codes) > 4:
         return _result(fixture, QualificationStage.RECOMMENDATION, candidate_count=candidate_count)
-    final_actions = _final_prompt_actions(fixture, client.kwargs, recommendation)
-    if final_actions is None:
-        return _result(fixture, QualificationStage.FINAL_CANDIDATES, candidate_count=candidate_count, recommendation_ready=True)
+    final_actions = client.final_actions
+    if not final_actions or not _same_action_ids(final_actions, client.displayed_actions):
+        return _result(
+            fixture,
+            QualificationStage.FINAL_CANDIDATES,
+            candidate_count=candidate_count,
+            recommendation_ready=True,
+        )
     final_ids = {int(item["action_id"]) for item in final_actions}
     source_ids = {int(item["action_id"]) for item in fixture.legal_actions}
     signatures = [DeepSeekClient._action_signature(item) for item in final_actions]
@@ -432,12 +531,24 @@ def qualify_h3_model_probe_fixture(fixture: ProbeFixture, *, advisor: RAGAdvisor
     category_counts = Counter(category for category in categories if category is not None)
     if sum(category_counts.values()) != len(final_actions) or not _required_categories_ready(fixture.name, category_counts):
         return _result(fixture, QualificationStage.CATEGORY_PARTITION, candidate_count=candidate_count, final_candidate_count=len(final_actions), category_counts=category_counts, recommendation_ready=True)
-    prompt = _prompt(fixture, client.kwargs, final_actions)
+    prompt = client.final_prompt
     intent = agent.last_strategy_intent
     intent_prompt = agent.last_strategy_intent_prompt
     prompt_markers = bool(prompt and all(marker in prompt for marker in ("【模型前建议】", "策略域：", "目标：", "反例检查：")))
     contrast_ready = _contrast_ready(fixture.name, contrasts, final_ids, validated.action_ids, prompt)
-    soft_ready = bool(prompt and "可撤回软假设" in prompt)
+    soft_ready = _soft_evidence_ready(client.kwargs, prompt)
+    if not _rag_context_ready(fixture, client.kwargs, intent):
+        return _result(
+            fixture,
+            QualificationStage.RAG_CONTEXT,
+            candidate_count=candidate_count,
+            final_candidate_count=len(final_actions),
+            category_counts=category_counts,
+            recommendation_ready=True,
+            contrast_ready=contrast_ready,
+            soft_marker_ready=soft_ready,
+            prompt_markers_ready=prompt_markers,
+        )
     if (
         prompt is None or intent is None or getattr(intent, "status", None) != "available"
         or intent_prompt is None or getattr(intent_prompt, "status", None) != "ready"
