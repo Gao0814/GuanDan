@@ -117,17 +117,33 @@ def build_strategy_recommendation(
     )
     selected: list[int] = []
     # Immediate finishes remain the highest model-before representative.  A
-    # contrast then reserves both original IDs together, if the three-ID
-    # budget can hold the complete public comparison.  This deliberately puts
-    # a proved pair/single or four/five-bomb comparison ahead of extra natural
-    # singles, which otherwise depend only on list order and can hide the
-    # alternative the model needs to inspect.
+    # pair/single contrast is not, by itself, an opening priority: it is common
+    # in a full hand and otherwise crowds out the low-cost natural single this
+    # recommendation is meant to surface.  It earns a complete two-ID slot
+    # only for the narrow public teammate-cleanup case.  Four/five-bomb
+    # contrasts remain available in ordinary leads, so a ubiquitous pair does
+    # not consume the entire three-ID budget before the bomb trade-off can be
+    # inspected.
     for fact in finishers:
         if fact.action_id not in selected:
             selected.append(fact.action_id)
         if len(selected) == 3:
             break
-    contrast_priority = ("natural_pair_single", "bomb_residual")
+    higher_public_priority = bool(finishers) or bool(
+        {"block_opponent", "plan_endgame"} & objectives
+    )
+    teammate_cleanup_priority = any(
+        contrast.kind == "natural_pair_single"
+        and contrast.teammate_hand_count in {1, 2}
+        for contrast in contrasts
+    )
+    contrast_priority: tuple[str, ...] = ()
+    if not higher_public_priority:
+        contrast_priority = (
+            ("natural_pair_single", "bomb_residual")
+            if teammate_cleanup_priority
+            else ("bomb_residual",)
+        )
     for kind in contrast_priority:
         for contrast in contrasts:
             if contrast.kind != kind:

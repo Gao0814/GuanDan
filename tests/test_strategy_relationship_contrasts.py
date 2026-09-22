@@ -114,6 +114,37 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
         self.assertIn("传递牌型与清理低价值牌", prompt)
         self.assertIn("不能推断队友暗牌", prompt)
 
+    def test_initial_engine_range_keeps_safe_single_ahead_of_ordinary_pair_contrasts(self) -> None:
+        pair_states = pair_front = safe_single_states = 0
+        for seed in range(30):
+            with self.subTest(seed=seed):
+                game = GuanDanGame(seed=seed, current_level_rank="2")
+                observation = game.reset()
+                actions = game.legal_actions()
+                facts = summarize_candidate_structures(observation, actions)
+                assert facts is not None
+                contrasts = summarize_candidate_contrasts(observation, actions)
+                assert contrasts is not None
+                contrast = next(item for item in contrasts if item.kind == "natural_pair_single")
+                recommendation = build_strategy_recommendation(observation, actions)
+                safe_ids = {
+                    fact.action_id
+                    for fact in facts
+                    if (
+                        fact.pattern == "single"
+                        and fact.natural_single_rank_value is not None
+                        and not fact.fragments_played_rank_group
+                        and not fact.consumes_control_resource
+                    )
+                }
+                pair_states += 1
+                pair_front += int(set(recommendation.action_ids[:2]) == set(contrast.action_ids))
+                safe_single_states += int(bool(safe_ids))
+                if safe_ids and not any(item.kind == "bomb_residual" for item in contrasts):
+                    self.assertIn(recommendation.action_ids[0], safe_ids)
+                self.assertFalse(set(contrast.action_ids).issubset(recommendation.action_ids))
+        self.assertEqual((pair_states, pair_front, safe_single_states), (30, 0, 29))
+
     def test_relationship_detection_is_stable_across_rank_and_public_hand_order(self) -> None:
         for rank in ("5", "9"):
             with self.subTest(rank=rank):
@@ -140,28 +171,54 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
 
         self.assertIn("finish_now", recommendation.objective_codes)
         self.assertIn("block_opponent", recommendation.objective_codes)
-        self.assertTrue(set(contrast.action_ids).issubset(recommendation.action_ids))
+        self.assertFalse(set(contrast.action_ids).issubset(recommendation.action_ids))
         self.assertLessEqual(len(recommendation.action_ids), 3)
         self.assertLessEqual(len(recommendation.objective_codes), 4)
 
     def test_overflow_keeps_engine_backed_bomb_contrast_within_existing_80_budget(self) -> None:
-        hand = ["7S", "7H", "7C", "7D", "7S"]
-        for rank in ("3", "4", "5", "6", "8", "9", "10", "J"):
+        hand = ["7S", "7H", "7C", "7D", "7S", "QS", "QH"]
+        for rank in ("3", "4", "5", "6", "8", "9"):
             hand.extend((f"{rank}S", f"{rank}H", f"{rank}C"))
-        game = _game(hand[:27])
+        hand.extend(("10S", "JS"))
+        game = _game(hand[:27], teammate=["KS", "KH", "KC"])
         observation = game.reset()
         actions = game.legal_actions()
         self.assertGreater(len(actions), PROMPT_MAX_CANDIDATE_ACTIONS)
+        contrasts = summarize_candidate_contrasts(observation, actions)
+        assert contrasts is not None
+        self.assertTrue(any(item.kind == "natural_pair_single" for item in contrasts))
         contrast = _contrast(observation, actions, "bomb_residual")
         recommendation = build_strategy_recommendation(observation, actions)
         final_actions = DeepSeekClient.prepare_prompt_actions(actions, **_context(observation, actions, recommendation))
         final_ids = {int(action["action_id"]) for action in final_actions}
 
         self.assertLessEqual(len(final_actions), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertTrue(set(contrast.action_ids).issubset(recommendation.action_ids))
         self.assertTrue(set(contrast.action_ids).issubset(final_ids))
         self.assertTrue(final_ids.issubset({int(action["action_id"]) for action in actions}))
         signatures = [DeepSeekClient._action_signature(action) for action in final_actions]
         self.assertEqual(len(signatures), len(set(signatures)))
+
+    def test_initial_engine_range_promotes_bomb_contrasts_without_pair_budget_starvation(self) -> None:
+        bomb_states = visible_pairs = recommended_pairs = 0
+        for seed in range(100):
+            game = GuanDanGame(seed=seed, current_level_rank="2")
+            observation = game.reset()
+            actions = game.legal_actions()
+            contrasts = summarize_candidate_contrasts(observation, actions)
+            assert contrasts is not None
+            bomb = next((item for item in contrasts if item.kind == "bomb_residual"), None)
+            if bomb is None:
+                continue
+            recommendation = build_strategy_recommendation(observation, actions)
+            final_actions = DeepSeekClient.prepare_prompt_actions(
+                actions, **_context(observation, actions, recommendation)
+            )
+            final_ids = {int(action["action_id"]) for action in final_actions}
+            bomb_states += 1
+            visible_pairs += int(set(bomb.action_ids).issubset(final_ids))
+            recommended_pairs += int(set(bomb.action_ids).issubset(recommendation.action_ids))
+        self.assertEqual((bomb_states, visible_pairs, recommended_pairs), (18, 18, 18))
 
     def test_both_model_choices_remain_original_model_ids(self) -> None:
         scenarios = (
