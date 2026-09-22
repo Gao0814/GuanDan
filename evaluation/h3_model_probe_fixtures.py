@@ -115,6 +115,45 @@ def _game(
     )
 
 
+def _opening_hands(
+    one: tuple[str, ...],
+    two: tuple[str, ...],
+    three: tuple[str, ...],
+    four: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Extend public engine hands to a real opening-sized state.
+
+    The fixture keeps its target relationships in the engine-generated
+    canonical actions; this helper only supplies enough distinct physical-card
+    tokens for the shared public phase classifier to establish ``opening``.
+    """
+    hands = [list(one), list(two), list(three), list(four)]
+    targets = (18, 16, 16, 16)
+    counts = Counter(card for hand in hands for card in hand)
+    if any(count > 2 for count in counts.values()):
+        raise RuntimeError("fixture_card_multiplicity_invalid")
+    pool = tuple(
+        f"{rank}{suit}"
+        for rank in ("3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2")
+        for suit in ("S", "H", "C", "D")
+    ) + ("SJ", "BJ")
+    for hand_index, target in enumerate(targets):
+        while len(hands[hand_index]) < target:
+            selected = next(
+                (
+                    token for token in pool
+                    if counts[token] < 2
+                    and not (hand_index == 0 and token == "2H")
+                ),
+                None,
+            )
+            if selected is None:
+                raise RuntimeError("fixture_opening_population_unavailable")
+            hands[hand_index].append(selected)
+            counts[selected] += 1
+    return tuple(tuple(hand) for hand in hands)  # type: ignore[return-value]
+
+
 def _action_id(game: GuanDanGame, predicate: Callable[[dict[str, object]], bool]) -> int:
     for action in game.legal_actions():
         if predicate(action):
@@ -147,9 +186,12 @@ def _bomb_residual() -> ProbeFixture:
 
 
 def _low_cost_single() -> ProbeFixture:
-    game = _game(
+    hands = _opening_hands(
         ("3S", "5H", "9C", "AS", "2S", "BJ", "6S", "6H"),
         ("KS", "KH", "KC"), ("QS", "QH", "QC"), ("JS", "JH", "JC"),
+    )
+    game = _game(
+        *hands,
     )
     game.reset()
     return _snapshot("low_cost_single", game)
@@ -165,9 +207,12 @@ def _pair_cleanup() -> ProbeFixture:
 
 
 def _neutral_soft_pair() -> ProbeFixture:
-    game = _game(
+    hands = _opening_hands(
         ("6S", "6H", "6C", "8S", "8H", "3S", "AH"),
         ("QS", "QH", "QC"), ("KS", "KH", "KC"), ("JS", "JH", "JC"),
+    )
+    game = _game(
+        *hands,
     )
     game.reset()
     return _snapshot("neutral_soft_pair", game)
@@ -480,6 +525,14 @@ def _rag_context_ready(
         return False
     if tags.get("strategy_intent") != getattr(intent, "intent", None):
         return False
+    expected_phase = {
+        "low_cost_single": ("lead_opening", "opening"),
+        "neutral_soft_pair": ("lead_opening", "opening"),
+    }.get(fixture.name)
+    if expected_phase is not None and (
+        tags.get("scene"), tags.get("phase")
+    ) != expected_phase:
+        return False
 
     def accepted_hits(items: list[object]) -> bool:
         return bool(items) and all(
@@ -516,6 +569,7 @@ def _rag_context_ready(
 def _soft_evidence_ready(
     captured: dict[str, object],
     prompt: str | None,
+    expected_source_id: str,
 ) -> bool:
     """Tie the rendered soft marker to an accepted RAG hit, not free text."""
     rag_context = captured.get("rag_context")
@@ -527,7 +581,11 @@ def _soft_evidence_ready(
     for hit in hits:
         if not isinstance(hit, dict) or not isinstance(hit.get("metadata"), dict):
             continue
-        if hit["metadata"].get("status") != "accepted" or hit["metadata"].get("guidance_mode") != "soft_hypothesis":
+        if (
+            hit.get("source_id") != expected_source_id
+            or hit["metadata"].get("status") != "accepted"
+            or hit["metadata"].get("guidance_mode") != "soft_hypothesis"
+        ):
             continue
         rendered = DeepSeekClient._format_rag_hits([hit])
         if len(rendered) == 1 and rendered[0].startswith("- 可撤回软假设：") and rendered[0] in prompt:
@@ -619,7 +677,14 @@ def qualify_h3_model_probe_fixture(
     intent_prompt = agent.last_strategy_intent_prompt
     prompt_markers = bool(prompt and all(marker in prompt for marker in ("【模型前建议】", "策略域：", "目标：", "反例检查：")))
     contrast_ready = _contrast_ready(fixture.name, contrasts, final_ids, validated.action_ids, prompt)
-    soft_ready = _soft_evidence_ready(client.kwargs, prompt)
+    expected_soft_source = {
+        "neutral_soft_pair": "exp_soft_pair_probe_001",
+        "bomb_wildcard_soft": "exp_bomb_wildcard_001",
+    }.get(fixture.name)
+    soft_ready = bool(
+        expected_soft_source
+        and _soft_evidence_ready(client.kwargs, prompt, expected_soft_source)
+    )
     if not _rag_context_ready(fixture, client.kwargs, intent):
         return _result(
             fixture,

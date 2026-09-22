@@ -33,6 +33,7 @@ _EXPERIENCE_OPTIONAL_METADATA = frozenset(
         "belief_confidence",
         "strategy_domain",
         "guidance_mode",
+        "candidate_requirements",
     }
 )
 _PROVENANCE_REQUIRED_FIELDS = frozenset(
@@ -69,6 +70,7 @@ _STRATEGY_DOMAINS = frozenset({
     "uncertainty_probe",
 })
 _GUIDANCE_MODES = frozenset({"source_principle", "soft_hypothesis"})
+_CANDIDATE_REQUIREMENTS = frozenset({"bomb_or_wildcard", "natural_pair"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,6 +316,12 @@ class KnowledgeBaseLoader:
             return False
         guidance_modes = values("guidance_mode")
         if guidance_modes and not guidance_modes.issubset(_GUIDANCE_MODES):
+            return False
+        candidate_requirements = values("candidate_requirements")
+        if (
+            ("candidate_requirements" in doc.metadata and not candidate_requirements)
+            or not candidate_requirements.issubset(_CANDIDATE_REQUIREMENTS)
+        ):
             return False
         record = registry.get(doc.doc_id)
         if record is None or record.get("evidence_status") != "active":

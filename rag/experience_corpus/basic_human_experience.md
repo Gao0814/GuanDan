@@ -136,6 +136,7 @@ priority: medium
 keywords_cn: [炸弹, 逢人配, 通配, 控制]
 strategy_domain: [bomb_wildcard_management]
 guidance_mode: soft_hypothesis
+candidate_requirements: [bomb_or_wildcard]
 ---
 
 # 炸弹与通配牌管理
@@ -190,6 +191,7 @@ priority: low
 keywords_cn: [对子, 侦察, 控制, 三带二, 顺子, 炸弹]
 strategy_domain: [uncertainty_probe, hand_structure, bomb_wildcard_management]
 guidance_mode: soft_hypothesis
+candidate_requirements: [natural_pair]
 ---
 
 # 可撤回的对子试探假设

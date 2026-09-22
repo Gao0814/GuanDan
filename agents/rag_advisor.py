@@ -5,6 +5,7 @@ import re
 
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase, phase_matches
 from agents.opening_strategy import normalize_hand_strength
+from agents.action_structure import summarize_candidate_structures
 from rag.kb_loader import KnowledgeDocument
 from rag.retriever import KnowledgeRetriever
 
@@ -34,6 +35,7 @@ _TAG_WEIGHTS = {
     "phase": (10.0, 2.0),
 }
 _PRIORITY_WEIGHTS = {"high": 1.5, "medium": 0.75, "low": 0.25}
+_CANDIDATE_REQUIREMENTS = frozenset({"bomb_or_wildcard", "natural_pair"})
 _KNOWLEDGE_METADATA_KEYS = frozenset(
     {
         "scene",
@@ -100,6 +102,95 @@ class RAGAdvisor:
     def _metadata_values(metadata: dict[str, str], key: str) -> set[str]:
         raw = metadata.get(key, "")
         return {part.strip() for part in raw.split(",") if part.strip()}
+
+    @staticmethod
+    def _rank_from_public_token(token: object) -> str | None:
+        if not isinstance(token, str):
+            return None
+        if token in {"SJ", "BJ"}:
+            return token
+        if len(token) < 2 or token[-1] not in {"S", "H", "C", "D"}:
+            return None
+        rank = token[:-1]
+        return rank if rank in {"3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"} else None
+
+    @staticmethod
+    def _rank_from_public_declaration(token: object) -> str | None:
+        if not isinstance(token, str):
+            return None
+        if token in {"SJ", "BJ"}:
+            return token
+        if token in {"3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"}:
+            return token
+        return RAGAdvisor._rank_from_public_token(token)
+
+    @classmethod
+    def _candidate_applicability(
+        cls,
+        observation: dict[str, object],
+        legal_actions: list[dict[str, object]],
+    ) -> dict[str, bool] | None:
+        """Derive prerequisite opportunities from complete public canonical actions.
+
+        This is intentionally an activation gate, not a score or an action
+        selector.  A malformed payload leaves every conditional experience
+        inactive instead of inferring an opportunity from prose or metadata.
+        """
+        facts = summarize_candidate_structures(observation, legal_actions)
+        if facts is None or len(facts) != len(legal_actions):
+            return None
+        actions_by_id: dict[int, dict[str, object]] = {}
+        for action in legal_actions:
+            action_id = action.get("action_id") if isinstance(action, dict) else None
+            if type(action_id) is not int or action_id in actions_by_id:
+                return None
+            actions_by_id[action_id] = action
+
+        has_bomb_or_wildcard = any(
+            fact.pattern in {"bomb", "joker_bomb"} or fact.uses_wildcard
+            for fact in facts
+        )
+        has_natural_pair = False
+        for fact in facts:
+            if fact.pattern != "pair" or fact.uses_wildcard or fact.carrier_count != 2:
+                continue
+            action = actions_by_id.get(fact.action_id)
+            if action is None:
+                return None
+            carrier = action.get("carrier_cards")
+            declared = action.get("declared_cards")
+            if not isinstance(carrier, list) or not isinstance(declared, list) or len(carrier) != 2 or len(declared) != 2:
+                return None
+            carrier_ranks = [cls._rank_from_public_token(card) for card in carrier]
+            declared_ranks = [cls._rank_from_public_declaration(card) for card in declared]
+            if (
+                all(isinstance(rank, str) for rank in carrier_ranks + declared_ranks)
+                and len(set(carrier_ranks)) == 1
+                and set(carrier_ranks) == set(declared_ranks)
+                and carrier_ranks[0] not in {"SJ", "BJ"}
+            ):
+                has_natural_pair = True
+        return {
+            "bomb_or_wildcard": has_bomb_or_wildcard,
+            "natural_pair": has_natural_pair,
+        }
+
+    @classmethod
+    def _requirements_match(
+        cls,
+        metadata: dict[str, str],
+        applicability: dict[str, bool] | None,
+    ) -> bool:
+        raw = metadata.get("candidate_requirements")
+        if raw is None:
+            return True
+        requirements = cls._metadata_values(metadata, "candidate_requirements")
+        return bool(
+            applicability is not None
+            and requirements
+            and requirements.issubset(_CANDIDATE_REQUIREMENTS)
+            and all(applicability.get(requirement) is True for requirement in requirements)
+        )
 
     @staticmethod
     def _ascii_tokens(text: str) -> set[str]:
@@ -284,7 +375,10 @@ class RAGAdvisor:
         scene_tags: dict[str, object],
         query: str,
         desired_topics: set[str],
+        candidate_applicability: dict[str, bool] | None,
     ) -> tuple[float, str, str] | None:
+        if not cls._requirements_match(doc.metadata, candidate_applicability):
+            return None
         semantic_metadata = " ".join(
             value
             for key, value in doc.metadata.items()
@@ -324,6 +418,7 @@ class RAGAdvisor:
         scene_tags: dict[str, object],
         query: str,
         top_k: int,
+        candidate_applicability: dict[str, bool] | None,
     ) -> tuple[RAGEvidence, ...]:
         if top_k <= 0:
             return ()
@@ -338,6 +433,7 @@ class RAGAdvisor:
                 scene_tags=scene_tags,
                 query=query,
                 desired_topics=desired_topics,
+                candidate_applicability=candidate_applicability,
             )
             if scored is None:
                 continue
@@ -425,6 +521,8 @@ class RAGAdvisor:
         hits = self._retriever.retrieve(query=query, layer="experience", top_k=top_k)
         evidence: list[RAGEvidence] = []
         for hit in hits:
+            if not self._requirements_match(hit.metadata, None):
+                continue
             semantic_metadata = " ".join(
                 value
                 for key, value in hit.metadata.items()
@@ -466,6 +564,7 @@ class RAGAdvisor:
         strategy_recommendation: object = None,
     ) -> dict[str, object]:
         scene_tags = self._scene_tags(observation, legal_actions, hand_eval, phase_context)
+        candidate_applicability = self._candidate_applicability(observation, legal_actions)
         intent = getattr(strategy_context, "intent", None)
         if isinstance(intent, str) and intent in {"run_out", "control", "support_teammate", "block_opponent"}:
             scene_tags["strategy_intent"] = intent
@@ -482,6 +581,7 @@ class RAGAdvisor:
                 scene_tags=scene_tags,
                 query=query,
                 top_k=top_k,
+                candidate_applicability=candidate_applicability,
             )
         except Exception:
             rule_evidence = ()
@@ -492,6 +592,7 @@ class RAGAdvisor:
                 scene_tags=scene_tags,
                 query=query,
                 top_k=top_k,
+                candidate_applicability=candidate_applicability,
             )
         except Exception:
             experience_evidence = ()

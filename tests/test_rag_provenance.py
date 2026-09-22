@@ -142,6 +142,7 @@ class TestExperienceProvenance(unittest.TestCase):
             "conflict",
             "governance_in_text",
             "malformed_metadata",
+            "unknown_candidate_requirement",
             "duplicate",
             "duplicate",
         ]
@@ -156,6 +157,11 @@ class TestExperienceProvenance(unittest.TestCase):
             "priority: high",
             "priority: unsupported",
         )
+        unknown_requirement_index = ids.index("unknown_candidate_requirement")
+        documents[unknown_requirement_index] = documents[unknown_requirement_index].replace(
+            "keywords_cn: [强牌, 小单]",
+            "keywords_cn: [强牌, 小单]\ncandidate_requirements: [unsupported_requirement]",
+        )
         records = [
             _record("active"),
             _record("candidate", status="candidate", tier="C"),
@@ -165,6 +171,7 @@ class TestExperienceProvenance(unittest.TestCase):
             _record("conflict", scope=_scope(level_rank="A")),
             _record("governance_in_text"),
             _record("malformed_metadata"),
+            _record("unknown_candidate_requirement"),
             _record("duplicate"),
         ]
         with tempfile.TemporaryDirectory() as temp_dir:

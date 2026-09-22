@@ -193,7 +193,10 @@ class RecommendationCandidateClosureTests(unittest.TestCase):
                     )
                 )
                 self.assertIn("【模型前建议】", prompt)
-                self.assertIn("可撤回软假设", prompt)
+                if name == "bomb_wildcard_resource":
+                    self.assertIn("可撤回软假设", prompt)
+                else:
+                    self.assertNotIn("可撤回软假设", prompt)
                 if name == "natural_pair_single_cleanup":
                     self.assertTrue(
                         {"single", "pair"}.issubset(

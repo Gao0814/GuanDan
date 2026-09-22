@@ -2,9 +2,10 @@
 
 import json
 import unittest
+from copy import deepcopy
 from unittest.mock import patch
 
-from agents.deepseek_client import DeepSeekSuggestion
+from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from evaluation.h3_model_probe_fixtures import (
     ProbeFixture,
     QualificationStage,
@@ -12,6 +13,7 @@ from evaluation.h3_model_probe_fixtures import (
     _NoNetworkTransport,
     _RecordingDeepSeekClient,
     _advisor,
+    _game,
     _run_projection,
     build_h3_model_probe_fixtures,
     qualify_h3_model_probe_fixture,
@@ -44,7 +46,7 @@ class _IrrelevantHitsRAGAdvisor:
         hits = []
         for hit in context.get("experience_hits", []):
             if isinstance(hit, dict):
-                metadata = {**dict(hit.get("metadata", {})), "scene": "lead_opening"}
+                metadata = {**dict(hit.get("metadata", {})), "scene": "follow_response"}
                 hits.append({**hit, "metadata": metadata})
         return {**context, "experience_hits": hits}
 
@@ -193,6 +195,124 @@ class H3ModelProbeFixtureTests(unittest.TestCase):
                 self.assertIsNotNone(client.final_prompt)
                 self.assertIn(chosen, {item["action_id"] for item in client.displayed_actions})
                 self.assertEqual(agent.last_decision_source, "model")
+
+    def test_fixture_semantics_and_soft_evidence_use_the_actual_target_sources(self) -> None:
+        expected_phase = {
+            "low_cost_single": ("lead_opening", "opening"),
+            "neutral_soft_pair": ("lead_opening", "opening"),
+        }
+        expected_soft_source = {
+            "neutral_soft_pair": "exp_soft_pair_probe_001",
+            "bomb_wildcard_soft": "exp_bomb_wildcard_001",
+        }
+        for fixture in build_h3_model_probe_fixtures():
+            with self.subTest(name=fixture.name):
+                _agent, client, _chosen = _run_projection(fixture, _advisor())
+                context = client.kwargs["rag_context"] if client.kwargs is not None else None
+                self.assertIsInstance(context, dict)
+                assert isinstance(context, dict)
+                tags = context["scene_tags"]
+                self.assertIsInstance(tags, dict)
+                assert isinstance(tags, dict)
+                if fixture.name in expected_phase:
+                    self.assertEqual(
+                        (tags.get("scene"), tags.get("phase")),
+                        expected_phase[fixture.name],
+                    )
+                if fixture.name in expected_soft_source:
+                    hits = context["experience_hits"]
+                    self.assertIsInstance(hits, list)
+                    expected = [hit for hit in hits if isinstance(hit, dict) and hit.get("source_id") == expected_soft_source[fixture.name]]
+                    self.assertEqual(len(expected), 1)
+                    rendered = DeepSeekClient._format_rag_hits(expected)
+                    self.assertEqual(len(rendered), 1)
+                    self.assertIn(rendered[0], client.transport.user_prompt or "")
+                self.assertNotIn("candidate_requirements", json.dumps(context, ensure_ascii=False))
+
+    def test_conditional_soft_evidence_requires_complete_public_opportunities(self) -> None:
+        fixtures = {fixture.name: fixture for fixture in build_h3_model_probe_fixtures()}
+        advisor = _advisor()
+        for name in ("low_cost_single", "neutral_soft_pair", "pair_cleanup", "short_endgame"):
+            with self.subTest(name=name):
+                context = advisor.get_rag_context(
+                    observation=fixtures[name].observation,
+                    legal_actions=fixtures[name].legal_actions,
+                    hand_eval={"label": "medium"},
+                    top_k=3,
+                )
+                self.assertNotIn(
+                    "exp_bomb_wildcard_001",
+                    [hit.get("source_id") for hit in context["experience_hits"] if isinstance(hit, dict)],
+                )
+
+        neutral = fixtures["neutral_soft_pair"]
+        context = advisor.get_rag_context(
+            observation=neutral.observation,
+            legal_actions=neutral.legal_actions,
+            hand_eval={"label": "medium"},
+            top_k=3,
+        )
+        self.assertIn(
+            "exp_soft_pair_probe_001",
+            [hit.get("source_id") for hit in context["experience_hits"] if isinstance(hit, dict)],
+        )
+        malformed_actions = deepcopy(neutral.legal_actions)
+        malformed_actions[0]["carrier_cards"] = ["malformed"]
+        malformed_context = advisor.get_rag_context(
+            observation=neutral.observation,
+            legal_actions=malformed_actions,
+            hand_eval={"label": "medium"},
+            top_k=3,
+        )
+        self.assertNotIn(
+            "exp_soft_pair_probe_001",
+            [hit.get("source_id") for hit in malformed_context["experience_hits"] if isinstance(hit, dict)],
+        )
+
+    def test_pair_soft_hypothesis_obeys_opening_midgame_and_endgame_boundaries(self) -> None:
+        fixtures = {fixture.name: fixture for fixture in build_h3_model_probe_fixtures()}
+        advisor = _advisor()
+        opening = advisor.get_rag_context(
+            observation=fixtures["neutral_soft_pair"].observation,
+            legal_actions=fixtures["neutral_soft_pair"].legal_actions,
+            hand_eval={"label": "medium"},
+            top_k=10,
+        )
+        midgame = _game(
+            ("6S", "6H", "3S", "4S", "5S", "7S", "8S", "9S", "10S", "JS", "QS", "KS"),
+            ("3H", "4H", "5H", "6H", "7H", "8H", "9H", "10H", "JH", "QH", "KH", "AH"),
+            ("3C", "4C", "5C", "6C", "7C", "8C", "9C", "10C", "JC", "QC", "KC", "AC"),
+            ("3D", "4D", "5D", "6D", "7D", "8D", "9D", "10D", "JD", "QD", "KD", "AD"),
+        )
+        midgame_observation = midgame.reset()
+        midgame_context = advisor.get_rag_context(
+            observation=midgame_observation,
+            legal_actions=midgame.legal_actions(),
+            hand_eval={"label": "medium"},
+            top_k=10,
+        )
+        endgame = advisor.get_rag_context(
+            observation=fixtures["pair_cleanup"].observation,
+            legal_actions=fixtures["pair_cleanup"].legal_actions,
+            hand_eval={"label": "medium"},
+            top_k=10,
+        )
+
+        contexts = {"opening": opening, "midgame": midgame_context, "endgame": endgame}
+        for phase, context in contexts.items():
+            with self.subTest(phase=phase):
+                tags = context["scene_tags"]
+                self.assertIsInstance(tags, dict)
+                assert isinstance(tags, dict)
+                if phase == "endgame":
+                    self.assertIn(tags.get("phase"), {"endgame", "near_open_endgame", "critical_endgame"})
+                else:
+                    self.assertEqual(tags.get("phase"), phase)
+                ids = [hit.get("source_id") for hit in context["experience_hits"] if isinstance(hit, dict)]
+                if phase == "endgame":
+                    self.assertNotIn("exp_soft_pair_probe_001", ids)
+                else:
+                    self.assertIn("exp_soft_pair_probe_001", ids)
 
     def test_empty_or_wrong_actual_rag_context_fails_all_qualifications(self) -> None:
         fixtures = build_h3_model_probe_fixtures()
