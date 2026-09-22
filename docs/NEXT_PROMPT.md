@@ -1,27 +1,38 @@
 # Coding Codex 执行 Prompt
 
-任务：H3-A3a——收窄 H3-A3 的模型前推荐优先级。`b40000eb1b82ddacd44b397e32b77702ea047719` 的严格关系识别、最终候选中的公开对照提示、合法模型原始 ID 与 `model` source 已通过规划 Codex 的代码/测试复审；本任务只修复其过宽的推荐激活，不重做 H3-A3 或引入新策略覆盖。
+任务：H3-A4——在已封板的 H3-A3/H3-A3a 代码上，完成八类代表场景的独立、低敏、真实 DeepSeek 诊断。只记录当前版本的模型原始选择类别与技术守恒，不把一次动作解释为最优策略、胜率或对 H3-A2r 的因果改善。本任务不修改仓库代码、tests、RAG、docs、配置或既有 evidence，不创建 commit。
 
-## 已复现的阻塞点
+## 前置边界
 
-规划 Codex 独立运行真实引擎初始局面：seed `0..29` 的 30/30 个状态均识别自然对子/单张关系，且推荐 ID 前两位均被该关系占用；其中 29/30 另有结构安全自然小单。这会让一个本为对子清理目标场景设计的优先级系统性影响普通开局。seed `0..99` 中 18 个初始局面识别同点数四/五炸；18/18 的两侧仍在最终候选和 prompt 对照中可见，但 0/18 同时进入最多 3 项推荐 ID，因为普通对子关系先占预算。这是离线范围问题，不是模型质量或胜率结论。
+1. 阅读适用 `AGENTS.md`，检查 `.agents/skills/`；本任务不是 Botzone live/清理，不执行那两个项目 Skill。阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/STRATEGY_SOURCE_AUDIT.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`。
+2. 检查 Git status、diff、HEAD 和最近提交；HEAD 必须包含 `b67075391d81add85ab9dc744d8cb886052fde77`，工作树必须 clean，否则零请求停止。确认没有其它本项目真实 DeepSeek 诊断进程正在运行；不能确认则零请求停止，不干预无关进程。
+3. 不访问 `D:\VsCodeProject\BotzoneWorkspace`、seed `47004` evidence、H3-A2r 旧 ledger 的内容或系统 Temp 流文件。不运行 Botzone、connector、browser、preflight 或 live。不得人工打开或输出 `.env`；真实模型配置只通过既有 `config.py` 读取，不输出密钥、URL、Cookie、prompt、模型响应/reasoning 或异常正文。
+4. 项目所有者长期授权单个明确任务中严格少于10次的预注册真实 DeepSeek 请求；本任务最多8次、每场至多1次、重试0，不得扩容或合并上一任务不可审计请求。`DEEPSEEK_MAX_RETRIES=0` 仅用于本进程。
 
-## 开始前与范围
+## 唯一新外部 artifact
 
-1. 阅读适用 `AGENTS.md` 并检查 `.agents/skills/`；本任务不属于 Botzone live/清理，不执行那两个 Skill。阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/STRATEGY_SOURCE_AUDIT.md`、`docs/RAG_KB.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md` 和 H3-A3 相关代码/测试。
-2. 检查 Git status、diff、HEAD 和最近提交。仅在工作树 clean 且 HEAD 包含 `b40000e` 时实施；遇到外部修改保留并停下说明，不用 reset/clean/restore/checkout/stash。
-3. 不访问 `D:\VsCodeProject\BotzoneWorkspace`、seed `47004` evidence 或仓库外 H3-A2r ledger；不清理 Coding 任务留下的系统 Temp 流文件。不运行 Botzone、connector、live、browser、preflight、真实 DeepSeek；不读取/输出 `.env`、凭据、prompt 全文或模型自由文本。
+固定路径：`D:\VsCodeProject\GuanDanH3A2Audit\h3-a4.jsonl`。父目录必须是已存在的普通非链接目录，新文件必须不存在；不删除、覆盖、移动或改名任何既有文件。用 exclusive-create 建立普通非链接 UTF-8 JSONL，每个事件写入后立即 flush + `os.fsync`。若路径门槛不通过，零请求停止，不换路径。任务结束保留文件，报告绝对路径、bytes、完整 SHA-256。
 
-## 最小实现目标
+每行只能包含固定低敏枚举、布尔值、计数和 Git HEAD，事件依次为：`header`（schema=`h3-a4-v1`、场景数8、请求上限8、重试上限0）、8条`qualification`、`qualification_complete`、每场调用前的`request_started`与调用后的`request_result`、最终`summary`。资格事件只记场景编号/固定名称、ready/failed、候选数量、分类数量、recommendation/关系对照/intent/RAG/prompt marker 的固定枚举或布尔值；结果事件只记请求序号、场景编号、固定provider outcome、预注册动作类别、是否在最终候选、source是否为`model`及技术守恒判定。`request_started` 必须在调用前落盘，作为本任务请求计数审计真值。禁止在文件或 stdout 输出牌面、手牌、action ID、完整 canonical action、prompt、模型自由文本、请求/响应原文、异常正文、URL、token、凭据；异常只映射固定 outcome。
 
-- 保留 `summarize_candidate_contrasts()` 的严格、fail-closed 关系识别及 `DeepSeekClient` 的有界“公开关系对照”。比较仅提供公开事实与可推翻条件，不指令模型必须选某侧；合法模型动作不经后置策略改写。
-- 调整 `build_strategy_recommendation()` 中完整关系组对最多 3 个推荐 ID 的占位优先级。一次出完仍最高。普通开局若存在结构安全、低成本的自然单张且队友没有公开紧急走牌条件，不得仅因存在常见自然对子就无条件把对子/同点单张置于推荐前两位；保留低成本单张的原有建议意义。队友公开接近出完且无更高公开紧急目标时，仍允许把对子清理/拆分作为完整关系组优先核验，满足 H3-A2r `pair_cleanup` 的目标条件。
-- 同点数四/五炸与普通对子关系共存时，不让遍在的对子关系自动耗尽预算，使炸弹残余关系仍能作为完整成组推荐被核验；若一次出完或其它更高公开紧急目标确实竞争预算，必须按既有优先级稳定降级，不保留半组关系。最终 prompt 中的关系对照仍须只描述实际最终候选同时可见的两侧。
-- 保持最多 3 个推荐 ID、最多 4 个 objective、最终最多 80 个候选、原始 ID/签名/顺序、两层候选闭环、畸形 payload fail-closed、来源治理字段隔离及其他 H3-A2r ready 场景不发生无关变化。不要增加固定点数、现场 seed/action ID 特判、本地直接动作、post-model override、新 decision source；不改 engine、Botzone、RAG 内容或规划 docs。仅修改直接必要的 AI 文件与 tests。
+## 八场冻结类别与离线资格
 
-## 验证与提交
+先独立运行 `tests.test_strategy_relationship_contrasts`、`tests.test_recommendation_candidate_closure`、`tests.test_h3_a1_projection`、`tests.test_strategy_recommendation`、`tests.test_action_structure`。随后从头构造八个不同的 engine-backed 场景：只能从 `observe()` 与完整 `legal_actions()` 取得公开输入和 canonical action，不手写伪合法动作、不删合法候选、不用 seed `47004` 或现场 ID。允许仅为诊断关闭 opening local shortcut，其余生产 router/RAG/recommendation/prompt 路径保持开启。八场全部资格 ready 并写入 `qualification_complete=true` 前，不得发起任何真实请求；任一场失败则记录失败、`qualification_complete=false`，零请求停止。
 
-- 新增 engine-backed 多状态/关系竞争回归，明确复现并解决上述 30/30、29/30、18/18、0/18 范围问题；同时保留 H3-A3 的炸弹、队友紧急对子、预算不足不留半组、畸形输入、最终候选/prompt 对照、模型两侧原始 ID/source 测试。至少覆盖一般开局、队友剩余 1–2 张、危险对手、一次出完、四/五炸与对子同存及 80 项候选溢出。测试不得手写伪 canonical action 或使用 seed `47004`。
-- 运行改动相关定向、原 H3-A1.1 23 项、主规则 39 项和全量 `python -m unittest discover -q`；运行 `git diff --check`。若环境限制导致某项不能跑，精确报告命令与原因。
-- 审查完整 diff 与生产 source：不出现新 post-model 策略分支、新 source、来源治理泄漏或无关文件。只按明确路径暂存自己的业务代码/tests，不用 `git add .`；提交后检查 Git status。
-- 报告根因、实现、测试、commit、最终 Git status、保留的外部 Temp 文件和当前范围内剩余风险。本轮真实模型请求必须为 0；不要声称两项 H3-A2r `not_ready` 已转为 ready。交回规划 Codex 独立复审后再单独安排真实模型诊断。
+1. `bomb_residual`：非紧急自由领牌，同点数自然四/五炸均合法，四炸留同点孤张、五炸清空；两侧完整进入推荐、最终候选和“公开关系对照”。动作类别：`five_bomb` / `four_bomb_leaves_singleton` / `alternative`。
+2. `low_cost_single`：普通自由领牌，有多个结构安全自然单张、较高单张和控制资源，且常见对子关系可达但不抢占低成本小单推荐。类别：`low_cost_single` / `high_single` / `control_resource` / `other`。
+3. `pair_cleanup`：队友公开剩余1–2张、无更高公开紧急目标，自然对子和拆出同点单张均合法；两侧完整进入推荐、最终候选和关系对照。类别：`pair_cleanup` / `single_split` / `other`。
+4. `neutral_soft_pair`：无队友紧急条件，有结构安全中性pair/triple、普通single和已激活C级软假设；关系推荐不得无故挤掉低成本单张。类别：`neutral_group` / `single` / `other`。
+5. `teammate_controls`：队友领出、无紧急对手，pass与消耗控制资源均合法。类别：`pass_preserve` / `spend_control` / `other`。
+6. `danger_block`：危险对手领出且接近走完，pass与合法压制并存。类别：`block` / `pass` / `other`。
+7. `short_endgame`：最少剩余分组动作和严格更差拆组动作均合法。类别：`minimum_group` / `strictly_worse`。
+8. `bomb_wildcard_soft`：自然路线与消耗炸弹/通配资源路线并存，无公开紧急性，C级软假设必须可撤回。类别：`preserve_resource` / `spend_resource` / `other`。
+
+每场调用前证明：公开输入与完整动作集通过现有 canonical 派生器；最终候选 `<=80`、ID 均来自原集合、签名唯一；recommendation 通过同一validator且全部推荐ID进入最终候选；router/RAG/模型前建议/反例等该场必需 marker 实际进入最终 prompt，第1、3场另须有完整关系对照，第4、8场另须有C级可撤回软假设 marker；类别集合非空且互斥；only-pass、一次出完与本地开局快捷路径不会吞掉请求。对第1、3场尤其核对两侧同在实际最终候选及关系对照，不只检查上游关系可达。
+
+## 请求、停止与报告
+
+- 按1–8顺序每场最多调用一次，总数最多8、重试0。每次先持久化 `request_started`，再调用模型；provider outcome仅用固定 `success|timeout|exception|invalid_suggestion`，success只分类为上述低基数动作类别，合法模型原始ID必须属于实际最终候选且source=`model`。动作类别本身不构成策略 ready/not_ready 判定。
+- timeout、exception、invalid suggestion 只记固定`inconclusive`技术结果，不重试，可继续下一场。若出现推荐/候选/ID/source守恒破坏或后置改写，先写低敏结果并停止剩余调用，在summary标记不完整。单纯选了`alternative`/`other`不停止，也不得擅自认定为错误。
+- 结束后重读新 ledger，校验唯一header、八条资格、资格完成、请求序号连续、started/result配对或明确中断点、各provider和动作类别计数守恒、请求`<=8`、重试0、summary完整性。报告八场资格、provider outcome、动作类别、最终候选/source技术守恒及总计；不要输出牌面、动作ID或模型文本，不给胜率或因果结论。明确说明新fixture若不与H3-A2r逐字同一，不能把两轮类别变化称为同状态改善。
+- 最后检查 Git HEAD/status 与 `git diff --check`；仓库不得有修改或commit。报告新 ledger 的绝对路径/bytes/完整SHA-256、既有H3-A2r ledger和系统Temp文件未改、Botzone/live/connector/browser/preflight为0、workspace未访问。若stdout再次丢失，只以已持久化事件报告可审计到的边界，不猜测缺失结果。
