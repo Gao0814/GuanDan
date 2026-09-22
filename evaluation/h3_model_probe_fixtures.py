@@ -1,0 +1,482 @@
+"""Deterministic, no-network qualifications for the H3 model probe.
+
+The fixtures are built through :class:`GuanDanGame` and exposed only as the
+same public observation/canonical-action payloads that an agent receives.
+They deliberately do not know about API configuration or perform requests.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass
+from enum import StrEnum
+from pathlib import Path
+from typing import Callable
+from unittest.mock import patch
+
+from agents.action_structure import CandidateContrast, CandidateStructure, summarize_candidate_contrasts, summarize_candidate_structures
+from agents.deepseek_ai import DeepSeekAIAgent
+from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
+from agents.rag_advisor import RAGAdvisor
+from agents.short_endgame_planner import minimum_group_free_lead_action_ids
+from config import AppConfig
+from engine.cards import Card
+from engine.game import GuanDanGame
+from rag.kb_loader import KnowledgeBaseLoader
+from rag.retriever import KnowledgeRetriever
+
+
+class QualificationStage(StrEnum):
+    READY = "ready"
+    SCENARIO_CONSTRUCTION = "scenario_construction"
+    PUBLIC_CANONICAL = "public_canonical"
+    CATEGORY_PARTITION = "category_partition"
+    RECOMMENDATION = "recommendation"
+    FINAL_CANDIDATES = "final_candidates"
+    ROUTER_RAG_PROMPT = "router_rag_prompt"
+    LOCAL_SHORTCUT = "local_shortcut"
+    MODEL_PASSTHROUGH = "model_passthrough"
+
+
+SCENARIO_NAMES = (
+    "bomb_residual",
+    "low_cost_single",
+    "pair_cleanup",
+    "neutral_soft_pair",
+    "teammate_controls",
+    "danger_block",
+    "short_endgame",
+    "bomb_wildcard_soft",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ProbeFixture:
+    name: str
+    observation: dict[str, object]
+    legal_actions: list[dict[str, object]]
+
+
+@dataclass(frozen=True, slots=True)
+class QualificationResult:
+    name: str
+    stage: QualificationStage
+    candidate_count: int
+    final_candidate_count: int
+    category_counts: tuple[tuple[str, int], ...]
+    recommendation_ready: bool
+    contrast_ready: bool
+    soft_marker_ready: bool
+    prompt_markers_ready: bool
+    source_is_model: bool
+
+    @property
+    def ready(self) -> bool:
+        return self.stage is QualificationStage.READY
+
+
+_SAFE_CONFIG = AppConfig(
+    deepseek_api_key=None,
+    deepseek_base_url="",
+    deepseek_model="",
+    deepseek_enabled=False,
+    hand_evaluation_enabled=True,
+    card_tracking_enabled=False,
+    opening_formula_enabled=False,
+    deepseek_timeout=1.0,
+    deepseek_max_retries=0,
+    debug=False,
+)
+
+
+def _cards(tokens: tuple[str, ...]) -> tuple[Card, ...]:
+    return tuple(
+        Card(rank=token, suit=None) if token in {"SJ", "BJ"} else Card(rank=token[:-1], suit=token[-1])
+        for token in tokens
+    )
+
+
+def _game(
+    one: tuple[str, ...],
+    two: tuple[str, ...],
+    three: tuple[str, ...],
+    four: tuple[str, ...],
+    *,
+    starting_player_id: int = 1,
+) -> GuanDanGame:
+    return GuanDanGame(
+        current_level_rank="2",
+        preset_hands={1: _cards(one), 2: _cards(two), 3: _cards(three), 4: _cards(four)},
+        starting_player_id=starting_player_id,
+    )
+
+
+def _action_id(game: GuanDanGame, predicate: Callable[[dict[str, object]], bool]) -> int:
+    for action in game.legal_actions():
+        if predicate(action):
+            return int(action["action_id"])
+    raise RuntimeError("fixture_canonical_action_missing")
+
+
+def _pass(game: GuanDanGame) -> int:
+    return _action_id(game, lambda action: action["declared_pattern"] == "pass")
+
+
+def _single(game: GuanDanGame, rank: str) -> int:
+    return _action_id(
+        game,
+        lambda action: action["declared_pattern"] == "single" and action["declared_cards"] == [rank],
+    )
+
+
+def _snapshot(name: str, game: GuanDanGame) -> ProbeFixture:
+    return ProbeFixture(name, game.observe(), game.legal_actions())
+
+
+def _bomb_residual() -> ProbeFixture:
+    game = _game(
+        ("7S", "7H", "7C", "7D", "7S", "3S", "4H"),
+        ("AS", "AH", "AC"), ("KS", "KH", "KC"), ("QS", "QH", "QC"),
+    )
+    game.reset()
+    return _snapshot("bomb_residual", game)
+
+
+def _low_cost_single() -> ProbeFixture:
+    game = _game(
+        ("3S", "5H", "9C", "AS", "2S", "BJ", "6S", "6H"),
+        ("KS", "KH", "KC"), ("QS", "QH", "QC"), ("JS", "JH", "JC"),
+    )
+    game.reset()
+    return _snapshot("low_cost_single", game)
+
+
+def _pair_cleanup() -> ProbeFixture:
+    game = _game(
+        ("6S", "6H", "3S", "4H", "9C", "AS"),
+        ("QS", "QH", "QC"), ("KS",), ("JS", "JH", "JC"),
+    )
+    game.reset()
+    return _snapshot("pair_cleanup", game)
+
+
+def _neutral_soft_pair() -> ProbeFixture:
+    game = _game(
+        ("6S", "6H", "6C", "8S", "8H", "3S", "AH"),
+        ("QS", "QH", "QC"), ("KS", "KH", "KC"), ("JS", "JH", "JC"),
+    )
+    game.reset()
+    return _snapshot("neutral_soft_pair", game)
+
+
+def _teammate_controls() -> ProbeFixture:
+    game = _game(
+        ("AS", "BJ", "6S", "7S"), ("9H", "10H", "JH"),
+        ("8S", "3S", "4H", "5C"), ("3H", "4D", "5D"), starting_player_id=3,
+    )
+    game.reset()
+    game.step(_single(game, "8"))
+    game.step(_pass(game))
+    return _snapshot("teammate_controls", game)
+
+
+def _danger_block() -> ProbeFixture:
+    game = _game(
+        ("9S", "JH", "3S"), ("8S", "3S", "4H"),
+        ("3H", "4D", "5D"), ("3C", "4C", "5C"), starting_player_id=2,
+    )
+    game.reset()
+    game.step(_single(game, "8"))
+    game.step(_pass(game))
+    game.step(_pass(game))
+    return _snapshot("danger_block", game)
+
+
+def _short_endgame() -> ProbeFixture:
+    game = _game(
+        ("6S", "7S", "JH", "JD"),
+        ("AS", "AH", "AC", "AD", "KS"),
+        ("QS", "QH", "QC", "QD", "JS", "JH"),
+        ("10S", "10H", "10C", "10D", "9S"),
+    )
+    game.reset()
+    return _snapshot("short_endgame", game)
+
+
+def _bomb_wildcard_soft() -> ProbeFixture:
+    game = _game(
+        ("2H", "7S", "7H", "7C", "7D", "3S", "4H"),
+        ("AS", "AH", "AC"), ("KS", "KH", "KC"), ("QS", "QH", "QC"),
+    )
+    game.reset()
+    return _snapshot("bomb_wildcard_soft", game)
+
+
+def build_h3_model_probe_fixtures() -> tuple[ProbeFixture, ...]:
+    """Build the frozen H3 categories from real engine public payloads."""
+    return (
+        _bomb_residual(), _low_cost_single(), _pair_cleanup(), _neutral_soft_pair(),
+        _teammate_controls(), _danger_block(), _short_endgame(), _bomb_wildcard_soft(),
+    )
+
+
+class _ProjectionClient:
+    """No-network client which preserves a displayed original candidate ID."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.kwargs: dict[str, object] | None = None
+
+    def suggest_action_id(self, **kwargs: object) -> DeepSeekSuggestion:
+        self.calls += 1
+        self.kwargs = dict(kwargs)
+        actions = kwargs.get("prompt_actions")
+        if not isinstance(actions, list) or not actions:
+            return DeepSeekSuggestion(None, None)
+        action_id = actions[0].get("action_id") if isinstance(actions[0], dict) else None
+        return DeepSeekSuggestion(action_id if type(action_id) is int else None, None)
+
+
+def _advisor() -> RAGAdvisor:
+    root = Path(__file__).resolve().parents[1] / "rag"
+    return RAGAdvisor(KnowledgeRetriever(KnowledgeBaseLoader(root).load_all_documents()))
+
+
+def _run_projection(fixture: ProbeFixture, advisor: RAGAdvisor) -> tuple[DeepSeekAIAgent, _ProjectionClient, int | None]:
+    client = _ProjectionClient()
+    player_id = fixture.observation.get("my_info", {}).get("player_id") if isinstance(fixture.observation.get("my_info"), dict) else None
+    if type(player_id) is not int:
+        raise RuntimeError("fixture_player_id_invalid")
+    # DeepSeekAIAgent normally reads config only to choose optional local
+    # helpers.  The probe fixes those helpers explicitly and patches the read
+    # so test/import execution never loads dotenv or requests a model.
+    with patch("agents.deepseek_ai.AppConfig.from_env", return_value=_SAFE_CONFIG):
+        agent = DeepSeekAIAgent(
+            player_id, client, rag_advisor=advisor, rag_top_k=3,
+            hand_evaluation_enabled=True, opening_formula_enabled=False,
+            strategy_router_shadow_enabled=True, strategy_intent_prompt_enabled=True,
+            strategy_recommendation_enabled=True,
+        )
+        chosen = agent.select_action(fixture.observation, fixture.legal_actions)
+    return agent, client, chosen
+
+
+def _final_prompt_actions(
+    fixture: ProbeFixture,
+    captured: dict[str, object],
+    recommendation: object,
+) -> list[dict[str, object]] | None:
+    prompt_actions = captured.get("prompt_actions")
+    if not isinstance(prompt_actions, list):
+        return None
+    supplied = DeepSeekClient._canonical_subset_actions(fixture.legal_actions, prompt_actions)
+    validated = DeepSeekClient._validated_strategy_recommendation(recommendation, fixture.legal_actions)
+    if supplied is None or validated is None:
+        return None
+    protected = DeepSeekClient._protected_actions_by_id(fixture.legal_actions, validated.action_ids)
+    present_ids = {int(action["action_id"]) for action in supplied}
+    candidates = supplied + [action for action in protected if int(action["action_id"]) not in present_ids]
+    current_round = fixture.observation.get("current_round")
+    my_info = fixture.observation.get("my_info")
+    if not isinstance(current_round, dict) or not isinstance(my_info, dict):
+        return None
+    hand_count = my_info.get("hand_count")
+    if type(hand_count) is not int:
+        return None
+    return DeepSeekClient._limit_prompt_actions(
+        candidates,
+        constraint=str(current_round.get("constraint", "")),
+        hand_count=hand_count,
+        protected_action_ids=validated.action_ids,
+    )
+
+
+def _prompt(fixture: ProbeFixture, captured: dict[str, object], final_actions: list[dict[str, object]]) -> str | None:
+    observation = fixture.observation
+    my_info = observation.get("my_info")
+    current_round = observation.get("current_round")
+    other_players = observation.get("other_players")
+    history = observation.get("history")
+    if not isinstance(my_info, dict) or not isinstance(current_round, dict) or not isinstance(other_players, list) or not isinstance(history, dict):
+        return None
+    try:
+        return DeepSeekClient._build_structured_prompt(
+            my_info=my_info, current_round=current_round, other_players=other_players,
+            history=history, legal_actions=final_actions,
+            rag_context=captured.get("rag_context"), hand_evaluation=captured.get("hand_evaluation"),
+            card_tracking_summary=captured.get("card_tracking_summary"), phase_context=captured.get("phase_context"),
+            strategy_intent_prompt=captured.get("strategy_intent_prompt"),
+            strategy_recommendation=captured.get("strategy_recommendation"),
+            residual_structure_source_actions=fixture.legal_actions,
+        )
+    except Exception:
+        return None
+
+
+def _classify(
+    name: str,
+    action_id: int,
+    final_ids: set[int],
+    facts: dict[int, CandidateStructure],
+    contrasts: tuple[CandidateContrast, ...],
+    minimum_ids: tuple[int, ...],
+) -> str | None:
+    fact = facts.get(action_id)
+    if fact is None or action_id not in final_ids:
+        return None
+    if name == "bomb_residual":
+        contrast = next((item for item in contrasts if item.kind == "bomb_residual"), None)
+        if contrast is None:
+            return None
+        if action_id == contrast.action_ids[1]:
+            return "five_bomb"
+        if action_id == contrast.action_ids[0]:
+            return "four_bomb_leaves_singleton"
+        return "alternative"
+    if name == "low_cost_single":
+        safe = sorted(
+            (item for item in facts.values() if item.action_id in final_ids and item.pattern == "single"
+             and item.natural_single_rank_value is not None and not item.fragments_played_rank_group
+             and not item.consumes_control_resource),
+            key=lambda item: (item.natural_single_rank_value, item.action_id),
+        )
+        if fact.consumes_control_resource:
+            return "control_resource"
+        if safe and action_id == safe[0].action_id:
+            return "low_cost_single"
+        if len(safe) > 1 and action_id == safe[-1].action_id:
+            return "high_single"
+        return "other"
+    if name == "pair_cleanup":
+        contrast = next((item for item in contrasts if item.kind == "natural_pair_single"), None)
+        if contrast is None:
+            return None
+        if action_id == contrast.action_ids[0]:
+            return "pair_cleanup"
+        if action_id == contrast.action_ids[1]:
+            return "single_split"
+        return "other"
+    if name == "neutral_soft_pair":
+        if fact.pattern in {"pair", "triple"} and not fact.uses_wildcard:
+            return "neutral_group"
+        return "single" if fact.pattern == "single" else "other"
+    if name == "teammate_controls":
+        if fact.pattern == "pass":
+            return "pass_preserve"
+        return "spend_control" if fact.consumes_control_resource else "other"
+    if name == "danger_block":
+        return "pass" if fact.pattern == "pass" else "block"
+    if name == "short_endgame":
+        return "minimum_group" if action_id in minimum_ids else "strictly_worse"
+    if name == "bomb_wildcard_soft":
+        return "spend_resource" if fact.uses_wildcard or fact.bomb_length is not None else "preserve_resource"
+    return None
+
+
+def _result(
+    fixture: ProbeFixture,
+    stage: QualificationStage,
+    *,
+    candidate_count: int = 0,
+    final_candidate_count: int = 0,
+    category_counts: Counter[str] | None = None,
+    recommendation_ready: bool = False,
+    contrast_ready: bool = False,
+    soft_marker_ready: bool = False,
+    prompt_markers_ready: bool = False,
+    source_is_model: bool = False,
+) -> QualificationResult:
+    return QualificationResult(
+        fixture.name, stage, candidate_count, final_candidate_count,
+        tuple(sorted((category_counts or Counter()).items())), recommendation_ready,
+        contrast_ready, soft_marker_ready, prompt_markers_ready, source_is_model,
+    )
+
+
+def qualify_h3_model_probe_fixture(fixture: ProbeFixture, *, advisor: RAGAdvisor | None = None) -> QualificationResult:
+    """Run the frozen, no-network production projection stage by stage."""
+    if fixture.name not in SCENARIO_NAMES or not isinstance(fixture.observation, dict) or not isinstance(fixture.legal_actions, list):
+        return _result(fixture, QualificationStage.SCENARIO_CONSTRUCTION)
+    candidate_count = len(fixture.legal_actions)
+    facts_tuple = summarize_candidate_structures(fixture.observation, fixture.legal_actions)
+    contrasts = summarize_candidate_contrasts(fixture.observation, fixture.legal_actions)
+    if facts_tuple is None or contrasts is None or candidate_count == 0:
+        return _result(fixture, QualificationStage.PUBLIC_CANONICAL, candidate_count=candidate_count)
+    facts = {item.action_id: item for item in facts_tuple}
+    try:
+        agent, client, chosen = _run_projection(fixture, advisor or _advisor())
+    except Exception:
+        return _result(fixture, QualificationStage.ROUTER_RAG_PROMPT, candidate_count=candidate_count)
+    if client.calls != 1 or client.kwargs is None or agent.last_decision_source != "model":
+        return _result(fixture, QualificationStage.LOCAL_SHORTCUT, candidate_count=candidate_count)
+    recommendation = agent.last_strategy_recommendation
+    validated = DeepSeekClient._validated_strategy_recommendation(recommendation, fixture.legal_actions)
+    if validated is None or len(validated.action_ids) > 3 or len(validated.objective_codes) > 4:
+        return _result(fixture, QualificationStage.RECOMMENDATION, candidate_count=candidate_count)
+    final_actions = _final_prompt_actions(fixture, client.kwargs, recommendation)
+    if final_actions is None:
+        return _result(fixture, QualificationStage.FINAL_CANDIDATES, candidate_count=candidate_count, recommendation_ready=True)
+    final_ids = {int(item["action_id"]) for item in final_actions}
+    source_ids = {int(item["action_id"]) for item in fixture.legal_actions}
+    signatures = [DeepSeekClient._action_signature(item) for item in final_actions]
+    if (
+        len(final_actions) > 80 or not final_ids.issubset(source_ids)
+        or len(signatures) != len(set(signatures)) or not set(validated.action_ids).issubset(final_ids)
+    ):
+        return _result(fixture, QualificationStage.FINAL_CANDIDATES, candidate_count=candidate_count, final_candidate_count=len(final_actions), recommendation_ready=True)
+    player_id = fixture.observation["my_info"].get("player_id") if isinstance(fixture.observation.get("my_info"), dict) else None
+    minimum_ids = minimum_group_free_lead_action_ids(fixture.observation, fixture.legal_actions, player_id) if type(player_id) is int else None
+    categories = [_classify(fixture.name, int(item["action_id"]), final_ids, facts, contrasts, minimum_ids or ()) for item in final_actions]
+    if any(category is None for category in categories):
+        return _result(fixture, QualificationStage.CATEGORY_PARTITION, candidate_count=candidate_count, final_candidate_count=len(final_actions), recommendation_ready=True)
+    category_counts = Counter(category for category in categories if category is not None)
+    if sum(category_counts.values()) != len(final_actions) or not _required_categories_ready(fixture.name, category_counts):
+        return _result(fixture, QualificationStage.CATEGORY_PARTITION, candidate_count=candidate_count, final_candidate_count=len(final_actions), category_counts=category_counts, recommendation_ready=True)
+    prompt = _prompt(fixture, client.kwargs, final_actions)
+    intent = agent.last_strategy_intent
+    intent_prompt = agent.last_strategy_intent_prompt
+    prompt_markers = bool(prompt and all(marker in prompt for marker in ("【模型前建议】", "策略域：", "目标：", "反例检查：")))
+    contrast_ready = _contrast_ready(fixture.name, contrasts, final_ids, validated.action_ids, prompt)
+    soft_ready = bool(prompt and "可撤回软假设" in prompt)
+    if (
+        prompt is None or intent is None or getattr(intent, "status", None) != "available"
+        or intent_prompt is None or getattr(intent_prompt, "status", None) != "ready"
+        or not prompt_markers or (fixture.name in {"bomb_residual", "pair_cleanup"} and not contrast_ready)
+        or (fixture.name in {"neutral_soft_pair", "bomb_wildcard_soft"} and not soft_ready)
+    ):
+        return _result(fixture, QualificationStage.ROUTER_RAG_PROMPT, candidate_count=candidate_count, final_candidate_count=len(final_actions), category_counts=category_counts, recommendation_ready=True, contrast_ready=contrast_ready, soft_marker_ready=soft_ready, prompt_markers_ready=prompt_markers)
+    if chosen not in final_ids:
+        return _result(fixture, QualificationStage.MODEL_PASSTHROUGH, candidate_count=candidate_count, final_candidate_count=len(final_actions), category_counts=category_counts, recommendation_ready=True, contrast_ready=contrast_ready, soft_marker_ready=soft_ready, prompt_markers_ready=prompt_markers, source_is_model=True)
+    return _result(fixture, QualificationStage.READY, candidate_count=candidate_count, final_candidate_count=len(final_actions), category_counts=category_counts, recommendation_ready=True, contrast_ready=contrast_ready, soft_marker_ready=soft_ready, prompt_markers_ready=prompt_markers, source_is_model=True)
+
+
+def _required_categories_ready(name: str, counts: Counter[str]) -> bool:
+    required = {
+        "bomb_residual": {"five_bomb", "four_bomb_leaves_singleton"},
+        "low_cost_single": {"low_cost_single", "high_single", "control_resource"},
+        "pair_cleanup": {"pair_cleanup", "single_split"},
+        "neutral_soft_pair": {"neutral_group", "single"},
+        "teammate_controls": {"pass_preserve", "spend_control"},
+        "danger_block": {"block", "pass"},
+        "short_endgame": {"minimum_group", "strictly_worse"},
+        "bomb_wildcard_soft": {"preserve_resource", "spend_resource"},
+    }
+    return required[name].issubset(counts)
+
+
+def _contrast_ready(name: str, contrasts: tuple[CandidateContrast, ...], final_ids: set[int], recommendation_ids: tuple[int, ...], prompt: str | None) -> bool:
+    kind = {"bomb_residual": "bomb_residual", "pair_cleanup": "natural_pair_single"}.get(name)
+    if kind is None:
+        return False
+    contrast = next((item for item in contrasts if item.kind == kind), None)
+    return bool(
+        contrast is not None and set(contrast.action_ids).issubset(final_ids)
+        and set(contrast.action_ids).issubset(recommendation_ids)
+        and prompt is not None and "【公开关系对照】" in prompt
+    )
+
+
+def qualify_h3_model_probe_fixtures() -> tuple[QualificationResult, ...]:
+    """Qualify all eight fixtures in frozen order without API/config side effects."""
+    advisor = _advisor()
+    return tuple(qualify_h3_model_probe_fixture(fixture, advisor=advisor) for fixture in build_h3_model_probe_fixtures())
