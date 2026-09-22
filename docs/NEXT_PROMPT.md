@@ -1,37 +1,20 @@
 # Coding Codex 执行 Prompt
 
-任务：H3-A4r——使用已封板的八场engine-backed资格fixture，完成一次独立、低敏、真实DeepSeek单点诊断。只报告当前版本的原始模型动作类别与候选/source技术守恒；不把一次选择解释成最优打法、胜率或相对H3-A2r的因果改善。本任务不改仓库代码、tests、RAG、docs、配置或既有evidence，不创建commit。
+任务：H3-A5——一次性修正“来源经验的公开适用条件”与八场诊断中的场景语义，不直接优化某个动作、更不增加成功模型后的覆盖。H3-A4r技术审计已完成：8次success、0重试，合法候选与`model` source守恒。但当前八个fixture全被公开phase分为残局；`neutral_soft_pair`实际渲染炸弹C级条目`exp_bomb_wildcard_001`，没有渲染目标对子C级`exp_soft_pair_probe_001`，且该局没有炸弹/通配候选；`low_cost_single`也未检验开局。因此本任务先修“知识投影是否适用”和“fixture是否真的代表目标”，不得据旧类别声称模型选择错误。
 
-## 前置门槛
+## 开始与边界
 
-1. 阅读适用`AGENTS.md`、检查`.agents/skills/`；本任务不是Botzone live或workspace清理，不执行那两个项目Skill。阅读`README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`与`evaluation/h3_model_probe_fixtures.py`及对应测试。检查Git status、diff、HEAD及最近提交；HEAD必须包含`81506f802f22e492d2cfec54f92061e45f5ffa04`，工作树必须clean。确认没有其它本项目真实DeepSeek诊断进程；不能确认则零请求停止，不干预无关进程。
-2. 不访问`D:\VsCodeProject\BotzoneWorkspace`、seed`47004` evidence、旧`h3-a2r.jsonl`/`h3-a4.jsonl`内容或系统Temp流文件；不运行Botzone、connector、browser、preflight或live。不得人工打开或输出`.env`；真实配置只经`config.py`读取，不输出密钥、URL、Cookie、牌面、手牌、action ID、prompt、模型响应/reasoning或异常正文。
-3. 本任务预注册真实DeepSeek外部请求总数最多8次，每场最多1次、重试0；属于项目所有者已授权的严格少于10次范围。`DEEPSEEK_MAX_RETRIES=0`和`CARD_TRACKING_ENABLED=0`仅设于本进程；后者用于与离线资格的固定关闭记牌配置一致。运行时确认实际客户端max_retries为0。不得扩容或补跑某场，也不得把上轮H3-A4零请求任务的审计文件当成本轮artifact。
-4. 独立运行`python -m unittest tests.test_h3_model_probe_fixtures tests.test_strategy_relationship_contrasts tests.test_recommendation_candidate_closure tests.test_h3_a1_projection tests.test_strategy_recommendation tests.test_action_structure -q`。随后调用`qualify_h3_model_probe_fixtures()`，按冻结顺序核对八场全部`stage=ready`、最终候选非空且`<=80`、请求体绑定、RAG、推荐/关系/软假设、分类覆盖和source门槛。任一不通过时零请求停止，只报告固定场景名/失败阶段/计数；准备阶段零外部副作用错误可原地修正并重新做完整离线检查，但不得绕过门槛或改变fixture/策略代码。
+1. 阅读适用`AGENTS.md`、检查`.agents/skills/`；本任务不是Botzone live或清理。阅读`README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/STRATEGY_SOURCE_AUDIT.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`及相关生产代码、语料和测试。检查Git status、diff、HEAD及最近提交；HEAD须包含`81506f802f22e492d2cfec54f92061e45f5ffa04`，保留他人修改，提交只包含自有文件。
+2. 允许最小修改`agents/rag_advisor.py`、必要的知识语义metadata/loader、`evaluation/h3_model_probe_fixtures.py`和直接相关`tests/`。不得改`engine/`规则真值、DeepSeek成功动作路径、Botzone协议、来源registry的治理等级/作者信息，或新增模型后策略覆盖。若需其它生产文件，先以具体反例说明必要性并保持最小范围。不能在业务代码中硬编码现场seed、牌面或绝对路径。
+3. 真实DeepSeek请求/重试、Botzone/live/connector/browser/preflight均为0；不读写`.env`、`D:\VsCodeProject\BotzoneWorkspace`、seed`47004` evidence、系统Temp流文件或旧`h3-a2r.jsonl`/`h3-a4.jsonl`/`h3-a4r.jsonl`。不创建新的仓库外evidence。H3-A4r的原fixture/代码状态由其Git HEAD和ledger封存；本任务修改后的fixture是新版本，不能与旧动作类别称作同状态对照。
 
-## 唯一新外部artifact
+## 实现目标
 
-固定新路径：`D:\VsCodeProject\GuanDanH3A2Audit\h3-a4r.jsonl`。八场离线资格全部ready后才创建。父目录必须已存在且为普通非链接目录，新目标必须不存在；条件不满足则零请求停止，不换路径。使用exclusive-create普通非链接UTF-8 JSONL，每行写入后立即flush并`os.fsync`。不覆盖、删除、移动或改名任何既有文件。结束后保留并报告绝对路径、bytes与完整SHA-256。
+1. 在现有RAG检索中建立通用、fail-closed的公开候选适用条件，而不是为某个source ID或点数写特判。`exp_bomb_wildcard_001`的正文要求候选涉及炸弹或逢人配：没有这种canonical候选时，不得检索、接受或渲染该C级假设；有真实机会时仍可检索。`exp_soft_pair_probe_001`只在其既有opening/midgame、自由领牌或跟牌范围内，且存在符合语义的自然对子机会时激活。所有机会只从`observe()`与完整`legal_actions()`公开payload得出，规则合法性仍由引擎负责；未知/畸形条件fail closed。作者、等级、URL、治理状态不进入检索评分、冲突扫描或prompt；C级仍是可撤回软假设，不升级为硬公式。
+2. 修正诊断fixture和必要资格断言：`low_cost_single`确实进入公开`opening / lead_opening`（保留结构安全小单、高单/控制资源及常见对子竞争）；`neutral_soft_pair`确实处于公开opening或midgame、存在自然pair/triple与普通single，实际RAG命中并在最终prompt渲染`exp_soft_pair_probe_001`，而不是用任意C级marker充数。其余六场应保持各自公开关系/紧急性目标；明确哪些本来就是endgame，不要求全部变成opening。构造必须经引擎`observe()`和完整canonical`legal_actions()`，不得伪造hand_count、phase、RAG hit或模型输入，不使用现场seed/动作ID。
+3. 测试既要有“无炸弹/通配候选却检索到炸弹C级”的原反例，也要有有机会时可检索的正例；对子软假设的适用/不适用、source ID与最终实际请求prompt渲染分别断言。八场新版本资格仍须全部`ready`，保持80项上限、推荐闭环、request body绑定、分类覆盖、原始合法ID/source和无后置覆盖。不要为了强行ready而放宽旧资格门槛；若某个场景目标本身与公开策略冲突，给出固定低敏失败阶段并交回规划Codex，不编造策略最优答案。
 
-固定低敏事件顺序：`header`（schema=`h3-a4r-v1`、Git HEAD、8场、上限8、重试0）、按场景顺序8条`qualification`、`qualification_complete=true`、每次调用前的`request_started`和调用后的`request_result`、最终`summary`。资格事件只含固定场景名、ready阶段、原始/最终候选数、各预注册类别计数及必需布尔门槛；结果事件只含序号、场景名、固定provider outcome、固定动作类别或`inconclusive`、是否在实际最终候选、source是否`model`、守恒布尔值。`request_started`必须在每次真正调用前完成持久化，作为本任务请求预算的审计上界。禁止持久化或打印完整observation/action、牌面、action ID、prompt、请求/响应原文、模型自由文本、异常正文、URL、token或凭据；异常只能映射固定outcome。
+## 验证与交付
 
-## 八场真实请求
-
-使用`build_h3_model_probe_fixtures()`与生产`DeepSeekAIAgent`/`DeepSeekClient`，保持离线资格同一公开输入、完整canonical动作及配置：`rag_top_k=3`、hand evaluation开启、opening formula关闭、card tracking关闭、router shadow与intent prompt及recommendation开启、card-confidence默认关闭、verbose关闭。不得用禁网fixture client代替真实请求，不人为缩减合法动作，也不得增加成功模型动作后的策略覆盖。运行时仅在内存中捕获实际最终候选及技术状态以分类；不持久化敏感内容。
-
-冻结顺序及类别：
-
-1. `bomb_residual`：`five_bomb|four_bomb_leaves_singleton|alternative`
-2. `low_cost_single`：`low_cost_single|high_single|control_resource|other`
-3. `pair_cleanup`：`pair_cleanup|single_split|other`
-4. `neutral_soft_pair`：`neutral_group|single|other`
-5. `teammate_controls`：`pass_preserve|spend_control|other`
-6. `danger_block`：`block|pass|other`
-7. `short_endgame`：`minimum_group|strictly_worse`
-8. `bomb_wildcard_soft`：`preserve_resource|spend_resource|other`
-
-每场最多调用一次。provider outcome只用`success|timeout|exception|invalid_suggestion`等预先固定低基数枚举；成功时动作必须属于实际最终候选，source必须为`model`，再按冻结类别记录。超时、异常、无效建议只记技术`inconclusive`且不重试，可继续其它尚未调用场景；任何候选/ID/source守恒破坏或后置改写，在写入低敏结果后停止剩余请求并将summary标为不完整。选择`alternative|other`本身不构成技术失败，也不能擅自判定策略错误。不要从八场类别推断普遍收益；新fixture与H3-A2r不完全同状态，不能宣称配对改善。
-
-## 结束审计
-
-重读本轮新ledger，验证唯一header、八条资格、请求序号连续、started/result逐一配对或明确中断点、请求数`<=8`、重试0、provider与动作类别汇总守恒、summary完整性。报告八场固定类别/技术状态和总计，不输出牌面、动作ID或模型文本；如果stdout丢失，只报告持久事件能证明的边界，不猜测缺失结果。最后检查Git HEAD/status和`git diff --check`：仓库不得有任何本轮修改或commit。明确说明旧ledger、Botzone workspace和Temp文件未访问，Botzone/live/connector/browser/preflight均为0。
+- 运行新/相关RAG、provenance、H3 fixture、recommendation、DeepSeek prompt与Botzone observability定向测试，主规则回归及`python -m unittest discover -q`；捕获可审计汇总，检查`git diff --check`与完整diff。离线多状态检查至少覆盖“有/无炸弹通配机会”“有/无自然对子机会”和opening/midgame/endgame边界，不只一个固定fixture。
+- 只按明确路径暂存并提交本轮自有源码/语料/tests，报告commit、变更范围、八场新版本公开phase/RAG scene/目标soft source的固定低敏摘要、反例结果、测试计数、最终Git status和任何外部修改。不得输出手牌、牌面、action ID、prompt、模型文本或凭据；不报告策略胜率或H3-A4r改善。

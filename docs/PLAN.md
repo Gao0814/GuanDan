@@ -131,6 +131,12 @@ H3-A1.1 通过组合复审后，重新执行原 H3-A2 的全部八场离线资�
 
 下一项H3-A4r使用冻结的八场engine-backed fixture，先全数离线资格ready，再独立最多8次、重试0真实模型请求。新fresh仓库外低敏ledger在每次请求前持久记录`request_started`、请求后记录固定provider outcome及动作类别；只报告候选/source技术守恒和单点选择，不做同状态因果消融或胜率结论。准备阶段零副作用错误可原地修正，旧H3-A2r/H3-A4 ledger不读写，Botzone workspace不访问。
 
+44. H3-A4r低敏ledger经规划Codex独立审计：`h3-a4r.jsonl`为5461 bytes、SHA-256`e5e3e2f2ab724ca809af01ef7e513d56974eace0ee5a40fafcb5e95b96f60c51`，27条事件含8条ready资格、8对连续请求起止和完整summary；8次success、0重试，模型ID在实际最终候选且source为`model`。当前HEAD重新执行八场资格，候选/类别计数与ledger一致。结果类别依序为`alternative / low_cost_single / other / other / pass_preserve / block / minimum_group / spend_resource`，仅为单点技术分类，不证明策略最优或改善。
+
+45. 独立语义审计发现八个fixture全部属于公开残局phase，RAG scene全部为`endgame`；`low_cost_single`不检验开局输入，`neutral_soft_pair`实际命中C级`exp_bomb_wildcard_001`而未命中目标`exp_soft_pair_probe_001`。前者在该无炸弹/通配候选局面也被检索，违反知识正文的适用条件。这是RAG机会门槛与诊断场景的当前范围内缺口，不是合法动作或模型source故障。不能把`neutral_soft_pair=other`据此判作对子软假设失败，也不能从`bomb_residual=alternative`推断四炸/五炸相对选择。
+
+下一项H3-A5用一项连贯Coding任务同时补公开候选驱动的来源知识激活边界与engine-backed场景语义回归：炸弹/通配软条目不进入无机会局面；中性对子软场景必须实际检索并呈现对子C级条目；小单开局场景必须公开分类为开局。保持旧H3-A4r ledger不变，修改后fixture/代码版本不得伪称与旧诊断同状态。独立复审前不做新的真实DeepSeek或Botzone请求，也不恢复模型后策略覆盖。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度

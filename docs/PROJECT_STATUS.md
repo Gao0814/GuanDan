@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：H3-A4r 独立真实模型诊断待执行（2026-09-22）
+## 当前阶段：H3-A5 场景语义与经验适用性纠错（2026-09-22）
 
 - 项目所有者已确认后续策略主线：DeepSeek 是合法候选空间内的主要策略裁决者；本地层负责完整且有界的候选召回、公开局面结构化、人类经验检索、场景/目标识别和模型前推荐。不得把策略质量问题重新实现为成功模型动作后的强制覆盖。
 - 开局公式的定位已收敛为延迟约束下的窄、高置信本地快速路径，以及可提供给 DeepSeek 验证的模型前推荐。它不是第二套完整规则 AI；命中条件存在结构、协同、阻断或控制资源歧义时，应退出快速路径交给 DeepSeek。
@@ -31,6 +31,9 @@
 - 最后一道请求体绑定仍未通过：工具在`_build_structured_prompt()`内先记录`final_prompt`，transport收到的真正请求正文另由该方法的返回值组成，却没有核对两者一致。规划Codex注入仅改返回值、保留记录值的禁网客户端，把实际请求的`【模型前建议】`删除，资格仍错误返回`ready`且`prompt_markers_ready=true`。这是资格工具的可复现假阳性，不是现有生产DeepSeek路径的已知缺陷。下一项H3-A4q1a只把固定资格断言绑定到transport实际接收的请求体和唯一调用次数，并补此最小反例；通过独立复审前不发起真实模型诊断。当前范围内剩余风险是该诊断门槛仍可误报ready，策略质量尚未实测。
 - `81506f8 test: bind H3 probe prompts to request body` 已把禁网transport实际收到的JSON request user prompt、候选ID集合和唯一调用次数纳入`request_binding` fail-closed门槛。规划Codex独立复跑相关40项、主规则39项、全量757项通过，八场最终候选数仍为6/5/4/6/3/3/4/25且均ready；独立复现“只篡改返回文本、不改已记录prompt”反例现在固定落在`request_binding`。提交只触及离线资格工具与测试，生产策略/协议未变。H3-A4q/H3-A4q1/H3-A4q1a组合离线门槛封板；当前范围内无已知资格功能性剩余风险。
 - 下一项H3-A4r是独立fresh-ledger、最多8次真实DeepSeek单点诊断，严格先在当前HEAD重跑八场资格，再依固定场景顺序、每场最多1次、重试0执行。原H3-A4零请求ledger与H3-A2r ledger保持原样；不触碰Botzone workspace。只审计请求、provider结果、预注册动作类别、最终候选与`model` source守恒，不把新旧不同fixture类别差异解释为同状态因果改善，也不宣称胜率收益。真实模型质量仍待这一任务验证。
+- H3-A4r已完成技术单点诊断。规划Codex独立核对fresh普通非链接ledger`D:\VsCodeProject\GuanDanH3A2Audit\h3-a4r.jsonl`为5461 bytes、SHA-256`e5e3e2f2ab724ca809af01ef7e513d56974eace0ee5a40fafcb5e95b96f60c51`；27条固定事件的header、8条资格、8对连续started/result和summary守恒通过。当前HEAD重跑八场资格与ledger的原始/最终候选及类别计数一致；ledger记载8次请求、8次success、0重试，均在最终候选且source=`model`。类别依序为`alternative / low_cost_single / other / other / pass_preserve / block / minimum_group / spend_resource`。这些是低敏记录的单点类别，不能独立重建网络侧计数、具体动作优劣、配对改善或胜率。
+- 语义复核发现新的范围内风险：八个当前fixture均被公开phase分类为残局（七个`critical_endgame`、一个`near_open_endgame`），RAG scene均为`endgame`。尤其`neutral_soft_pair`实际命中并渲染的C级软条目是`exp_bomb_wildcard_001`，并非目标`exp_soft_pair_probe_001`；其手牌/候选没有炸弹或通配机会，炸弹知识的适用条件不成立。`low_cost_single`也不是开局输入。故H3-A4r的技术守恒成立，但不能用`neutral_soft_pair=other`推断“对子试探软假设无效”，也不能把`low_cost_single`当作开局效果。炸弹残余的`alternative`不等于四炸优于五炸，`pair_cleanup=other`不等于拆对优于出对；不据此直接改prompt或增加后置覆盖。
+- 下一项H3-A5统一纠正知识激活与诊断场景语义：仅在公开canonical候选满足适用条件时检索对应炸弹/通配或对子C级条目，并让开局小单与中性对子场景的公开phase/RAG/命中来源匹配其目标。使用engine-backed离线回归、保留旧H3-A4r ledger和其HEAD可复现性，独立复审后再决定是否需要新的真实模型对照。本任务不发起模型或Botzone请求。当前范围内剩余风险是RAG可能把不适用的炸弹经验投给无相关候选的局面，以及资格场景的策略语义误标；技术合法性/协议守恒无已知回归。
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
