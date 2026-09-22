@@ -127,6 +127,10 @@ H3-A1.1 通过组合复审后，重新执行原 H3-A2 的全部八场离线资�
 
 下一项H3-A4q1a仅绑定transport实际接收的请求正文、展示候选与唯一调用次数，在内存中比较后以固定阶段fail closed；加入上述最小反例与八场正例。规划Codex独立通过后再单独设计fresh-ledger真实模型任务，不复用H3-A4旧ledger，不访问Botzone evidence。
 
+43. `81506f8`已完成H3-A4q1a：禁网transport捕获实际Request envelope并以`request_binding`校验user prompt、展示候选ID集合与单次调用。规划Codex独立通过40项相关、39项主规则、757项全量，八场资格均ready；其独立“只改返回prompt”反例现在固定fail closed。改动仅限离线资格工具和测试，未改变生产DeepSeek动作路径。H3-A4q组合资格工具封板，不把先前H3-A4零请求ledger追认为模型证据。
+
+下一项H3-A4r使用冻结的八场engine-backed fixture，先全数离线资格ready，再独立最多8次、重试0真实模型请求。新fresh仓库外低敏ledger在每次请求前持久记录`request_started`、请求后记录固定provider outcome及动作类别；只报告候选/source技术守恒和单点选择，不做同状态因果消融或胜率结论。准备阶段零副作用错误可原地修正，旧H3-A2r/H3-A4 ledger不读写，Botzone workspace不访问。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度

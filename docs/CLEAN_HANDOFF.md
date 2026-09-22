@@ -344,3 +344,5 @@ H3-A4已在网络前依门槛停止，不能称为真实模型探针完成。规
 `c87defa`已建立八场固定engine-backed资格工具，规划Codex独立复跑35/39/752项测试通过，最终候选数6/5/4/6/3/3/4/25；禁网真实DeepSeekClient组装路径与工具当前八场prompt、原始ID/source对照相等。但资格API对空RAG scene/hits的无网络反例仍有六场返回`ready`，没有实质检验RAG层；fake client还绕过了实际最终客户端组装。故当前不放行真实模型请求。`docs/NEXT_PROMPT.md`已转为H3-A4q1离线纠错：仅补RAG/intent/最终组装的可失败门槛与反例，规划复审通过后再单独发起fresh-ledger真实诊断，不修改旧ledger或Botzone证据。
 
 `b229371`已用真实DeepSeekClient禁网transport与RAG scene/hits阶段收紧资格，规划Codex独立复跑39/39/756项通过；八场正例ready，空/错配RAG八场固定失败。但规划Codex注入仅在`_build_structured_prompt()`返回时删除`【模型前建议】`、保留客户端预先记录的`final_prompt`，transport实际接收的请求缺该区块，资格仍误报ready。这是离线资格工具的请求体绑定缺口，生产策略尚无对应反例。下一项`docs/NEXT_PROMPT.md`为H3-A4q1a最小纠错：在禁网transport内捕获实际请求正文，仅以其与记录的候选/prompt及唯一调用次数守恒判定ready；不读旧ledger，不启动真实模型或Botzone。
+
+`81506f8`已封住请求体绑定缺口。规划Codex独立复跑相关40项、主规则39项、全量757项；八场固定离线资格全部ready，最终候选数6/5/4/6/3/3/4/25；单独篡改实际Request user prompt而保留记录prompt的无网络反例固定落在`request_binding`。完整提交只改`evaluation/h3_model_probe_fixtures.py`及对应测试，生产策略未变。H3-A4q组合离线资格门槛封板。当前执行`docs/NEXT_PROMPT.md`的H3-A4r独立真实模型诊断：先全数离线资格，再最多8次/0重试，fresh仓库外低敏ledger；旧H3-A2r/H3-A4 ledger、Botzone workspace、seed`47004` evidence及系统Temp文件均保持原样。
