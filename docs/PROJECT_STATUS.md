@@ -1,6 +1,6 @@
 # 项目状态看板
 
-## 当前阶段：H3-A5 场景语义与经验适用性纠错（2026-09-22）
+## 当前阶段：H3-A5b 开局诊断场景真实性纠错（2026-09-22）
 
 - 项目所有者已确认后续策略主线：DeepSeek 是合法候选空间内的主要策略裁决者；本地层负责完整且有界的候选召回、公开局面结构化、人类经验检索、场景/目标识别和模型前推荐。不得把策略质量问题重新实现为成功模型动作后的强制覆盖。
 - 开局公式的定位已收敛为延迟约束下的窄、高置信本地快速路径，以及可提供给 DeepSeek 验证的模型前推荐。它不是第二套完整规则 AI；命中条件存在结构、协同、阻断或控制资源歧义时，应退出快速路径交给 DeepSeek。
@@ -34,6 +34,8 @@
 - H3-A4r已完成技术单点诊断。规划Codex独立核对fresh普通非链接ledger`D:\VsCodeProject\GuanDanH3A2Audit\h3-a4r.jsonl`为5461 bytes、SHA-256`e5e3e2f2ab724ca809af01ef7e513d56974eace0ee5a40fafcb5e95b96f60c51`；27条固定事件的header、8条资格、8对连续started/result和summary守恒通过。当前HEAD重跑八场资格与ledger的原始/最终候选及类别计数一致；ledger记载8次请求、8次success、0重试，均在最终候选且source=`model`。类别依序为`alternative / low_cost_single / other / other / pass_preserve / block / minimum_group / spend_resource`。这些是低敏记录的单点类别，不能独立重建网络侧计数、具体动作优劣、配对改善或胜率。
 - 语义复核发现新的范围内风险：八个当前fixture均被公开phase分类为残局（七个`critical_endgame`、一个`near_open_endgame`），RAG scene均为`endgame`。尤其`neutral_soft_pair`实际命中并渲染的C级软条目是`exp_bomb_wildcard_001`，并非目标`exp_soft_pair_probe_001`；其手牌/候选没有炸弹或通配机会，炸弹知识的适用条件不成立。`low_cost_single`也不是开局输入。故H3-A4r的技术守恒成立，但不能用`neutral_soft_pair=other`推断“对子试探软假设无效”，也不能把`low_cost_single`当作开局效果。炸弹残余的`alternative`不等于四炸优于五炸，`pair_cleanup=other`不等于拆对优于出对；不据此直接改prompt或增加后置覆盖。
 - 下一项H3-A5统一纠正知识激活与诊断场景语义：仅在公开canonical候选满足适用条件时检索对应炸弹/通配或对子C级条目，并让开局小单与中性对子场景的公开phase/RAG/命中来源匹配其目标。使用engine-backed离线回归、保留旧H3-A4r ledger和其HEAD可复现性，独立复审后再决定是否需要新的真实模型对照。本任务不发起模型或Botzone请求。当前范围内剩余风险是RAG可能把不适用的炸弹经验投给无相关候选的局面，以及资格场景的策略语义误标；技术合法性/协议守恒无已知回归。
+- `6ff6d97 feat: gate RAG experience by public candidates` 已以完整公开 canonical 候选给炸弹/通配、自然对子 C 级经验加 fail-closed 激活门槛；治理字段与新条件字段不进入打分、冲突扫描或最终上下文。规划 Codex 阅读完整 diff、生产调用顺序及测试，独立复跑相关39项、主规则39项、全量760项均通过；八场禁网资格当前均 `ready`，两项目标场景公开分类为 `lead_opening / opening` 且实际命中并渲染 `exp_soft_pair_probe_001`。未做真实模型或 Botzone 请求。
+- H3-A5 的知识适用性纠错已通过复审，但真实开局诊断尚不能封板：`low_cost_single`、`neutral_soft_pair` 的 fixture 在 `step_no=0` 使用 `18/16/16/16` 手牌、总数66，而单局真实初始状态为四家各27、总数108。引擎允许测试用预设手牌，并且公开 phase 阈值会把该合成状态分类为 opening；这只证明投影链路可达，不能把下一次模型选择解读为真实开局质量。下一项 H3-A5b 仅修复两场 fixture 的完整牌局真实性并重跑八场离线资格，再决定是否启动新的真实模型诊断。当前范围内剩余风险是开局场景生态失真；来源激活与合法模型动作守恒未发现回归。
 
 - 主线已从 L5-A4h11b 严格 Botzone capacity 恢复切换到算法优化；8 对/16 局正式实验延期。
 - connector 已有真实完整 RuleBased、DeepSeek 和单对运行证据，当前不再把“证明 connector 能工作”作为阻塞项。
