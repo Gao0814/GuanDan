@@ -1,12 +1,15 @@
 """No-network regressions for the reproducible H3 model-probe qualification."""
 
+import json
 import unittest
 from unittest.mock import patch
 
+from agents.deepseek_client import DeepSeekSuggestion
 from evaluation.h3_model_probe_fixtures import (
     ProbeFixture,
     QualificationStage,
     SCENARIO_NAMES,
+    _NoNetworkTransport,
     _RecordingDeepSeekClient,
     _advisor,
     _run_projection,
@@ -72,6 +75,62 @@ class _MismatchedCandidateClient(_RecordingDeepSeekClient):
         return prompt
 
 
+class _ReturnedOnlyMissingMarkerClient(_RecordingDeepSeekClient):
+    def _build_structured_prompt(self, **kwargs: object) -> str:
+        return super()._build_structured_prompt(**kwargs).replace("【模型前建议】", "【缺失建议】")
+
+
+class _BadJsonTransport(_NoNetworkTransport):
+    def __call__(self, request: object, timeout: float) -> str:
+        request.data = b"{"  # type: ignore[attr-defined]
+        return super().__call__(request, timeout)
+
+
+class _MissingUserTransport(_NoNetworkTransport):
+    def __call__(self, request: object, timeout: float) -> str:
+        envelope = json.loads(request.data.decode("utf-8"))  # type: ignore[attr-defined]
+        envelope["messages"] = [envelope["messages"][0]]
+        request.data = json.dumps(envelope).encode("utf-8")  # type: ignore[attr-defined]
+        return super().__call__(request, timeout)
+
+
+class _DuplicateTransport(_NoNetworkTransport):
+    def __call__(self, request: object, timeout: float) -> str:
+        response = super().__call__(request, timeout)
+        super().__call__(request, timeout)
+        return response
+
+
+class _CustomTransportClient(_RecordingDeepSeekClient):
+    transport_type = _NoNetworkTransport
+
+    def _new_transport(self) -> _NoNetworkTransport:
+        return self.transport_type()
+
+
+class _BadJsonClient(_CustomTransportClient):
+    transport_type = _BadJsonTransport
+
+
+class _MissingUserClient(_CustomTransportClient):
+    transport_type = _MissingUserTransport
+
+
+class _DuplicateTransportClient(_CustomTransportClient):
+    transport_type = _DuplicateTransport
+
+
+class _ZeroTransportClient(_RecordingDeepSeekClient):
+    def suggest_action_id(self, **kwargs: object) -> object:
+        self.calls += 1
+        self.kwargs = dict(kwargs)
+        actions = kwargs.get("prompt_actions")
+        if not isinstance(actions, list) or not actions or not isinstance(actions[0], dict):
+            return DeepSeekSuggestion(None, None)
+        action_id = actions[0].get("action_id")
+        return DeepSeekSuggestion(action_id if type(action_id) is int else None, None)
+
+
 class _FailingClient(_RecordingDeepSeekClient):
     def suggest_action_id(self, **kwargs: object) -> object:
         raise RuntimeError("offline-client-failure")
@@ -124,7 +183,13 @@ class H3ModelProbeFixtureTests(unittest.TestCase):
                 agent, client, chosen = _run_projection(fixture, _advisor())
                 self.assertEqual(client.calls, 1)
                 self.assertEqual(client.transport.calls, 1)
+                self.assertTrue(client.transport.envelope_valid)
+                self.assertEqual(client.final_prompt, client.transport.user_prompt)
                 self.assertEqual(client.displayed_actions, client.final_actions)
+                self.assertEqual(
+                    {item["action_id"] for item in client.displayed_actions},
+                    set(client.transport.prompt_action_ids),
+                )
                 self.assertIsNotNone(client.final_prompt)
                 self.assertIn(chosen, {item["action_id"] for item in client.displayed_actions})
                 self.assertEqual(agent.last_decision_source, "model")
@@ -151,7 +216,7 @@ class H3ModelProbeFixtureTests(unittest.TestCase):
             ("bomb_residual", _MissingContrastClient, QualificationStage.ROUTER_RAG_PROMPT),
             ("neutral_soft_pair", _MissingSoftEvidenceClient, QualificationStage.ROUTER_RAG_PROMPT),
             ("bomb_wildcard_soft", _MissingSoftEvidenceClient, QualificationStage.ROUTER_RAG_PROMPT),
-            ("bomb_residual", _MismatchedCandidateClient, QualificationStage.FINAL_CANDIDATES),
+            ("bomb_residual", _MismatchedCandidateClient, QualificationStage.REQUEST_BINDING),
             ("low_cost_single", _FailingClient, QualificationStage.LOCAL_SHORTCUT),
         )
         for name, client_factory, expected_stage in cases:
@@ -162,6 +227,25 @@ class H3ModelProbeFixtureTests(unittest.TestCase):
                     client_factory=client_factory,
                 )
                 self.assertIs(result.stage, expected_stage)
+                self.assertFalse(result.ready)
+
+    def test_actual_request_binding_fails_closed_for_mutated_or_invalid_envelopes(self) -> None:
+        fixture = build_h3_model_probe_fixtures()[0]
+        clients = (
+            _ReturnedOnlyMissingMarkerClient,
+            _BadJsonClient,
+            _MissingUserClient,
+            _DuplicateTransportClient,
+            _ZeroTransportClient,
+        )
+        for client_factory in clients:
+            with self.subTest(client=client_factory.__name__):
+                result = qualify_h3_model_probe_fixture(
+                    fixture,
+                    advisor=_advisor(),
+                    client_factory=client_factory,
+                )
+                self.assertIs(result.stage, QualificationStage.REQUEST_BINDING)
                 self.assertFalse(result.ready)
 
 

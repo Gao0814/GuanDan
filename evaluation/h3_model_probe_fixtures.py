@@ -12,12 +12,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 import json
 from pathlib import Path
+import re
 from typing import Callable
 from unittest.mock import patch
 
 from agents.action_structure import CandidateContrast, CandidateStructure, summarize_candidate_contrasts, summarize_candidate_structures
 from agents.deepseek_ai import DeepSeekAIAgent
-from agents.deepseek_client import DeepSeekClient
+from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from agents.rag_advisor import RAGAdvisor
 from agents.short_endgame_planner import minimum_group_free_lead_action_ids
 from config import AppConfig
@@ -33,6 +34,7 @@ class QualificationStage(StrEnum):
     PUBLIC_CANONICAL = "public_canonical"
     CATEGORY_PARTITION = "category_partition"
     RECOMMENDATION = "recommendation"
+    REQUEST_BINDING = "request_binding"
     FINAL_CANDIDATES = "final_candidates"
     RAG_CONTEXT = "rag_context"
     ROUTER_RAG_PROMPT = "router_rag_prompt"
@@ -228,9 +230,65 @@ class _NoNetworkTransport:
     def __init__(self) -> None:
         self.calls = 0
         self.client: _RecordingDeepSeekClient | None = None
+        self.envelope_valid = False
+        self.user_prompt: str | None = None
+        self.prompt_action_ids: tuple[int, ...] = ()
 
-    def __call__(self, _request: object, _timeout: float) -> str:
+    @staticmethod
+    def _candidate_ids(prompt: str) -> tuple[int, ...] | None:
+        start = prompt.find("【候选动作】")
+        end = prompt.find("【规则库依据】")
+        if start < 0 or end <= start:
+            return None
+        pairs = re.findall(r"#(\d+)\s+action_id=(\d+)\s+\|", prompt[start:end])
+        if not pairs or any(first != second for first, second in pairs):
+            return None
+        action_ids = tuple(int(first) for first, _ in pairs)
+        return action_ids if len(action_ids) == len(set(action_ids)) else None
+
+    def _capture_request(self, request: object) -> None:
+        self.envelope_valid = False
+        self.user_prompt = None
+        self.prompt_action_ids = ()
+        raw = getattr(request, "data", None)
+        if not isinstance(raw, bytes):
+            return
+        try:
+            envelope = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return
+        if (
+            not isinstance(envelope, dict)
+            or not isinstance(envelope.get("model"), str)
+            or not envelope["model"]
+            or envelope.get("temperature") != 0
+            or envelope.get("stream") is not True
+        ):
+            return
+        messages = envelope.get("messages")
+        if not isinstance(messages, list) or len(messages) != 2:
+            return
+        system_messages = [item for item in messages if isinstance(item, dict) and item.get("role") == "system"]
+        user_messages = [item for item in messages if isinstance(item, dict) and item.get("role") == "user"]
+        if (
+            len(system_messages) != 1
+            or len(user_messages) != 1
+            or not isinstance(system_messages[0].get("content"), str)
+        ):
+            return
+        prompt = user_messages[0].get("content")
+        if not isinstance(prompt, str):
+            return
+        action_ids = self._candidate_ids(prompt)
+        if action_ids is None:
+            return
+        self.envelope_valid = True
+        self.user_prompt = prompt
+        self.prompt_action_ids = action_ids
+
+    def __call__(self, request: object, _timeout: float) -> str:
         self.calls += 1
+        self._capture_request(request)
         client = self.client
         if client is None or not client.displayed_actions:
             raise OSError("probe_client_not_assembled")
@@ -246,7 +304,7 @@ class _RecordingDeepSeekClient(DeepSeekClient):
     """Exercise the production client while retaining only in-memory projections."""
 
     def __init__(self) -> None:
-        self.transport = _NoNetworkTransport()
+        self.transport = self._new_transport()
         self.calls = 0
         self.kwargs: dict[str, object] | None = None
         self.displayed_actions: list[dict[str, object]] = []
@@ -261,6 +319,9 @@ class _RecordingDeepSeekClient(DeepSeekClient):
             transport=self.transport,
         )
         self.transport.client = self
+
+    def _new_transport(self) -> _NoNetworkTransport:
+        return _NoNetworkTransport()
 
     def suggest_action_id(self, **kwargs: object) -> object:
         self.calls += 1
@@ -478,6 +539,21 @@ def _same_action_ids(left: list[dict[str, object]], right: list[dict[str, object
     return [item.get("action_id") for item in left] == [item.get("action_id") for item in right]
 
 
+def _request_binding_ready(client: _RecordingDeepSeekClient) -> bool:
+    """Bind recorded projections to the user prompt actually sent to transport."""
+    displayed_ids = tuple(item.get("action_id") for item in client.displayed_actions)
+    return bool(
+        client.transport.calls == 1
+        and client.transport.envelope_valid
+        and client.final_prompt is not None
+        and client.transport.user_prompt == client.final_prompt
+        and len(displayed_ids) == len(client.transport.prompt_action_ids)
+        and len(set(displayed_ids)) == len(displayed_ids)
+        and set(displayed_ids) == set(client.transport.prompt_action_ids)
+        and _same_action_ids(client.displayed_actions, client.final_actions)
+    )
+
+
 def qualify_h3_model_probe_fixture(
     fixture: ProbeFixture,
     *,
@@ -507,6 +583,13 @@ def qualify_h3_model_probe_fixture(
     validated = DeepSeekClient._validated_strategy_recommendation(recommendation, fixture.legal_actions)
     if validated is None or len(validated.action_ids) > 3 or len(validated.objective_codes) > 4:
         return _result(fixture, QualificationStage.RECOMMENDATION, candidate_count=candidate_count)
+    if not _request_binding_ready(client):
+        return _result(
+            fixture,
+            QualificationStage.REQUEST_BINDING,
+            candidate_count=candidate_count,
+            recommendation_ready=True,
+        )
     final_actions = client.final_actions
     if not final_actions or not _same_action_ids(final_actions, client.displayed_actions):
         return _result(
