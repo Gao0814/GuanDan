@@ -1,21 +1,20 @@
 # Coding Codex 执行 Prompt
 
-任务：H3-A4q1——纠正八场离线资格工具的假阳性门槛；不做真实模型请求。`c87defa`的八场正例当前均ready，相关/主规则/全量测试也通过，但规划复审发现：注入空RAG scene/hits后仍有6/8场被判ready；fake client没有执行真实`DeepSeekClient.suggest_action_id()`的最终候选/prompt组装。先把这些离线门槛封住，再另立H3-A4真实诊断任务。
+任务：H3-A4q1a——仅封住离线资格工具的实际请求体绑定缺口，不发起真实模型请求。`b229371`已让八场RAG正例ready、空/错配RAG fail closed；规划Codex复审发现，禁网客户端在`_build_structured_prompt()`里先记录`final_prompt`，而真正放进请求正文的是该方法的返回值。注入仅改变返回值、保留记录值的反例后，实际请求缺`【模型前建议】`，资格仍误报ready。
 
 ## 边界
 
-1. 阅读适用`AGENTS.md`、检查`.agents/skills/`，阅读`README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`以及本任务对应代码/测试。先核对Git status、diff、HEAD及`c87defabb869dfdedc722e8881426e3a8cdbed37`完整diff；保留所有外部修改。
-2. 仅修改`evaluation/h3_model_probe_fixtures.py`和`tests/test_h3_model_probe_fixtures.py`中完成纠错所必需的内容。不修改`agents/`、`engine/`、`rag/`、`integrations/`、配置、规划docs、Skill或其它业务文件；若出现生产链路反例，记录低敏最小证据后停下，交规划Codex另立任务。
-3. 真实DeepSeek请求/重试、Botzone、live、connector、browser、preflight、网络均为0。不得读取`.env`、旧`h3-a2r.jsonl`/`h3-a4.jsonl`、`D:\VsCodeProject\BotzoneWorkspace`、seed`47004` evidence或系统Temp文件，不新建仓库外ledger。报告只含固定场景名、阶段、计数和布尔值，不输出牌面、action ID、prompt、模型文本、URL、token或异常正文。
+1. 阅读适用`AGENTS.md`、检查`.agents/skills/`，阅读`README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`及相关代码/测试。先检查Git status、diff、HEAD，完整审阅`b229371a70817c80992dee33a4bec136bdb6b84f`。保留外部修改。
+2. 只改`evaluation/h3_model_probe_fixtures.py`及`tests/test_h3_model_probe_fixtures.py`中必要部分。不得改生产DeepSeek、RAG、引擎、Botzone、配置、规划docs或其它文件；如遇生产路径反例，提供低敏最小复现并交回规划Codex。
+3. 真实DeepSeek请求/重试、网络、Botzone、live、connector、browser、preflight均为0。不读`.env`、旧`h3-a2r.jsonl`/`h3-a4.jsonl`、`D:\VsCodeProject\BotzoneWorkspace`、seed`47004` evidence或系统Temp文件，不新建仓库外artifact。牌面、action ID、prompt、请求正文、模型文本、URL、token及异常正文不得输出或持久化。
 
-## 纠错与测试
+## 最小纠错
 
-1. 保留现有八场engine-backed构造、顺序、冻结动作分类、候选上限与推荐ID闭环。资格结果的`ready`必须检查实际RAG上下文（至少正确结构和当前场景需要的可用scene/命中证据）、route intent与prompt投影的一致性；第4、8场还须验证C级软假设来自实际RAG证据并在最终prompt出现，而非仅凭任意同名文本。失败返回固定低基数阶段，不泄漏内部内容。不要通过在工具中硬填RAG结果或把空上下文视为ready来达标。
-2. 对每场使用禁网注入transport或拦截`DeepSeekClient`实际请求组装，验证其最终展示候选、最终prompt与资格判定使用的是同一结果；fake模型只返回已展示原始合法ID，检查source=`model`。不得发真正HTTP请求或依赖dotenv。当前由资格工具手工复制客户端剪枝/组装逻辑的路径如果保留，必须有逐场与实际客户端路径对照的稳定测试，防止两者漂移后继续误报ready。
-3. 新增至少以下反例：空RAG scene/hits使全部八场不ready；错配或缺失关键router intent/场景时不ready；实际最终prompt缺必需marker、关系对照或C级可撤回软假设时不ready；客户端最终候选与资格工具重建结果不一致时不ready。用真实生产投影或定点mock制造反例，不自造已通过标记；检查不会因异常被吞掉而误报ready。
-4. 八场正例仍须全部ready且稳定，最终候选数及类别守恒要可审计。若当前fixture的router/RAG场景本身与目标语义不符，不改生产策略、不偷换目标类别；报告固定失败阶段，交回规划Codex决定后续处理。
+1. 在现有禁网transport里只以内存方式捕获其真正收到的`Request`正文，严格解码固定JSON envelope并取得实际user prompt；资格门槛必须核对它与客户端记录的`final_prompt`一致、必需marker确实在请求体里，且transport恰好调用一次。解析错误、缺消息、格式漂移或计数不守恒一律固定阶段fail closed。不要在日志或测试失败消息里输出请求正文。
+2. 确认资格使用的最终候选与实际请求prompt里展示的候选一致，至少防止已有`displayed_actions`/`final_actions`记录与最终发送内容分离；保持原始ID、签名、80项预算及source=`model`校验。优先复用生产客户端当前构造结果，不另写第二套策略剪枝器。
+3. 新增最小反例：子类先调用`super()._build_structured_prompt()`记录正常`final_prompt`，随后只在返回值中删除`【模型前建议】`，使实际请求体不含该marker；资格必须不ready。另测坏JSON envelope或缺user message、transport零次/重复调用，以及候选记录漂移均不能ready。八场固定正例和现有空/错配RAG、软假设反例继续通过。测试使用注入transport，不访问网络或dotenv。
 
-## 验收与交付
+## 验收
 
-- 运行新增测试与`tests.test_strategy_relationship_contrasts tests.test_recommendation_candidate_closure tests.test_h3_a1_projection tests.test_strategy_recommendation tests.test_action_structure`，再运行主规则回归和`python -m unittest discover -q`；必须捕获全量最终汇总或明确说明未能捕获。检查`git diff --check`和完整diff。
-- 仅按明确路径暂存并提交本轮自有离线工具/测试修改，不提交其它文件。报告commit、八场低敏资格与反例结果、相关/主规则/全量计数、最终Git status和任何保留外部修改。真实模型请求/重试均为0；不要声称策略质量或H3-A4真实结果已经改善。
+- 运行`tests.test_h3_model_probe_fixtures tests.test_strategy_relationship_contrasts tests.test_recommendation_candidate_closure tests.test_h3_a1_projection tests.test_strategy_recommendation tests.test_action_structure`、主规则回归和`python -m unittest discover -q`；捕获可审计汇总，检查`git diff --check`。
+- 只暂存并提交这两个自有文件，报告提交hash、八场固定资格/反例、测试计数、最终Git status及保留外部修改。真实模型调用0；不得宣称H3-A4真实诊断完成或策略质量改善。

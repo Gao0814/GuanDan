@@ -123,6 +123,10 @@ H3-A1.1 通过组合复审后，重新执行原 H3-A2 的全部八场离线资�
 
 下一项H3-A4q1只在该离线资格工具及测试中补RAG/intent场景真值与实际客户端禁网组装对照，加入空RAG、错误intent和最终prompt漂移等反例。不得改生产策略来满足fixture。规划Codex重新复核8/8正例和反例均通过后，才另立新的fresh-ledger H3-A4真实诊断任务；原H3-A4零请求结果不追认为模型结果。
 
+42. `b229371`修复RAG空/错配资格假阳性并改用DeepSeekClient禁网transport，规划Codex独立复跑39/39/756项通过。但工具记录的`final_prompt`不是transport实际收到的请求体校验真值：注入客户端只修改`_build_structured_prompt()`返回值、保留已记录`final_prompt`，实际请求缺`【模型前建议】`而资格仍判ready。H3-A4q1尚未封板；这是诊断工具门槛问题，不据此推断生产策略错误。
+
+下一项H3-A4q1a仅绑定transport实际接收的请求正文、展示候选与唯一调用次数，在内存中比较后以固定阶段fail closed；加入上述最小反例与八场正例。规划Codex独立通过后再单独设计fresh-ledger真实模型任务，不复用H3-A4旧ledger，不访问Botzone evidence。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度
