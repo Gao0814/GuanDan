@@ -337,4 +337,6 @@ H3-A2r 低敏ledger位于 `D:\VsCodeProject\GuanDanH3A2Audit\h3-a2r.jsonl`，727
 
 `b40000e` 已实现H3-A3关系识别与prompt对照，规划Codex独立通过30/39/747项测试，合法模型动作ID/source与历史边界未漂移。但30个不同初始局面中30/30将自然对子/单张关系放在推荐最前，其中29个另有安全自然小单；100个初始局面里的18个四/五炸关系虽都在最终候选及prompt可见，0个被完整推荐，因为普通对子关系先占最多3项预算。故H3-A3的模型前范围当时未封板，转入H3-A3a离线推荐优先级收窄。仓库外H3-A2r ledger和Coding任务报告的系统Temp流文件均保留，不因本规划复审清理。
 
-`b670753` 已修复H3-A3的推荐优先级外溢，规划Codex独立通过32/39/749项测试。100个真实引擎初始状态中，推荐预算100/100合规；前30个自然对子关系均存在但占推荐前两位0/30，另有安全自然小单29/30；18个四/五炸关系均完整进入推荐、最终候选和prompt。H3-A3/H3-A3a离线范围封板。当前直接执行 `docs/NEXT_PROMPT.md` 的H3-A4低敏真实模型诊断：先八场资格、再最多8请求/0重试；原H3-A2r ledger与系统Temp文件均保持原样，不接触Botzone workspace或seed `47004` evidence，不把类别变化直接当因果收益。
+`b670753` 已修复H3-A3的推荐优先级外溢，规划Codex独立通过32/39/749项测试。100个真实引擎初始状态中，推荐预算100/100合规；前30个自然对子关系均存在但占推荐前两位0/30，另有安全自然小单29/30；18个四/五炸关系均完整进入推荐、最终候选和prompt。H3-A3/H3-A3a离线范围封板。当时规划的H3-A4低敏真实模型诊断需先八场资格、再最多8请求/0重试；原H3-A2r ledger与系统Temp文件均保持原样，不接触Botzone workspace或seed `47004` evidence，不把类别变化直接当因果收益。
+
+H3-A4已在网络前依门槛停止，不能称为真实模型探针完成。规划Codex独立核对新低敏`D:\VsCodeProject\GuanDanH3A2Audit\h3-a4.jsonl`为3209 bytes、SHA-256 `033107dcd2fb1b242a0cf824a4ec453cee77c494920a8101b1acd0b6944dc54a`，11条事件记录八场资格全部failed、`qualification_complete=false`、真实请求/重试均0。ledger只给出各场候选数0，没有逐阶段失败码；相关32项回归通过，当前引擎两个合成关系场景可生成非零合法候选及ready推荐，因此不能据此宣称生产回归。旧H3-A4 ledger封存不覆盖。当前执行`docs/NEXT_PROMPT.md`的H3-A4q：仅实现与验证可重复的八场engine-backed离线资格场景及固定失败阶段；独立复审8/8后才另立fresh-ledger真实模型诊断。原H3-A2r ledger、Botzone workspace、seed`47004` evidence与系统Temp文件均保持原样。
