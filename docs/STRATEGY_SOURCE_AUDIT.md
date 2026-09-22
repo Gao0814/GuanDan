@@ -75,4 +75,4 @@ seed `47004` 的自由首出 Q 不是一个只需微调分数的孤立反例。�
 2. H3-A1 已将三篇已核对王春国正文中的角色、组牌、首攻、记牌、协同、剩余张数和非绝对化原则拆成条件化知识，并完成公开候选结构、recommendation、router、RAG 与 prompt 的十域投影。
 3. C 级转载中不依赖未披露统计的定性内容已明确标为 `soft_hypothesis`，只进入 RAG/prompt 推荐和离线评测，不进入本地直接公式；作者、来源层级和状态仍只在治理 registry。
 4. H3-A1 已通过 212/39/732 项回归和 30 局/2730 状态真实引擎离线可达性复审；模型动作保真与无后置覆盖边界保持。
-5. H3-A2 的八场离线资格已由执行报告判定通过，但真实请求stdout丢失且没有低敏持久审计，故该轮只记`inconclusive / evidence_missing`。当前按 `docs/NEXT_PROMPT.md` 执行带低敏请求ledger的独立H3-A2r恢复；结果仍只用于分层定位，不改变来源等级、知识/治理隔离或直接证明策略收益。
+5. H3-A2 的八场离线资格已由执行报告判定通过，但真实请求stdout丢失且没有低敏持久审计，故该轮只记`inconclusive / evidence_missing`。独立 H3-A2r 的低敏 ledger 已经规划复核：八场资格 ready、8 次请求/8 次 success/0 重试、6 ready/2 not_ready；`bomb_residual=alternative`、`pair_cleanup=other`。这些单点分类只用于定位模型前对照表达，不改变来源等级、知识/治理隔离，也不证明具体打法或胜率收益。

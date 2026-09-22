@@ -1,85 +1,31 @@
 # Coding Codex 执行 Prompt
 
-这是独立的 H3-A2r：恢复八场真实 DeepSeek 代表场景诊断的低敏可审计结果。上一 H3-A2 任务因真实请求进程 stdout 未被会话捕获而判定 `inconclusive / evidence_missing`；本任务不是原任务内重试，不得引用、猜测或合并上一任务不可审计的请求结果。
+任务：H3-A3——修复两类模型前关系对照的表达与代表保留。先独立从当前仓库建立事实，不把下述诊断当作某一具体动作必然最优的证明。
 
-本任务不修改业务代码、RAG、tests、docs、配置或 Botzone evidence，不创建 commit。项目所有者已长期授权单个明确任务中严格少于10次的预注册真实 DeepSeek 请求；本任务是新的明确恢复诊断，总上限固定为8次、重试0，无需再次申请，不得扩容。
+## 背景与边界
+
+规划 Codex 已复核独立 H3-A2r 低敏 ledger：八场资格 ready、8 次真实请求/8 次 success/0 重试、6 ready/2 not_ready；`bomb_residual=alternative`、`pair_cleanup=other`。所有成功动作属于最终候选、source=`model`。这是单点类别结果，不保存原始牌面/action ID/模型文本，也不证明胜率或具体最优动作。原 H3-A2 因 stdout 丢失仍是 `inconclusive / evidence_missing`，不得追认。H3-A2r ledger 保留在 `D:\VsCodeProject\GuanDanH3A2Audit\h3-a2r.jsonl`，本任务不得改写、移动或清理。
+
+当前代码的可检验缺口是：`build_strategy_recommendation()` 的最多 3 个 ID 按 finisher、自然单张、自然对子填充，没有主动把同点数四/五炸作为对照；多个自然单张也可能挤掉用于比较的自然对子。最终 prompt 已有残余结构事实，但没有明确把这两组候选按公开条件和反例并列比较。任务只改善模型前输入，让 DeepSeek 在合法候选中自行裁决；不得新增本地策略动作、过滤合法候选、后置改写、decision source 或固定现场牌点特判。
 
 ## 开始前
 
-1. 阅读并遵守根目录及适用范围内的 `AGENTS.md`；检查 `.agents/skills/`。本任务不是 Botzone live 或 workspace 清理，不执行两个项目 Skill。
-2. 阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/STRATEGY_SOURCE_AUDIT.md`、`docs/RAG_KB.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`。
-3. 检查 Git status、HEAD 和最近提交。HEAD 必须包含 `8d2146ea9c10db7dde79f6241951e06ff53300df`，工作树必须 clean；否则失败即停。
-4. 确认没有上一 H3-A2 真实请求进程仍在运行；若不能确认则零请求停止，不结束或干预无关进程。
-5. 不访问、读取、列举、复制或改写 `D:\VsCodeProject\BotzoneWorkspace` 及 seed `47004` evidence；不启动 browser、Botzone、connector、preflight 或 live。
+1. 阅读适用 `AGENTS.md`，检查 `.agents/skills/`；本任务不是 Botzone live 或 workspace 清理，不执行那两个 Skill。阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/STRATEGY_SOURCE_AUDIT.md`、`docs/RAG_KB.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`。
+2. 检查 Git status、diff、HEAD 与最近提交。仅在 clean 且包含 `8d2146e` 时开始；保留任何外部修改，不用 reset/clean/restore/checkout/stash。阅读相关生产代码和测试，明确 `recommendation -> 首层剪枝 -> 最终80项 -> prompt` 的真实顺序。
+3. 不访问 `D:\VsCodeProject\BotzoneWorkspace` 或 seed `47004` evidence；不运行 Botzone、connector、live、browser、preflight、真实 DeepSeek，也不读取或输出 `.env`、模型原文、凭据。H3-A2r ledger 无需再读取原始内容；若只需核对规划摘要，以 docs 为准。
 
-## Fresh 低敏 ledger 硬门槛
+## 实现范围
 
-唯一允许的新外部 artifact 为：
+1. 从公开 `observe()` 与完整 canonical `legal_actions()` 严格识别两个关系，证据不足则不激活：
+   - 同点数自然四张与五张炸弹同时合法，四炸留下同点数孤张、五炸清空该点数组。让两项在最终候选及有界对照中同时可见，并把“少耗一张炸弹资源”和“避免残余孤张/减少后续分组”的取舍明确告诉模型。不得无条件命令选五炸；一次出完、公开紧急性、牌权或更高价值结构可以改变判断。
+   - 同点数自然对子与拆出其中一张的单张同时合法，整对清理与留下同点数单张有公开结构差异。两项要在最终候选及有界对照中同时可见；结合队友公开剩余张数说明传递牌型与清理低价值牌的取舍。不得无条件命令出对或根据队友暗牌推理；若存在更紧急的出完、阻断或回手目标，要允许模型推翻。
+2. 对照代表与推荐 ID 仍需固定预算、确定顺序、原始 action ID、签名去重和 fail-closed。最多 3 个 recommendation ID，objective 最多 4 个，最终候选最多 80。关系保护只在严格识别且预算允许时启用；明确更高优先级目标与关系竞争时，按既有公开优先级合理取舍并以测试锁定，不得让普通自然单张靠列表顺序偶然挤掉已识别关系。不要放松 canonical 校验或扩大所有场景候选。
+3. 仅使用已激活来源知识：B级结构/组牌原则可作条件化建议，C级炸弹/通配内容继续标明 `soft_hypothesis`、可撤回。H3-A2r 的 `bomb_residual` 资格记录 soft marker 为 false；先查明该场相关 C 级假设是否真的进入最终 prompt，不能把“RAG 域可达”当作“具体知识已呈现”。若需要调整检索/投影，只允许基于现有已激活条目做最小修正并加回归；不要把作者、等级、URL、registry 状态等治理字段送入检索正文或 prompt，不为了形式新增经验条目。
+4. DeepSeek 成功返回最终候选中的合法 ID 时，原样返回并记录 `model`；legacy source 只读兼容保持。opening 窄快捷路径、其它六个 H3-A2r 场景、engine 和 Botzone 协议不应有无关变化。
 
-`D:\VsCodeProject\GuanDanH3A2Audit\h3-a2r.jsonl`
+## 验证与交付
 
-在首个真实请求前：
-
-1. `D:\VsCodeProject\GuanDanH3A2Audit` 必须不存在；若已存在则失败即停，不删除、不覆盖、不换路径。
-2. 创建该普通非链接目录，并以 exclusive-create 建立唯一 ledger；创建后再次确认目录和文件均为普通非链接对象且位于该固定目录内。
-3. JSONL 使用 UTF-8，每行一个只含固定低敏字段的 JSON object；每次写入后必须 `flush` 并 `os.fsync`。
-4. 禁止写入或输出：牌面、手牌、action ID、canonical action正文、prompt、模型响应、reasoning、异常正文、URL、token、key、Cookie、请求/响应原文或任意凭据。
-5. ledger 只允许以下事件：
-   - `header`：固定schema `h3-a2r-v1`、Git HEAD、场景数8、请求上限8、重试上限0；
-   - `qualification`：场景编号/固定名称、`ready|failed`、候选数、各目标类别数量、固定intent/domain/recommendation/RAG枚举或布尔marker；
-   - `qualification_complete`：八场是否全部ready；
-   - `request_started`：请求序号与场景编号，必须在调用前持久化；
-   - `request_result`：固定provider outcome、低基数动作类别、是否属于最终候选、source是否为model、`ready|not_ready|inconclusive`；
-   - `summary`：请求总数、各outcome数、重试数、ready/not_ready/inconclusive总数、是否完整结束。
-6. 不得把Python traceback或自由异常字符串写入ledger；异常只映射为既有固定类别。`request_started` 数量是本任务真实请求计数的审计真值。
-7. 任务结束后保留ledger供规划复审，不删除、不移动、不修改；报告其绝对路径、bytes和完整SHA-256。
-
-## 离线资格与固定请求预算
-
-- 先运行 `tests.test_recommendation_candidate_closure`、`tests.test_h3_a1_projection`、`tests.test_strategy_recommendation`、`tests.test_action_structure`；失败即停。
-- 从头重建并校验全部8个engine-backed fixture，不复用上一任务内存状态。所有八场的 `qualification` 事件都持久化后再写 `qualification_complete`。
-- 任一场资格失败时，写入失败资格和 `qualification_complete=false`，真实请求0并停止；不得边调用边修fixture。
-- 八场全部通过后，按1–8顺序每场至多1次；总请求上限8，`DEEPSEEK_MAX_RETRIES=0`仅作用于本进程。
-- 每次必须先持久化 `request_started`，再调用模型；timeout、exception、invalid suggestion或不理想动作均不重试。
-- 不持久化模型自由文本或逐牌局输入；stdout也只输出ledger允许的低敏字段。
-
-## 八个冻结场景
-
-每场必须由引擎公开 `observe()` 与完整 canonical `legal_actions()` 构造；不得手写伪合法action、删除合法候选、硬编码现场action ID，或让本地selector在模型返回后改写结果。允许为诊断关闭既有opening local shortcut，但其他router/RAG/recommendation/prompt生产路径保持开启。
-
-1. **五张同点数炸弹残余关系**：四炸留下同点数孤张，五炸清空该点数组。分类 `five_bomb`、`four_bomb_leaves_singleton` 或 `alternative`。
-2. **低成本自然单张试探**：多个结构安全普通自然单张和可保留控制资源并存。分类 `low_cost_single`、`high_single`、`control_resource` 或 `other`。
-3. **自然对子与单张清理**：同一低点数natural pair与single并存，队友公开接近走完。分类 `pair_cleanup`、`single_split` 或 `other`。
-4. **中性对子/三张软假设**：结构安全中性pair/triple、普通single和C级可撤回软假设同时可达。分类 `neutral_group`、`single` 或 `other`。
-5. **队友控桌资源保留**：队友领出、无公开紧急对手、pass与消耗控制资源均合法。分类 `pass_preserve`、`spend_control` 或 `other`。
-6. **危险对手阻断**：危险对手领出且公开接近走完，pass与合法压制并存。分类 `block`、`pass` 或 `other`。
-7. **短残局最少分组**：公开最少分组集合与严格更差拆组集合均非空。分类 `minimum_group` 或 `strictly_worse`。
-8. **炸弹/通配资源软策略**：自然路线与消耗wildcard/炸弹资源路线并存且无公开紧急条件。分类 `preserve_resource`、`spend_resource` 或 `other`。
-
-不得使用seed `47004`，不得在生产代码中增加Q/4/10、固定点数或action ID特判。本任务不修改生产代码。
-
-## 调用前硬校验
-
-八场必须全部证明：
-
-- observation、玩家关系、free/follow/table、hand multiset、declared/carrier/wildcard和完整legal actions通过现有canonical派生器；最终候选不超过80且ID均来自原集合。
-- recommendation由完整canonical actions生成并通过同一validator，objective在共享预算内，全部recommendation IDs位于实际prompt candidates；模型前建议、必要域/目标/反例/soft marker存在。
-- 预注册类别集合非空且互斥；模型返回最终候选内合法ID时原样保留且source为`model`。
-- only-pass、一次出完或opening shortcut不吞掉真实请求路径。
-
-## 判定与停止规则
-
-- provider outcome只允许现有固定类别，例如`success`、`timeout`、`exception`、`invalid_suggestion`。
-- success只映射为预注册低基数动作类别，不写动作ID或牌面；最终候选与source守恒则按原规则判`ready`或`not_ready`。
-- timeout/exception/invalid suggestion判`inconclusive`，继续下一冻结场景但不重试。
-- 若出现模型后策略改写、非`model` source、候选/ID不守恒或必需prompt marker缺失，先写低敏结果事件，再停止剩余调用并在summary标记不完整。
-- 不理想模型动作本身不停止后续场景。
-
-## 结束验证与报告
-
-1. 从ledger重新读取并验证：header唯一、八条qualification及qualification_complete完整；`request_started`与`request_result`按场景配对或能明确显示中断点；序号连续唯一；summary计数守恒；请求不超过8、重试0。
-2. 报告每场固定名称、资格状态、provider outcome、低基数动作类别、候选/source守恒及ready/not_ready/inconclusive；不得补写不可观测结果。
-3. 报告整体汇总和偏差层级，不给胜率、普遍收益或“策略已证明正确”的结论。
-4. 报告ledger绝对路径、bytes、完整SHA-256；保留该文件供规划Codex读取复审。
-5. 运行 `git status --short --branch` 与 `git diff --check`；Git必须保持开始前HEAD且clean，不创建commit。
-6. 明确报告Botzone/live/connector/browser/preflight均未运行，`D:\VsCodeProject\BotzoneWorkspace`未访问，仓库外唯一新artifact就是上述ledger。
+- 新增/更新 engine-backed 关系型测试，使用多种点数、手牌顺序、队友剩余张数与公开紧急性变体；不用伪 canonical action、现场 action ID 或 seed `47004`。至少覆盖：四/五炸均可见且对照语义出现；自然对子/同点单张均可见且对照语义出现；finisher/危险对手竞争、超过代表预算、接近80候选上限、畸形公开 payload 降级、重复签名/原始顺序、模型返回两侧任一合法 ID 均保持 `model`。
+- 运行修改相关定向测试、原 H3-A1.1 23 项、主规则 39 项与全量 `python -m unittest discover -q`；运行 `git diff --check`。若测试环境有限，准确报告命令与原因。
+- 检查完整 diff 与生产 source 扫描，确认无 post-model selector/guard、新 source、固定现场点数、seed 特判、provenance 字段泄漏。只提交本任务业务代码和 tests 的自有修改，不修改规划 docs、`.env`、仓库外 ledger 或 Botzone evidence；按明确路径暂存，不用 `git add .`。
+- 报告改动原因、文件、测试结果、commit、最终 Git status、保留外部修改及当前范围内剩余风险。不要发起真实请求或以本轮离线实现声称两场已变成 ready；交回规划 Codex 独立复审后，再单独设计不超过既有授权上限的真实模型对照。

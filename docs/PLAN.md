@@ -103,6 +103,10 @@ H3-A1.1 通过组合复审后，重新执行原 H3-A2 的全部八场离线资�
 
 下一步为新的H3-A2r恢复任务，不视为原任务内重试。原八场、顺序、分类、停止规则、每场至多1次、总计最多8次和重试0全部冻结；只新增仓库外fresh低敏JSONL ledger。每次调用前先写并flush `request_started`，调用后只写固定provider outcome、低基数动作类别、候选/source守恒和逐场判定，不保存牌面、ID、prompt、响应、reasoning、URL、token、凭据或异常正文。规划复审必须同时核对ledger完整性、bytes/SHA-256和Git clean，不能再只依赖stdout。
 
+37. H3-A2r 按独立任务完成。规划 Codex 核对仓库外普通非链接 ledger `D:\VsCodeProject\GuanDanH3A2Audit\h3-a2r.jsonl` 的 7270 bytes / SHA-256 `32ec0dcbf7709ff30702fc85f5aae0c0c2aabfbb197fb223ebeb4823d9f0a63a`、27 行固定 schema/顺序、八场 ready 资格、8 组连续 request_started/result、0 重试、8 次 success、6 ready / 2 not_ready / 0 inconclusive 与汇总守恒；指定回归独立复跑 23/23。`bomb_residual` 选 `alternative`、`pair_cleanup` 选 `other`，其余六场按预注册分类 ready；所有成功动作均在最终候选内且 source 为 `model`。ledger 不包含原始动作与模型文本，因此这只是可审计的低基数单点诊断，不证明哪一具体动作最优或普遍胜率收益；原 H3-A2 `evidence_missing` 判定保留，不追认。
+
+下一项 H3-A3 仅修模型前关系表达和推荐代表：在非更高优先级公开紧急性下，同点数四/五炸要作为“多耗一张炸弹资源 vs 四炸残余孤张”的可见对照；同点数自然对子/单张要作为“整组清理 vs 拆分留下孤张”的可见对照，结合队友剩余张数而非无条件偏向对子。当前推荐 ID 固定先 finisher/自然单张/对子、最多3项，未主动保护炸弹对照且自然单张可挤掉对子；最终 prompt 有结构事实但缺少显式条件化比较。Coding 任务用 engine-backed 变体建立回归，保持 80 项预算、最多3推荐 ID、来源隔离及模型原始 ID/source 保真，不增加本地动作或后置覆盖；实现复审后才另立真实模型对照任务。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度
