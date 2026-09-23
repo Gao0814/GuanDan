@@ -1,9 +1,9 @@
-"""Small, deterministic same-state action-quality proxy for offline evaluation.
+"""Small, deterministic same-state action-quality proxy for evaluation.
 
-The injected provider sees only an engine-produced public observation, its
-complete canonical legal actions, and the actions actually assembled by the
-production DeepSeek client.  Engine snapshots remain private to this module
-and are used only to run independent local continuations.
+An injected provider sees only public observation, complete canonical legal
+actions, and production-assembled candidates; an injected transport receives
+the actual production request.  Engine snapshots stay private to local
+continuations and are never passed to the agent or transport.
 """
 
 from __future__ import annotations
@@ -15,7 +15,11 @@ from enum import StrEnum
 import json
 
 from agents.base import require_legal_action_id
-from agents.deepseek_client import DeepSeekClient, PROMPT_MAX_CANDIDATE_ACTIONS
+from agents.deepseek_client import (
+    DeepSeekClient,
+    DeepSeekTransport,
+    PROMPT_MAX_CANDIDATE_ACTIONS,
+)
 from agents.game_phase import ENDGAME_PHASES, MIDGAME, OPENING, classify_game_phase
 from agents.rag_advisor import RAGAdvisor
 from agents.rule_based_ai import RuleBasedAIAgent
@@ -65,6 +69,37 @@ class ProviderInput:
 
 
 ActionIdProvider = Callable[[ProviderInput], object]
+
+
+@dataclass(frozen=True, slots=True)
+class DeepSeekClientSettings:
+    """Explicit client settings for a caller-supplied transport.
+
+    Secret/configuration values are intentionally omitted from repr and from
+    every report serializer.  The next real-model task can build this object
+    from ``config.py`` without changing the evaluation pipeline.
+    """
+
+    api_key: str = field(repr=False)
+    base_url: str = field(repr=False)
+    model: str = field(repr=False)
+    timeout_seconds: float = field(default=30.0, repr=False)
+    max_retries: int = 0
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.api_key, str)
+            or not self.api_key
+            or not isinstance(self.base_url, str)
+            or not self.base_url
+            or not isinstance(self.model, str)
+            or not self.model
+            or type(self.timeout_seconds) not in (int, float)
+            or self.timeout_seconds <= 0
+            or type(self.max_retries) is not int
+            or self.max_retries != 0
+        ):
+            raise ValueError("client_settings_invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +222,10 @@ class _ModelSelection:
     reference_action_id: int | None
     final_action_ids: tuple[int, ...]
     failure_code: str | None
+    raw_response_action_id: int | None = field(default=None, repr=False)
+    client_returned_action_id: int | None = field(default=None, repr=False)
+    decision_source: str | None = field(default=None, repr=False)
+    transport_call_count: int = field(default=0, repr=False)
 
 
 def _reference_action_id(observation: dict[str, object], legal_actions: list[dict[str, object]]) -> int | None:
@@ -216,16 +255,23 @@ def _invoke_model_path(
     game: GuanDanGame,
     observation: dict[str, object],
     legal_actions: list[dict[str, object]],
-    provider: ActionIdProvider,
+    provider: ActionIdProvider | None,
     advisor: RAGAdvisor,
+    *,
+    transport: DeepSeekTransport | None = None,
+    client_settings: DeepSeekClientSettings | None = None,
 ) -> _ModelSelection:
+    if (provider is None) == (transport is None):
+        return _ModelSelection(None, None, (), "model_transport_configuration_invalid")
+    if client_settings is not None and not isinstance(client_settings, DeepSeekClientSettings):
+        return _ModelSelection(None, None, (), "client_settings_invalid")
     if not _actual_game_matches_public(game, observation, legal_actions):
         return _ModelSelection(None, None, (), "snapshot_public_mismatch")
     info = observation.get("my_info")
     player_id = info.get("player_id") if isinstance(info, Mapping) else None
     if type(player_id) is not int or not 1 <= player_id <= 4:
         return _ModelSelection(None, None, (), "player_invalid")
-    # Freeze the RuleBased reference before the injected provider is invoked.
+    # Freeze the RuleBased reference before the injected model path is invoked.
     reference_id = _reference_action_id(observation, legal_actions)
     if reference_id is None:
         return _ModelSelection(None, None, (), "reference_action_invalid")
@@ -235,6 +281,8 @@ def _invoke_model_path(
         canonical_actions: list[dict[str, object]],
         final_candidates: list[dict[str, object]],
     ) -> object:
+        if provider is None:
+            return None
         return provider(ProviderInput(public_observation, canonical_actions, final_candidates))
 
     fixture = ProbeFixture(
@@ -243,37 +291,59 @@ def _invoke_model_path(
         deepcopy(legal_actions),
         game_snapshot=game,
     )
-    client_factory = lambda: _RecordingDeepSeekClient(selection_provider=dispatch_provider)
+    client_options: dict[str, object] = {}
+    if client_settings is not None:
+        client_options = {
+            "api_key": client_settings.api_key,
+            "base_url": client_settings.base_url,
+            "model": client_settings.model,
+            "timeout_seconds": client_settings.timeout_seconds,
+            "max_retries": client_settings.max_retries,
+        }
+    if transport is not None:
+        client_options["transport"] = transport
+    client_factory = lambda: _RecordingDeepSeekClient(
+        selection_provider=dispatch_provider if provider is not None else None,
+        **client_options,
+    )
     try:
         agent, client, chosen = _run_projection(fixture, advisor, client_factory=client_factory)
     except Exception:
         return _ModelSelection(None, reference_id, (), "model_pipeline_failure")
-    transport = client.transport
-    failure = transport.failure_code
+    injected_transport = transport
+    recording_transport = client.transport
+    failure = recording_transport.failure_code
     if client._max_retries != 0:  # the offline path must never retry
         failure = "retry_configuration_invalid"
-    if transport.calls != 1:
-        failure = failure or "model_path_not_reached"
+    if recording_transport.calls != 1:
+        failure = failure or (
+            "model_path_not_reached" if recording_transport.calls == 0 else "transport_call_count_invalid"
+        )
+    if injected_transport is not None and recording_transport.delegate_calls != 1:
+        failure = failure or "injected_transport_call_count"
+    if injected_transport is None and recording_transport.delegate_calls != 0:
+        failure = failure or "unexpected_transport_delegate"
     final_actions = client.final_actions
     candidate_ids: tuple[object, ...] = tuple(item.get("action_id") for item in final_actions)
     final_ids = tuple(action_id for action_id in candidate_ids if type(action_id) is int)
     if (
         client.calls != 1
-        or transport.calls != 1
-        or client.provider_call_count != 1
+        or recording_transport.calls != 1
+        or (provider is not None and client.provider_call_count != 1)
+        or (provider is None and client.provider_call_count != 0)
     ):
         failure = failure or "model_path_call_count"
     if (
-        not transport.envelope_valid
+        not recording_transport.envelope_valid
         or client.final_prompt is None
-        or transport.user_prompt != client.final_prompt
+        or recording_transport.user_prompt != client.final_prompt
     ):
         failure = failure or "request_body_binding_invalid"
     if final_actions:
         canonical = DeepSeekClient._canonical_subset_actions(legal_actions, final_actions)
         raw_ids = {item.get("action_id") for item in legal_actions if type(item.get("action_id")) is int}
         signatures = tuple(DeepSeekClient._action_signature(item) for item in final_actions)
-        body_ids = transport.prompt_action_ids
+        body_ids = recording_transport.prompt_action_ids
         if (
             canonical is None
             or len(final_actions) > PROMPT_MAX_CANDIDATE_ACTIONS
@@ -292,11 +362,17 @@ def _invoke_model_path(
         failure = failure or "final_candidates_missing"
     if len(final_actions) < 2:
         failure = failure or "insufficient_final_candidates"
-    raw_selected = client.provider_action_id
-    selected_is_int = type(raw_selected) is int
-    if not selected_is_int or raw_selected not in final_ids:
+    raw_selected = client.provider_action_id if provider is not None else client.response_action_id
+    if type(raw_selected) is not int or raw_selected not in final_ids:
         failure = failure or "provider_action_not_in_final_candidates"
-    if type(chosen) is not int or chosen != raw_selected:
+    if type(client.response_action_id) is not int or client.response_action_id != raw_selected:
+        failure = failure or "provider_response_binding_invalid"
+    if (
+        type(client.client_result_action_id) is not int
+        or client.client_result_action_id != client.response_action_id
+    ):
+        failure = failure or "client_response_binding_invalid"
+    if type(chosen) is not int or chosen != client.client_result_action_id:
         failure = failure or "selected_action_mismatch"
     source_is_model = agent.last_decision_source == "model"
     if not source_is_model:
@@ -308,6 +384,10 @@ def _invoke_model_path(
         reference_action_id=reference_id,
         final_action_ids=final_ids,
         failure_code=failure,
+        raw_response_action_id=client.response_action_id,
+        client_returned_action_id=client.client_result_action_id,
+        decision_source=agent.last_decision_source,
+        transport_call_count=recording_transport.calls,
     )
 
 
@@ -558,11 +638,15 @@ def _unevaluable_result(
 
 def evaluate_quality_sample(
     sample: ReplayableQualitySample,
-    provider: ActionIdProvider,
+    provider: ActionIdProvider | None = None,
     *,
+    transport: DeepSeekTransport | None = None,
+    client_settings: DeepSeekClientSettings | None = None,
     advisor: RAGAdvisor | None = None,
 ) -> ActionQualityResult:
-    """Call the production client path offline, then compare two frozen rollouts."""
+    """Call the production client path through one injected response source, then compare rollouts."""
+    if (provider is None) == (transport is None):
+        return _unevaluable_result(sample, failure_code="model_transport_configuration_invalid")
     if not _actual_game_matches_public(sample.game_snapshot, sample.observation, sample.legal_actions):
         return _unevaluable_result(sample, failure_code="snapshot_public_mismatch")
     canonical_ids = tuple(action.get("action_id") for action in sample.legal_actions)
@@ -592,6 +676,8 @@ def evaluate_quality_sample(
         sample.legal_actions,
         provider,
         advisor or _h3_advisor(),
+        transport=transport,
+        client_settings=client_settings,
     )
     reference_visible = reference_id in selection.final_action_ids
     if selection.failure_code is not None or selection.reference_action_id != reference_id:
@@ -694,12 +780,23 @@ def evaluate_quality_sample(
 
 def evaluate_quality_samples(
     sample_set: SampleSetResult,
-    provider: ActionIdProvider,
+    provider: ActionIdProvider | None = None,
     *,
+    transport: DeepSeekTransport | None = None,
+    client_settings: DeepSeekClientSettings | None = None,
     advisor: RAGAdvisor | None = None,
 ) -> ActionQualityReport:
     if not sample_set.ready:
         return ActionQualityReport(sample_set.stage, ())
     rag_advisor = advisor or _h3_advisor()
-    results = tuple(evaluate_quality_sample(sample, provider, advisor=rag_advisor) for sample in sample_set.samples)
+    results = tuple(
+        evaluate_quality_sample(
+            sample,
+            provider,
+            transport=transport,
+            client_settings=client_settings,
+            advisor=rag_advisor,
+        )
+        for sample in sample_set.samples
+    )
     return ActionQualityReport(sample_set.stage, results)

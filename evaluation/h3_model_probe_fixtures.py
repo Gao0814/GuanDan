@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 from agents.action_structure import CandidateContrast, CandidateStructure, summarize_candidate_contrasts, summarize_candidate_structures
 from agents.deepseek_ai import DeepSeekAIAgent
-from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
+from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion, DeepSeekTransport
 from agents.rag_advisor import RAGAdvisor
 from agents.short_endgame_planner import minimum_group_free_lead_action_ids
 from config import AppConfig
@@ -269,16 +269,19 @@ def build_h3_model_probe_opening_fixtures() -> tuple[ProbeFixture, ProbeFixture]
     return _low_cost_single(), _neutral_soft_pair()
 
 
-class _NoNetworkTransport:
-    """Return one displayed ID through the real streaming parser, without I/O."""
+class _RequestRecordingTransport:
+    """Record the client request and optionally delegate to an injected transport."""
 
-    def __init__(self) -> None:
+    def __init__(self, delegate: DeepSeekTransport | None = None) -> None:
         self.calls = 0
+        self.delegate_calls = 0
+        self.delegate = delegate
         self.client: _RecordingDeepSeekClient | None = None
         self.envelope_valid = False
         self.user_prompt: str | None = None
         self.prompt_action_ids: tuple[int, ...] = ()
         self.failure_code: str | None = None
+        self._request_data: bytes | None = None
 
     @staticmethod
     def _candidate_ids(prompt: str) -> tuple[int, ...] | None:
@@ -331,24 +334,26 @@ class _NoNetworkTransport:
         self.envelope_valid = True
         self.user_prompt = prompt
         self.prompt_action_ids = action_ids
+        self._request_data = raw
 
-    def __call__(self, request: object, _timeout: float) -> str:
+    def __call__(self, request: object, timeout: float) -> str:
         self.calls += 1
         self._capture_request(request)
         client = self.client
         if client is None or not client.displayed_actions:
+            self.failure_code = "client_request_not_assembled"
             raise OSError("probe_client_not_assembled")
+        displayed_ids = tuple(item.get("action_id") for item in client.displayed_actions)
+        if (
+            not self.envelope_valid
+            or self.user_prompt != client.final_prompt
+            or len(displayed_ids) != len(self.prompt_action_ids)
+            or any(type(action_id) is not int for action_id in displayed_ids)
+            or set(displayed_ids) != set(self.prompt_action_ids)
+        ):
+            self.failure_code = "request_binding_invalid"
+            raise OSError("probe_request_binding_invalid")
         if client.selection_provider is not None:
-            displayed_ids = tuple(item.get("action_id") for item in client.displayed_actions)
-            if (
-                not self.envelope_valid
-                or self.user_prompt != client.final_prompt
-                or len(displayed_ids) != len(self.prompt_action_ids)
-                or any(type(action_id) is not int for action_id in displayed_ids)
-                or set(displayed_ids) != set(self.prompt_action_ids)
-            ):
-                self.failure_code = "request_binding_invalid"
-                raise OSError("probe_request_binding_invalid")
             kwargs = client.kwargs
             observation = kwargs.get("observation") if isinstance(kwargs, dict) else None
             legal_actions = kwargs.get("legal_actions") if isinstance(kwargs, dict) else None
@@ -366,6 +371,17 @@ class _NoNetworkTransport:
             except Exception:
                 self.failure_code = "provider_exception"
                 raise OSError("probe_provider_failure") from None
+        elif self.delegate is not None:
+            try:
+                self.delegate_calls += 1
+                response = self.delegate(request, timeout)
+            except Exception:
+                self.failure_code = "injected_transport_failure"
+                raise OSError("probe_injected_transport_failure") from None
+            if getattr(request, "data", None) != self._request_data:
+                self.failure_code = "request_body_mutated"
+                raise OSError("probe_request_body_mutated")
+            return response
         else:
             action_id = client.displayed_actions[0].get("action_id")
         if type(action_id) is not int:
@@ -384,33 +400,74 @@ class _RecordingDeepSeekClient(DeepSeekClient):
         selection_provider: Callable[
             [dict[str, object], list[dict[str, object]], list[dict[str, object]]], object
         ] | None = None,
+        *,
+        transport: DeepSeekTransport | None = None,
+        api_key: str = "offline-probe",
+        base_url: str = "https://offline.invalid",
+        model: str = "offline-probe",
+        timeout_seconds: float = 1.0,
+        max_retries: int = 0,
     ) -> None:
+        if selection_provider is not None and transport is not None:
+            raise ValueError("probe_transport_source_ambiguous")
         self.transport = self._new_transport()
+        self.transport.delegate = transport
         self.selection_provider = selection_provider
         self.calls = 0
         self.provider_call_count = 0
         self.provider_action_id: object = None
+        self.response_action_id: int | None = None
+        self.client_result_action_id: int | None = None
         self.kwargs: dict[str, object] | None = None
         self.displayed_actions: list[dict[str, object]] = []
         self.final_actions: list[dict[str, object]] = []
         self.final_prompt: str | None = None
         super().__init__(
-            api_key="offline-probe",
-            base_url="https://offline.invalid",
-            model="offline-probe",
-            timeout_seconds=1.0,
-            max_retries=0,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
             transport=self.transport,
         )
         self.transport.client = self
 
-    def _new_transport(self) -> _NoNetworkTransport:
-        return _NoNetworkTransport()
+    def _new_transport(self) -> _RequestRecordingTransport:
+        return _RequestRecordingTransport()
 
     def suggest_action_id(self, **kwargs: object) -> object:
         self.calls += 1
         self.kwargs = dict(kwargs)
-        return super().suggest_action_id(**kwargs)
+        suggestion = super().suggest_action_id(**kwargs)
+        self.client_result_action_id = (
+            suggestion.action_id if isinstance(suggestion, DeepSeekSuggestion) else None
+        )
+        return suggestion
+
+    @staticmethod
+    def _strict_response_action_id(content: str) -> int | None:
+        try:
+            payload = json.loads(content)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if type(payload) is int:
+            return payload
+        if not isinstance(payload, dict):
+            return None
+        for key in ("action_id", "suggested_action_id"):
+            if key in payload:
+                value = payload.get(key)
+                return value if type(value) is int else None
+        suggested = payload.get("suggested_action")
+        if isinstance(suggested, dict):
+            value = suggested.get("action_id")
+            return value if type(value) is int else None
+        return None
+
+    def _stream_sse(self, req: object, timeout: float) -> tuple[str, str]:
+        content, reasoning = super()._stream_sse(req, timeout)  # type: ignore[arg-type]
+        self.response_action_id = self._strict_response_action_id(content)
+        return content, reasoning
 
     def _build_structured_prompt(self, **kwargs: object) -> str:
         actions = kwargs.get("legal_actions")

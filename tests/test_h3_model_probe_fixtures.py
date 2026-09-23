@@ -12,7 +12,7 @@ from evaluation.h3_model_probe_fixtures import (
     ProbeFixture,
     QualificationStage,
     SCENARIO_NAMES,
-    _NoNetworkTransport,
+    _RequestRecordingTransport,
     _RecordingDeepSeekClient,
     _advisor,
     _complete_opening_hands,
@@ -85,13 +85,13 @@ class _ReturnedOnlyMissingMarkerClient(_RecordingDeepSeekClient):
         return super()._build_structured_prompt(**kwargs).replace("【模型前建议】", "【缺失建议】")
 
 
-class _BadJsonTransport(_NoNetworkTransport):
+class _BadJsonTransport(_RequestRecordingTransport):
     def __call__(self, request: object, timeout: float) -> str:
         request.data = b"{"  # type: ignore[attr-defined]
         return super().__call__(request, timeout)
 
 
-class _MissingUserTransport(_NoNetworkTransport):
+class _MissingUserTransport(_RequestRecordingTransport):
     def __call__(self, request: object, timeout: float) -> str:
         envelope = json.loads(request.data.decode("utf-8"))  # type: ignore[attr-defined]
         envelope["messages"] = [envelope["messages"][0]]
@@ -99,7 +99,7 @@ class _MissingUserTransport(_NoNetworkTransport):
         return super().__call__(request, timeout)
 
 
-class _DuplicateTransport(_NoNetworkTransport):
+class _DuplicateTransport(_RequestRecordingTransport):
     def __call__(self, request: object, timeout: float) -> str:
         response = super().__call__(request, timeout)
         super().__call__(request, timeout)
@@ -107,9 +107,9 @@ class _DuplicateTransport(_NoNetworkTransport):
 
 
 class _CustomTransportClient(_RecordingDeepSeekClient):
-    transport_type = _NoNetworkTransport
+    transport_type = _RequestRecordingTransport
 
-    def _new_transport(self) -> _NoNetworkTransport:
+    def _new_transport(self) -> _RequestRecordingTransport:
         return self.transport_type()
 
 
