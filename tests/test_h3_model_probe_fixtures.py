@@ -1,11 +1,13 @@
 """No-network regressions for the reproducible H3 model-probe qualification."""
 
+from collections import Counter
 import json
 import unittest
 from copy import deepcopy
 from unittest.mock import patch
 
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
+from engine.cards import build_double_deck, card_to_token
 from evaluation.h3_model_probe_fixtures import (
     ProbeFixture,
     QualificationStage,
@@ -13,6 +15,7 @@ from evaluation.h3_model_probe_fixtures import (
     _NoNetworkTransport,
     _RecordingDeepSeekClient,
     _advisor,
+    _complete_opening_hands,
     _game,
     _run_projection,
     build_h3_model_probe_fixtures,
@@ -156,7 +159,7 @@ class H3ModelProbeFixtureTests(unittest.TestCase):
                 self.assertTrue(result.source_is_model)
         for name in ("bomb_residual", "pair_cleanup"):
             self.assertTrue(next(result for result in results if result.name == name).contrast_ready)
-        for name in ("neutral_soft_pair", "bomb_wildcard_soft"):
+        for name in ("low_cost_single", "neutral_soft_pair", "bomb_wildcard_soft"):
             self.assertTrue(next(result for result in results if result.name == name).soft_marker_ready)
 
     def test_malformed_fixture_fails_at_a_fixed_early_stage_without_projection(self) -> None:
@@ -183,6 +186,7 @@ class H3ModelProbeFixtureTests(unittest.TestCase):
         for fixture in build_h3_model_probe_fixtures():
             with self.subTest(name=fixture.name):
                 agent, client, chosen = _run_projection(fixture, _advisor())
+                self.assertTrue(agent.opening_formula_enabled)
                 self.assertEqual(client.calls, 1)
                 self.assertEqual(client.transport.calls, 1)
                 self.assertTrue(client.transport.envelope_valid)
@@ -196,12 +200,98 @@ class H3ModelProbeFixtureTests(unittest.TestCase):
                 self.assertIn(chosen, {item["action_id"] for item in client.displayed_actions})
                 self.assertEqual(agent.last_decision_source, "model")
 
+    def test_opening_targets_are_complete_initial_double_deck_deals(self) -> None:
+        fixtures = {fixture.name: fixture for fixture in build_h3_model_probe_fixtures()}
+        full_deck = Counter(card_to_token(card) for card in build_double_deck())
+        for name in ("low_cost_single", "neutral_soft_pair"):
+            with self.subTest(name=name):
+                fixture = fixtures[name]
+                observation = fixture.observation
+                my_info = observation["my_info"]
+                current_round = observation["current_round"]
+                history = observation["history"]
+                assert isinstance(my_info, dict)
+                assert isinstance(current_round, dict)
+                assert isinstance(history, dict)
+                first_hand = tuple(my_info["hand_cards"])
+                deal = _complete_opening_hands(first_hand)
+
+                self.assertEqual(tuple(len(hand) for hand in deal), (27, 27, 27, 27))
+                self.assertEqual(sum(len(hand) for hand in deal), 108)
+                self.assertTrue(
+                    Counter(token for hand in deal for token in hand) == full_deck,
+                    "opening_deal_must_match_complete_double_deck",
+                )
+                self.assertEqual(tuple(my_info["hand_cards"]), deal[0])
+                self.assertEqual(current_round.get("step_no"), 0)
+                self.assertEqual(current_round.get("round_no"), 1)
+                self.assertEqual(current_round.get("current_player_id"), 1)
+                self.assertEqual(current_round.get("constraint"), "free")
+                self.assertIsNone(current_round.get("table_action"))
+                self.assertEqual(history.get("actions"), [])
+                self.assertEqual(history.get("finish_order"), [])
+                other_players = observation["other_players"]
+                self.assertIsInstance(other_players, list)
+                self.assertEqual(
+                    sorted(player.get("hand_count") for player in other_players if isinstance(player, dict)),
+                    [27, 27, 27],
+                )
+                self.assertTrue(all(not player.get("finished") for player in other_players if isinstance(player, dict)))
+
+                replay = _game(*deal)
+                replay_observation = replay.reset()
+                self.assertTrue(
+                    replay_observation == fixture.observation
+                    and replay.legal_actions() == fixture.legal_actions,
+                    "opening_fixture_must_match_engine_public_payload",
+                )
+
+                result = qualify_h3_model_probe_fixture(fixture, advisor=_advisor())
+                self.assertIs(result.stage, QualificationStage.READY)
+                self.assertLessEqual(result.final_candidate_count, 80)
+                self.assertTrue(result.recommendation_ready)
+                self.assertTrue(result.soft_marker_ready)
+                self.assertTrue(result.source_is_model)
+
+    def test_other_six_fixtures_keep_their_qualified_projection(self) -> None:
+        expected = {
+            "bomb_residual": (10, 6, "endgame", "critical_endgame", True, True),
+            "pair_cleanup": (7, 4, "endgame", "critical_endgame", True, False),
+            "teammate_controls": (3, 3, "endgame", "critical_endgame", False, False),
+            "danger_block": (3, 3, "endgame", "critical_endgame", False, False),
+            "short_endgame": (5, 4, "endgame", "near_open_endgame", False, False),
+            "bomb_wildcard_soft": (30, 25, "endgame", "critical_endgame", False, True),
+        }
+        fixtures = {fixture.name: fixture for fixture in build_h3_model_probe_fixtures()}
+        results = {result.name: result for result in qualify_h3_model_probe_fixtures()}
+        for name, (candidate_count, final_count, scene, phase, contrast, bomb_soft) in expected.items():
+            with self.subTest(name=name):
+                fixture = fixtures[name]
+                result = results[name]
+                _agent, client, _chosen = _run_projection(fixture, _advisor())
+                context = client.kwargs["rag_context"] if client.kwargs is not None else None
+                self.assertIsInstance(context, dict)
+                assert isinstance(context, dict)
+                tags = context.get("scene_tags")
+                hits = context.get("experience_hits")
+                self.assertIsInstance(tags, dict)
+                self.assertIsInstance(hits, list)
+                assert isinstance(tags, dict) and isinstance(hits, list)
+                source_ids = {hit.get("source_id") for hit in hits if isinstance(hit, dict)}
+                self.assertIs(result.stage, QualificationStage.READY)
+                self.assertEqual((result.candidate_count, result.final_candidate_count), (candidate_count, final_count))
+                self.assertLessEqual(result.final_candidate_count, 80)
+                self.assertEqual((tags.get("scene"), tags.get("phase")), (scene, phase))
+                self.assertEqual(result.contrast_ready, contrast)
+                self.assertEqual("exp_bomb_wildcard_001" in source_ids, bomb_soft)
+
     def test_fixture_semantics_and_soft_evidence_use_the_actual_target_sources(self) -> None:
         expected_phase = {
             "low_cost_single": ("lead_opening", "opening"),
             "neutral_soft_pair": ("lead_opening", "opening"),
         }
         expected_soft_source = {
+            "low_cost_single": "exp_soft_pair_probe_001",
             "neutral_soft_pair": "exp_soft_pair_probe_001",
             "bomb_wildcard_soft": "exp_bomb_wildcard_001",
         }
@@ -333,6 +423,7 @@ class H3ModelProbeFixtureTests(unittest.TestCase):
         fixtures = {fixture.name: fixture for fixture in build_h3_model_probe_fixtures()}
         cases = (
             ("low_cost_single", _MissingMarkerClient, QualificationStage.ROUTER_RAG_PROMPT),
+            ("low_cost_single", _MissingSoftEvidenceClient, QualificationStage.ROUTER_RAG_PROMPT),
             ("bomb_residual", _MissingContrastClient, QualificationStage.ROUTER_RAG_PROMPT),
             ("neutral_soft_pair", _MissingSoftEvidenceClient, QualificationStage.ROUTER_RAG_PROMPT),
             ("bomb_wildcard_soft", _MissingSoftEvidenceClient, QualificationStage.ROUTER_RAG_PROMPT),

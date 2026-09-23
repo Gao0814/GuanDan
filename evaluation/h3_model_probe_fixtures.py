@@ -22,7 +22,7 @@ from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from agents.rag_advisor import RAGAdvisor
 from agents.short_endgame_planner import minimum_group_free_lead_action_ids
 from config import AppConfig
-from engine.cards import Card
+from engine.cards import Card, build_double_deck, card_to_token
 from engine.game import GuanDanGame
 from rag.kb_loader import KnowledgeBaseLoader
 from rag.retriever import KnowledgeRetriever
@@ -86,7 +86,7 @@ _SAFE_CONFIG = AppConfig(
     deepseek_enabled=False,
     hand_evaluation_enabled=True,
     card_tracking_enabled=False,
-    opening_formula_enabled=False,
+    opening_formula_enabled=True,
     deepseek_timeout=1.0,
     deepseek_max_retries=0,
     debug=False,
@@ -115,43 +115,27 @@ def _game(
     )
 
 
-def _opening_hands(
-    one: tuple[str, ...],
-    two: tuple[str, ...],
-    three: tuple[str, ...],
-    four: tuple[str, ...],
+def _complete_opening_hands(
+    first_hand: tuple[str, ...],
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
-    """Extend public engine hands to a real opening-sized state.
+    """Complete a deterministic first hand into a physical double-deck deal."""
+    deck = [card_to_token(card) for card in build_double_deck()]
+    deck_counts = Counter(deck)
+    first_counts = Counter(first_hand)
+    if len(first_hand) != 27 or any(count > deck_counts.get(token, 0) for token, count in first_counts.items()):
+        raise RuntimeError("fixture_opening_hand_invalid")
 
-    The fixture keeps its target relationships in the engine-generated
-    canonical actions; this helper only supplies enough distinct physical-card
-    tokens for the shared public phase classifier to establish ``opening``.
-    """
-    hands = [list(one), list(two), list(three), list(four)]
-    targets = (18, 16, 16, 16)
-    counts = Counter(card for hand in hands for card in hand)
-    if any(count > 2 for count in counts.values()):
-        raise RuntimeError("fixture_card_multiplicity_invalid")
-    pool = tuple(
-        f"{rank}{suit}"
-        for rank in ("3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2")
-        for suit in ("S", "H", "C", "D")
-    ) + ("SJ", "BJ")
-    for hand_index, target in enumerate(targets):
-        while len(hands[hand_index]) < target:
-            selected = next(
-                (
-                    token for token in pool
-                    if counts[token] < 2
-                    and not (hand_index == 0 and token == "2H")
-                ),
-                None,
-            )
-            if selected is None:
-                raise RuntimeError("fixture_opening_population_unavailable")
-            hands[hand_index].append(selected)
-            counts[selected] += 1
-    return tuple(tuple(hand) for hand in hands)  # type: ignore[return-value]
+    remainder = list(deck)
+    for token in first_hand:
+        remainder.remove(token)
+    if len(remainder) != 81:
+        raise RuntimeError("fixture_opening_remainder_invalid")
+    return (
+        tuple(first_hand),
+        tuple(remainder[:27]),
+        tuple(remainder[27:54]),
+        tuple(remainder[54:81]),
+    )
 
 
 def _action_id(game: GuanDanGame, predicate: Callable[[dict[str, object]], bool]) -> int:
@@ -186,9 +170,13 @@ def _bomb_residual() -> ProbeFixture:
 
 
 def _low_cost_single() -> ProbeFixture:
-    hands = _opening_hands(
-        ("3S", "5H", "9C", "AS", "2S", "BJ", "6S", "6H"),
-        ("KS", "KH", "KC"), ("QS", "QH", "QC"), ("JS", "JH", "JC"),
+    hands = _complete_opening_hands(
+        (
+            "3S", "9C", "AH",
+            "4S", "4H", "5C", "5D", "6S", "6H", "7C", "7D", "8S", "8H",
+            "10S", "10C", "JH", "JD", "QS", "QC", "KH", "KD", "2S", "2C",
+            "SJ", "SJ", "BJ", "BJ",
+        ),
     )
     game = _game(
         *hands,
@@ -207,9 +195,12 @@ def _pair_cleanup() -> ProbeFixture:
 
 
 def _neutral_soft_pair() -> ProbeFixture:
-    hands = _opening_hands(
-        ("6S", "6H", "6C", "8S", "8H", "3S", "AH"),
-        ("QS", "QH", "QC"), ("KS", "KH", "KC"), ("JS", "JH", "JC"),
+    hands = _complete_opening_hands(
+        (
+            "3S", "6S", "6H", "6C", "8S", "8H", "AH",
+            "4S", "4H", "5S", "5H", "7S", "7H", "9S", "9H", "10S", "10H",
+            "JS", "JH", "QS", "QH", "KS", "KH", "2S", "2C", "SJ", "SJ",
+        ),
     )
     game = _game(
         *hands,
@@ -405,7 +396,7 @@ def _run_projection(
     with patch("agents.deepseek_ai.AppConfig.from_env", return_value=_SAFE_CONFIG):
         agent = DeepSeekAIAgent(
             player_id, client, rag_advisor=advisor, rag_top_k=3,
-            hand_evaluation_enabled=True, opening_formula_enabled=False,
+            hand_evaluation_enabled=True, opening_formula_enabled=True,
             strategy_router_shadow_enabled=True, strategy_intent_prompt_enabled=True,
             strategy_recommendation_enabled=True,
         )
@@ -678,6 +669,7 @@ def qualify_h3_model_probe_fixture(
     prompt_markers = bool(prompt and all(marker in prompt for marker in ("【模型前建议】", "策略域：", "目标：", "反例检查：")))
     contrast_ready = _contrast_ready(fixture.name, contrasts, final_ids, validated.action_ids, prompt)
     expected_soft_source = {
+        "low_cost_single": "exp_soft_pair_probe_001",
         "neutral_soft_pair": "exp_soft_pair_probe_001",
         "bomb_wildcard_soft": "exp_bomb_wildcard_001",
     }.get(fixture.name)
@@ -701,7 +693,7 @@ def qualify_h3_model_probe_fixture(
         prompt is None or intent is None or getattr(intent, "status", None) != "available"
         or intent_prompt is None or getattr(intent_prompt, "status", None) != "ready"
         or not prompt_markers or (fixture.name in {"bomb_residual", "pair_cleanup"} and not contrast_ready)
-        or (fixture.name in {"neutral_soft_pair", "bomb_wildcard_soft"} and not soft_ready)
+        or (fixture.name in {"low_cost_single", "neutral_soft_pair", "bomb_wildcard_soft"} and not soft_ready)
     ):
         return _result(fixture, QualificationStage.ROUTER_RAG_PROMPT, candidate_count=candidate_count, final_candidate_count=len(final_actions), category_counts=category_counts, recommendation_ready=True, contrast_ready=contrast_ready, soft_marker_ready=soft_ready, prompt_markers_ready=prompt_markers)
     if chosen not in final_ids:
