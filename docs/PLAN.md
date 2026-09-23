@@ -145,6 +145,10 @@ H3-A1.1 通过组合复审后，重新执行原 H3-A2 的全部八场离线资�
 
 下一项H3-A6固定当前八场为一次独立真实DeepSeek单点诊断：先在执行HEAD重跑完整禁网资格；全数ready后最多8次、每场1次、重试0，使用新独占低敏JSONL按请求前后同步记录固定事件。只审计原始类别和候选/source守恒；旧ledger与Botzone evidence保持原样，不作跨fixture因果改善或胜率推断。项目所有者对单任务严格少于10次请求已有长期授权。
 
+49. H3-A6 新ledger `h3-a6.jsonl` 经规划Codex只读复核：普通非链接文件，6730 bytes、SHA-256 `7cb3dd76198929871484a03c44dcb12c362082b3915fe70d8914ae727de863bc`，27条固定事件、8条与当前HEAD离线资格一致的记录、8对连续请求起止、8 success/0重试/8个合法候选与`model` source守恒；指定45项测试独立通过。动作类别顺序为`alternative / low_cost_single / other / single / pass_preserve / block / minimum_group / spend_resource`。该ledger能审计记录的调用边界与低基数结果，不能独立重建网络侧计数或具体动作优劣；旧H3-A4r与本轮fixture不同，不作同状态因果比较。
+
+50. 继续规划的关键区别是技术守恒与质量证据：`alternative`和`other`各覆盖多个具体动作，H3-A6并未保存所选ID；六个短手牌残局fixture可验证模型前投影，却不能充当完整物理对局的续局质量真值。下一项H3-A7以完整108张起局并通过引擎合法回放取得最多6个固定状态，注入假provider，在同状态克隆上比较所选动作与预定RuleBased参考动作的终局/名次代理。复用现有`strategy_intent_action_quality`续局逻辑；先零网络实现并独立复审，再单独安排真实模型质量评测。代理只解释冻结续局策略下的相对结果，不宣称实际胜率。
+
 正式实验恢复时必须保留的经验：**把每一个可以原地修正的准备阶段小错误，都升级成不可恢复的正式实验失败**是错误的流程模型。qualification 与实验副作用必须分层，零外部副作用的准备错误允许原地修正。
 
 ## 2026-08-14 Botzone v4 诊断画像进度

@@ -352,3 +352,5 @@ H3-A4r已形成可审计单点技术结果：规划Codex独立核对fresh普通�
 `6ff6d97` 的 H3-A5 来源经验适用门槛已由规划 Codex 独立复审：完整 canonical 候选驱动的炸弹/通配与自然对子激活、知识字段白名单隔离、八场禁网资格均 ready；相关39、主规则39、全量760项通过。两项目标场景已公开分类为 `lead_opening / opening` 并实际投影对子 C 级来源，但其 `step_no=0` 时手牌为 `18/16/16/16`、总数66，非真实完整开局。故下一项 `docs/NEXT_PROMPT.md` 是 H3-A5b：仅修两项评测 fixture 的108张/每家27张或合法回放可达性并重跑离线资格；此前不启动新真实模型诊断。旧 ledger、Botzone workspace、seed证据均保持原样。
 
 `13b9817` 已完成 H3-A5b，规划 Codex 独立审阅提交、复跑57项相关与762项全量测试。两项开局 fixture 现在均为完整108张双副牌、四家各27张、第0步空历史；八场禁网资格均ready，最终候选数按顺序为6/21/4/50/3/3/4/25，source均为`model`。下一项`docs/NEXT_PROMPT.md`为H3-A6：独立最多8次、重试0真实DeepSeek低敏单点诊断，新fresh ledger；旧H3 ledger、Botzone workspace、seed证据与系统Temp文件保持原样。结果只解释当前fixture的单次选择，不推断旧版同状态改善或胜率。
+
+H3-A6 已有可审计低敏结果：规划 Codex 只读核对 `D:\VsCodeProject\GuanDanH3A2Audit\h3-a6.jsonl` 为普通非链接文件、6730 bytes、SHA-256 `7cb3dd76198929871484a03c44dcb12c362082b3915fe70d8914ae727de863bc`；27条事件与当前HEAD八场离线资格、8对请求起止及summary守恒，账本为8 success、0重试、8个候选/source守恒。指定45项测试独立通过。类别依序`alternative / low_cost_single / other / single / pass_preserve / block / minimum_group / spend_resource`，不能从中还原具体动作或断言策略优劣。下一项`docs/NEXT_PROMPT.md`为H3-A7零网络同状态动作质量代理；旧H3 ledger、Botzone workspace、seed证据和系统Temp文件不清理。
