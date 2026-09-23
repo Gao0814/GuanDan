@@ -1,20 +1,35 @@
 # Coding Codex 执行 Prompt
 
-任务：H3-A5b——修复两项开局诊断 fixture 的物理牌局真实性，然后重新封板八场离线资格。`6ff6d97` 已使公开候选适用条件和目标 C 级经验命中生效；规划 Codex 独立复跑 39 项相关、39 项主规则及 760 项全量测试，并确认八场当前资格均为 `ready`。但 `low_cost_single` 与 `neutral_soft_pair` 由 `_opening_hands()` 构造为第 0 步手牌数 `18/16/16/16`、总数 66。虽然公开 phase 分类为 `opening`，这不是固定单局 profile 的真实开局（108 张、每家 27 张），不能直接用于声称真实开局模型质量。
+任务：H3-A6——对 H3-A5/H3-A5b 修正后的八个固定场景做一次真实 DeepSeek 低敏单点诊断。只记录当前版本原始模型动作的预注册类别、provider 结果及最终候选/source 守恒。两项开局 fixture 已改为完整 108 张分配，且开局公式在禁网资格中保持启用；旧 H3-A2r/H3-A4r 使用不同 fixture/链路，类别差异不能解释为同状态策略改善。本任务不修改或提交仓库文件。
 
-## 开始与边界
+## 前置门槛
 
-1. 阅读适用 `AGENTS.md`，检查 `.agents/skills/`；阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`，以及相关生产代码、评测工具和测试。先核对 Git status、diff、HEAD 和提交 `6ff6d97a1677377e8e99455748160bdcd76d1274`；保留非本任务修改。
-2. 只修改 `evaluation/h3_model_probe_fixtures.py` 与直接相关测试；不得修改 `engine/`、生产 RAG/DeepSeek/策略路径、知识语料、来源 registry、Botzone 或规划 docs。无需新增依赖。若发现不能仅用评测文件解决，报告固定反例并停止扩大范围。
-3. 真实 DeepSeek 请求和重试均为 0；不运行 Botzone、live、connector、browser 或 preflight；不读写 `.env`、旧 H3 ledger、`D:\VsCodeProject\BotzoneWorkspace`、seed `47004` evidence 或系统 Temp 文件；不创建仓库外 artifact。
+1. 阅读适用 `AGENTS.md`，检查 `.agents/skills/`；阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、`evaluation/h3_model_probe_fixtures.py` 和对应测试。检查 Git HEAD、status、diff、最近提交；HEAD 必须包含 `13b9817c9b4dd55f14fc31368acfc8ee8e1a5a59` 且工作树 clean。确认没有其它本项目真实 DeepSeek 诊断进程；不能确认时零请求停止，不干预无关进程。
+2. 先运行 `python -m unittest tests.test_h3_model_probe_fixtures tests.test_strategy_relationship_contrasts tests.test_recommendation_candidate_closure tests.test_h3_a1_projection tests.test_strategy_recommendation tests.test_action_structure -q`，再调用当前 HEAD 的 `qualify_h3_model_probe_fixtures()`。八场须依固定顺序全部 `ready`，最终候选非空且不超过 80；两项开局须经完整双副牌、每家 27 张、第 0 步/空历史与引擎公开输入重放断言；推荐、RAG 来源、软假设实际请求正文、关系对照、请求体绑定、分类覆盖、开局公式启用及模型原始 ID/source 门槛均须通过。任一失败时零请求停止并报告固定场景名、失败阶段与低敏计数。零网络准备错误可原地修正并重做完整资格，但不得改变 fixture、生产代码或门槛。
+3. 本任务真实 DeepSeek 请求最多 8 次，固定每场最多 1 次、重试 0；这是项目所有者已长期授权的严格少于 10 次范围。`DEEPSEEK_MAX_RETRIES=0`、`CARD_TRACKING_ENABLED=0` 仅设在本进程，运行时确认客户端实际 max_retries=0；开局公式、hand evaluation、router/intent/recommendation 与禁网资格的配置一致。不得补跑或扩容。
+4. 不运行 Botzone、live、connector、browser 或 preflight；不访问 `D:\VsCodeProject\BotzoneWorkspace`、seed `47004` evidence、旧 H3 ledger 内容或系统 Temp 文件。不人工打开或输出 `.env`；真实配置仅经 `config.py` 读取。不得输出或持久化牌面、手牌、动作 ID、prompt、请求/响应自由文本、reasoning、异常正文、URL、token 或凭据。
 
-## 实现与验收
+## 唯一新审计 artifact
 
-1. 将 `low_cost_single` 和 `neutral_soft_pair` 改为真实可达的开局公开状态：优先使用确定性的完整 108 张双副实体牌分配、四家各 27 张、`step_no=0`、空历史、自由领牌；或者使用由完整初始对局经合法 `step(action_id)` 走到的可复现早期状态。所有 observation 与完整 canonical actions 必须由引擎生成；不得伪造 hand_count、phase、RAG hit、候选或 prompt。禁止现场 seed、具体现场动作和业务代码点数特判。
-2. 两场仍应分别保有原预注册目标的公开竞争结构：低成本自然单张与较高单张/控制资源、常见对子竞争；中性自然对子/三张与普通单张竞争。两场须由真实 `DeepSeekClient.suggest_action_id()` 的禁网 transport 路径验明 `lead_opening / opening`、目标 `exp_soft_pair_probe_001` 的实际适配命中与最终请求正文渲染、推荐 ID 闭环、最终候选不超过 80、真实请求体绑定和原始合法 ID/source=`model`。不要降低已有资格门槛来追求 `ready`。
-3. 增加明确回归断言：两场的实体牌多重集恰好为完整双副牌、总数 108、四家各 27、步数/历史相符；八场资格顺序与其余六场既有关系、RAG、软假设和候选预算不漂移。若完整开局触发本地快捷路径，换独立离线局面而非禁用需要验收的生产行为；若确实无法构造目标，交回低敏失败阶段，不编造通过。
+固定路径：`D:\VsCodeProject\GuanDanH3A2Audit\h3-a6.jsonl`。仅在八场离线资格全部 ready 后创建；父目录须已存在且为普通非链接目录，目标须不存在，否则零请求停止，不换路径。用独占创建的 UTF-8 JSONL，逐行 flush 并 `os.fsync`。不覆盖、移动、删除或补写任何旧 artifact。结束后报告新文件的绝对路径、bytes 与完整 SHA-256。
 
-## 验证与交付
+固定事件顺序：一个 `header`（schema=`h3-a6-v1`、Git HEAD、八场顺序、请求上限 8、重试 0），八条 `qualification`，一条 `qualification_complete=true`，每场调用前持久化 `request_started`，调用后持久化 `request_result`，末尾 `summary`。资格事件只记录场景名、阶段、原始/最终候选数、预注册类别计数与必要的布尔门槛。结果事件只记录连续序号、场景名、固定 provider outcome、固定动作类别或 `inconclusive`、是否属于实际最终候选、source 是否为 `model` 和守恒布尔值。`request_started` 完成持久化后才发起该场调用；若进程中断，保留可审计中断点，不猜测结果。
 
-- 运行 fixture、RAG、推荐、剪枝、DeepSeek prompt 与 Botzone observability 相关测试，主规则回归和全量 `python -m unittest discover -q`，保留可审计汇总；运行 `git diff --check` 并审视完整 diff。
-- 只按明确路径暂存并提交本轮自有评测代码与测试；报告 commit、八场低敏资格摘要、两项开局真实性断言、测试计数、最终 Git status 和保留的外部修改。不得输出手牌、牌面、action ID、prompt、模型文本、URL 或凭据。不把本任务同旧 H3-A4r 视为相同 fixture 的策略对照；本任务不做真实模型质量判断。
+## 八场请求与判定
+
+使用当前 `build_h3_model_probe_fixtures()` 和生产 `DeepSeekAIAgent`/`DeepSeekClient`，同一公开 observation、完整 canonical 动作及与资格一致的配置：`rag_top_k=3`、hand evaluation/开局公式/router shadow/intent prompt/recommendation 开启，card tracking 关闭，verbose 关闭。不得以禁网客户端代替真实请求，不缩减原始候选，也不增加模型成功后的动作改写。只在内存里检查实际最终候选与原始模型 action ID/source，再映射为以下类别：
+
+1. `bomb_residual`：`five_bomb|four_bomb_leaves_singleton|alternative`
+2. `low_cost_single`：`low_cost_single|high_single|control_resource|other`
+3. `pair_cleanup`：`pair_cleanup|single_split|other`
+4. `neutral_soft_pair`：`neutral_group|single|other`
+5. `teammate_controls`：`pass_preserve|spend_control|other`
+6. `danger_block`：`block|pass|other`
+7. `short_endgame`：`minimum_group|strictly_worse`
+8. `bomb_wildcard_soft`：`preserve_resource|spend_resource|other`
+
+Provider outcome 使用预注册的低基数枚举 `success|timeout|exception|invalid_suggestion`。成功时，动作必须属于实际最终候选、source 必须为 `model`，然后记录其固定类别。失败只记 `inconclusive` 并保持零重试；可继续未请求场景。若发现候选、ID 或 source 守恒破坏，持久化该低敏结果后停止其余请求，并将 summary 标记为不完整。`alternative|other` 本身不是技术失败，也不是策略优劣结论。
+
+## 结束审计
+
+重读本轮新 ledger，检查唯一 header、八条资格、请求序号连续、started/result 配对或明确中断点、请求总数不超过 8、重试 0、结果和 summary 守恒。报告逐场固定类别/技术状态与汇总，说明这些是当前 fixture 的单次选择，不能推断胜率或与旧诊断的因果改善。最后核对 Git HEAD/status 与 `git diff --check`：不创建仓库修改或 commit；说明旧 ledger、Botzone workspace 和系统 Temp 文件未访问。
