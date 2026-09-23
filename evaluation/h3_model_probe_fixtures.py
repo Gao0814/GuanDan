@@ -8,7 +8,8 @@ They deliberately do not know about API configuration or perform requests.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, field
 from enum import StrEnum
 import json
 from pathlib import Path
@@ -59,6 +60,9 @@ class ProbeFixture:
     name: str
     observation: dict[str, object]
     legal_actions: list[dict[str, object]]
+    # Kept only so evaluation code can clone the exact engine state for local
+    # rollouts.  Agents receive observation/legal_actions, never this snapshot.
+    game_snapshot: GuanDanGame | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,7 +161,7 @@ def _single(game: GuanDanGame, rank: str) -> int:
 
 
 def _snapshot(name: str, game: GuanDanGame) -> ProbeFixture:
-    return ProbeFixture(name, game.observe(), game.legal_actions())
+    return ProbeFixture(name, game.observe(), game.legal_actions(), game_snapshot=game)
 
 
 def _bomb_residual() -> ProbeFixture:
@@ -260,6 +264,11 @@ def build_h3_model_probe_fixtures() -> tuple[ProbeFixture, ...]:
     )
 
 
+def build_h3_model_probe_opening_fixtures() -> tuple[ProbeFixture, ProbeFixture]:
+    """Return only the two complete physical opening deals used by H3-A5b."""
+    return _low_cost_single(), _neutral_soft_pair()
+
+
 class _NoNetworkTransport:
     """Return one displayed ID through the real streaming parser, without I/O."""
 
@@ -269,6 +278,7 @@ class _NoNetworkTransport:
         self.envelope_valid = False
         self.user_prompt: str | None = None
         self.prompt_action_ids: tuple[int, ...] = ()
+        self.failure_code: str | None = None
 
     @staticmethod
     def _candidate_ids(prompt: str) -> tuple[int, ...] | None:
@@ -328,8 +338,38 @@ class _NoNetworkTransport:
         client = self.client
         if client is None or not client.displayed_actions:
             raise OSError("probe_client_not_assembled")
-        action_id = client.displayed_actions[0].get("action_id")
+        if client.selection_provider is not None:
+            displayed_ids = tuple(item.get("action_id") for item in client.displayed_actions)
+            if (
+                not self.envelope_valid
+                or self.user_prompt != client.final_prompt
+                or len(displayed_ids) != len(self.prompt_action_ids)
+                or any(type(action_id) is not int for action_id in displayed_ids)
+                or set(displayed_ids) != set(self.prompt_action_ids)
+            ):
+                self.failure_code = "request_binding_invalid"
+                raise OSError("probe_request_binding_invalid")
+            kwargs = client.kwargs
+            observation = kwargs.get("observation") if isinstance(kwargs, dict) else None
+            legal_actions = kwargs.get("legal_actions") if isinstance(kwargs, dict) else None
+            if not isinstance(observation, dict) or not isinstance(legal_actions, list):
+                self.failure_code = "provider_input_invalid"
+                raise OSError("probe_provider_input_invalid")
+            try:
+                client.provider_call_count += 1
+                action_id = client.selection_provider(
+                    deepcopy(observation),
+                    deepcopy(legal_actions),
+                    deepcopy(client.displayed_actions),
+                )
+                client.provider_action_id = action_id
+            except Exception:
+                self.failure_code = "provider_exception"
+                raise OSError("probe_provider_failure") from None
+        else:
+            action_id = client.displayed_actions[0].get("action_id")
         if type(action_id) is not int:
+            self.failure_code = self.failure_code or "provider_action_invalid"
             raise OSError("probe_displayed_action_invalid")
         content = json.dumps({"action_id": action_id}, separators=(",", ":"))
         chunk = json.dumps({"choices": [{"delta": {"content": content}}]})
@@ -339,9 +379,17 @@ class _NoNetworkTransport:
 class _RecordingDeepSeekClient(DeepSeekClient):
     """Exercise the production client while retaining only in-memory projections."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        selection_provider: Callable[
+            [dict[str, object], list[dict[str, object]], list[dict[str, object]]], object
+        ] | None = None,
+    ) -> None:
         self.transport = self._new_transport()
+        self.selection_provider = selection_provider
         self.calls = 0
+        self.provider_call_count = 0
+        self.provider_action_id: object = None
         self.kwargs: dict[str, object] | None = None
         self.displayed_actions: list[dict[str, object]] = []
         self.final_actions: list[dict[str, object]] = []
