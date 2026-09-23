@@ -1,17 +1,15 @@
 # Coding Codex 执行 Prompt
 
-任务：H3-A10——零网络校准同状态动作质量代理的区分度。H3-A8 六状态代理为 3 次 `selected_better`、3 次 `tie`；独立 H3-A9 六状态为 1 次 `selected_better`、2 次 `reference_better`、3 次 `tie`。两批均只是冻结 RuleBased 续局下的模型单次动作比较。现在不继续重复真实请求、不据此改生产策略；先在这 12 个固定状态上评估最终展示候选的完整代理分布，判断该代理有多少可区分的空间。
+任务：H3-A11——零网络检验 H3-A10 同状态动作质量代理对续局策略的敏感性。先核对 Git status、diff、HEAD 和最近提交，确认包含 `ce1a37098bcc7158302d8621bb8ce8395ae48ccf`，保留他人修改；阅读适用 `AGENTS.md`、检查 `.agents/skills/`，并阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md` 及 H3-A7/A9/A10 评测代码和相关测试。
 
-## 范围
+H3-A10 在 12 个固定状态穷举了 235 个最终候选，冻结 RuleBased 续局下相对同一 RuleBased 参考动作的优/平/劣为 32/102/101。这只证明代理能区分候选，不证明其排名对续局策略稳健。此任务只检查稳健性；不要修改生产 `engine/`、`agents/`、RAG、prompt、候选生成或 Botzone，不要新增策略性模型后覆盖。
 
-1. 阅读适用 `AGENTS.md`、检查 `.agents/skills/`；阅读 `README.md`、`CLAUDE.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md`、`docs/PLAN.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、`evaluation/action_quality_proxy.py`、`evaluation/h3_a9_quality_queue.py`、现有质量比较 helper 与相关测试。先核对 Git status、diff、HEAD 和最近提交，确认包含 `6b8bd48cef8801f59a3a151524f30bd5025afd97`，保留他人修改。
-2. 只在 `evaluation/` 与对应 `tests/` 增加最小的离线校准器。复用现有 H3-A8/H3-A9 共 12 个样本、最终候选、冻结 RuleBased 参考动作、`_rollout` 与 `_compare_quality`；不改变抽样、候选剪枝、比较顺序或生产 `engine/`、`agents/`、RAG、prompt、Botzone。不得从 H3 ledger 推测或重建模型所选 action ID。
-3. 真实 DeepSeek 请求/重试、其它网络、Botzone/live/connector/browser/preflight 均为 0。不读取 `.env`、旧 H3 ledger、`D:\VsCodeProject\BotzoneWorkspace`、seed `47004` evidence 或系统 Temp 文件；不创建仓库外 artifact。任何动作 ID、手牌、prompt、模型文本、URL、凭据和原始引擎快照只留在内存，不进入低敏报告。
+## 范围与方法
 
-## 实现与验收
+1. 复用 H3-A8/A9 的同一 12 个固定引擎状态、完整 canonical 动作、实际最终展示候选及现有 RuleBased 参考动作。首步候选和参考 ID 在两种评测中必须完全相同。基线仍为现有 `RuleBasedAIAgent` 后续续局；唯一实验变量是首步之后四座位均改用仓库已有 `FrozenRuleBasedAIAgent` 续局。不得把 Frozen agent 选择改为新的参考首步，不得用旧 H3 ledger 猜测真实模型动作 ID。
+2. 每个候选分别在两个互不共享的快照克隆上完成两种续局；沿用终局类别优先、团队名次和次之、步数仅诊断的比较口径。每种续局都以本策略下相同参考首步的结果为基线，给该候选 `better/tie/worse` 标签。形成每状态及总体三乘三标签转移计数、标签改变数、严格优劣反向数、两种续局完成数和固定状态码；各状态九格之和必须等于该状态最终候选数，总计必须为 235，参考动作在两种续局中均为 tie。
+3. 确认替代策略不是名义上的同一路径：在 Frozen 续局经过的公开状态上仅在内存比较它与普通 RuleBased 的合法选择，低敏报告只给出发生差异的候选分支数/状态数；若零差异，明确标记本次敏感性检查无信息量，不宣称代理稳健。不可把候选占比当模型选择概率，也不可从标签一致性推断真实策略优劣或胜率。
+4. 校验快照/公开输入、12状态顺序、phase、完整和最终候选数、候选唯一/合法/实际展示、参考可见、独立克隆与原快照不变。任一分支非法、未完成、步数超限、结果畸形或比较异常则该状态 fail closed，整体不得报告完整 235 候选分布；不得跳过坏分支。输出只允许样本名、phase、候选及完成计数、九格聚合、标签改变/严格反向数、续局选择差异分支/状态数、固定状态码与总体聚合；不输出 action ID、手牌、seed、prompt、模型文本、原始快照、URL、密钥或异常正文。
+5. 只在 `evaluation/` 与对应 `tests/` 增加最小离线实现和回归。测试至少覆盖 12 个真实引擎状态、基线复算与 H3-A10 的逐状态计数一致、同参考动作/候选闭环、真正不同的续局动作、九格守恒、参考动作双 tie、独立克隆、失败即停和稳定低敏序列化。不要仅用打桩的终局结果宣称两种真实续局可复现。
 
-1. 对每个样本，先验证公开 observation 与完整 canonical actions 对应同一真实快照、phase/完整及最终候选数与冻结契约一致、最终候选 ID 唯一且来自完整 canonical 集合、RuleBased 参考 ID 在最终候选中。每个最终展示候选仅在该快照的独立克隆上执行首步，之后使用现有冻结 RuleBased 续局；同动作只计算一次。对每个结果使用既有“团队终局类别优先、团队名次和次之、步数只诊断”的比较口径与参考动作比较。任何非法、快照漂移、续局未完成、步数超限或比较异常均固定失败码并 fail closed，不跳过坏候选后继续给出完整分布。
-2. 只输出每状态低敏聚合：样本名、phase、完整/最终候选数、完成候选数、`better_than_reference / tie_with_reference / worse_than_reference` 三类计数、参考动作是否可见、固定状态码；以及 12 状态汇总。不输出候选级明细、动作 ID、牌面、来源 seed 或可反推具体动作的异常文本。不要把“候选数占比”解释为模型随机选择概率、胜率或最优策略证明。特别说明：H3-A8/A9 未保存模型 ID，本任务不能重算两批真实模型动作的具体排名，只校准当前代理的分辨率。
-3. 加入最小合成 fixture 与全部 12 个 engine-backed 样本回归，锁定代表性的 better/tie/worse 比较、同动作只续局一次、独立克隆、缺失/非法候选与未完成分支 fail closed、稳定低敏序列化。运行直接相关测试、主规则回归及 `python -m unittest discover -q`；检查 `git diff --check` 与完整 diff。只按明确路径暂存并提交本轮自有 `evaluation/`、`tests/` 文件，报告 commit、各样本聚合及总计、测试数、最终 Git status 与保留的外部修改。
-
-规划 Codex 独立复审此校准结果后，再决定继续真实模型评测、调整代理口径或进入新 live；本任务不预先选择其中一种。
+真实 DeepSeek 请求/重试、其它网络、Botzone/live/connector/browser/preflight 均为 0；不读取 `.env`、旧 H3 ledger、`D:\VsCodeProject\BotzoneWorkspace`、seed `47004` evidence 或系统 Temp 文件，不创建仓库外 artifact。运行相关测试、主规则回归和 `python -m unittest discover -q`；检查完整 diff 与 `git diff --check`。仅按明确路径暂存、提交本轮自有评测和测试文件，报告低敏转移汇总、真实续局差异计数、验证结果、commit、最终 Git status 与保留的外部修改。项目规划 Codex 随后独立复审；本任务不据结果修改生产策略或启动 live。
