@@ -358,3 +358,5 @@ H3-A6 已有可审计低敏结果：规划 Codex 只读核对 `D:\VsCodeProject\
 H3-A7 `cb262c5` 已交付六状态零网络同局面动作质量代理。规划 Codex 审阅完整提交，独立复跑相关41项、主规则39项、全量775项，并执行未打桩的六组分支续局：6/6完成、参考动作6/6进入最终候选。两个开局、中局两个、残局族两个均从完整108张单局取得；比较仍只是冻结RuleBased后续策略下的终局/名次代理。当前评测尚以禁网假provider提供ID，未封住真实模型Request、最终候选、原始响应和续局首步的绑定。下一项`docs/NEXT_PROMPT.md`是H3-A7a零网络评测接线与反例测试；独立复审前不做真实模型质量请求，不清理旧ledger或Botzone evidence。
 
 H3-A7a `6e304dc` 已完成零网络真实客户端 transport 接线：规划 Codex 审阅完整提交，独立通过相关46项、主规则39项、全量780项。六个固定样本由禁网假 transport 完成实际请求体/SSE/客户端 ID/source 绑定和未打桩本地续局，报告字节级复现；故障反例固定 fail closed，生产策略未变。下一项`docs/NEXT_PROMPT.md`为H3-A8独立真实模型同状态代理：先六场离线资格，后最多六次/重试零请求，fresh低敏ledger同步审计，遇技术失败即停。不读写旧H3 ledger、Botzone workspace或seed证据；代理结果不是胜率真值。
+
+H3-A8 低敏新ledger `D:\VsCodeProject\GuanDanH3A2Audit\h3-a8.jsonl` 已由规划 Codex 只读核对为5700 bytes、SHA-256 `2fe5525ffe17e1fe5b7335f43fe96d0df878851ec627e81dbd6d342bb1f74a3d`，21条事件的六项资格、六对请求起止、六次success/零重试和summary守恒。当前HEAD独立重建六样本phase/候选数，相关46项及主规则39项通过；终局/名次和代理重算为3 `selected_better`、3 `tie`，没有`reference_better`或`unevaluable`。此结果不是胜率，也不能独立核对网络侧计数或具体动作。下一项`docs/NEXT_PROMPT.md`是H3-A9独立状态队列与至多六次真实模型复核；旧ledger、Botzone workspace及seed证据不触碰。
