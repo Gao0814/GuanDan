@@ -1,11 +1,10 @@
 # Coding Codex 执行 Prompt
 
-任务：一次性封住来源策略整合后的**跟牌四/五炸模型前关系缺口**，并复核两条 C 级经验未命中的实际语义影响。不要按 seed、具体点数或历史 action ID 加补丁，也不要另拆 H3-A 子阶段。先核对 Git status/diff/HEAD 与外部修改，阅读适用 `AGENTS.md`、检查 `.agents/skills/`，阅读 `docs/PROJECT_STATUS.md` 顶部最新复放结论、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、`docs/STRATEGY_SOURCE_AUDIT.md` 及相关生产代码和测试。只改本任务必要的 `agents/`、`rag/`、`tests/`，必要时改离线 `evaluation/`；不改引擎、Botzone、配置、规划文档或 `.env`。
+任务：对来源策略整合后的三个固定历史公开状态做**一次集中真实 DeepSeek 原始选择诊断**。这不是新 Botzone 对局、胜率评测或生产代码修复。开始核对 Git status/diff/HEAD，确认包含 `1b6d59d` 且无待处理外部修改；读取适用 `AGENTS.md`、检查 `.agents/skills/`，阅读 `docs/PROJECT_STATUS.md` 顶部结论、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、trace 解析及 DeepSeek/候选/策略输入相关代码。仓库文件一律不修改、不创建 commit；不读取旧 H3 ledger 或系统 Temp，不运行 Botzone/live/connector/browser/preflight，不清理 workspace。
 
-1. 通用缺口：当前 `summarize_candidate_contrasts()` 在收集四/五炸前排除了所有跟牌事实，`strategy_intent_prompt` 也把 `bomb_residual` 视为只能自由领牌。旧局恰是跟牌：同点自然四炸与五炸都在完整合法动作及最终 5 项候选中；四炸留同点孤张，五炸清空点数组，软原则已到达但两侧关系句/反例缺席。只在**当前 canonical 跟牌候选同时确证同点自然四炸和五炸、残余结构可验证**时生成该关系，并让 router/RAG/推荐/两层候选保护/最终请求的验证与投影一致；自由领牌原行为不退化。不得推断对手暗牌，不强制模型出五炸，也不得新增成功模型后动作改写。
-2. 以多个引擎构造的自由领牌和跟牌状态做正反测试：两侧实际合法时均在最终 `<=80` 候选、请求体含具体残余比较与可推翻条件；缺一侧、通配声明、畸形 payload 或残余事实不成立时不制造关系。用禁网 fake transport 证明实际请求候选与返回原始 ID 闭环，source=`model`；既有退役 source 只读兼容、不在生产主动产生。
-3. 对历史开局单张与中局对子，不把“专项 C 条目未进默认 top-k=1”直接等同于策略输入缺失：规划复核确认两场的合法候选、具体关系及反例已在最终请求。逐项对照 `exp_soft_single_cost_probe_001`、`exp_soft_pair_probe_001` 的正文和实际 Request，判断是否仍有**独特、可行动、公开可证**的语义未被关系句表达。若没有，保持 RAG 不变并给出低敏证据；若有，只做有界且通用的检索/投影修正并补实际请求测试，不能机械提高全局 top-k、无条件强制所有 C 级条目命中、挤掉更重要证据或让 provenance 字段进入模型。此判断不需要对历史动作作优劣裁判。
-4. 实现与测试完成后，再只读核对下表六份 seed `47004` evidence。固定 workspace 为 `D:\VsCodeProject\BotzoneWorkspace`；逐项核对精确相对路径、普通非链接类型、字节与 SHA-256，任一不符就停止正文读取，不枚举或找替代。全部匹配才在内存中对三处 ACK 局面做禁网最终 Request 后验检查，报告四/五炸关系是否补齐，以及单张/对子语义是否仍在；不持久化或输出手牌、逐动作牌面、原始 action ID、prompt/模型文本、凭据或 match/binding 标识。
+预注册真实请求上限为 **3 次**：跟牌四/五炸、开局低成本/较高自然单张、中局自然对子/同点单张，按此固定顺序各一次，重试 0。项目所有者对单项诊断严格少于 10 次真实请求已有长期授权；不得把“最多 3 次”扩大为重跑、换 prompt、换 fixture 或额外模型调用。只使用当前生产 `DeepSeekAIAgent`/`DeepSeekClient`、当前配置模型与真实 transport；`DEEPSEEK_MAX_RETRIES=0` 仅限本进程。密钥从既有配置读取，不输出、硬编码或持久化。模型 reasoning/响应自由文本、prompt、手牌、逐动作牌面及原始 action ID 只可在内存中处理，不输出或保存。
+
+先逐项只读核对固定 workspace `D:\VsCodeProject\BotzoneWorkspace` 下六个**精确相对路径**的普通非链接类型、字节数和 SHA-256。任一不符就停止，不读取正文、枚举 state 或找替代：
 
 | 相对路径 | 字节 | SHA-256 |
 | --- | ---: | --- |
@@ -16,4 +15,10 @@
 | `streams/stdout.txt` | 76 | `4ad569f46ba5902d05b4780156b64f78b24802141f94c880b6afbd051ad9df1c` |
 | `streams/stderr.txt` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 
-真实 DeepSeek 请求/重试、Botzone/live/connector/browser/preflight、workspace 清理均为 0，不读取旧 H3 ledger 或系统 Temp。运行直接相关、主规则和 `python -m unittest discover -q`，检查完整 diff 与 `git diff --check`；仅按明确路径暂存本轮自有业务/测试文件并提交。报告通用正反例、三处旧观察的低敏后验、C 级语义判断、测试数、commit、最终 Git status 与保留外部修改，交规划 Codex 独立复审。旧局输入修正不等于真实模型策略质量或胜率提升。
+六项通过后，才在内存中读取 ACK trace，以公开 observation 和当时完整 canonical actions 唯一定位三场。**三场离线资格必须全部 ready 才发出首个真实请求**：24 条 ACK 顺序与合法 ID 守恒；当前版本三场最终候选分别为 5/47/13、各不超过 80 且签名唯一；对应两侧原始合法候选均在实际最终 Request；四/五炸有残余关系、软原则和反例，单张/对子有对应关系、可推翻条件及公开结构信息；实际 Request 与记录的最终候选集合一致。专项 C 级单张/对子条目不必强求进入默认 top-1，只验收其可行动语义已到达。使用禁网 transport 先验证请求体绑定和 fake 合法 ID/source 保真；定向运行 `tests.test_strategy_relationship_contrasts`，不需因仓库零改动重跑全量。任一资格失败则真实请求保持 0，报告失败层级，不临时修代码或换状态。
+
+资格通过后才按预注册顺序发出真实请求。每次调用前写 `request_started`，完成后写 `request_result`；若 provider/transport/解析/ID/source 守恒出现异常，立即停止，不能重试或补发。仅记录低敏动作类别：炸弹为 `five_clears_rank` / `four_leaves_singleton` / `other`，单张为 `lower_safe_single` / `higher_single` / `other`，对子为 `natural_pair` / `same_rank_single` / `other`。成功结果必须是实际最终候选中的原始合法 ID、source=`model`；类别不代表好坏，不把历史动作或 RuleBased 选择当正确答案。
+
+为避免终端输出丢失，创建一份新的低敏账本 `D:\VsCodeProject\GuanDanH3A2Audit\source-three-scene-20260924.jsonl`，仅追加本轮事件；若该精确文件已存在就停止，不覆盖或改名重试。仅允许 header、三条资格、`qualification_complete`、每请求一对 started/result、summary 事件，字段只含 HEAD、场景固定代号、候选数、资格布尔/失败阶段、provider 固定结果类别、上述动作类别、技术守恒布尔和计数。不得含手牌、牌面、原始 ID、prompt、模型文本、URL/token/凭据、match/binding 标识或异常正文。结束时重读校验事件顺序/配对/计数，报告账本字节数与 SHA-256。该账本是客户端侧记录，不是独立网络计数证明。
+
+最终报告三场技术资格、实际请求/重试/provider 计数、逐场低敏动作类别、候选/source/返回值守恒、账本校验、Git HEAD/status 和所有保留外部修改。执行前后检查 `git diff --check`；不提交仓库文件。无论模型选了哪类动作，都不据三次单点选择宣称最优打法、普遍改进或胜率；交规划 Codex 复审后再决定是否还有需要修正的具体输入层问题。
