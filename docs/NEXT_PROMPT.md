@@ -1,8 +1,11 @@
 # Coding Codex 执行 Prompt
 
-任务：仅对已保留的 seed `47004` 单局证据做一次**只读、禁网、内存中**的三处历史观察复放。通用来源策略整合 `bc3c083`、`2b9c24f` 已通过规划 Codex 离线复审；本任务不修改业务代码、测试、RAG、文档或配置，不创建仓库内外 artifact，也不重跑真实模型或 Botzone。先读取适用 `AGENTS.md`，检查 `.agents/skills/`，核对 Git status/diff/HEAD，阅读 `docs/PROJECT_STATUS.md` 顶部新结论、seed `47004` inventory、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md` 及 trace/候选/prompt 相关代码。保留所有外部修改。
+任务：一次性封住来源策略整合后的**跟牌四/五炸模型前关系缺口**，并复核两条 C 级经验未命中的实际语义影响。不要按 seed、具体点数或历史 action ID 加补丁，也不要另拆 H3-A 子阶段。先核对 Git status/diff/HEAD 与外部修改，阅读适用 `AGENTS.md`、检查 `.agents/skills/`，阅读 `docs/PROJECT_STATUS.md` 顶部最新复放结论、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、`docs/STRATEGY_SOURCE_AUDIT.md` 及相关生产代码和测试。只改本任务必要的 `agents/`、`rag/`、`tests/`，必要时改离线 `evaluation/`；不改引擎、Botzone、配置、规划文档或 `.env`。
 
-固定 workspace 为 `D:\VsCodeProject\BotzoneWorkspace`。在读取任何 evidence 正文前，只对下列**精确相对路径**逐项核对普通非链接文件、字节数、SHA-256；不得枚举 `state`、猜测或查找替代路径：
+1. 通用缺口：当前 `summarize_candidate_contrasts()` 在收集四/五炸前排除了所有跟牌事实，`strategy_intent_prompt` 也把 `bomb_residual` 视为只能自由领牌。旧局恰是跟牌：同点自然四炸与五炸都在完整合法动作及最终 5 项候选中；四炸留同点孤张，五炸清空点数组，软原则已到达但两侧关系句/反例缺席。只在**当前 canonical 跟牌候选同时确证同点自然四炸和五炸、残余结构可验证**时生成该关系，并让 router/RAG/推荐/两层候选保护/最终请求的验证与投影一致；自由领牌原行为不退化。不得推断对手暗牌，不强制模型出五炸，也不得新增成功模型后动作改写。
+2. 以多个引擎构造的自由领牌和跟牌状态做正反测试：两侧实际合法时均在最终 `<=80` 候选、请求体含具体残余比较与可推翻条件；缺一侧、通配声明、畸形 payload 或残余事实不成立时不制造关系。用禁网 fake transport 证明实际请求候选与返回原始 ID 闭环，source=`model`；既有退役 source 只读兼容、不在生产主动产生。
+3. 对历史开局单张与中局对子，不把“专项 C 条目未进默认 top-k=1”直接等同于策略输入缺失：规划复核确认两场的合法候选、具体关系及反例已在最终请求。逐项对照 `exp_soft_single_cost_probe_001`、`exp_soft_pair_probe_001` 的正文和实际 Request，判断是否仍有**独特、可行动、公开可证**的语义未被关系句表达。若没有，保持 RAG 不变并给出低敏证据；若有，只做有界且通用的检索/投影修正并补实际请求测试，不能机械提高全局 top-k、无条件强制所有 C 级条目命中、挤掉更重要证据或让 provenance 字段进入模型。此判断不需要对历史动作作优劣裁判。
+4. 实现与测试完成后，再只读核对下表六份 seed `47004` evidence。固定 workspace 为 `D:\VsCodeProject\BotzoneWorkspace`；逐项核对精确相对路径、普通非链接类型、字节与 SHA-256，任一不符就停止正文读取，不枚举或找替代。全部匹配才在内存中对三处 ACK 局面做禁网最终 Request 后验检查，报告四/五炸关系是否补齐，以及单张/对子语义是否仍在；不持久化或输出手牌、逐动作牌面、原始 action ID、prompt/模型文本、凭据或 match/binding 标识。
 
 | 相对路径 | 字节 | SHA-256 |
 | --- | ---: | --- |
@@ -13,6 +16,4 @@
 | `streams/stdout.txt` | 76 | `4ad569f46ba5902d05b4780156b64f78b24802141f94c880b6afbd051ad9df1c` |
 | `streams/stderr.txt` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 
-任一精确目标不匹配则立即停止正文读取，报告失败门槛，不寻找替代证据。六项全通过后，仅在内存中核对 trace ACK、原始公开 observation 和当时完整 canonical legal actions 的基本守恒，再使用当前生产算法及禁网 fake transport 构造最终候选、RAG/策略意图/推荐和实际最终 Request；不得把历史实际动作当作新模型会选的动作。定位并复放三处旧观察：同点数四/五炸及残余孤张、较高普通单张开局与低成本单张、自然对子/同点单张清理。逐场只报告低敏结论：当前本地公式是否直出、两侧关键候选是否进入最终 `<=80` 集合、相关来源软原则/具体关系/反例是否进入实际 Request，以及若缺失的责任层。若 trace 不足以唯一定位场景，明确 `inconclusive`；不要猜手牌或补现场点数特判。
-
-真实 DeepSeek 请求/重试、Botzone/live/connector/browser/preflight、workspace 清理与仓库修改均为 0；不读取 `.env`、旧 H3 ledger 或系统 Temp。不得输出或持久化历史手牌、逐动作牌面、原始 action ID、prompt 正文、模型文本、URL、token、凭据或 match/binding 标识。执行前后检查 Git status 与 `git diff --check`，报告六项门槛、三处低敏判定、零副作用和最终 Git status；无修改不创建 commit。交规划 Codex 复审后再决定是否需要集中真实模型验证。
+真实 DeepSeek 请求/重试、Botzone/live/connector/browser/preflight、workspace 清理均为 0，不读取旧 H3 ledger 或系统 Temp。运行直接相关、主规则和 `python -m unittest discover -q`，检查完整 diff 与 `git diff --check`；仅按明确路径暂存本轮自有业务/测试文件并提交。报告通用正反例、三处旧观察的低敏后验、C 级语义判断、测试数、commit、最终 Git status 与保留外部修改，交规划 Codex 独立复审。旧局输入修正不等于真实模型策略质量或胜率提升。
