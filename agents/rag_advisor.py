@@ -61,6 +61,7 @@ _CANDIDATE_REQUIREMENTS = frozenset(
 _RELATION_SPECIFIC_SOFT_REQUIREMENTS = frozenset(
     {
         "bomb_strength_resource",
+        "bomb_residual",
         "triple_split_repartition",
         "straight_flush_bomb_fragment",
         "steel_plate_strength",
@@ -394,7 +395,7 @@ class RAGAdvisor:
             "straight_flush_bomb_fragment": "同花顺 拆炸弹 自然炸弹 结构资源",
             "steel_plate_strength": "钢板 大小 强度 保留 清理",
             "triple_pair_kicker_gradient": "三带二 携带对子 梯度 余组",
-            "bomb_residual": "四炸 五炸 残余孤张",
+            "bomb_residual": "自然炸弹 不同长度 出后残余 点数组 自然组合 用途",
             "bomb_strength_resource": "自然小炸弹 大炸 强度 控制 资源成本 余组",
             "wildcard_resource": "逢人配 自然路线 通配资源",
             "teammate_control_resource": "队友控桌 pass 让牌 控制资源",
@@ -540,11 +541,11 @@ class RAGAdvisor:
             score, _, _ = scored
             document_requirements = self._metadata_values(doc.metadata, "candidate_requirements")
             exact_relations = active_relations & document_requirements & _RELATION_SPECIFIC_SOFT_REQUIREMENTS
-            if (
-                "bomb_strength_resource" in active_relations
-                and "bomb_or_wildcard" in document_requirements
-            ):
-                exact_relations.add("bomb_strength_resource")
+            if "bomb_or_wildcard" in document_requirements:
+                if "bomb_strength_resource" in active_relations:
+                    exact_relations.add("bomb_strength_resource")
+                if "bomb_residual" in active_relations:
+                    exact_relations.add("bomb_residual")
             # Reserve the top of the bounded result for semantically exact,
             # currently proven soft hypotheses; rank among them by the same
             # public semantic score. Provenance never participates here.

@@ -1,7 +1,7 @@
 from copy import deepcopy
 import unittest
 
-from agents.action_structure import summarize_free_lead_residual_structures
+from agents.action_structure import summarize_candidate_structures, summarize_free_lead_residual_structures
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 
@@ -123,7 +123,10 @@ class TestActionStructure(unittest.TestCase):
 
         self.assertIn("action_id=40", prompt)
         self.assertIn("action_id=50", prompt)
-        self.assertIn("不是动作指令，也不保证后续牌权", prompt)
+        self.assertIn("不是动作指令", prompt)
+        self.assertIn("不保证未来牌权", prompt)
+        self.assertIn("未识别不等于无未来用途", prompt)
+        self.assertIn("出后用途=", prompt)
         line_40 = next(
             line for line in prompt.splitlines()
             if "action_id=40" in line and "残余结构=" in line
@@ -179,7 +182,8 @@ class TestActionStructure(unittest.TestCase):
 
         for bad_observation, bad_actions in cases:
             with self.subTest(case=(bad_observation, bad_actions)):
-                self.assertIsNone(summarize_free_lead_residual_structures(bad_observation, bad_actions))
+                free_lead_facts = summarize_free_lead_residual_structures(bad_observation, bad_actions)
+                self.assertIsNone(free_lead_facts)
                 prompt = DeepSeekClient._build_structured_prompt(
                     my_info=bad_observation["my_info"],
                     current_round=bad_observation["current_round"],
@@ -187,7 +191,9 @@ class TestActionStructure(unittest.TestCase):
                     history=bad_observation["history"],
                     legal_actions=bad_actions,
                 )
-                self.assertNotIn("残余结构=", prompt)
+                self.assertNotIn("出后用途仅按当前公开手牌", prompt)
+                if bad_observation["current_round"]["constraint"] == "free":
+                    self.assertIsNone(summarize_candidate_structures(bad_observation, bad_actions))
 
 
 if __name__ == "__main__":

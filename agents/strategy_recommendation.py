@@ -121,10 +121,11 @@ def build_strategy_recommendation(
     # pair/single contrast is not, by itself, an opening priority: it is common
     # in a full hand and otherwise crowds out the low-cost natural single this
     # recommendation is meant to surface.  It earns a complete two-ID slot
-    # only for the narrow public teammate-cleanup case.  Four/five-bomb
-    # contrasts remain available in ordinary leads, so a ubiquitous pair does
+    # only for the narrow public teammate-cleanup case. Different-length bomb
+    # residual contrasts remain available in ordinary leads, so a ubiquitous pair does
     # not consume the entire three-ID budget before the bomb trade-off can be
-    # inspected.
+    # inspected. Multiple bomb-residual representatives still share this
+    # same three-ID budget; later fallback suggestions may only fill vacancies.
     for fact in finishers:
         if fact.action_id not in selected:
             selected.append(fact.action_id)
@@ -166,10 +167,10 @@ def build_strategy_recommendation(
     # fits; otherwise it leaves the relationship to the independently bounded
     # prompt contrast while still retaining one low-cost singleton candidate.
     for fact in safe_singles + pairs:
+        if len(selected) >= 3:
+            break
         if fact.action_id not in selected:
             selected.append(fact.action_id)
-        if len(selected) == 3:
-            break
     if finishers:
         objectives.add("finish_now")
     return StrategyRecommendation(

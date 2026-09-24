@@ -36,6 +36,17 @@ class FreeLeadResidualStructure:
 
 
 @dataclass(frozen=True, slots=True)
+class ResidualRankUse:
+    """Conservative natural-structure cues for one played rank after an action."""
+
+    rank: str
+    # Counts exclude the red-heart level wildcard; it is reported separately.
+    remaining_count: int
+    natural_pattern_kinds: tuple[str, ...]
+    wildcard_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class CandidateStructure:
     """Compact, public-only comparison facts for one canonical action.
 
@@ -61,6 +72,9 @@ class CandidateStructure:
     teammate_active: bool
     minimum_opponent_hand_count: int | None
     is_free_lead: bool
+    residual_rank_uses: tuple[ResidualRankUse, ...] | None = None
+    residual_hand_natural_pattern_kinds: tuple[str, ...] | None = None
+    residual_natural_control_resource_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +96,31 @@ _RANK_VALUES = {
     "10": 10, "J": 11, "Q": 12, "K": 13, "A": 14, "2": 15,
     "SJ": 16, "BJ": 17,
 }
+# These rank windows describe possible natural structures in the visible
+# residual hand. They neither construct nor validate actions; overlapping
+# windows are not counted as guaranteed future plays.
+_RESIDUAL_STRAIGHT_WINDOWS = (
+    ("A", "2", "3", "4", "5"), ("2", "3", "4", "5", "6"),
+    ("3", "4", "5", "6", "7"), ("4", "5", "6", "7", "8"),
+    ("5", "6", "7", "8", "9"), ("6", "7", "8", "9", "10"),
+    ("7", "8", "9", "10", "J"), ("8", "9", "10", "J", "Q"),
+    ("9", "10", "J", "Q", "K"), ("10", "J", "Q", "K", "A"),
+)
+_RESIDUAL_PAIR_STRAIGHT_WINDOWS = (
+    ("3", "4", "5"), ("4", "5", "6"), ("5", "6", "7"),
+    ("6", "7", "8"), ("7", "8", "9"), ("8", "9", "10"),
+    ("9", "10", "J"), ("10", "J", "Q"), ("J", "Q", "K"),
+    ("Q", "K", "A"),
+)
+_RESIDUAL_STEEL_PLATE_WINDOWS = (
+    ("3", "4"), ("4", "5"), ("5", "6"), ("6", "7"), ("7", "8"),
+    ("8", "9"), ("9", "10"), ("10", "J"), ("J", "Q"),
+    ("Q", "K"), ("K", "A"),
+)
+_RESIDUAL_USE_ORDER = (
+    "pair", "triple", "bomb", "triple_with_pair", "straight",
+    "pair_straight", "steel_plate",
+)
 _TEAM_BY_PLAYER = {1: "team_13", 2: "team_24", 3: "team_13", 4: "team_24"}
 CANDIDATE_RELATION_KINDS = (
     "natural_single_cost",
@@ -227,6 +266,117 @@ def _validate_public_action_schema(
             # This instance is represented by one wildcard_info entry above.
             continue
     return (action_id, pattern, declared, carrier, wildcard_count) if not any(declared_counts.values()) else None
+
+
+def _residual_natural_pattern_kinds(
+    residual_hand: Counter[str],
+    *,
+    wildcard_token: str,
+) -> tuple[dict[str, tuple[str, ...]], tuple[str, ...]]:
+    """Describe possible natural rank structures without asserting action legality.
+
+    The wildcard carrier is excluded rather than treated as a natural card.
+    Returned structures may overlap and are only cues about the current public
+    residual multiset; they say nothing about future control or completion.
+    """
+    counts = Counter(
+        _rank_of(card)
+        for card in residual_hand.elements()
+        if card != wildcard_token
+    )
+    patterns_by_rank: dict[str, set[str]] = {rank: set() for rank in counts}
+    for rank, count in counts.items():
+        if count >= 2:
+            patterns_by_rank[rank].add("pair")
+        if rank in _NORMAL_RANKS and count >= 3:
+            patterns_by_rank[rank].add("triple")
+        if rank in _NORMAL_RANKS and count >= 4:
+            patterns_by_rank[rank].add("bomb")
+
+    triples = {rank for rank, count in counts.items() if rank in _NORMAL_RANKS and count >= 3}
+    pairs = {rank for rank, count in counts.items() if count >= 2}
+    for triple_rank in triples:
+        for pair_rank in pairs - {triple_rank}:
+            patterns_by_rank[triple_rank].add("triple_with_pair")
+            patterns_by_rank[pair_rank].add("triple_with_pair")
+
+    for window in _RESIDUAL_STRAIGHT_WINDOWS:
+        if all(counts.get(rank, 0) >= 1 for rank in window):
+            for rank in window:
+                patterns_by_rank[rank].add("straight")
+    for window in _RESIDUAL_PAIR_STRAIGHT_WINDOWS:
+        if all(counts.get(rank, 0) >= 2 for rank in window):
+            for rank in window:
+                patterns_by_rank[rank].add("pair_straight")
+    for window in _RESIDUAL_STEEL_PLATE_WINDOWS:
+        if all(counts.get(rank, 0) >= 3 for rank in window):
+            for rank in window:
+                patterns_by_rank[rank].add("steel_plate")
+
+    ordered_by_rank = {
+        rank: tuple(kind for kind in _RESIDUAL_USE_ORDER if kind in kinds)
+        for rank, kinds in patterns_by_rank.items()
+    }
+    all_kinds = tuple(
+        kind for kind in _RESIDUAL_USE_ORDER
+        if any(kind in kinds for kinds in ordered_by_rank.values())
+    )
+    return ordered_by_rank, all_kinds
+
+
+def _residual_use_facts(
+    *,
+    action: Mapping[str, object],
+    residual_hand: Counter[str],
+    level_rank: str,
+    played_ranks: set[str],
+) -> tuple[tuple[ResidualRankUse, ...], tuple[str, ...], int] | None:
+    """Return public natural-use cues, omitting wildcard/declaration ambiguity."""
+    if action.get("declared_pattern") != "pass":
+        carrier = action.get("carrier_cards")
+        declared = action.get("declared_cards")
+        pattern = action.get("declared_pattern")
+        if (
+            action.get("wildcard_count") != 0
+            or not isinstance(carrier, list)
+            or not isinstance(declared, list)
+            or not isinstance(pattern, str)
+            or f"{level_rank}H" in carrier
+            or Counter(_declared_multiset_key(card, pattern) for card in declared)
+            != Counter(_declared_multiset_key(card, pattern) for card in carrier)
+            or (pattern == "straight_flush" and Counter(declared) != Counter(carrier))
+        ):
+            return None
+
+    patterns_by_rank, all_kinds = _residual_natural_pattern_kinds(
+        residual_hand,
+        wildcard_token=f"{level_rank}H",
+    )
+    physical_counts = Counter(_rank_of(card) for card in residual_hand.elements())
+    natural_counts = Counter(
+        _rank_of(card)
+        for card in residual_hand.elements()
+        if card != f"{level_rank}H"
+    )
+    rank_uses = tuple(
+        ResidualRankUse(
+            rank=rank,
+            remaining_count=natural_counts.get(rank, 0),
+            natural_pattern_kinds=patterns_by_rank.get(rank, ()),
+            wildcard_count=(
+                physical_counts.get(rank, 0) - natural_counts.get(rank, 0)
+                if rank == level_rank else 0
+            ),
+        )
+        for rank in sorted(played_ranks, key=lambda item: _RANK_VALUES.get(item, 99))
+    )
+    control_ranks = {"SJ", "BJ", "A", level_rank}
+    natural_control_count = sum(
+        count
+        for token, count in residual_hand.items()
+        if token != f"{level_rank}H" and _rank_of(token) in control_ranks
+    )
+    return rank_uses, all_kinds, natural_control_count
 
 
 def summarize_free_lead_residual_structures(
@@ -419,11 +569,20 @@ def summarize_candidate_structures(
         if pattern == "pass":
             if constraint == "free":
                 return None
+            residual_uses = _residual_use_facts(
+                action=action,
+                residual_hand=hand,
+                level_rank=level_rank,
+                played_ranks=set(),
+            )
             results.append(CandidateStructure(
                 action_id, pattern, 0, False, False, False, 0, len({_rank_of(card) for card in hand}),
                 False, None, False, None, None, teammate_count, teammate_active,
                 min(opponent_counts) if opponent_counts else None,
                 current_round.get("constraint") == "free",
+                residual_uses[0] if residual_uses is not None else None,
+                residual_uses[1] if residual_uses is not None else None,
+                residual_uses[2] if residual_uses is not None else None,
             ))
             seen.add(action_id)
             continue
@@ -441,12 +600,21 @@ def summarize_candidate_structures(
         control = any(_rank_of(card) in {"SJ", "BJ", "A", level_rank} for card in carrier)
         bomb_length = len(carrier) if pattern == "bomb" else None
         leaves_bomb_singleton = bool(pattern == "bomb" and any(remaining_ranks.get(rank) == 1 for rank in played_ranks)) if pattern == "bomb" else None
+        residual_uses = _residual_use_facts(
+            action=action,
+            residual_hand=remaining,
+            level_rank=level_rank,
+            played_ranks=played_ranks,
+        )
         results.append(CandidateStructure(
             int(action_id), pattern, len(carrier), wildcard_count > 0, len(carrier) == hand_count,
             not fragments, sum(1 for count in remaining_ranks.values() if count == 1), len(remaining_ranks),
             fragments, natural_single_value, control, bomb_length, leaves_bomb_singleton,
             teammate_count, teammate_active, min(opponent_counts) if opponent_counts else None,
             current_round.get("constraint") == "free",
+            residual_uses[0] if residual_uses is not None else None,
+            residual_uses[1] if residual_uses is not None else None,
+            residual_uses[2] if residual_uses is not None else None,
         ))
         seen.add(action_id)
     return tuple(results)
@@ -548,6 +716,84 @@ def _natural_triple_pair_kicker(action: Mapping[str, object]) -> tuple[str, str]
     return triples[0], pairs[0]
 
 
+def _rank_residual_use(fact: CandidateStructure, rank: str) -> ResidualRankUse | None:
+    if fact.residual_rank_uses is None:
+        return None
+    return next((item for item in fact.residual_rank_uses if item.rank == rank), None)
+
+
+def _bomb_residual_contrasts(
+    bombs_by_rank: dict[str, dict[int, CandidateStructure]],
+) -> tuple[CandidateContrast, ...]:
+    """Choose at most two complete, stable natural-bomb residual comparisons.
+
+    Prefer one contrast where the shorter route leaves an identified natural
+    use, then one where it leaves an unclassified singleton that the longer
+    route clears. These are descriptive representatives, not action rankings.
+    """
+    options: list[tuple[str, CandidateStructure, CandidateStructure, ResidualRankUse, ResidualRankUse]] = []
+    for rank in sorted(bombs_by_rank, key=lambda item: _RANK_VALUES[item]):
+        choices = bombs_by_rank[rank]
+        lengths = sorted(choices)
+        for shorter_length, longer_length in zip(lengths, lengths[1:]):
+            if shorter_length == longer_length:
+                continue
+            shorter = choices[shorter_length]
+            longer = choices[longer_length]
+            shorter_use = _rank_residual_use(shorter, rank)
+            longer_use = _rank_residual_use(longer, rank)
+            if shorter_use is None or longer_use is None:
+                continue
+            if shorter_use.remaining_count <= longer_use.remaining_count:
+                continue
+            options.append((rank, shorter, longer, shorter_use, longer_use))
+
+    if not options:
+        return ()
+
+    retained = [option for option in options if option[3].natural_pattern_kinds]
+    retained.sort(
+        key=lambda option: (
+            -option[3].remaining_count,
+            _RANK_VALUES[option[0]],
+            option[1].bomb_length or 0,
+            option[1].action_id,
+            option[2].action_id,
+        )
+    )
+    singleton_clear = [
+        option for option in options
+        if option[3].remaining_count == 1
+        and not option[3].natural_pattern_kinds
+        and option[4].remaining_count == 0
+    ]
+    singleton_clear.sort(
+        key=lambda option: (
+            _RANK_VALUES[option[0]],
+            option[1].bomb_length or 0,
+            option[1].action_id,
+            option[2].action_id,
+        )
+    )
+
+    selected: list[tuple[str, CandidateStructure, CandidateStructure, ResidualRankUse, ResidualRankUse]] = []
+    for pool in (retained, singleton_clear, options):
+        candidate = next(
+            (item for item in pool if (item[1].action_id, item[2].action_id) not in {
+                (selected_item[1].action_id, selected_item[2].action_id) for selected_item in selected
+            }),
+            None,
+        )
+        if candidate is not None and candidate not in selected:
+            selected.append(candidate)
+        if len(selected) == 2:
+            break
+    return tuple(
+        CandidateContrast("bomb_residual", (shorter.action_id, longer.action_id), shorter.teammate_hand_count)
+        for _, shorter, longer, _, _ in selected
+    )
+
+
 def summarize_candidate_contrasts(
     observation: object,
     legal_actions: object,
@@ -579,13 +825,11 @@ def summarize_candidate_contrasts(
         action = actions_by_id.get(fact.action_id)
         if action is None:
             continue
-        # A four/five-bomb residual comparison is also meaningful on a
-        # follow when both natural canonical responses are currently legal.
-        # Every other relation in this collection remains a free-lead
-        # comparison, so do not broaden those paths accidentally.
-        if fact.pattern == "bomb" and fact.bomb_length in {4, 5}:
+        # Natural same-rank bombs of any engine-supported length are
+        # comparable on a lead or follow, but only when both are canonical.
+        if fact.pattern == "bomb" and fact.bomb_length is not None and 4 <= fact.bomb_length <= 8:
             rank = _natural_same_rank(action, count=fact.bomb_length)
-            if rank is not None:
+            if rank is not None and not fact.uses_wildcard:
                 bombs_by_rank.setdefault(rank, {}).setdefault(fact.bomb_length, fact)
         elif not fact.is_free_lead:
             continue
@@ -600,23 +844,7 @@ def summarize_candidate_contrasts(
                 all_singles.append(fact)
 
     contrasts: list[CandidateContrast] = []
-    for rank in sorted(bombs_by_rank, key=lambda item: _RANK_VALUES[item]):
-        choices = bombs_by_rank[rank]
-        four = choices.get(4)
-        five = choices.get(5)
-        if (
-            four is not None
-            and five is not None
-            and four.leaves_bomb_rank_singleton is True
-            and five.clears_played_rank_groups is True
-        ):
-            contrasts.append(
-                CandidateContrast(
-                    "bomb_residual",
-                    (four.action_id, five.action_id),
-                    four.teammate_hand_count,
-                )
-            )
+    contrasts.extend(_bomb_residual_contrasts(bombs_by_rank))
 
     # Compare the weakest and strongest natural bomb routes when both are
     # present. GuanDan bomb strength is public: length first, then rank with
@@ -648,7 +876,7 @@ def summarize_candidate_contrasts(
         higher_bomb = ordered_bombs[-1][1]
         pair = (lower_bomb.action_id, higher_bomb.action_id)
         already_shown = any(
-            contrast.kind == "bomb_residual" and contrast.action_ids == pair
+            contrast.kind == "bomb_residual" and set(contrast.action_ids) == set(pair)
             for contrast in contrasts
         )
         if not already_shown:
@@ -1098,16 +1326,17 @@ def representative_candidate_contrasts(
     observation: object,
     legal_actions: object,
 ) -> tuple[CandidateContrast, ...] | None:
-    """Return the first complete, stable contrast of each public relation kind."""
+    """Return bounded, complete, stable representatives of public relations."""
     contrasts = summarize_candidate_contrasts(observation, legal_actions)
     if contrasts is None:
         return None
     representatives: list[CandidateContrast] = []
-    seen: set[str] = set()
+    counts: dict[str, int] = {}
     for contrast in contrasts:
-        if contrast.kind not in seen:
+        limit = 2 if contrast.kind == "bomb_residual" else 1
+        if counts.get(contrast.kind, 0) < limit:
             representatives.append(contrast)
-            seen.add(contrast.kind)
+            counts[contrast.kind] = counts.get(contrast.kind, 0) + 1
     return tuple(representatives)
 
 

@@ -29,7 +29,7 @@ RELATION_PROMPT_TEXT = {
     "straight_strength": "较小与较大自然顺子的清理、保留及整体余组取舍",
     "steel_plate_strength": "较小与较大自然钢板的清理、保留及后续控制取舍",
     "triple_pair_kicker_gradient": "同一三张主组下不同自然对子携带的梯度与余组取舍",
-    "bomb_residual": "四/五炸资源成本与残余结构的取舍",
+    "bomb_residual": "同点不同长度自然炸弹的资源成本与出后剩牌用途取舍",
     "wildcard_resource": "自然牌型与通配资源消耗的取舍",
     "teammate_control_resource": "队友控桌时让牌与消耗控制资源的取舍",
     "teammate_table_choice": "队友控桌时让牌与本家合法接牌的取舍",
