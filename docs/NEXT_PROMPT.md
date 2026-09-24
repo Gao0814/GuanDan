@@ -1,18 +1,17 @@
-# 执行 Codex Prompt：已审计 Botzone workspace 的独立回收
+# 执行 Codex Prompt：一次人工 Botzone DeepSeek 单局
 
-本任务只为下一次人工单局准备空的固定 workspace；**不运行** preflight、connector、Botzone/live、浏览器、DeepSeek 或任何网络请求，不分配 seed，不修改仓库文件或创建 commit。先阅读仓库 `AGENTS.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md` 顶部以及 `.agents/skills/botzone-workspace-recycle/SKILL.md`，严格按该 Skill 执行；检查 Git status、diff、HEAD，确认工作树 clean 且 HEAD 包含 `f67faf6`，保留任何既有修改。本任务已由规划 Codex 对上一局六份 evidence 作审计并写入状态文档；AGENTS.md 的长期授权仅覆盖下述精确文件。
+项目所有者已明确授权**仅此一次**人工 Botzone DeepSeek 单局，包括该局可能达到 10 次或更多的真实模型请求；不授权第二桌、额外独立模型探针、批量评测或网页自动建桌。先完整阅读根 `AGENTS.md`、适用的 `.agents/skills/botzone-manual-live/SKILL.md`、`docs/CLEAN_HANDOFF.md` 与 `docs/PROJECT_STATUS.md` 顶部，并只读确认当前 `integrations/botzone/__main__.py` 参数及 audit/trace schema。检查 Git status/diff/HEAD；必须是可解释的 clean 工作树且包含 `f67faf6`，不改仓库代码、tests、RAG、docs 或配置，不创建 commit。
 
-固定 workspace：`D:\VsCodeProject\BotzoneWorkspace`。先只读确认 `D:\VsCodeProject` 直属、名称以 `Botzone` 开头的目录精确只有普通非链接的 `BotzoneWorkspace`；workspace 根目录和 `audit`、`state`、`streams` 均为普通非链接目录。递归 inventory 必须**恰好**是这三个目录与下列六个普通非链接文件，没有其他文件、子目录或链接。逐项核对完整大小和 SHA-256，不能只核前缀，不能解析或输出证据正文、搜索替代路径、猜测哈希或接受新文件：
+本次固定 profile：四人，级牌 `2`，无需进贡，玩家 1 / seat 0，agent=`deepseek`；建桌 seed=`47005`。**不要在页面确认“已连接”之前向项目所有者发送含 seed 的建桌配置。**该 seed 从执行 Codex 首次发给项目所有者时起视为已使用，不可重用。网页建桌、配置和点击开始均由项目所有者手动完成；Codex 仅作 best-effort 只读检查，不点击或提交页面。
 
-1. `audit/completion-audit.json` — 781 bytes — `018a95e4c6f286bb93f870d2c56baa6c05e6bde72b458f1a7dffdee61a0a88a4`
-2. `decision-trace.json` — 261941 bytes — `87607a11e7dc1acf41e74c86c34767012cd734130e891b7c2fc807e44618ee00`
-3. `history.txt` — 11426 bytes — `28864f2e44243085860e6bbbaa180b4fc7b663bc5825cc19416bb4387f23f7c8`
-4. `state/6439aef518ba6343a0e4ba8c6a1294dc5fc70703f31588a048cc19f7435e4e47.json` — 115 bytes — `6037548d58f35dceb751ecdf25216f83cdfee5cdde9848e1db99550ee95b4c55`
-5. `streams/stdout.txt` — 76 bytes — `4ad569f46ba5902d05b4780156b64f78b24802141f94c880b6afbd051ad9df1c`
-6. `streams/stderr.txt` — 0 bytes — `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+唯一工作根目录为 `D:\VsCodeProject\BotzoneWorkspace`。起始 inventory 必须精确为普通非链接根目录及空的普通非链接 `audit`、`state`、`streams` 三目录，文件数 0；`D:\VsCodeProject` 直属 `Botzone*` 集合只能是 `BotzoneWorkspace`。确认无可归属的项目 connector，目标 `audit/completion-audit.json`、`decision-trace.json`、`history.txt`、`streams/stdout.txt`、`streams/stderr.txt` 均不存在。任何未知文件、链接、目录或无法解释的进程使任务暂停，不能在 live 任务中清理旧 evidence。
 
-另以不输出命令行或凭据的方式确认无可归属的在运行项目 connector。任何 Git、类型、路径、目录集合、大小、hash、connector 或 inventory 门槛不符，**零清理、立即停止并报告**；不得自行修订预期值或处理未知对象。
+准备阶段先在内存或独立系统临时位置核对 shell、参数、路径、32 位小写十六进制 run token 与输出捕获方式；不要创建其他顶层 `Botzone*` 目录。使用项目解释器执行同一 agent/state 配置的**零网络** `python -m integrations.botzone --preflight-only`，以返回 `preflight_ready` 为就绪依据；不得手动读取或输出 `.env`、URL、key、Cookie、Header 或 token。仅在本次 connector 进程中设置 `DEEPSEEK_MAX_RETRIES=0`，不要更改持久配置。外部建桌、真实请求和 seed 告知均尚未发生时，shell/路径/preflight 编排错误可原地诊断修正，不当作一次失败对局。
 
-全部前提通过后，才按上述顺序逐文件使用 Windows 回收站 API（例如 `Microsoft.VisualBasic.FileIO.FileSystem::DeleteFile(..., SendToRecycleBin)`）回收；每项处理前再次确认其精确路径和身份。不得永久删除、递归删除、移除目录、清空回收站、跨 shell 拼接路径或切换删除机制。任一回收失败即停，报告已处理与未处理项，不重试或扩大目标。
+就绪后以受监控的唯一前台 session 启动 `python -m integrations.botzone`：`--agent deepseek`、`--state-dir D:\VsCodeProject\BotzoneWorkspace\state`、`--max-cycles 80`、`--max-wall-seconds 1800`、`--stop-after-finished 1`、`--audit-file D:\VsCodeProject\BotzoneWorkspace\audit\completion-audit.json`、`--history-file D:\VsCodeProject\BotzoneWorkspace\history.txt`、`--decision-trace-file D:\VsCodeProject\BotzoneWorkspace\decision-trace.json`、`--run-token` 为本次新生成的有效值。只在固定 `streams` 目录捕获 stdout/stderr，不在普通日志输出手牌、动作明细、prompt、模型响应或敏感连接信息。不要使用第二个 connector，也不要为凑足策略场景延长或重开对局。
 
-最后只读确认六条原路径均不存在，固定根和 `audit`、`state`、`streams` 仍为普通非链接且空目录，整个 workspace 文件数为 0，直属 `Botzone*` 集合未漂移；Git HEAD/status 不变。报告各项低敏结果、永久删除数、是否留下外部修改，并结束此清理任务；**不要接着启动单局**。若成功，交规划 Codex 复审空 workspace 后再单独安排 live。
+持续确认 connector 存活与 Botzone 本地 AI 页面确实显示“已连接”；进程存活或长轮询 timeout 不是连接证明。页面不可可靠读取时可接受项目所有者的明确连接确认。**确认已连接后**才告诉项目所有者 seed `47005`、玩家 1/seat 0、四人、级牌 `2`、无需进贡、`deepseek`，请其建一桌并停在开始前；可靠读回若有不一致，指出字段并等待修正，否则接受其明确就绪确认。随后复述配置，邀请其只点击一次开始。开始后立即监测首个请求、state、history、trace/audit 指标；一旦证明确已进入对局，不再索要第二次“已开始”回复。活跃期间至少每分钟给低敏进度。
+
+达到一个 qualified finish、不可恢复的开局后故障或 1800 秒墙钟上限即停止，**不得开第二桌**。非致命 transport 事件如未破坏完成和 ACK 守恒，只如实记录，不自动重赛。发现代码缺陷则保留证据，交回规划 Codex 另立任务；live 中不得修改仓库或清理 workspace。
+
+结束后按当前 schema 审核 connector exit 与残留进程、audit 的 agent/provenance、request/response/Header/finish/transport/decision/model/source/fallback 守恒、history 和 ACK trace 状态、连续唯一 ACK 与所选 canonical action ID 绑定、pending 状态及 finished tombstone（若生成）与 audit provenance 一致性。只报告低敏聚合与保留 evidence 的精确路径、大小、SHA-256，不输出正文、手牌、动作详情、prompt、模型自由文本、URL、密钥或 token。区分平台结局有效性与决策证据有效性；单局胜负不证明策略质量或胜率。确认 Git HEAD/status 未变，所有 evidence 留在固定 workspace，报告任何真实模型请求/重试/fallback 数及实际停止原因，然后结束任务等待规划复审。
