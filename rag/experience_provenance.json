@@ -183,15 +183,74 @@
       "evidence_status": "candidate"
     },
     {
+      "entry_id": "source_user_supplied_strategy_100_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "用户提供文本；原始作者与出处未核实",
+      "title": "掼蛋出牌策略详细版",
+      "publication": "用户提供的仓库外文本；无公开书目信息",
+      "url_or_bibliography": "未提供公开URL",
+      "locator": "只读核对#4、#51、#55、#73；不主张其与公开稿同源或能证明原始作者归属",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening", "lead"]},
+      "evidence_status": "active"
+    },
+    {
       "entry_id": "candidate_smzdm_strategy_100_001",
       "source_tier": "C", "claim_type": "strategy",
       "author_or_institution": "金牌掼蛋账号；百条原始作者及资质未核实",
       "title": "掼蛋赢牌技巧100条，快速收藏",
       "publication": "什么值得买，2024-08-19",
       "url_or_bibliography": "https://post.smzdm.com/p/a5xk3dpl/",
-      "locator": "仅核对公开可见的部分条目；不将与用户文本高度匹配推断为作者归属或全篇证据",
+      "locator": "仅激活已核对的公开可见#4、#51、#55、#73条件化片段；不推断原作者资质或全篇证据",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]},
-      "evidence_status": "candidate"
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_soft_straight_flush_bomb_cost_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "金牌掼蛋账号；单篇作者未核实",
+      "title": "掼蛋赢牌技巧100条，快速收藏",
+      "publication": "什么值得买，2024-08-19",
+      "url_or_bibliography": "https://post.smzdm.com/p/a5xk3dpl/",
+      "locator": "公开可见#4；仅采用拆炸组花色顺子的条件例外，不激活绝对化炸弹顺序",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening", "lead"]},
+      "corroborating_source_ids": ["candidate_smzdm_strategy_100_001", "source_user_supplied_strategy_100_001"],
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_soft_steel_plate_strength_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "金牌掼蛋账号；单篇作者未核实",
+      "title": "掼蛋赢牌技巧100条，快速收藏",
+      "publication": "什么值得买，2024-08-19",
+      "url_or_bibliography": "https://post.smzdm.com/p/a5xk3dpl/",
+      "locator": "公开可见#55；大小钢板的清理与保留，取消绝对化先后顺序",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening", "lead"]},
+      "corroborating_source_ids": ["candidate_smzdm_strategy_100_001", "source_user_supplied_strategy_100_001"],
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_soft_triple_pair_gradient_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "金牌掼蛋账号；单篇作者未核实",
+      "title": "掼蛋赢牌技巧100条，快速收藏",
+      "publication": "什么值得买，2024-08-19",
+      "url_or_bibliography": "https://post.smzdm.com/p/a5xk3dpl/",
+      "locator": "公开可见#73；三带二携带对子梯度的余组假设，不固定对子大小顺序",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening", "lead"]},
+      "corroborating_source_ids": ["candidate_smzdm_strategy_100_001", "source_user_supplied_strategy_100_001"],
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_soft_triple_repartition_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "金牌掼蛋账号；单篇作者未核实",
+      "title": "掼蛋赢牌技巧100条，快速收藏",
+      "publication": "什么值得买，2024-08-19",
+      "url_or_bibliography": "https://post.smzdm.com/p/a5xk3dpl/",
+      "locator": "公开可见#51；三张拆分后的两组三带二结构案例，不保证后续牌权",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening", "lead"]},
+      "corroborating_source_ids": ["candidate_smzdm_strategy_100_001", "source_user_supplied_strategy_100_001"],
+      "evidence_status": "active"
     },
     {
       "entry_id": "registry_book_wang_xiong_2024",

@@ -152,12 +152,6 @@ class OpeningFormulaStrategy:
             for fact in facts
         ) or self._has_public_urgency(observation):
             return None
-        # The formula table is narrower than all model-before claims.  Any
-        # unresolved public relationship is handed to DeepSeek so B/C source
-        # conflicts remain visible instead of being flattened into a shortcut.
-        blocking_relations = {item.kind for item in contrasts}
-        if blocking_relations:
-            return None
         structured_tokens = {
             str(card)
             for action in legal_actions
@@ -192,7 +186,13 @@ class OpeningFormulaStrategy:
         targets = [action for rank_value, action in safe_singles if rank_value == lowest]
         if len(targets) != 1 or not self._has_return_resource(observation, legal_actions):
             return None
-        return targets[0]["action_id"]
+        target_id = targets[0]["action_id"]
+        # Only yield when a complete public relation actually includes the
+        # proposed action.  Unrelated pair, bomb, or sequence comparisons in
+        # the same hand do not invalidate the B-tier small-single convention.
+        if any(target_id in contrast.action_ids for contrast in contrasts):
+            return None
+        return target_id
 
     @staticmethod
     def _has_return_resource(

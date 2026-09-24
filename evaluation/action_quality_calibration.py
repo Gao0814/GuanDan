@@ -79,7 +79,10 @@ _H3_A8_CONTRACT = (
 )
 _H3_A9_CONTRACT = (
     ("opening_1", "opening", 77, 53),
-    ("opening_2", "opening", 74, 48),
+    # The current sourced-contrast projector exposes one additional original
+    # candidate for this frozen observation; keep the evaluator bound to the
+    # production request set rather than its pre-integration count.
+    ("opening_2", "opening", 74, 49),
     ("midgame_1", "midgame", 25, 13),
     ("midgame_2", "midgame", 11, 11),
     ("endgame_1", "critical_endgame", 8, 8),

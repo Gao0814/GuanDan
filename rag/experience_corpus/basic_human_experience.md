@@ -142,7 +142,7 @@ candidate_requirements: [bomb_or_wildcard]
 
 # 炸弹与通配牌管理
 
-适用条件：完整canonical候选确实含炸弹或逢人配。策略目标：在牌权、阻断、资源成本和余牌结构间保留选择。建议倾向：若同点四/五炸都合法，可比较少耗一张炸弹资源与五炸清空该点数组、减少残余孤张的差异；通配路线则与同声明自然路线比较。反例与调整：这是可撤回软假设，不是“必须炸”规则；一次出完、公开紧急、牌权和更高价值结构均可推翻。
+适用条件：完整canonical候选确实含炸弹或逢人配。策略目标：在牌权、阻断、资源成本和余牌结构间保留选择。建议倾向：若同点四/五炸都合法，可比较少耗一张炸弹资源与五炸清空该点数组、减少残余孤张的差异；若不同大小或强度的自然炸弹同时合法，也可比较较小炸弹的资源节省与较大炸弹可能带来的控制力度；通配路线则与同声明自然路线比较。反例与调整：这是可撤回软假设，不是“必须炸”或固定大小顺序规则；一次出完、公开紧急、牌权和更高价值结构均可推翻。
 
 ---
 id: exp_endgame_run_out_001
@@ -217,3 +217,79 @@ candidate_requirements: [natural_single_cost]
 # 自然单张成本与试探路线
 
 适用条件：至少两种自然单张均在完整canonical动作中存在，且当前首出不会拆散已成的同点对子/三张等组合。策略目标：比较较低成本清理与保留较高单张作为后续试探/牌权路线。建议倾向：低单张和较高单张都可能合理，不套用固定点数或花色顺序，也不据此猜测对手暗牌；仍须核对各动作对顺子等整体余组的影响。反例与调整：可用回手资源、队友协同、危险对手、整体组牌变化或更高价值牌型均可推翻；这只是可撤回假设。
+
+---
+id: exp_soft_straight_flush_bomb_cost_001
+corpus: experience
+scene: [lead_opening, lead]
+phase: [opening, midgame]
+hand_strength: [any]
+action_context: [free_lead]
+topic: [bomb, straight_flush, structure, control]
+priority: low
+keywords_cn: [同花顺, 炸弹, 拆组, 资源, 余组]
+strategy_domain: [bomb_wildcard_management, hand_structure]
+guidance_mode: soft_hypothesis
+candidate_requirements: [straight_flush_bomb_fragment]
+---
+
+# 同花顺与炸弹组拆分假设
+
+适用条件：完整canonical自由领牌中，同花顺路线会拆动至少两个自然四张点数组，且也有对应自然四炸候选。策略目标：比较一次压制价值、拆组损失与炸弹资源消耗。反例与调整：这是可撤回假设，不要求保留炸弹；一次出完、公开阻断或当前牌权需求可以推翻。
+
+---
+id: exp_soft_steel_plate_strength_001
+corpus: experience
+scene: [lead_opening, lead]
+phase: [opening, midgame]
+hand_strength: [any]
+action_context: [free_lead]
+topic: [steel_plate, control, structure]
+priority: low
+keywords_cn: [钢板, 大小, 强度, 保留, 余组]
+strategy_domain: [hand_structure, control_return_resource]
+guidance_mode: soft_hypothesis
+candidate_requirements: [steel_plate_strength]
+---
+
+# 自然钢板强弱与保留假设
+
+适用条件：自由领牌时至少两种不同主点数的自然钢板均为完整canonical候选。策略目标：比较先清理较小钢板与保留较大钢板作为后续控制路线。反例与调整：不推断对手持有小钢板；整手分组、队友/对手紧急性、立即出完和回手价值均可推翻，不能固定为“留大不留小”。
+
+---
+id: exp_soft_triple_pair_gradient_001
+corpus: experience
+scene: [lead_opening, lead]
+phase: [opening, midgame]
+hand_strength: [any]
+action_context: [free_lead]
+topic: [triple_with_pair, pair, structure]
+priority: low
+keywords_cn: [三带二, 携带对子, 梯度, 余组]
+strategy_domain: [hand_structure, uncertainty_probe]
+guidance_mode: soft_hypothesis
+candidate_requirements: [triple_pair_kicker_gradient]
+---
+
+# 三带二携带对子梯度假设
+
+适用条件：同一自然三张主组有至少三种完整canonical自然对子携带路线。策略目标：比较带走中间对子后保留大小对子路线与当前余组。反例与调整：不规定固定大小顺序；自然组合、立即出完、队友/对手紧急性和实际回手价值可推翻此可撤回假设。
+
+---
+id: exp_soft_triple_repartition_001
+corpus: experience
+scene: [lead_opening, lead]
+phase: [opening, midgame]
+hand_strength: [any]
+action_context: [free_lead]
+topic: [triple, triple_with_pair, singles, structure]
+priority: low
+keywords_cn: [拆三张, 单张, 三带二, 重组, 余组]
+strategy_domain: [hand_structure, opening_free_lead]
+guidance_mode: soft_hypothesis
+candidate_requirements: [triple_split_repartition]
+---
+
+# 拆三张后的三带二重组假设
+
+适用条件：公开手牌有至少三组自然三张与自然对子，且canonical动作同时包含拆三张的单张和另一组的自然三带二。策略目标：比较先出单张后保留两组对子/三张重组空间与立即出三带二。反例与调整：结构兼容不保证后续牌权；立即出完、公开紧急性和整体手数可推翻此可撤回假设。

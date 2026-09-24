@@ -16,12 +16,13 @@ from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion, PROMPT_MAX_CANDIDATE_ACTIONS
 from agents.game_phase import classify_game_phase
 from agents.strategy_recommendation import build_strategy_recommendation
-from engine.cards import Card
+from engine.cards import Card, build_double_deck
 from engine.game import GuanDanGame
 from evaluation.h3_model_probe_fixtures import build_h3_model_probe_fixtures
 from rag.kb_loader import KnowledgeBaseLoader
 from rag.retriever import KnowledgeRetriever
 from agents.rag_advisor import RAGAdvisor
+from agents.strategy_intent_prompt import RELATION_PROMPT_TEXT
 
 
 def _cards(tokens: list[str]) -> tuple[Card, ...]:
@@ -43,6 +44,24 @@ def _game(
             4: _cards(["QS", "QH", "QC"]),
         },
     )
+
+
+def _midgame_engine_game_with_fixed_hand(hand_tokens: list[str]) -> GuanDanGame:
+    """Construct a public midgame-shaped preset with a focused acting hand."""
+
+    selected = list(_cards(hand_tokens))
+    deck = build_double_deck()
+    for card in selected:
+        deck.remove(card)
+    if len(selected) > 27:
+        raise ValueError("fixed hand exceeds a complete-deal hand size")
+    hands = {
+        1: tuple(selected),
+        2: tuple(deck[:20]),
+        3: tuple(deck[20:40]),
+        4: tuple(deck[40:60]),
+    }
+    return GuanDanGame(current_level_rank="2", preset_hands=hands)
 
 
 def _context(observation: dict[str, object], actions: list[dict[str, object]], recommendation: object) -> dict[str, object]:
@@ -366,7 +385,10 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
                     "offline-test-key", "https://offline.invalid", "offline-test",
                     max_retries=0, transport=transport,
                 )
-                with patch("agents.deepseek_ai.AppConfig.from_env", return_value=safe_config):
+                with patch("agents.deepseek_ai.AppConfig.from_env", return_value=safe_config), patch(
+                    "agents.deepseek_ai.evaluate_hand",
+                    return_value={"label": "中等", "total_score": 50, "control_score": 10},
+                ):
                     agent = DeepSeekAIAgent(
                         1, client, rag_advisor=advisor, rag_top_k=3,
                         hand_evaluation_enabled=True, opening_formula_enabled=True,
@@ -427,6 +449,95 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
                 assert validated is not None
                 self.assertTrue(set(validated.action_ids).issubset(transport.candidate_ids))
 
+    def test_natural_bomb_strength_resource_relation_reaches_real_request(self) -> None:
+        hand = [
+            "5S", "5H", "5C", "5D", "5S",
+            "7S", "7H", "7C", "7D", "7S", "7H",
+            "3S", "4H",
+        ]
+        game = _game(hand)
+        observation = game.reset()
+        actions = game.legal_actions()
+        contrast = _contrast(observation, actions, "bomb_strength_resource")
+        applicability = RAGAdvisor._candidate_applicability(observation, actions)
+        self.assertIsNotNone(applicability)
+        assert applicability is not None
+        self.assertTrue(applicability["bomb_strength_resource"])
+
+        transport = _RequestCapturingTransport(contrast.action_ids[0])
+        client = _CapturingProductionClient(
+            "offline-test-key", "https://offline.invalid", "offline-test",
+            max_retries=0, transport=transport,
+        )
+        advisor = RAGAdvisor(
+            KnowledgeRetriever(KnowledgeBaseLoader(Path("rag")).load_all_documents())
+        )
+        safe_config = type(
+            "OfflineConfig",
+            (),
+            {"card_tracking_enabled": False, "hand_evaluation_enabled": True, "opening_formula_enabled": False},
+        )()
+        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=safe_config), patch(
+            "agents.deepseek_ai.evaluate_hand",
+            return_value={"label": "中等", "total_score": 50, "control_score": 10},
+        ):
+            agent = DeepSeekAIAgent(
+                1, client, rag_advisor=advisor, rag_top_k=3,
+                hand_evaluation_enabled=True, opening_formula_enabled=False,
+                strategy_router_shadow_enabled=True, strategy_intent_prompt_enabled=True,
+                strategy_recommendation_enabled=True,
+            )
+            selected_id = agent.select_action(observation, actions)
+
+        self.assertEqual(transport.calls, 1)
+        self.assertEqual(selected_id, contrast.action_ids[0])
+        self.assertEqual(agent.last_decision_source, "model")
+        self.assertIn("自然炸弹强度/资源对照", transport.prompt)
+        self.assertIn("不规定先出小炸或大炸", transport.prompt)
+        self.assertTrue(set(contrast.action_ids).issubset(transport.candidate_ids))
+        self.assertLessEqual(len(transport.candidate_ids), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertEqual(len(transport.candidate_ids), len(set(transport.candidate_ids)))
+        self.assertTrue(set(transport.candidate_ids).issubset({int(item["action_id"]) for item in actions}))
+        rag_context = client.captured_kwargs.get("rag_context")
+        self.assertIsInstance(rag_context, dict)
+        assert isinstance(rag_context, dict)
+        hits = rag_context.get("experience_hits")
+        self.assertIsInstance(hits, list)
+        assert isinstance(hits, list)
+        self.assertIn(
+            "exp_bomb_wildcard_001",
+            {item.get("source_id") for item in hits if isinstance(item, dict)},
+        )
+        self.assertIn("可撤回软假设：", transport.prompt)
+        self.assertIn("自然炸弹", transport.prompt)
+        recommendation = DeepSeekClient._validated_strategy_recommendation(
+            agent.last_strategy_recommendation, actions
+        )
+        self.assertIsNotNone(recommendation)
+        assert recommendation is not None
+        self.assertTrue(set(recommendation.action_ids).issubset(transport.candidate_ids))
+
+        second_transport = _RequestCapturingTransport(contrast.action_ids[1])
+        second_client = _CapturingProductionClient(
+            "offline-test-key", "https://offline.invalid", "offline-test",
+            max_retries=0, transport=second_transport,
+        )
+        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=safe_config), patch(
+            "agents.deepseek_ai.evaluate_hand",
+            return_value={"label": "中等", "total_score": 50, "control_score": 10},
+        ):
+            second_agent = DeepSeekAIAgent(
+                1, second_client, rag_advisor=advisor, rag_top_k=3,
+                hand_evaluation_enabled=True, opening_formula_enabled=False,
+                strategy_router_shadow_enabled=True, strategy_intent_prompt_enabled=True,
+                strategy_recommendation_enabled=True,
+            )
+            second_selected = second_agent.select_action(observation, actions)
+        self.assertEqual(second_transport.calls, 1)
+        self.assertEqual(second_selected, contrast.action_ids[1])
+        self.assertEqual(second_agent.last_decision_source, "model")
+        self.assertTrue(set(contrast.action_ids).issubset(second_transport.candidate_ids))
+
     def test_medium_opening_group_relation_activates_matching_b_principle_in_final_request(self) -> None:
         fixture = build_h3_model_probe_fixtures()[3]
         contrasts = summarize_candidate_contrasts(fixture.observation, fixture.legal_actions)
@@ -443,7 +554,8 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
             {"card_tracking_enabled": False, "hand_evaluation_enabled": True, "opening_formula_enabled": True},
         )()
         with patch("agents.deepseek_ai.AppConfig.from_env", return_value=safe_config), patch(
-            "agents.deepseek_ai.evaluate_hand", return_value={"label": "medium", "control_score": 40}
+            "agents.deepseek_ai.evaluate_hand",
+            return_value={"label": "中等", "total_score": 50, "control_score": 10},
         ):
             agent = DeepSeekAIAgent(
                 1, client, rag_advisor=RAGAdvisor(
@@ -469,6 +581,149 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
             {item.get("source_id") for item in hits if isinstance(item, dict)},
         )
         self.assertIn("中性开局表达", transport.prompt)
+
+    def test_new_source_relationships_reach_real_request_with_both_canonical_sides(self) -> None:
+        cases = (
+            (
+                "sequence",
+                ["3S", "4S", "5S", "6S", "6H", "7S", "8S", "9C", "10D", "QC"],
+                "sequence_structure_loss",
+                "自然顺子/连组与同点组对照",
+                None,
+            ),
+            (
+                "straight_strength",
+                ["3S", "4S", "5S", "6S", "6H", "7S", "8S", "9C", "10D", "QC"],
+                "straight_strength",
+                "自然顺子强弱对照",
+                None,
+            ),
+            (
+                "repartition",
+                ["5S", "5H", "5C", "8S", "8H", "8C", "JS", "JH", "JC", "4S", "4H"],
+                "triple_split_repartition",
+                "三张拆分/三带二对照",
+                "exp_soft_triple_repartition_001",
+            ),
+            (
+                "straight_flush_bombs",
+                ["5S", "6S", "6H", "6C", "6D", "7S", "8S", "8H", "8C", "8D", "9S"],
+                "straight_flush_bomb_fragment",
+                "同花顺/炸弹结构对照",
+                "exp_soft_straight_flush_bomb_cost_001",
+            ),
+            (
+                "steel_plates",
+                ["3S", "3H", "3C", "4S", "4H", "4C", "8S", "8H", "8C", "9S", "9H", "9C"],
+                "steel_plate_strength",
+                "自然钢板强弱对照",
+                "exp_soft_steel_plate_strength_001",
+            ),
+            (
+                "triple_pair_gradient",
+                ["7S", "7H", "7C", "5S", "5H", "8S", "8H", "10S", "10H", "QS", "QH"],
+                "triple_pair_kicker_gradient",
+                "三带二携带对子梯度",
+                "exp_soft_triple_pair_gradient_001",
+            ),
+        )
+        advisor = RAGAdvisor(
+            KnowledgeRetriever(KnowledgeBaseLoader(Path("rag")).load_all_documents())
+        )
+        safe_config = type(
+            "OfflineConfig",
+            (),
+            {"card_tracking_enabled": False, "hand_evaluation_enabled": True, "opening_formula_enabled": True},
+        )()
+
+        for name, hand, relation_kind, marker, expected_source in cases:
+            with self.subTest(relation=relation_kind):
+                game = _midgame_engine_game_with_fixed_hand(hand)
+                observation = game.reset()
+                actions = game.legal_actions()
+                contrasts = summarize_candidate_contrasts(observation, actions)
+                assert contrasts is not None
+                contrast = next(item for item in contrasts if item.kind == relation_kind)
+                transport = _RequestCapturingTransport(contrast.action_ids[0])
+                client = _CapturingProductionClient(
+                    "offline-test-key", "https://offline.invalid", "offline-test",
+                    max_retries=0, transport=transport,
+                )
+                with patch("agents.deepseek_ai.AppConfig.from_env", return_value=safe_config), patch(
+                    "agents.deepseek_ai.evaluate_hand",
+                    return_value={"label": "中等", "total_score": 50, "control_score": 10},
+                ):
+                    agent = DeepSeekAIAgent(
+                        1, client, rag_advisor=advisor, rag_top_k=3,
+                        hand_evaluation_enabled=True, opening_formula_enabled=True,
+                        strategy_router_shadow_enabled=True, strategy_intent_prompt_enabled=True,
+                        strategy_recommendation_enabled=True,
+                    )
+                    selected_id = agent.select_action(observation, actions)
+
+                self.assertEqual(transport.calls, 1)
+                self.assertEqual(selected_id, contrast.action_ids[0])
+                self.assertEqual(agent.last_decision_source, "model")
+                self.assertIn(marker, transport.prompt)
+                self.assertTrue(set(contrast.action_ids).issubset(transport.candidate_ids))
+                self.assertLessEqual(len(transport.candidate_ids), PROMPT_MAX_CANDIDATE_ACTIONS)
+                self.assertEqual(len(transport.candidate_ids), len(set(transport.candidate_ids)))
+                self.assertTrue(set(transport.candidate_ids).issubset({int(action["action_id"]) for action in actions}))
+                captured = client.captured_kwargs
+                self.assertEqual(len(captured["legal_actions"]), len(actions))
+                recommendation = agent.last_strategy_recommendation
+                validated = DeepSeekClient._validated_strategy_recommendation(recommendation, actions)
+                self.assertIsNotNone(validated)
+                assert validated is not None
+                self.assertTrue(set(validated.action_ids).issubset(transport.candidate_ids))
+                rag_context = captured.get("rag_context")
+                self.assertIsInstance(rag_context, dict)
+                assert isinstance(rag_context, dict)
+                hits = rag_context.get("experience_hits")
+                self.assertIsInstance(hits, list)
+                assert isinstance(hits, list)
+                hit_ids = {item.get("source_id") for item in hits if isinstance(item, dict)}
+                if expected_source is not None:
+                    self.assertIn(expected_source, hit_ids)
+                    self.assertIn("可撤回软假设：", transport.prompt)
+                self.assertNotIn("source_tier", transport.prompt)
+                self.assertNotIn("王春国", transport.prompt)
+                self.assertNotIn("https://", transport.prompt)
+
+    def test_new_relation_applicability_is_false_without_a_legal_public_opportunity(self) -> None:
+        game = _game(["3S", "5H", "8C", "JD", "AS"])
+        observation = game.reset()
+        actions = game.legal_actions()
+        applicability = RAGAdvisor._candidate_applicability(observation, actions)
+        assert applicability is not None
+        for requirement in (
+            "bomb_strength_resource",
+            "sequence_structure_loss", "triple_split_repartition",
+            "straight_flush_bomb_fragment", "steel_plate_strength",
+            "triple_pair_kicker_gradient",
+        ):
+            with self.subTest(requirement=requirement):
+                self.assertFalse(applicability[requirement])
+
+    def test_straight_strength_orders_low_ace_window_below_six_high_window(self) -> None:
+        game = _game(["AS", "2S", "3S", "4S", "5S", "2H", "3H", "4H", "5H", "6D", "QC"])
+        observation = game.reset()
+        actions = game.legal_actions()
+        contrast = _contrast(observation, actions, "straight_strength")
+        by_id = {int(action["action_id"]): action for action in actions}
+
+        lower_ranks = {card[:-1] if card.endswith(("S", "H", "C", "D")) else card
+                       for card in by_id[contrast.action_ids[0]]["declared_cards"]}
+        higher_ranks = {card[:-1] if card.endswith(("S", "H", "C", "D")) else card
+                        for card in by_id[contrast.action_ids[1]]["declared_cards"]}
+
+        self.assertEqual(lower_ranks, {"A", "2", "3", "4", "5"})
+        self.assertEqual(higher_ranks, {"2", "3", "4", "5", "6"})
+
+    def test_every_candidate_relation_has_a_strict_intent_prompt_projection(self) -> None:
+        from agents.action_structure import CANDIDATE_RELATION_KINDS
+
+        self.assertEqual(set(RELATION_PROMPT_TEXT), set(CANDIDATE_RELATION_KINDS))
 
     def test_malformed_payload_and_tight_representative_budget_fail_closed_without_half_contrast(self) -> None:
         game = _game(["5S", "5H", "3S", "4H"])

@@ -1524,7 +1524,13 @@ class DeepSeekClient:
             lines.append("【公开关系对照】")
             for contrast in visible_contrasts:
                 first_id, second_id = contrast.action_ids
-                if contrast.kind == "bomb_residual":
+                if contrast.kind == "bomb_strength_resource":
+                    lines.append(
+                        f"自然炸弹强度/资源对照：action_id={first_id} 是较弱的自然炸弹，action_id={second_id} 是较强的自然炸弹；"
+                        "比较较小炸弹少耗资源与较大炸弹可能带来的控制力度，并核对出后余组。"
+                        "不规定先出小炸或大炸；一次出完、公开紧急性、队友/对手牌权和残余结构都可改变取舍。"
+                    )
+                elif contrast.kind == "bomb_residual":
                     lines.append(
                         f"四/五炸对照：action_id={first_id} 与 action_id={second_id} 是同点数自然炸弹；"
                         "四炸少耗一张炸弹资源，五炸清空该点数组、避免残余孤张并可能减少后续分组。"
@@ -1552,6 +1558,42 @@ class DeepSeekClient:
                         f"自然组牌/普通单张对照：action_id={first_id} 是不拆已识别同点组合的自然对子或三张，"
                         f"action_id={second_id} 是其他点数的自然单张；比较该组牌的清理、单张成本与整体余组变化，{teammate_text}。"
                         "顺子等其他组合、立即出完、公开紧急性、协同或回手计划可推翻此比较；不把对子/三张设为固定先手。"
+                    )
+                elif contrast.kind == "sequence_structure_loss":
+                    lines.append(
+                        f"自然顺子/连组与同点组对照：action_id={first_id} 会从一个仍可组成对子或三张的点数组取牌，"
+                        f"action_id={second_id} 是该点数的自然整组候选；比较顺子清理、残余组数与后续组合，"
+                        "不要只按当前张数下结论。立即出完、公开紧急性或更好的回手路线可以推翻局部保组倾向。"
+                    )
+                elif contrast.kind == "triple_split_repartition":
+                    lines.append(
+                        f"三张拆分/三带二对照：action_id={first_id} 从自然三张中出单张，公开余牌留下另一对子并仍有两组三张，"
+                        f"可比较后续重组为两组三带二的结构空间；action_id={second_id} 是当前合法的自然三带二路线。"
+                        "后续结构不保证取得牌权或一定形成，立即出完、公开紧急性和实际余组可推翻该软假设。"
+                    )
+                elif contrast.kind == "straight_flush_bomb_fragment":
+                    lines.append(
+                        f"同花顺/炸弹结构对照：action_id={first_id} 会拆动至少两个仍可组成自然炸弹的同点数组，"
+                        f"action_id={second_id} 是其中一个当前合法的自然四炸。比较同花顺压制价值、拆组损失与一次消耗一组炸弹的代价；"
+                        "不要求保留炸弹，立即出完、危险阻断和实际牌权需求可推翻。"
+                    )
+                elif contrast.kind == "straight_strength":
+                    lines.append(
+                        f"自然顺子强弱对照：action_id={first_id} 与 action_id={second_id} 是不同公开强度的自然顺子；"
+                        "比较较小顺子的清理价值与较大顺子可能保留的后续压制路线，同时检查出后余组。"
+                        "不推断对手持有何种顺子；立即出完、队友/对手紧急性、回手和整体结构均可改变顺序。"
+                    )
+                elif contrast.kind == "steel_plate_strength":
+                    lines.append(
+                        f"自然钢板强弱对照：action_id={first_id} 与 action_id={second_id} 是不同强度的自然钢板；"
+                        "比较先清理较小钢板与保留较大钢板作为可能的后续压制，同时核对出后余组。"
+                        "不据此推断对手持有小钢板；立即出完、队友/对手紧急性、回手和整体结构均可改变顺序。"
+                    )
+                elif contrast.kind == "triple_pair_kicker_gradient":
+                    lines.append(
+                        f"三带二携带对子梯度：action_id={first_id} 与 action_id={second_id} 使用同一自然三张主组、不同自然对子；"
+                        "比较带走中间对子后保留大小对子路线与当前余组，不把固定大小顺序当公式。"
+                        "出后结构、立即出完、公开紧急性及回手价值都可推翻该可撤回假设。"
                     )
                 elif contrast.kind == "natural_single_cost":
                     lines.append(

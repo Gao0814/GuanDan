@@ -258,6 +258,10 @@ class TestExperienceProvenance(unittest.TestCase):
                 "exp_card_memory_001",
                 "exp_soft_pair_probe_001",
                 "exp_soft_single_cost_probe_001",
+                "exp_soft_straight_flush_bomb_cost_001",
+                "exp_soft_steel_plate_strength_001",
+                "exp_soft_triple_pair_gradient_001",
+                "exp_soft_triple_repartition_001",
             },
         )
         for doc in loaded:
@@ -285,10 +289,28 @@ class TestExperienceProvenance(unittest.TestCase):
         soft = [doc for doc in loaded if doc.metadata.get("guidance_mode") == "soft_hypothesis"]
         self.assertEqual(
             [doc.doc_id for doc in soft],
-            ["exp_bomb_wildcard_001", "exp_soft_pair_probe_001", "exp_soft_single_cost_probe_001"],
+            [
+                "exp_bomb_wildcard_001", "exp_soft_pair_probe_001", "exp_soft_single_cost_probe_001",
+                "exp_soft_straight_flush_bomb_cost_001", "exp_soft_steel_plate_strength_001",
+                "exp_soft_triple_pair_gradient_001", "exp_soft_triple_repartition_001",
+            ],
         )
         records = {record["entry_id"]: record for record in json.loads((Path("rag") / "experience_provenance.json").read_text(encoding="utf-8"))["records"]}
         self.assertEqual(records["exp_bomb_wildcard_001"]["source_tier"], "C")
+        self.assertEqual(
+            records["source_user_supplied_strategy_100_001"]["evidence_status"],
+            "active",
+        )
+        for entry_id in (
+            "exp_soft_straight_flush_bomb_cost_001",
+            "exp_soft_steel_plate_strength_001",
+            "exp_soft_triple_pair_gradient_001",
+            "exp_soft_triple_repartition_001",
+        ):
+            self.assertEqual(
+                set(records[entry_id]["corroborating_source_ids"]),
+                {"candidate_smzdm_strategy_100_001", "source_user_supplied_strategy_100_001"},
+            )
 
 
 if __name__ == "__main__":

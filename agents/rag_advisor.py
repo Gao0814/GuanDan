@@ -41,7 +41,14 @@ _CANDIDATE_REQUIREMENTS = frozenset(
         "natural_pair",
         "natural_pair_single",
         "natural_group_single",
+        "bomb_strength_resource",
         "natural_single_cost",
+        "straight_strength",
+        "sequence_structure_loss",
+        "triple_split_repartition",
+        "straight_flush_bomb_fragment",
+        "steel_plate_strength",
+        "triple_pair_kicker_gradient",
         "single_control_resource",
         "wildcard_resource",
         "bomb_residual",
@@ -49,6 +56,15 @@ _CANDIDATE_REQUIREMENTS = frozenset(
         "teammate_table_choice",
         "danger_block_resource",
         "danger_block_choice",
+    }
+)
+_RELATION_SPECIFIC_SOFT_REQUIREMENTS = frozenset(
+    {
+        "bomb_strength_resource",
+        "triple_split_repartition",
+        "straight_flush_bomb_fragment",
+        "steel_plate_strength",
+        "triple_pair_kicker_gradient",
     }
 )
 _KNOWLEDGE_METADATA_KEYS = frozenset(
@@ -323,10 +339,21 @@ class RAGAdvisor:
         relations = set(RAGAdvisor._metadata_values(scene_tags, "candidate_relation_kinds"))
         if relations & {"natural_single_cost", "single_control_resource"}:
             topics.update({"opening", "singles", "control", "probe"})
-        if relations & {"natural_pair_single", "natural_group_single"}:
+        if relations & {
+            "natural_pair_single", "natural_group_single", "sequence_structure_loss",
+            "triple_split_repartition", "triple_pair_kicker_gradient",
+        }:
             topics.update({"pair", "structure", "probe"})
+        if "straight_strength" in relations:
+            topics.update({"straight", "structure", "control"})
+        if "steel_plate_strength" in relations:
+            topics.update({"steel_plate", "structure", "control"})
+        if "straight_flush_bomb_fragment" in relations:
+            topics.update({"bomb", "straight_flush", "structure", "control"})
         if "bomb_residual" in relations:
             topics.update({"bomb", "structure", "control"})
+        if "bomb_strength_resource" in relations:
+            topics.update({"bomb", "structure", "control", "resource"})
         if "wildcard_resource" in relations:
             topics.update({"wildcard", "structure", "control"})
         if relations & {"teammate_control_resource", "teammate_table_choice"}:
@@ -361,7 +388,14 @@ class RAGAdvisor:
             "single_control_resource": "自然小单 控制牌 回手",
             "natural_pair_single": "自然对子 单张 拆组 清理",
             "natural_group_single": "自然对子 三张 普通单张 清理 余组",
+            "straight_strength": "小顺 大顺 强弱 清理 保留 余组",
+            "sequence_structure_loss": "顺子 拆组 残余对子 三张 余组",
+            "triple_split_repartition": "三张 拆单 三带二 两组牌结构 重组",
+            "straight_flush_bomb_fragment": "同花顺 拆炸弹 自然炸弹 结构资源",
+            "steel_plate_strength": "钢板 大小 强度 保留 清理",
+            "triple_pair_kicker_gradient": "三带二 携带对子 梯度 余组",
             "bomb_residual": "四炸 五炸 残余孤张",
+            "bomb_strength_resource": "自然小炸弹 大炸 强度 控制 资源成本 余组",
             "wildcard_resource": "逢人配 自然路线 通配资源",
             "teammate_control_resource": "队友控桌 pass 让牌 控制资源",
             "teammate_table_choice": "队友控桌 pass 让牌 争夺牌权",
@@ -489,7 +523,8 @@ class RAGAdvisor:
             return ()
 
         desired_topics = self._topics_from_scene_tags(scene_tags)
-        candidates: list[tuple[float, int, KnowledgeDocument]] = []
+        candidates: list[tuple[int, float, int, KnowledgeDocument]] = []
+        active_relations = self._metadata_values(scene_tags, "candidate_relation_kinds")
         for idx, doc in enumerate(self._retriever.documents):
             if doc.layer != layer:
                 continue
@@ -503,12 +538,23 @@ class RAGAdvisor:
             if scored is None:
                 continue
             score, _, _ = scored
-            candidates.append((score, idx, doc))
+            document_requirements = self._metadata_values(doc.metadata, "candidate_requirements")
+            exact_relations = active_relations & document_requirements & _RELATION_SPECIFIC_SOFT_REQUIREMENTS
+            if (
+                "bomb_strength_resource" in active_relations
+                and "bomb_or_wildcard" in document_requirements
+            ):
+                exact_relations.add("bomb_strength_resource")
+            # Reserve the top of the bounded result for semantically exact,
+            # currently proven soft hypotheses; rank among them by the same
+            # public semantic score. Provenance never participates here.
+            candidates.append((0 if exact_relations else 1, -score, idx, doc))
 
-        candidates.sort(key=lambda item: (-item[0], item[1]))
+        candidates.sort(key=lambda item: (item[0], item[1], item[2]))
 
         evidence: list[RAGEvidence] = []
-        for score, _, doc in candidates[:top_k]:
+        for _, negative_score, _, doc in candidates[:top_k]:
+            score = -negative_score
             metadata = dict(doc.metadata)
             metadata.update(
                 {

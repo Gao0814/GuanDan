@@ -70,7 +70,7 @@ class ActionQualityCalibrationTests(unittest.TestCase):
                 ("endgame", 9, 9),
                 ("near_open_endgame", 8, 4),
                 ("opening", 77, 53),
-                ("opening", 74, 48),
+                ("opening", 74, 49),
                 ("midgame", 25, 13),
                 ("midgame", 11, 11),
                 ("critical_endgame", 8, 8),

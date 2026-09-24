@@ -88,6 +88,13 @@ CANDIDATE_RELATION_KINDS = (
     "single_control_resource",
     "natural_pair_single",
     "natural_group_single",
+    "bomb_strength_resource",
+    "sequence_structure_loss",
+    "triple_split_repartition",
+    "straight_flush_bomb_fragment",
+    "straight_strength",
+    "steel_plate_strength",
+    "triple_pair_kicker_gradient",
     "bomb_residual",
     "wildcard_resource",
     "teammate_control_resource",
@@ -470,6 +477,77 @@ def _natural_same_rank(action: Mapping[str, object], *, count: int) -> str | Non
     return rank if rank in _NORMAL_RANKS else None
 
 
+def _natural_sequence_high_rank(action: Mapping[str, object], *, pattern: str) -> str | None:
+    """Return a public high rank for one unmodified natural sequence action."""
+
+    carrier = action.get("carrier_cards")
+    declared = action.get("declared_cards")
+    expected_count = 5 if pattern == "straight" else 6 if pattern == "steel_plate" else 0
+    if (
+        action.get("declared_pattern") != pattern
+        or action.get("wildcard_count") != 0
+        or not isinstance(carrier, list)
+        or not isinstance(declared, list)
+        or len(carrier) != expected_count
+        or len(declared) != expected_count
+        or any(not isinstance(card, str) for card in carrier + declared)
+    ):
+        return None
+    carrier_ranks = Counter(_rank_of(card) for card in carrier)
+    declared_ranks = Counter(
+        card if card in _NORMAL_RANKS | {"SJ", "BJ"} else _rank_of(card)
+        for card in declared
+    )
+    if carrier_ranks != declared_ranks:
+        return None
+    expected_multiplicity = 1 if pattern == "straight" else 3
+    if len(carrier_ranks) != (5 if pattern == "straight" else 2):
+        return None
+    if any(
+        rank not in _RANK_VALUES or count != expected_multiplicity
+        for rank, count in carrier_ranks.items()
+    ):
+        return None
+    if pattern == "steel_plate":
+        ordered_ranks = sorted((_RANK_VALUES[rank] for rank in carrier_ranks))
+        if ordered_ranks[-1] > _RANK_VALUES["A"] or ordered_ranks[1] - ordered_ranks[0] != 1:
+            return None
+    if pattern == "straight" and set(carrier_ranks) == {"A", "2", "3", "4", "5"}:
+        # A2345 is the engine's weakest straight window; treating its ace as
+        # high would incorrectly rank it above 23456 in a public comparison.
+        return "5"
+    return max(carrier_ranks, key=lambda rank: _RANK_VALUES[rank])
+
+
+def _natural_triple_pair_kicker(action: Mapping[str, object]) -> tuple[str, str] | None:
+    """Return (triple rank, pair rank) only for a natural canonical 3+2 shape."""
+
+    carrier = action.get("carrier_cards")
+    declared = action.get("declared_cards")
+    if (
+        action.get("declared_pattern") != "triple_with_pair"
+        or action.get("wildcard_count") != 0
+        or not isinstance(carrier, list)
+        or not isinstance(declared, list)
+        or len(carrier) != 5
+        or len(declared) != 5
+        or any(not isinstance(card, str) for card in carrier + declared)
+    ):
+        return None
+    carrier_ranks = Counter(_rank_of(card) for card in carrier)
+    declared_ranks = Counter(
+        card if card in _NORMAL_RANKS | {"SJ", "BJ"} else _rank_of(card)
+        for card in declared
+    )
+    if carrier_ranks != declared_ranks:
+        return None
+    triples = [rank for rank, count in carrier_ranks.items() if count == 3]
+    pairs = [rank for rank, count in carrier_ranks.items() if count == 2]
+    if len(triples) != 1 or len(pairs) != 1 or triples[0] in {"SJ", "BJ"} or pairs[0] in {"SJ", "BJ"}:
+        return None
+    return triples[0], pairs[0]
+
+
 def summarize_candidate_contrasts(
     observation: object,
     legal_actions: object,
@@ -533,6 +611,48 @@ def summarize_candidate_contrasts(
                     four.teammate_hand_count,
                 )
             )
+
+    # Compare the weakest and strongest natural bomb routes when both are
+    # present. GuanDan bomb strength is public: length first, then rank with
+    # the current level rank elevated. This exposes the resource/control
+    # tradeoff without imposing a small-first or large-first action rule.
+    current_round = observation.get("current_round") if isinstance(observation, Mapping) else None
+    level_rank = current_round.get("current_level_rank") if isinstance(current_round, Mapping) else None
+    natural_bomb_options: dict[tuple[int, int], CandidateStructure] = {}
+    if isinstance(level_rank, str) and level_rank in _NORMAL_RANKS:
+        for fact in facts:
+            if (
+                not fact.is_free_lead
+                or fact.pattern != "bomb"
+                or fact.uses_wildcard
+                or fact.bomb_length is None
+            ):
+                continue
+            rank = _natural_same_rank(actions_by_id[fact.action_id], count=fact.bomb_length)
+            if rank is None:
+                continue
+            rank_strength = 16 if rank == level_rank else _RANK_VALUES[rank]
+            strength = (fact.bomb_length, rank_strength)
+            previous = natural_bomb_options.get(strength)
+            if previous is None or fact.action_id < previous.action_id:
+                natural_bomb_options[strength] = fact
+    if len(natural_bomb_options) >= 2:
+        ordered_bombs = sorted(natural_bomb_options.items())
+        lower_bomb = ordered_bombs[0][1]
+        higher_bomb = ordered_bombs[-1][1]
+        pair = (lower_bomb.action_id, higher_bomb.action_id)
+        already_shown = any(
+            contrast.kind == "bomb_residual" and contrast.action_ids == pair
+            for contrast in contrasts
+        )
+        if not already_shown:
+            contrasts.append(
+                CandidateContrast(
+                    "bomb_strength_resource",
+                    pair,
+                    lower_bomb.teammate_hand_count,
+                )
+            )
     for rank in sorted(set(pairs_by_rank) & set(singles_by_rank), key=lambda item: _RANK_VALUES[item]):
         pair = pairs_by_rank[rank]
         single = singles_by_rank[rank]
@@ -590,6 +710,226 @@ def summarize_candidate_contrasts(
                 )
             )
             break
+
+    # Compare a natural sequence that breaks a complete same-rank group with
+    # the canonical pair/triple action that clears that exact group.  The
+    # relation reports a local structural choice, not which route is better.
+    my_info = observation.get("my_info") if isinstance(observation, Mapping) else None
+    hand_cards = my_info.get("hand_cards") if isinstance(my_info, Mapping) else None
+    hand_rank_counts = Counter(_rank_of(card) for card in hand_cards) if isinstance(hand_cards, list) else Counter()
+    sequence_group_pair: tuple[CandidateStructure, CandidateStructure] | None = None
+    for sequence_fact in sorted(facts, key=lambda fact: fact.action_id):
+        if (
+            not sequence_fact.is_free_lead
+            or sequence_fact.pattern not in {"straight", "pair_straight", "steel_plate"}
+            or sequence_fact.uses_wildcard
+            or sequence_fact.finishes_hand
+            or not sequence_fact.fragments_played_rank_group
+        ):
+            continue
+        sequence_action = actions_by_id[sequence_fact.action_id]
+        sequence_carrier = sequence_action.get("carrier_cards")
+        if not isinstance(sequence_carrier, list):
+            continue
+        used_ranks = Counter(_rank_of(card) for card in sequence_carrier)
+        for rank in sorted(used_ranks, key=lambda item: _RANK_VALUES.get(item, 99)):
+            group_size = hand_rank_counts.get(rank, 0)
+            if group_size not in {2, 3} or used_ranks[rank] >= group_size:
+                continue
+            group_fact = next(
+                (
+                    fact for fact in facts
+                    if fact.is_free_lead
+                    and fact.pattern == ("pair" if group_size == 2 else "triple")
+                    and not fact.uses_wildcard
+                    and not fact.finishes_hand
+                    and _natural_same_rank(actions_by_id[fact.action_id], count=group_size) == rank
+                ),
+                None,
+            )
+            if group_fact is not None:
+                sequence_group_pair = (sequence_fact, group_fact)
+                break
+        if sequence_group_pair is not None:
+            break
+    if sequence_group_pair is not None:
+        sequence_fact, group_fact = sequence_group_pair
+        contrasts.append(
+            CandidateContrast(
+                "sequence_structure_loss",
+                (sequence_fact.action_id, group_fact.action_id),
+                sequence_fact.teammate_hand_count,
+            )
+        )
+
+    # A public three-triple/one-pair hand can expose a useful alternative to
+    # splitting a triple for a singleton: after that legal single, the visible
+    # remainder contains two intact triples and two natural pairs.  Pair it
+    # only with a currently canonical 3+2 action using another triple rank;
+    # no future action ID is synthesized.
+    triple_repartition_pair: tuple[CandidateStructure, CandidateStructure] | None = None
+    triples_in_hand = sorted(
+        (rank for rank, count in hand_rank_counts.items() if count == 3),
+        key=lambda rank: _RANK_VALUES.get(rank, 99),
+    )
+    pair_ranks_in_hand = {
+        rank for rank, count in hand_rank_counts.items()
+        if count >= 2 and rank not in triples_in_hand and rank not in {"SJ", "BJ"}
+    }
+    if len(triples_in_hand) >= 3 and pair_ranks_in_hand:
+        for single_fact in facts:
+            if (
+                not single_fact.is_free_lead
+                or single_fact.pattern != "single"
+                or single_fact.uses_wildcard
+                or single_fact.finishes_hand
+            ):
+                continue
+            single_action = actions_by_id[single_fact.action_id]
+            split_rank = _natural_same_rank(single_action, count=1)
+            if split_rank not in triples_in_hand or not single_fact.fragments_played_rank_group:
+                continue
+            other_triples = set(triples_in_hand) - {split_rank}
+            direct_plays: list[CandidateStructure] = []
+            for fact in facts:
+                if (
+                    not fact.is_free_lead
+                    or fact.pattern != "triple_with_pair"
+                    or fact.uses_wildcard
+                    or fact.finishes_hand
+                ):
+                    continue
+                shape = _natural_triple_pair_kicker(actions_by_id[fact.action_id])
+                if shape is not None and shape[0] in other_triples and shape[1] in pair_ranks_in_hand:
+                    direct_plays.append(fact)
+            if direct_plays:
+                triple_repartition_pair = (single_fact, min(direct_plays, key=lambda fact: fact.action_id))
+                break
+    if triple_repartition_pair is not None:
+        single_fact, triple_pair_fact = triple_repartition_pair
+        contrasts.append(
+            CandidateContrast(
+                "triple_split_repartition",
+                (single_fact.action_id, triple_pair_fact.action_id),
+                single_fact.teammate_hand_count,
+            )
+        )
+
+    # Only surface the straight-flush/bomb split relation when the current
+    # natural straight flush visibly takes cards from two exact four-card rank
+    # groups and a corresponding canonical natural four-bomb is also present.
+    flush_bomb_pair: tuple[CandidateStructure, CandidateStructure] | None = None
+    four_bomb_ranks = {
+        _natural_same_rank(actions_by_id[fact.action_id], count=4)
+        for fact in facts
+        if fact.is_free_lead
+        and fact.pattern == "bomb" and fact.bomb_length == 4 and not fact.uses_wildcard
+    }
+    four_bomb_ranks.discard(None)
+    for flush_fact in facts:
+        if (
+            not flush_fact.is_free_lead
+            or flush_fact.pattern != "straight_flush"
+            or flush_fact.uses_wildcard
+            or flush_fact.finishes_hand
+        ):
+            continue
+        flush_carrier = actions_by_id[flush_fact.action_id].get("carrier_cards")
+        if not isinstance(flush_carrier, list):
+            continue
+        affected = sorted(
+            (
+                rank for rank in set(_rank_of(card) for card in flush_carrier)
+                if hand_rank_counts.get(rank) == 4 and rank in four_bomb_ranks
+            ),
+            key=lambda rank: _RANK_VALUES[rank],
+        )
+        if len(affected) < 2:
+            continue
+        bomb_fact = next(
+            (
+                fact for fact in facts
+                if fact.is_free_lead
+                and fact.pattern == "bomb" and fact.bomb_length == 4 and not fact.uses_wildcard
+                and _natural_same_rank(actions_by_id[fact.action_id], count=4) == affected[0]
+            ),
+            None,
+        )
+        if bomb_fact is not None:
+            flush_bomb_pair = (flush_fact, bomb_fact)
+            break
+    if flush_bomb_pair is not None:
+        flush_fact, bomb_fact = flush_bomb_pair
+        contrasts.append(
+            CandidateContrast(
+                "straight_flush_bomb_fragment",
+                (flush_fact.action_id, bomb_fact.action_id),
+                flush_fact.teammate_hand_count,
+            )
+        )
+
+    # A same-shape natural sequence can be released at different public
+    # strengths.  Show the weakest and strongest available routes together;
+    # the model still weighs timing, team urgency, and residual hand structure.
+    for pattern, relation_kind in (
+        ("straight", "straight_strength"),
+        ("steel_plate", "steel_plate_strength"),
+    ):
+        by_high_rank: dict[str, CandidateStructure] = {}
+        for fact in facts:
+            if not fact.is_free_lead or fact.pattern != pattern or fact.finishes_hand:
+                continue
+            action = actions_by_id[fact.action_id]
+            high_rank = _natural_sequence_high_rank(action, pattern=pattern)
+            if high_rank is not None:
+                by_high_rank.setdefault(high_rank, fact)
+        if len(by_high_rank) >= 2:
+            ordered_ranks = sorted(by_high_rank, key=lambda rank: _RANK_VALUES[rank])
+            lower, higher = by_high_rank[ordered_ranks[0]], by_high_rank[ordered_ranks[-1]]
+            contrasts.append(
+                CandidateContrast(
+                    relation_kind,
+                    (lower.action_id, higher.action_id),
+                    lower.teammate_hand_count,
+                )
+            )
+
+    # The 3+2 kicker is strategically distinct only when the same natural
+    # triple can legally carry at least three different natural pairs.  Use
+    # the middle kicker and a deterministic edge as a bounded comparison;
+    # no fixed rank direction is prescribed.
+    kicker_options: dict[str, dict[str, CandidateStructure]] = {}
+    for fact in facts:
+        if not fact.is_free_lead or fact.finishes_hand:
+            continue
+        action = actions_by_id[fact.action_id]
+        shape = _natural_triple_pair_kicker(action)
+        if shape is None:
+            continue
+        triple_rank, pair_rank = shape
+        kicker_options.setdefault(triple_rank, {}).setdefault(pair_rank, fact)
+    for triple_rank in sorted(kicker_options, key=lambda rank: _RANK_VALUES.get(rank, 99)):
+        choices = kicker_options[triple_rank]
+        if len(choices) < 3:
+            continue
+        ordered_kickers = sorted(choices, key=lambda rank: _RANK_VALUES[rank])
+        middle_rank = ordered_kickers[len(ordered_kickers) // 2]
+        edge_ranks = (ordered_kickers[0], ordered_kickers[-1])
+        edge_rank = max(
+            edge_ranks,
+            key=lambda rank: (
+                abs(_RANK_VALUES[rank] - _RANK_VALUES[middle_rank]),
+                -_RANK_VALUES[rank],
+            ),
+        )
+        contrasts.append(
+            CandidateContrast(
+                "triple_pair_kicker_gradient",
+                (choices[middle_rank].action_id, choices[edge_rank].action_id),
+                choices[middle_rank].teammate_hand_count,
+            )
+        )
+        break
 
     # This relation only certifies that a single does not fragment an already
     # held same-rank group.  It does not certify that a card has no possible

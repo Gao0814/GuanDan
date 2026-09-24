@@ -1,4 +1,5 @@
 from copy import deepcopy
+from collections import Counter
 from dataclasses import replace
 import unittest
 from unittest import mock
@@ -6,7 +7,10 @@ from unittest import mock
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekSuggestion
 from agents.game_phase import classify_game_phase
+from agents.action_structure import representative_candidate_contrasts, summarize_candidate_structures
+from agents.hand_evaluator import evaluate_hand
 from agents.opening_strategy import OpeningFormulaStrategy, normalize_hand_strength
+from engine.game import GuanDanGame
 
 
 def _action(
@@ -97,6 +101,48 @@ class RecordingRAGAdvisor:
         return {"scene_tags": {}, "rule_hits": [], "experience_hits": [], "query": ""}
 
 
+def _public_formula_target_id(
+    observation: dict[str, object], actions: list[dict[str, object]]
+) -> int | None:
+    """Mirror only the public target predicate for a multi-seed conflict assertion."""
+
+    my_info = observation["my_info"]
+    round_context = observation["current_round"]
+    assert isinstance(my_info, dict) and isinstance(round_context, dict)
+    hand = Counter(
+        card if card in {"SJ", "BJ"} else str(card)[:-1]
+        for card in my_info["hand_cards"]
+    )
+    rank_order = {rank: index for index, rank in enumerate(("3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"), start=3)}
+    level_rank = str(round_context["current_level_rank"])
+    structured = {
+        card
+        for action in actions
+        if action["wildcard_count"] == 0 and len(action["carrier_cards"]) > 1
+        for card in action["carrier_cards"]
+    }
+    safe: list[tuple[int, int]] = []
+    for action in actions:
+        carrier = action["carrier_cards"]
+        declared = action["declared_cards"]
+        if action["declared_pattern"] != "single" or action["wildcard_count"] != 0 or len(carrier) != 1 or len(declared) != 1:
+            continue
+        token = str(carrier[0])
+        rank = token if token in {"SJ", "BJ"} else token[:-1]
+        declared_rank = str(declared[0])
+        declared_rank = declared_rank if declared_rank in rank_order else declared_rank[:-1]
+        if (
+            declared_rank == rank and rank not in {"A", "2", "SJ", "BJ"}
+            and rank != level_rank and hand.get(rank) == 1 and token not in structured
+        ):
+            safe.append((rank_order[rank], int(action["action_id"])))
+    if not safe:
+        return None
+    lowest = min(rank for rank, _ in safe)
+    targets = [action_id for rank, action_id in safe if rank == lowest]
+    return targets[0] if len(targets) == 1 else None
+
+
 class TestOpeningFormulaStrategy(unittest.TestCase):
     def setUp(self) -> None:
         self.strategy = OpeningFormulaStrategy()
@@ -122,6 +168,55 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
 
         self.assertIsNone(chosen)
         self.assertEqual((observation, actions), before)
+
+    def test_full_engine_openings_keep_formula_live_only_when_relations_do_not_touch_target(self) -> None:
+        direct_count = 0
+        relevant_conflict_count = 0
+        unrelated_relation_count = 0
+        state_count = 200
+        for seed in range(state_count):
+            game = GuanDanGame(seed=seed, current_level_rank="2")
+            observation = game.reset()
+            actions = game.legal_actions()
+            my_info = observation["my_info"]
+            other_players = observation["other_players"]
+            current_round = observation["current_round"]
+            assert isinstance(my_info, dict) and isinstance(other_players, list)
+            assert isinstance(current_round, dict)
+            player_hand_counts = [int(my_info["hand_count"])] + [
+                int(player["hand_count"]) for player in other_players
+            ]
+            self.assertEqual(player_hand_counts, [27, 27, 27, 27])
+            self.assertEqual(sum(player_hand_counts), 108)
+            self.assertEqual(current_round["step_no"], 0)
+            hand_eval = evaluate_hand(observation, actions)
+            if normalize_hand_strength(hand_eval) != "strong":
+                continue
+            facts = summarize_candidate_structures(observation, actions)
+            contrasts = representative_candidate_contrasts(observation, actions)
+            self.assertIsNotNone(facts)
+            self.assertIsNotNone(contrasts)
+            assert facts is not None and contrasts is not None
+            target_id = _public_formula_target_id(observation, actions)
+            if target_id is None or any(fact.finishes_hand for fact in facts):
+                continue
+            if self.strategy._has_public_urgency(observation) or not self.strategy._has_return_resource(observation, actions):
+                continue
+            target_is_in_visible_relation = any(target_id in contrast.action_ids for contrast in contrasts)
+            selected = self.strategy.select_action(observation, actions, hand_eval)
+            if target_is_in_visible_relation:
+                relevant_conflict_count += 1
+                self.assertIsNone(selected)
+            else:
+                self.assertTrue(contrasts)
+                unrelated_relation_count += 1
+                self.assertEqual(selected, target_id)
+                direct_count += 1
+                self.assertFalse(any(selected in contrast.action_ids for contrast in contrasts))
+
+        self.assertGreater(direct_count, 0)
+        self.assertGreater(relevant_conflict_count, 0)
+        self.assertGreater(unrelated_relation_count, 0)
 
     def test_joker_level_wildcard_and_partial_groups_are_not_formula_targets(self) -> None:
         observation = _observation(["4S", "4H", "QS", "2S", "2H", "SJ"])
