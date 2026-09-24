@@ -577,12 +577,18 @@ def summarize_candidate_contrasts(
     all_singles: list[CandidateStructure] = []
     for fact in facts:
         action = actions_by_id.get(fact.action_id)
-        if action is None or not fact.is_free_lead:
+        if action is None:
             continue
+        # A four/five-bomb residual comparison is also meaningful on a
+        # follow when both natural canonical responses are currently legal.
+        # Every other relation in this collection remains a free-lead
+        # comparison, so do not broaden those paths accidentally.
         if fact.pattern == "bomb" and fact.bomb_length in {4, 5}:
             rank = _natural_same_rank(action, count=fact.bomb_length)
             if rank is not None:
                 bombs_by_rank.setdefault(rank, {}).setdefault(fact.bomb_length, fact)
+        elif not fact.is_free_lead:
+            continue
         elif fact.pattern == "pair":
             rank = _natural_same_rank(action, count=2)
             if rank is not None:

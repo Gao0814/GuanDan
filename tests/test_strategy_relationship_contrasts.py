@@ -1,6 +1,7 @@
 """Engine-backed regressions for public model-before action contrasts."""
 
 from copy import deepcopy
+from collections.abc import Callable
 import json
 from pathlib import Path
 import re
@@ -62,6 +63,117 @@ def _midgame_engine_game_with_fixed_hand(hand_tokens: list[str]) -> GuanDanGame:
         4: tuple(deck[40:60]),
     }
     return GuanDanGame(current_level_rank="2", preset_hands=hands)
+
+
+def _take_cards(
+    deck: list[Card], predicate: Callable[[Card], bool], count: int,
+) -> list[Card]:
+    selected: list[Card] = []
+    for card in tuple(deck):
+        if predicate(card):
+            selected.append(card)
+            deck.remove(card)
+            if len(selected) == count:
+                break
+    if len(selected) != count:
+        raise ValueError("synthetic deal does not contain requested cards")
+    return selected
+
+
+def _engine_follow_bomb_game(
+    *,
+    follow_rank: str,
+    table_rank: str,
+    follow_rank_count: int = 5,
+    current_level_rank: str = "2",
+    include_follow_wildcard: bool = False,
+) -> GuanDanGame:
+    """Build a complete deal, then reach a genuine follow through legal steps."""
+
+    deck = list(build_double_deck())
+    follower = _take_cards(deck, lambda card: card.rank == follow_rank, follow_rank_count)
+    leader_bomb = _take_cards(deck, lambda card: card.rank == table_rank, 4)
+    if include_follow_wildcard:
+        follower.extend(
+            _take_cards(
+                deck,
+                lambda card: card.rank == current_level_rank and card.suit == "H",
+                1,
+            )
+        )
+    wildcard_token = Card(rank=current_level_rank, suit="H")
+    follower.extend(
+        _take_cards(
+            deck,
+            lambda card: card.rank != follow_rank and card != wildcard_token,
+            27 - len(follower),
+        )
+    )
+
+    leader = list(leader_bomb)
+    # Leave many natural singleton leads so two ordinary rounds can be
+    # completed without consuming the bomb used for the follow fixture.
+    seen_ranks: set[str] = set()
+    for card in tuple(deck):
+        if card.rank in {table_rank, "A", "K"} or card.rank in seen_ranks:
+            continue
+        leader.append(card)
+        deck.remove(card)
+        seen_ranks.add(card.rank)
+        if len(leader) == 4 + 12:
+            break
+    for filler_rank in ("A", "K"):
+        needed = 27 - len(leader)
+        if needed <= 0:
+            break
+        available = [card for card in deck if card.rank == filler_rank]
+        take = min(needed, len(available))
+        leader.extend(_take_cards(deck, lambda card, rank=filler_rank: card.rank == rank, take))
+    if len(leader) < 27:
+        leader.extend(_take_cards(deck, lambda card: card.rank != table_rank, 27 - len(leader)))
+    if len(leader) != 27 or len(follower) != 27:
+        raise ValueError("synthetic complete deal has incorrect hand sizes")
+
+    hands = {
+        1: tuple(follower),
+        4: tuple(leader),
+        2: tuple(deck[:27]),
+        3: tuple(deck[27:54]),
+    }
+    game = GuanDanGame(
+        current_level_rank=current_level_rank,
+        preset_hands=hands,
+        starting_player_id=4,
+    )
+    game.reset()
+
+    def step_first_natural_single() -> None:
+        action = next(
+            item for item in game.legal_actions()
+            if item["declared_pattern"] == "single" and item["wildcard_count"] == 0
+        )
+        game.step(int(action["action_id"]))
+
+    def step_pass() -> None:
+        action = next(item for item in game.legal_actions() if item["declared_pattern"] == "pass")
+        game.step(int(action["action_id"]))
+
+    for _ in range(2):
+        step_first_natural_single()
+        for _ in range(3):
+            step_pass()
+    table_action = next(
+        action for action in game.legal_actions()
+        if action["declared_pattern"] == "bomb"
+        and len(action["carrier_cards"]) == 4
+        and all(card[:-1] == table_rank for card in action["carrier_cards"])
+        and action["wildcard_count"] == 0
+    )
+    game.step(int(table_action["action_id"]))
+    observation = game.observe()
+    if observation["my_info"]["player_id"] != 1 or observation["current_round"]["constraint"] == "free":
+        raise AssertionError("synthetic legal replay did not reach the intended follow seat")
+    return game
 
 
 def _context(observation: dict[str, object], actions: list[dict[str, object]], recommendation: object) -> dict[str, object]:
@@ -159,26 +271,97 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
         self.assertFalse(applicability["natural_pair_single"])
 
     def test_engine_bomb_contrast_protects_both_ids_and_explains_public_tradeoff(self) -> None:
-        game = _game(["7S", "7H", "7C", "7D", "7S", "3S", "4H"])
-        observation = game.reset()
-        actions = game.legal_actions()
-        contrast = _contrast(observation, actions, "bomb_residual")
-        recommendation = build_strategy_recommendation(observation, actions)
+        for rank in ("7", "9"):
+            with self.subTest(rank=rank):
+                game = _game([f"{rank}S", f"{rank}H", f"{rank}C", f"{rank}D", f"{rank}S", "3S", "4H"])
+                observation = game.reset()
+                actions = game.legal_actions()
+                contrast = _contrast(observation, actions, "bomb_residual")
+                recommendation = build_strategy_recommendation(observation, actions)
 
-        self.assertTrue(set(contrast.action_ids).issubset(recommendation.action_ids))
-        final_actions = DeepSeekClient.prepare_prompt_actions(actions, **_context(observation, actions, recommendation))
-        self.assertTrue(set(contrast.action_ids).issubset({action["action_id"] for action in final_actions}))
-        prompt = DeepSeekClient._build_structured_prompt(
-            my_info=observation["my_info"], current_round=observation["current_round"],
-            other_players=observation["other_players"], history=observation["history"],
-            legal_actions=final_actions, strategy_recommendation=recommendation,
-            residual_structure_source_actions=actions,
+                self.assertTrue(set(contrast.action_ids).issubset(recommendation.action_ids))
+                final_actions = DeepSeekClient.prepare_prompt_actions(actions, **_context(observation, actions, recommendation))
+                self.assertTrue(set(contrast.action_ids).issubset({action["action_id"] for action in final_actions}))
+                prompt = DeepSeekClient._build_structured_prompt(
+                    my_info=observation["my_info"], current_round=observation["current_round"],
+                    other_players=observation["other_players"], history=observation["history"],
+                    legal_actions=final_actions, strategy_recommendation=recommendation,
+                    residual_structure_source_actions=actions,
+                )
+                self.assertIn("【公开关系对照】", prompt)
+                self.assertIn("四/五炸对照", prompt)
+                self.assertIn("少耗一张炸弹资源", prompt)
+                self.assertIn("避免残余孤张", prompt)
+                self.assertIn("不是动作指令", prompt)
+
+    def test_follow_bomb_residual_relation_requires_both_natural_sizes_and_exact_residuals(self) -> None:
+        for follow_rank, table_rank in (("7", "3"), ("9", "5")):
+            with self.subTest(follow_rank=follow_rank):
+                game = _engine_follow_bomb_game(
+                    follow_rank=follow_rank,
+                    table_rank=table_rank,
+                )
+                observation = game.observe()
+                actions = game.legal_actions()
+                self.assertNotEqual(observation["current_round"]["constraint"], "free")
+                self.assertEqual(classify_game_phase(observation).phase, "midgame")
+                contrast = _contrast(observation, actions, "bomb_residual")
+                by_id = {int(action["action_id"]): action for action in actions}
+                four, five = (by_id[action_id] for action_id in contrast.action_ids)
+                self.assertEqual((len(four["carrier_cards"]), len(five["carrier_cards"])), (4, 5))
+                self.assertEqual((four["wildcard_count"], five["wildcard_count"]), (0, 0))
+                self.assertTrue(all(card[:-1] == follow_rank for card in four["carrier_cards"] + five["carrier_cards"]))
+                facts = {fact.action_id: fact for fact in summarize_candidate_structures(observation, actions) or ()}
+                self.assertTrue(facts[four["action_id"]].leaves_bomb_rank_singleton)
+                self.assertTrue(facts[five["action_id"]].clears_played_rank_groups)
+
+        missing_size = _engine_follow_bomb_game(
+            follow_rank="7", table_rank="3", follow_rank_count=4,
         )
-        self.assertIn("【公开关系对照】", prompt)
-        self.assertIn("四/五炸对照", prompt)
-        self.assertIn("少耗一张炸弹资源", prompt)
-        self.assertIn("避免残余孤张", prompt)
-        self.assertIn("不是动作指令", prompt)
+        missing_actions = missing_size.legal_actions()
+        self.assertFalse(any(item.kind == "bomb_residual" for item in summarize_candidate_contrasts(missing_size.observe(), missing_actions) or ()))
+        malformed_actions = deepcopy(missing_actions)
+        natural_bomb = next(
+            action for action in malformed_actions
+            if action["declared_pattern"] == "bomb" and len(action["carrier_cards"]) == 4
+            and all(card[:-1] == "7" for card in action["carrier_cards"])
+        )
+        natural_bomb["wildcard_count"] = 1
+        self.assertIsNone(summarize_candidate_contrasts(missing_size.observe(), malformed_actions))
+
+        inexact_residual = _engine_follow_bomb_game(
+            follow_rank="7", table_rank="3", follow_rank_count=6,
+        )
+        inexact_actions = inexact_residual.legal_actions()
+        inexact_facts = {fact.action_id: fact for fact in summarize_candidate_structures(inexact_residual.observe(), inexact_actions) or ()}
+        inexact_bombs = [
+            action for action in inexact_actions
+            if action["declared_pattern"] == "bomb"
+            and action["wildcard_count"] == 0
+            and len(action["carrier_cards"]) in {4, 5}
+            and all(card[:-1] == "7" for card in action["carrier_cards"])
+        ]
+        self.assertEqual({len(action["carrier_cards"]) for action in inexact_bombs}, {4, 5})
+        self.assertFalse(any(item.kind == "bomb_residual" for item in summarize_candidate_contrasts(inexact_residual.observe(), inexact_actions) or ()))
+        self.assertFalse(any(inexact_facts[action["action_id"]].leaves_bomb_rank_singleton for action in inexact_bombs if len(action["carrier_cards"]) == 4))
+        self.assertFalse(any(inexact_facts[action["action_id"]].clears_played_rank_groups for action in inexact_bombs if len(action["carrier_cards"]) == 5))
+
+        wildcard_follow = _engine_follow_bomb_game(
+            follow_rank="8", table_rank="3", follow_rank_count=4,
+            current_level_rank="7", include_follow_wildcard=True,
+        )
+        wildcard_actions = wildcard_follow.legal_actions()
+        self.assertTrue(any(
+            action["declared_pattern"] == "bomb" and len(action["carrier_cards"]) == 4
+            and action["wildcard_count"] == 0 and all(card[:-1] == "8" for card in action["carrier_cards"])
+            for action in wildcard_actions
+        ))
+        self.assertTrue(any(
+            action["declared_pattern"] == "bomb" and len(action["carrier_cards"]) == 5
+            and action["wildcard_count"] > 0 and set(action["declared_cards"]) == {"8"}
+            for action in wildcard_actions
+        ))
+        self.assertFalse(any(item.kind == "bomb_residual" for item in summarize_candidate_contrasts(wildcard_follow.observe(), wildcard_actions) or ()))
 
     def test_engine_pair_single_contrast_beats_extra_singles_and_uses_public_teammate_count(self) -> None:
         game = _game(["6S", "6H", "3S", "4H", "9C", "AS"], teammate=["KS"])
@@ -448,6 +631,89 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
                 self.assertIsNotNone(validated)
                 assert validated is not None
                 self.assertTrue(set(validated.action_ids).issubset(transport.candidate_ids))
+
+    def test_follow_bomb_relation_reaches_actual_request_and_both_choices_stay_model_owned(self) -> None:
+        advisor = RAGAdvisor(
+            KnowledgeRetriever(KnowledgeBaseLoader(Path("rag")).load_all_documents())
+        )
+        safe_config = type(
+            "OfflineConfig",
+            (),
+            {"card_tracking_enabled": False, "hand_evaluation_enabled": True, "opening_formula_enabled": True},
+        )()
+
+        for follow_rank, table_rank in (("7", "3"), ("9", "5")):
+            game = _engine_follow_bomb_game(
+                follow_rank=follow_rank,
+                table_rank=table_rank,
+            )
+            observation = game.observe()
+            actions = game.legal_actions()
+            contrast = _contrast(observation, actions, "bomb_residual")
+            recommendation = build_strategy_recommendation(observation, actions)
+            self.assertTrue(set(contrast.action_ids).issubset(recommendation.action_ids))
+            self.assertEqual(classify_game_phase(observation).phase, "midgame")
+
+            for action_id in contrast.action_ids:
+                with self.subTest(follow_rank=follow_rank, choice=action_id):
+                    transport = _RequestCapturingTransport(action_id)
+                    client = _CapturingProductionClient(
+                        "offline-test-key", "https://offline.invalid", "offline-test",
+                        max_retries=0, transport=transport,
+                    )
+                    with patch("agents.deepseek_ai.AppConfig.from_env", return_value=safe_config), patch(
+                        "agents.deepseek_ai.evaluate_hand",
+                        return_value={"label": "中等", "total_score": 50, "control_score": 10},
+                    ):
+                        agent = DeepSeekAIAgent(
+                            1, client, rag_advisor=advisor, rag_top_k=3,
+                            hand_evaluation_enabled=True, opening_formula_enabled=True,
+                            strategy_router_shadow_enabled=True, strategy_intent_prompt_enabled=True,
+                            strategy_recommendation_enabled=True,
+                        )
+                        selected_id = agent.select_action(observation, actions)
+
+                    self.assertEqual(transport.calls, 1)
+                    self.assertEqual(selected_id, action_id)
+                    self.assertEqual(agent.last_decision_source, "model")
+                    self.assertIn("四/五炸对照", transport.prompt)
+                    self.assertIn("四炸少耗一张炸弹资源", transport.prompt)
+                    self.assertIn("五炸清空该点数组", transport.prompt)
+                    self.assertIn("一次出完、公开紧急性、牌权或更高价值结构可以推翻", transport.prompt)
+                    self.assertIsNotNone(agent.last_strategy_intent)
+                    assert agent.last_strategy_intent is not None
+                    self.assertIn("bomb_residual", agent.last_strategy_intent.candidate_relation_kinds)
+                    self.assertEqual(agent.last_strategy_intent_prompt.status, "ready")
+                    self.assertIn("四/五炸资源成本与残余结构的取舍", agent.last_strategy_intent_prompt.text)
+                    captured = client.captured_kwargs
+                    first_pass_ids = {
+                        int(action["action_id"]) for action in captured["prompt_actions"]
+                    }
+                    self.assertTrue(set(contrast.action_ids).issubset(first_pass_ids))
+                    self.assertTrue(set(contrast.action_ids).issubset(transport.candidate_ids))
+                    self.assertLessEqual(len(transport.candidate_ids), PROMPT_MAX_CANDIDATE_ACTIONS)
+                    self.assertEqual(len(transport.candidate_ids), len(set(transport.candidate_ids)))
+                    self.assertTrue(set(transport.candidate_ids).issubset({int(item["action_id"]) for item in actions}))
+                    validated = DeepSeekClient._validated_strategy_recommendation(
+                        agent.last_strategy_recommendation, actions
+                    )
+                    self.assertIsNotNone(validated)
+                    assert validated is not None
+                    self.assertTrue(set(validated.action_ids).issubset(first_pass_ids))
+                    self.assertTrue(set(validated.action_ids).issubset(transport.candidate_ids))
+                    rag_context = captured.get("rag_context")
+                    self.assertIsInstance(rag_context, dict)
+                    assert isinstance(rag_context, dict)
+                    hits = rag_context.get("experience_hits")
+                    self.assertIsInstance(hits, list)
+                    assert isinstance(hits, list)
+                    self.assertIn(
+                        "exp_bomb_wildcard_001",
+                        {item.get("source_id") for item in hits if isinstance(item, dict)},
+                    )
+                    self.assertIn("可撤回软假设：", transport.prompt)
+                    self.assertNotIn("source_tier", transport.prompt)
+                    self.assertNotIn("https://", transport.prompt)
 
     def test_natural_bomb_strength_resource_relation_reaches_real_request(self) -> None:
         hand = [

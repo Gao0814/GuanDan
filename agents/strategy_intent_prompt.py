@@ -218,7 +218,7 @@ def _valid_candidate_relations(context: StrategyIntentContext) -> bool:
     free_lead_kinds = {
         "natural_single_cost", "single_control_resource", "natural_pair_single", "natural_group_single",
         "bomb_strength_resource", "sequence_structure_loss", "triple_split_repartition", "straight_flush_bomb_fragment", "straight_strength",
-        "steel_plate_strength", "triple_pair_kicker_gradient", "bomb_residual",
+        "steel_plate_strength", "triple_pair_kicker_gradient",
     }
     if any(kind in free_lead_kinds for kind in kinds) and context.is_free_lead is not True:
         return False
