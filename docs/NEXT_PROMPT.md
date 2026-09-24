@@ -1,13 +1,18 @@
-# Coding Codex 执行 Prompt
+# 执行 Codex Prompt：已审计 Botzone workspace 的独立回收
 
-任务：对 `ad1779c` 的通用出后剩牌用途实现做**一次合并的模型前表达修正**，解决规划复审发现的两项验收缺口，不重做关系识别、另开单点探针或增加本地动作决策。先按 `AGENTS.md` 检查适用项目 Skill、Git status/diff/HEAD；确认包含 `ad1779c`，保留任何外部修改。阅读 `docs/PROJECT_STATUS.md` 顶部、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、`docs/STRATEGY_SOURCE_AUDIT.md` 相关组牌/炸弹行，以及 `agents/action_structure.py`、`agents/deepseek_client.py`、相关 RAG/推荐与直接测试。只改任务相关业务、经验文本和测试，不改规划 docs 或 engine。
+本任务只为下一次人工单局准备空的固定 workspace；**不运行** preflight、connector、Botzone/live、浏览器、DeepSeek 或任何网络请求，不分配 seed，不修改仓库文件或创建 commit。先阅读仓库 `AGENTS.md`、`docs/CLEAN_HANDOFF.md`、`docs/PROJECT_STATUS.md` 顶部以及 `.agents/skills/botzone-workspace-recycle/SKILL.md`，严格按该 Skill 执行；检查 Git status、diff、HEAD，确认工作树 clean 且 HEAD 包含 `f67faf6`，保留任何既有修改。本任务已由规划 Codex 对上一局六份 evidence 作审计并写入状态文档；AGENTS.md 的长期授权仅覆盖下述精确文件。
 
-已验收的基础须保留：自然四至八张同点炸弹与已有拆组关系共享公开剩牌事实，通配/声明歧义 fail closed；两侧原始合法候选、`<=80` 最终候选、最多 3 个推荐 ID、RAG 来源等级隔离、实际 Request 绑定及成功模型原始 ID/source=`model` 守恒。既有八个禁网 fixture 当前都 `ready`，本任务不得让它们退化。不能新增后置策略覆盖、本地强制出较长炸弹、新 decision source 或 seed/点数特例。
+固定 workspace：`D:\VsCodeProject\BotzoneWorkspace`。先只读确认 `D:\VsCodeProject` 直属、名称以 `Botzone` 开头的目录精确只有普通非链接的 `BotzoneWorkspace`；workspace 根目录和 `audit`、`state`、`streams` 均为普通非链接目录。递归 inventory 必须**恰好**是这三个目录与下列六个普通非链接文件，没有其他文件、子目录或链接。逐项核对完整大小和 SHA-256，不能只核前缀，不能解析或输出证据正文、搜索替代路径、猜测哈希或接受新文件：
 
-缺口一（策略表达）：项目所有者的判据是**少打而留下的牌是否值得保留**，不是“短炸留孤张、长炸清空”这一种形状。对同点不同长度自然炸弹及已有拆组对照，先用公开出后结构比较被留下的实体牌：若它能形成真正有利的自然组合、保留可识别的独立回手或控制路线，或对当前公开队友/对手局面有可说明的作用，则说明保留理由及其代价；若只形成低价值的散张或增加余组/后续走牌负担，且较多出牌的合法候选不带来更大的结构或资源损失，则模型前应**倾向把它一并打出**，而不把“少耗一张”自动写为优点。“可参与对子/三张/炸弹/连续结构”只是线索，不自动等于高价值：组合可能重叠、需要拆别组或没有后续牌权，应与一并打出后的余组、控制资源及公开局势对比。对价值无法由公开信息判定的牌，不虚构高价值，也不声称未来绝无用途；明确不确定性，并比较当前可证的留牌负担与多出牌的成本。此判断应覆盖剩余一张或多张的可识别结构，不依赖某个炸弹长度或固定点数。它是有条件、可撤回的模型前建议，不是强制选动作或来源逐字口诀。协调关系 prompt 与 `exp_bomb_wildcard_001`，保持 B/C 来源等级与治理隔离。
+1. `audit/completion-audit.json` — 781 bytes — `018a95e4c6f286bb93f870d2c56baa6c05e6bde72b458f1a7dffdee61a0a88a4`
+2. `decision-trace.json` — 261941 bytes — `87607a11e7dc1acf41e74c86c34767012cd734130e891b7c2fc807e44618ee00`
+3. `history.txt` — 11426 bytes — `28864f2e44243085860e6bbbaa180b4fc7b663bc5825cc19416bb4387f23f7c8`
+4. `state/6439aef518ba6343a0e4ba8c6a1294dc5fc70703f31588a048cc19f7435e4e47.json` — 115 bytes — `6037548d58f35dceb751ecdf25216f83cdfee5cdde9848e1db99550ee95b4c55`
+5. `streams/stdout.txt` — 76 bytes — `4ad569f46ba5902d05b4780156b64f78b24802141f94c880b6afbd051ad9df1c`
+6. `streams/stderr.txt` — 0 bytes — `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
 
-缺口二（时延相关输入体积）：规划 Codex 用同一最终候选与上下文，在内存中分别调用父提交和本提交的 prompt builder，23 候选开局从 8059 增至 13406 字，51 候选开局从 13311 增至 22531 字（约 +66%/+69%）。目前每个候选的 `出后用途=` 与部分 `候选公开结构`、关系行重复表达相近内容。只让真正参与有界关系对照的代表得到足够的剩牌用途细节；其余候选保留必要、短小且不误导的公开摘要，或省略重复项。不要为了缩短提示而丢失关键关系两侧、反例或声明歧义边界。给这两个冻结开局 fixture 建立可复验字符预算；目标在现有候选数、RAG/意图配置下分别不超过约 10,000/16,000 字，并说明若某一门槛无法合理达到的具体原因。另测 80 候选上限局面，防止冗余随候选数无界放大。字符预算只是输入开销门槛，不证明真实时延改善。
+另以不输出命令行或凭据的方式确认无可归属的在运行项目 connector。任何 Git、类型、路径、目录集合、大小、hash、connector 或 inventory 门槛不符，**零清理、立即停止并报告**；不得自行修订预期值或处理未知对象。
 
-用引擎正反例覆盖四/五、五/六、六/七、七/八及已有拆组关系：留牌可成对/三张/仍成炸或参与连续结构、留牌为低价值散张且增加余组、价值未知、较长路线反而损失其他结构等。验证提示真正比较**留下牌的边际用途与负担**，不把“清空点数”或“出牌更多”本身当成无条件优胜。通过真实 `DeepSeekClient` 的禁网 transport 检查最终 Request 与两侧候选、RAG、关系及反例绑定，fake 成功返回两侧均保持原始 action ID 和 `model` source。跑直接相关、主规则、全量 `unittest`，`git diff --check`。完成后报告 prompt 字符数前后、测试、代码边界和剩余限制；不得声称策略选择或胜率已实测改善。
+全部前提通过后，才按上述顺序逐文件使用 Windows 回收站 API（例如 `Microsoft.VisualBasic.FileIO.FileSystem::DeleteFile(..., SendToRecycleBin)`）回收；每项处理前再次确认其精确路径和身份。不得永久删除、递归删除、移除目录、清空回收站、跨 shell 拼接路径或切换删除机制。任一回收失败即停，报告已处理与未处理项，不重试或扩大目标。
 
-本任务真实 DeepSeek 请求/重试、其他网络、Botzone/live/connector/browser/preflight 均为 0。显式设置 `PYTHON_DOTENV_DISABLED=1` 再运行会调用配置的测试；不读取 `.env`、Botzone workspace/seed evidence、旧 H3 ledger 或系统 Temp，不创建仓库外 artifact。只提交自己的业务/知识/测试文件并报告 commit、最终 Git status 与保留外部修改。完成后交规划 Codex 一次复审，再决定整局验证；不为开局单张或对子 `other` 类别猜测新修复。
+最后只读确认六条原路径均不存在，固定根和 `audit`、`state`、`streams` 仍为普通非链接且空目录，整个 workspace 文件数为 0，直属 `Botzone*` 集合未漂移；Git HEAD/status 不变。报告各项低敏结果、永久删除数、是否留下外部修改，并结束此清理任务；**不要接着启动单局**。若成功，交规划 Codex 复审空 workspace 后再单独安排 live。
