@@ -20,7 +20,7 @@ from agents.game_phase import classify_game_phase
 from agents.strategy_recommendation import build_strategy_recommendation
 from engine.cards import Card, build_double_deck
 from engine.game import GuanDanGame
-from evaluation.h3_model_probe_fixtures import build_h3_model_probe_fixtures
+from evaluation.h3_model_probe_fixtures import build_h3_model_probe_fixtures, build_h3_model_probe_opening_fixtures
 from rag.kb_loader import KnowledgeBaseLoader
 from rag.retriever import KnowledgeRetriever
 from agents.rag_advisor import RAGAdvisor
@@ -208,6 +208,42 @@ def _contrast(
     return next(item for item in contrasts if item.kind == kind)
 
 
+def _capture_production_request(
+    observation: dict[str, object],
+    actions: list[dict[str, object]],
+    *,
+    opening_formula_enabled: bool,
+    advisor: RAGAdvisor,
+) -> tuple["DeepSeekAIAgent", "_CapturingProductionClient", "_RequestCapturingTransport"]:
+    recommendation = build_strategy_recommendation(observation, actions)
+    chosen_id = recommendation.action_ids[0] if recommendation.action_ids else int(actions[0]["action_id"])
+    transport = _RequestCapturingTransport(chosen_id)
+    client = _CapturingProductionClient(
+        "offline-test-key", "https://offline.invalid", "offline-test",
+        max_retries=0, transport=transport,
+    )
+    safe_config = type(
+        "OfflineConfig",
+        (),
+        {"card_tracking_enabled": False, "hand_evaluation_enabled": True,
+         "opening_formula_enabled": opening_formula_enabled},
+    )()
+    with patch("agents.deepseek_ai.AppConfig.from_env", return_value=safe_config), patch(
+        "agents.deepseek_ai.evaluate_hand",
+        return_value={"label": "中等", "total_score": 50, "control_score": 10},
+    ):
+        agent = DeepSeekAIAgent(
+            1, client, rag_advisor=advisor, rag_top_k=3,
+            hand_evaluation_enabled=True, opening_formula_enabled=opening_formula_enabled,
+            strategy_router_shadow_enabled=True, strategy_intent_prompt_enabled=True,
+            strategy_recommendation_enabled=True,
+        )
+        selected_id = agent.select_action(observation, actions)
+    if transport.calls != 1 or selected_id != chosen_id or agent.last_decision_source != "model":
+        raise AssertionError("offline_request_path_not_preserved")
+    return agent, client, transport
+
+
 class _RecordingClient:
     def __init__(self, action_id: int) -> None:
         self.action_id = action_id
@@ -300,9 +336,10 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
                 )
                 self.assertIn("【公开关系对照】", prompt)
                 self.assertIn("同点数自然炸弹残余用途对照", prompt)
-                self.assertIn("出后公开结构线索", prompt)
+                self.assertIn("留牌边际判据", prompt)
+                self.assertIn("留牌事实", prompt)
+                self.assertIn("可有条件倾向一并打出", prompt)
                 self.assertIn("未识别不等于无未来用途", prompt)
-                self.assertIn("不要仅按张数最大化", prompt)
                 self.assertIn("不是动作指令", prompt)
 
     def test_free_lead_bomb_residual_uses_share_public_natural_structure_facts(self) -> None:
@@ -346,8 +383,9 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
                     residual_structure_source_actions=actions,
                 )
                 self.assertTrue(set(contrasts[0].action_ids).issubset(final_ids))
-                self.assertIn("出后用途=", prompt)
-                self.assertIn("未识别不等于无未来用途", prompt)
+                self.assertIn("留牌事实", prompt)
+                self.assertIn("所出点残留=", prompt)
+                self.assertIn("可能重叠", prompt)
 
     def test_residual_control_resource_is_a_counted_cue_not_a_future_control_claim(self) -> None:
         game = _game(["5S", "5H", "5C", "5D", "5S", "AS", "3S", "4H"])
@@ -367,7 +405,7 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
             legal_actions=final_actions, strategy_recommendation=recommendation,
             residual_structure_source_actions=actions,
         )
-        self.assertIn("余手自然控制牌资源候选数:1", prompt)
+        self.assertIn("自然控制牌候选=1", prompt)
         self.assertIn("不保证未来牌权", prompt)
 
     def test_follow_bomb_residual_covers_natural_lengths_four_through_eight(self) -> None:
@@ -467,7 +505,7 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
         self.assertIn("队友公开剩余1张", prompt)
         self.assertIn("传递牌型与清理低价值牌", prompt)
         self.assertIn("不能推断队友暗牌", prompt)
-        self.assertIn("出后公开结构线索", prompt)
+        self.assertIn("留牌事实", prompt)
         self.assertIn("未识别不等于无未来用途", prompt)
 
     def test_initial_engine_range_keeps_safe_single_ahead_of_ordinary_pair_contrasts(self) -> None:
@@ -500,6 +538,50 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
                     self.assertIn(recommendation.action_ids[0], safe_ids)
                 self.assertFalse(set(contrast.action_ids).issubset(recommendation.action_ids))
         self.assertEqual((pair_states, pair_front, safe_single_states), (30, 0, 29))
+
+    def test_production_prompt_character_budgets_for_openings_and_80_candidate_cap(self) -> None:
+        advisor = RAGAdvisor(
+            KnowledgeRetriever(KnowledgeBaseLoader(Path("rag")).load_all_documents())
+        )
+        opening_cases = (
+            ("low_cost_single", 53, 23, 10_000),
+            ("neutral_soft_pair", 83, 51, 16_000),
+        )
+        for fixture, expected in zip(build_h3_model_probe_opening_fixtures(), opening_cases):
+            name, raw_count, candidate_count, char_budget = expected
+            with self.subTest(scene=name):
+                self.assertEqual(fixture.name, name)
+                self.assertEqual(len(fixture.legal_actions), raw_count)
+                agent, client, transport = _capture_production_request(
+                    fixture.observation,
+                    fixture.legal_actions,
+                    opening_formula_enabled=True,
+                    advisor=advisor,
+                )
+                self.assertEqual(len(transport.candidate_ids), candidate_count)
+                self.assertEqual(len(set(transport.candidate_ids)), candidate_count)
+                self.assertLessEqual(len(transport.prompt), char_budget)
+                self.assertNotIn("出后用途=", transport.prompt)
+                self.assertIn("留牌边际判据", transport.prompt)
+                self.assertIn("留牌事实", transport.prompt)
+                self.assertEqual(agent.last_decision_source, "model")
+                self.assertEqual(
+                    client.captured_kwargs.get("strategy_recommendation"),
+                    agent.last_strategy_recommendation,
+                )
+
+        game = GuanDanGame(seed=0, current_level_rank="2")
+        observation = game.reset()
+        actions = game.legal_actions()
+        _, _, transport = _capture_production_request(
+            observation,
+            actions,
+            opening_formula_enabled=False,
+            advisor=advisor,
+        )
+        self.assertEqual(len(transport.candidate_ids), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertLessEqual(len(transport.prompt), 30_000)
+        self.assertNotIn("出后用途=", transport.prompt)
 
     def test_relationship_detection_is_stable_across_rank_and_public_hand_order(self) -> None:
         for rank in ("5", "9"):
@@ -635,7 +717,7 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
     def test_real_client_request_unifies_router_rag_recommendation_and_public_contrast(self) -> None:
         fixtures = build_h3_model_probe_fixtures()
         cases = (
-            (fixtures[0], "bomb_residual", "同点数自然炸弹残余用途对照", "同点不同长度自然炸弹的资源成本与出后剩牌用途取舍", "炸弹与通配牌管理", "exp_bomb_wildcard_001"),
+            (fixtures[0], "bomb_residual", "同点数自然炸弹残余用途对照", "同点不同长度炸弹的留牌边际用途、余组负担与炸弹资源/牌权成本", "炸弹与通配牌管理", "exp_bomb_wildcard_001"),
             (fixtures[1], "natural_single_cost", "自然单张成本对照", "不拆已成同点组的低成本自然单张", "自然单张成本与试探路线", "exp_soft_single_cost_probe_001"),
             (fixtures[2], "natural_pair_single", "同点数对子/单张对照", "自然对子清理与同点单张拆分", "传递牌型与清理低价值牌", None),
             (fixtures[3], "natural_group_single", "自然组牌/普通单张对照", "自然对子/三张与普通单张的清理和余组取舍", "可撤回的对子试探假设", "exp_soft_pair_probe_001"),
@@ -787,15 +869,16 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
                         self.assertEqual(selected_id, action_id)
                         self.assertEqual(agent.last_decision_source, "model")
                         self.assertIn("同点数自然炸弹残余用途对照", transport.prompt)
-                        self.assertIn("出后公开结构线索", transport.prompt)
-                        self.assertIn("未识别不等于无未来用途", transport.prompt)
-                        self.assertIn("不要仅按张数最大化", transport.prompt)
+                        self.assertIn("留牌事实", transport.prompt)
+                        self.assertIn("价值不明时只比较当前可证成本", transport.prompt)
+                        self.assertIn("不保证未来牌权", transport.prompt)
+                        self.assertIn("可有条件倾向一并打出", transport.prompt)
                         self.assertIn("一次出完、公开紧急性", transport.prompt)
                         self.assertIsNotNone(agent.last_strategy_intent)
                         assert agent.last_strategy_intent is not None
                         self.assertIn("bomb_residual", agent.last_strategy_intent.candidate_relation_kinds)
                         self.assertEqual(agent.last_strategy_intent_prompt.status, "ready")
-                        self.assertIn("同点不同长度自然炸弹", agent.last_strategy_intent_prompt.text)
+                        self.assertIn("同点不同长度炸弹的留牌边际用途", agent.last_strategy_intent_prompt.text)
                         captured = client.captured_kwargs
                         first_pass_ids = {
                             int(action["action_id"]) for action in captured["prompt_actions"]

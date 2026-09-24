@@ -77,6 +77,15 @@ _RANK_ORDER: dict[str, int] = {
     "J": 11, "Q": 12, "K": 13, "A": 14, "2": 15, "SJ": 16, "BJ": 17,
 }
 _PRESSURE_PATTERNS = {"bomb", "straight_flush", "joker_bomb"}
+_RESIDUAL_USE_RELATION_KINDS = frozenset(
+    {
+        "natural_pair_single", "natural_group_single", "sequence_structure_loss",
+        "triple_split_repartition", "straight_flush_bomb_fragment", "straight_strength",
+        "steel_plate_strength", "triple_pair_kicker_gradient", "natural_single_cost",
+        "single_control_resource", "wildcard_resource", "bomb_strength_resource",
+        "bomb_residual",
+    }
+)
 
 # Prompt limits are deliberately centralized so context growth stays auditable.
 PROMPT_MAX_CANDIDATE_ACTIONS = 80
@@ -365,7 +374,6 @@ class DeepSeekClient:
         action: dict[str, object],
         current_level_rank: str,
         residual_structure: FreeLeadResidualStructure | None = None,
-        candidate_structure: CandidateStructure | None = None,
     ) -> str:
         action_id = action.get("action_id")
         brief = DeepSeekClient._compact_action_text(
@@ -400,17 +408,14 @@ class DeepSeekClient:
                     PROMPT_MAX_WILDCARD_INFO_CHARS,
                 )
             )
-        structure = candidate_structure or residual_structure
-        if structure is not None:
-            clears = "是" if structure.clears_played_rank_groups else "否"
+        if residual_structure is not None:
+            clears = "是" if residual_structure.clears_played_rank_groups else "否"
             fields.append(
                 "残余结构="
                 f"清空所出点数组:{clears},"
-                f"残余孤张点数:{structure.residual_singleton_rank_count},"
-                f"估计剩余点数组:{structure.estimated_remaining_rank_groups}"
+                f"残余孤张点数:{residual_structure.residual_singleton_rank_count},"
+                f"估计剩余点数组:{residual_structure.estimated_remaining_rank_groups}"
             )
-        if candidate_structure is not None:
-            fields.append("出后用途=" + DeepSeekClient._format_residual_use(candidate_structure))
         prefix = f"#{action_id} " if action_id is not None else ""
         return prefix + " | ".join(fields)
 
@@ -431,29 +436,30 @@ class DeepSeekClient:
         rank_parts: list[str] = []
         for item in fact.residual_rank_uses:
             if item.remaining_count == 0 and item.wildcard_count == 0:
-                rank_parts.append("所出点自然牌已清空")
+                rank_parts.append(f"{item.rank}点清空")
                 continue
             uses = "、".join(pattern_labels[kind] for kind in item.natural_pattern_kinds)
             natural_part = (
-                f"所出点余{item.remaining_count}张自然牌，可参与{uses}"
-                if uses
-                else f"所出点余{item.remaining_count}张自然牌，未识别自然组合"
+                f"{item.rank}点余{item.remaining_count}张自然牌"
+                + (f"可组成{uses}" if uses else "未识别同点组合")
             )
             if item.wildcard_count:
-                natural_part += f"；另余通配牌{item.wildcard_count}张，单独评估用途"
+                natural_part += f"；另留通配{item.wildcard_count}张"
             rank_parts.append(natural_part)
+        parts = [f"余手{fact.residual_card_count}张"] if fact.residual_card_count is not None else []
+        if rank_parts:
+            parts.append("所出点残留=" + "/".join(rank_parts))
         hand_uses = "、".join(
             pattern_labels[kind] for kind in fact.residual_hand_natural_pattern_kinds
         )
         if hand_uses:
-            rank_parts.append(f"余手结构候选:{hand_uses}")
-        elif not rank_parts:
-            rank_parts.append("余手未识别自然组合")
+            parts.append(f"余手结构线索={hand_uses}")
+        parts.append(
+            f"余组≈{fact.estimated_remaining_rank_groups}/孤张={fact.residual_singleton_rank_count}"
+        )
         if fact.residual_natural_control_resource_count is not None:
-            rank_parts.append(
-                f"余手自然控制牌资源候选数:{fact.residual_natural_control_resource_count}"
-            )
-        return "；".join(rank_parts) + "（可能重叠；未识别不等于无未来用途）"
+            parts.append(f"自然控制牌候选={fact.residual_natural_control_resource_count}")
+        return "；".join(parts)
 
     @staticmethod
     def _residual_use_contrast_text(
@@ -461,11 +467,36 @@ class DeepSeekClient:
         second_id: int,
         candidate_facts: dict[int, CandidateStructure],
     ) -> str:
-        first = DeepSeekClient._format_residual_use(candidate_facts.get(first_id))
-        second = DeepSeekClient._format_residual_use(candidate_facts.get(second_id))
+        first_fact = candidate_facts.get(first_id)
+        second_fact = candidate_facts.get(second_id)
+        if first_fact is None or second_fact is None:
+            return (
+                f"留牌事实：候选{first_id}/{second_id}的出后结构无法完整核实，具体用途未知。"
+            )
+
+        first = DeepSeekClient._format_residual_use(first_fact)
+        second = DeepSeekClient._format_residual_use(second_fact)
+        carrier_delta = abs(first_fact.carrier_count - second_fact.carrier_count)
+        retained_id = (
+            first_id if first_fact.carrier_count < second_fact.carrier_count
+            else second_id if second_fact.carrier_count < first_fact.carrier_count
+            else None
+        )
+        retained_text = (
+            f"候选{retained_id}少出{carrier_delta}张、多留{carrier_delta}张实体牌；"
+            if retained_id is not None and carrier_delta > 0
+            else "两侧出牌张数相同；"
+        )
+        public_context: list[str] = []
+        teammate_count = first_fact.teammate_hand_count
+        if first_fact.teammate_active and teammate_count is not None and teammate_count <= 2:
+            public_context.append(f"队友公开剩余{teammate_count}张")
+        opponent_count = first_fact.minimum_opponent_hand_count
+        if opponent_count is not None and opponent_count <= 2:
+            public_context.append(f"对手公开最少剩余{opponent_count}张")
+        context_text = f"公开局势={'/'.join(public_context)}；" if public_context else ""
         return (
-            f"出后公开结构线索：候选{first_id}为[{first}]；候选{second_id}为[{second}]。"
-            "这些只是当前余手中可能重叠的自然配合，不保证未来牌权、可走路线或分组结果。"
+            f"留牌事实：{retained_text}候选{first_id}[{first}]；候选{second_id}[{second}]。{context_text}"
         )
 
     @staticmethod
@@ -764,7 +795,6 @@ class DeepSeekClient:
         hand_count: int | None,
         current_level_rank: str,
         residual_structures: dict[int, FreeLeadResidualStructure] | None = None,
-        candidate_structures: dict[int, CandidateStructure] | None = None,
     ) -> list[str]:
         scene = "lead" if constraint == "free" else "follow"
         buckets: dict[str, list[dict[str, object]]] = {
@@ -814,17 +844,11 @@ class DeepSeekClient:
                     if residual_structures is not None and isinstance(action_id, int)
                     else None
                 )
-                candidate_structure = (
-                    candidate_structures.get(action_id)
-                    if candidate_structures is not None and isinstance(action_id, int)
-                    else None
-                )
                 items.append(
                     DeepSeekClient._action_summary_entry(
                         action,
                         current_level_rank,
                         residual_structure,
-                        candidate_structure,
                     )
                 )
             lines.append(f"{label}：{'、'.join(items)}")
@@ -1592,13 +1616,19 @@ class DeepSeekClient:
 
         if visible_contrasts:
             lines.append("【公开关系对照】")
+            if any(item.kind in _RESIDUAL_USE_RELATION_KINDS for item in visible_contrasts):
+                lines.append(
+                    "留牌边际判据：少出留下的牌只有在当前可识别的自然组合、可能回手/控制资源或公开协同用途足以抵消余组/孤张与资源成本时，才构成保留理由；"
+                    "组合线索可能重叠、需拆别组或无后续牌权，并不自动等于高价值。若没有可证用途且留牌增加负担，另一侧又不损更高价值结构/控制资源，可有条件倾向一并打出；"
+                    "价值不明时只比较当前可证成本，不断言未来无用、必然可走或能取得牌权，也不保证未来牌权。"
+                )
             for contrast in visible_contrasts:
                 first_id, second_id = contrast.action_ids
                 if contrast.kind == "bomb_strength_resource":
                     lines.append(
                         f"自然炸弹强度/资源对照：action_id={first_id} 是较弱的自然炸弹，action_id={second_id} 是较强的自然炸弹；"
-                        "比较较小炸弹少耗资源与较大炸弹可能带来的控制力度，并核对出后余组。"
-                        "不规定先出小炸或大炸；一次出完、公开紧急性、队友/对手牌权和残余结构都可改变取舍。"
+                        "比较少出留下的牌是否值得保留、炸弹强度/牌权机会与资源成本；不规定先出小炸或大炸。"
+                        "一次出完、公开紧急性、队友/对手牌权和整体结构都可改变取舍。"
                         + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id)
                     )
                 elif contrast.kind == "bomb_residual":
@@ -1613,9 +1643,9 @@ class DeepSeekClient:
                     spend_text = f"少出{length_delta}张" if length_delta is not None else "少出若干张"
                     lines.append(
                         f"同点数自然炸弹残余用途对照：action_id={first_id} 与 action_id={second_id} 是不同长度的当前合法自然炸弹；"
-                        f"较短侧{spend_text}，较长侧可能有不同的炸弹强度/牌权机会；不要把多出的剩牌自动当作节省资源，也不要仅按张数最大化。"
+                        f"较短侧{spend_text}；比较少出留下的牌是否值得保留，与多出牌的结构/资源成本及炸弹强度/牌权机会。"
                         + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id)
-                        + "一次出完、公开紧急性、队友/对手协同、回手计划或更高价值结构都可推翻局部残余比较。"
+                        + "一次出完、公开紧急性、队友/对手协同、回手计划或更高价值结构均可改变取舍。"
                     )
                 elif contrast.kind == "natural_pair_single":
                     teammate_text = (
@@ -1745,7 +1775,7 @@ class DeepSeekClient:
         lines.append("【候选动作】")
         if residual_structures is not None:
             lines.append(
-                "出后用途仅按当前公开手牌与canonical carrier归纳；自然结构可重叠，未识别到用途不等于证明无未来用途；"
+                "出后用途仅按当前公开手牌与canonical carrier归纳；自然结构可重叠，未识别不等于无未来用途；"
                 "不推断暗牌、未来合法出牌或牌权，估计余组不是动作指令。"
             )
         if len(prompt_actions) < len(legal_actions):
@@ -1760,7 +1790,6 @@ class DeepSeekClient:
                 hand_count=hand_count,
                 current_level_rank=current_level_rank,
                 residual_structures=residual_structures,
-                candidate_structures=candidate_facts_by_id,
             )
         )
         if candidate_facts is not None:
@@ -1777,7 +1806,6 @@ class DeepSeekClient:
                     parts.append("消耗控制")
                 if fact.bomb_length is not None:
                     parts.append(f"炸弹长度={fact.bomb_length}")
-                parts.append("出后用途=" + DeepSeekClient._format_residual_use(fact))
                 compact_facts.append("；".join(parts))
             if compact_facts:
                 lines.append("候选公开结构：" + " | ".join(compact_facts))

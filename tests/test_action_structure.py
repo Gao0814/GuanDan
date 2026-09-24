@@ -126,7 +126,7 @@ class TestActionStructure(unittest.TestCase):
         self.assertIn("不是动作指令", prompt)
         self.assertIn("不保证未来牌权", prompt)
         self.assertIn("未识别不等于无未来用途", prompt)
-        self.assertIn("出后用途=", prompt)
+        self.assertNotIn("出后用途=", prompt)
         line_40 = next(
             line for line in prompt.splitlines()
             if "action_id=40" in line and "残余结构=" in line

@@ -75,6 +75,7 @@ class CandidateStructure:
     residual_rank_uses: tuple[ResidualRankUse, ...] | None = None
     residual_hand_natural_pattern_kinds: tuple[str, ...] | None = None
     residual_natural_control_resource_count: int | None = None
+    residual_card_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -583,6 +584,7 @@ def summarize_candidate_structures(
                 residual_uses[0] if residual_uses is not None else None,
                 residual_uses[1] if residual_uses is not None else None,
                 residual_uses[2] if residual_uses is not None else None,
+                sum(hand.values()),
             ))
             seen.add(action_id)
             continue
@@ -615,6 +617,7 @@ def summarize_candidate_structures(
             residual_uses[0] if residual_uses is not None else None,
             residual_uses[1] if residual_uses is not None else None,
             residual_uses[2] if residual_uses is not None else None,
+            sum(remaining.values()),
         ))
         seen.add(action_id)
     return tuple(results)
