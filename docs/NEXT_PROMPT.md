@@ -1,28 +1,13 @@
 # Coding Codex 执行 Prompt
 
-前一次同目标任务在首个请求前因报告 `streams/stdout.txt` hash 不匹配而停止；它没有读取 trace、创建账本或发出请求。规划 Codex 随后只读复核六个精确文件均与下表匹配，原 inventory **不修改**；差异原因仍未知。本次是新的诊断任务，必须自己重新核对全部门槛，不能沿用上轮的部分通过结论。
+任务：只针对已复现的同点数自然四/五炸选择，改进**模型前**公开取舍表达。来源策略整合与跟牌关系修复已经让旧固定局面的两侧候选、残余关系、反例及软经验进入实际 DeepSeek Request；随后一次真实请求仍原始选择了“四炸留同点孤张”。这只证明该固定状态的选择没有自动转成五炸，不证明四炸在所有局面都错误。开局单张、中局对子两场只记录为 `other`，不能据此推定旧动作重现；本任务不修改它们。
 
-任务：对来源策略整合后的三个固定历史公开状态做**一次集中真实 DeepSeek 原始选择诊断**。这不是新 Botzone 对局、胜率评测或生产代码修复。开始核对 Git status/diff/HEAD，确认包含 `1b6d59d` 且无待处理外部修改；读取适用 `AGENTS.md`、检查 `.agents/skills/`，阅读 `docs/PROJECT_STATUS.md` 顶部结论、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、trace 解析及 DeepSeek/候选/策略输入相关代码。仓库文件一律不修改、不创建 commit；不读取旧 H3 ledger 或系统 Temp，不运行 Botzone/live/connector/browser/preflight，不清理 workspace。
+先按 `AGENTS.md` 检查适用 Skill、Git status/diff/HEAD，确认包含 `1b6d59d` 且无需要保留的外部改动；阅读 `docs/PROJECT_STATUS.md` 顶部、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`，以及 `agents/action_structure.py`、`agents/deepseek_client.py`、`agents/strategy_intent_prompt.py`、炸弹相关经验 corpus/provenance 和直接测试。仅 Coding Codex 可改本任务所需业务代码/测试，规划 docs 不要改。
 
-预注册真实请求上限为 **3 次**：跟牌四/五炸、开局低成本/较高自然单张、中局自然对子/同点单张，按此固定顺序各一次，重试 0。项目所有者对单项诊断严格少于 10 次真实请求已有长期授权；不得把“最多 3 次”扩大为重跑、换 prompt、换 fixture 或额外模型调用。只使用当前生产 `DeepSeekAIAgent`/`DeepSeekClient`、当前配置模型与真实 transport；`DEEPSEEK_MAX_RETRIES=0` 仅限本进程。密钥从既有配置读取，不输出、硬编码或持久化。模型 reasoning/响应自由文本、prompt、手牌、逐动作牌面及原始 action ID 只可在内存中处理，不输出或保存。
+目标是通用、有条件地说明：四炸与五炸都是合法原始动作；五炸多耗一张但清空该点数组、避免同点残余孤张且本手炸弹更强。四炸所“节省”的第五张只有在公开手牌结构、后续组合、牌权或协同上有可说明的价值时才是有效收益；不能把留下孤张本身笼统称为资源优势。若公开候选与出后结构能证明第五张无其他可识别的组合收益，模型前建议应明确倾向五炸，同时列出可推翻条件（例如立即出完、保留可验证的更高价值结构、公开紧急性或牌权安排）。若证据不足，就保留中性对照，不编造暗牌或确定收益。检查并协调关系 prompt 与相关 C 级软经验，避免两处措辞相互抵消。只从 `observe()` 与完整 canonical `legal_actions()` 推导，不针对 seed `47004`、具体点数、动作 ID 或历史响应写特例；不修改 `engine/`。
 
-先逐项只读核对固定 workspace `D:\VsCodeProject\BotzoneWorkspace` 下六个**精确相对路径**的普通非链接类型、字节数和 SHA-256。任一不符就停止，不读取正文、枚举 state 或找替代：
+保持 DeepSeek 对最终合法候选的裁决：四/五炸两侧都保留在有界最终请求中，最终候选 `<=80`，推荐 ID/请求体闭环，模型返回的原始合法 ID 原样保留且 source=`model`；禁止 post-model 策略覆盖、过滤四炸、固定本地直出或新增 decision source。若现有公开结构不足以可靠判断“第五张无其他组合收益”，先用最小共享公开结构摘要表达可证事实；不能证明时 fail closed，而不是把推测写成确定结论。不要扩大到开局单张、对子、RuleBased 续局代理或新策略阶段。
 
-| 相对路径 | 字节 | SHA-256 |
-| --- | ---: | --- |
-| `audit/completion-audit.json` | 781 | `018a95e4c6f286bb93f870d2c56baa6c05e6bde72b458f1a7dffdee61a0a88a4` |
-| `decision-trace.json` | 261941 | `87607a11e7dc1acf41e74c86c34767012cd734130e891b7c2fc807e44618ee00` |
-| `history.txt` | 11426 | `28864f2e44243085860e6bbbaa180b4fc7b663bc5825cc19416bb4387f23f7c8` |
-| `state/6439aef518ba6343a0e4ba8c6a1294dc5fc70703f31588a048cc19f7435e4e47.json` | 115 | `6037548d58f35dceb751ecdf25216f83cdfee5cdde9848e1db99550ee95b4c55` |
-| `streams/stdout.txt` | 76 | `4ad569f46ba5902d05b4780156b64f78b24802141f94c880b6afbd051ad9df1c` |
-| `streams/stderr.txt` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+用引擎构造自由领牌与跟牌的正反例，覆盖同点自然四/五炸同时合法、四炸确实留同点孤张、五炸确实清空、第五张另有可识别结构价值、缺一侧候选或残余前提不成立；在真实 `DeepSeekClient` 禁网 transport 路径核对实际 Request 中的候选两侧、明确取舍及反例，并用 fake 成功返回分别验证原始 ID 与 `model` source 守恒。先跑定向，再跑主规则和全量测试，`git diff --check`；如环境导致全量结果不可审计，明确报告而不要声称通过。
 
-hash 比较使用表中**完整** 64 位十六进制值，大小写可归一但不得截断或用摘要前缀比较。如比较报告不符，先不读正文、后续文件或发网络请求；只核对比较脚本的目标、算法和预期常量是否与上表逐字一致。若仅是无外部副作用的准备脚本误抄，可修正脚本并从首项重新只读校验；若实测文件仍不符，则立即停止，低敏报告给出精确路径、预期/实测大小与完整 SHA-256、类型和失败阶段，不改 inventory、不找替代。任何已发请求都不得借此补发或重试。
-
-六项通过后，才在内存中读取 ACK trace，以公开 observation 和当时完整 canonical actions 唯一定位三场。**三场离线资格必须全部 ready 才发出首个真实请求**：24 条 ACK 顺序与合法 ID 守恒；当前版本三场最终候选分别为 5/47/13、各不超过 80 且签名唯一；对应两侧原始合法候选均在实际最终 Request；四/五炸有残余关系、软原则和反例，单张/对子有对应关系、可推翻条件及公开结构信息；实际 Request 与记录的最终候选集合一致。专项 C 级单张/对子条目不必强求进入默认 top-1，只验收其可行动语义已到达。使用禁网 transport 先验证请求体绑定和 fake 合法 ID/source 保真；定向运行 `tests.test_strategy_relationship_contrasts`，不需因仓库零改动重跑全量。任一资格失败则真实请求保持 0，报告失败层级，不临时修代码或换状态。
-
-资格通过后才按预注册顺序发出真实请求。每次调用前写 `request_started`，完成后写 `request_result`；若 provider/transport/解析/ID/source 守恒出现异常，立即停止，不能重试或补发。仅记录低敏动作类别：炸弹为 `five_clears_rank` / `four_leaves_singleton` / `other`，单张为 `lower_safe_single` / `higher_single` / `other`，对子为 `natural_pair` / `same_rank_single` / `other`。成功结果必须是实际最终候选中的原始合法 ID、source=`model`；类别不代表好坏，不把历史动作或 RuleBased 选择当正确答案。
-
-为避免终端输出丢失，创建一份新的低敏账本 `D:\VsCodeProject\GuanDanH3A2Audit\source-three-scene-20260924.jsonl`，仅追加本轮事件；若该精确文件已存在就停止，不覆盖或改名重试。仅允许 header、三条资格、`qualification_complete`、每请求一对 started/result、summary 事件，字段只含 HEAD、场景固定代号、候选数、资格布尔/失败阶段、provider 固定结果类别、上述动作类别、技术守恒布尔和计数。不得含手牌、牌面、原始 ID、prompt、模型文本、URL/token/凭据、match/binding 标识或异常正文。结束时重读校验事件顺序/配对/计数，报告账本字节数与 SHA-256。该账本是客户端侧记录，不是独立网络计数证明。
-
-最终报告三场技术资格、实际请求/重试/provider 计数、逐场低敏动作类别、候选/source/返回值守恒、账本校验、Git HEAD/status 和所有保留外部修改。执行前后检查 `git diff --check`；不提交仓库文件。无论模型选了哪类动作，都不据三次单点选择宣称最优打法、普遍改进或胜率；交规划 Codex 复审后再决定是否还有需要修正的具体输入层问题。
+本任务真实 DeepSeek 请求/重试、Botzone/live/connector/browser/preflight 均为 0。不要读取 `.env`、旧 H3 ledger、Botzone workspace/seed evidence 或系统 Temp，不创建仓库外 artifact。只提交自己修改的业务/测试/知识文件，报告提交、测试、最终 Git status 和保留外部修改。不要宣称 prompt 修改已改善真实模型选择或胜率；完成后交规划 Codex 复审，由规划层决定下一次整局验证，不继续拆分探针。
