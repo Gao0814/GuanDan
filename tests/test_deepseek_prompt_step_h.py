@@ -579,7 +579,10 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
 
         config = mock.Mock(card_tracking_enabled=False)
 
-        def prune(actions, _constraint, *, step_no, hand_count, phase_context, protected_action_ids=()):
+        def prune(
+            actions, _constraint, *, step_no, hand_count, phase_context,
+            protected_action_ids=(), protected_relation_groups=(),
+        ):
             events.append("prune")
             return list(actions)
 
@@ -654,7 +657,7 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
         self.assertIsNone(agent.last_card_confidence_prompt)
         pipeline.assert_not_called()
 
-    def test_card_confidence_shadow_skips_all_local_shortcuts(self) -> None:
+    def test_card_confidence_shadow_skips_forced_pass_and_finish_shortcuts(self) -> None:
         client = RecordingClient()
         agent = DeepSeekAIAgent(
             1,
@@ -679,28 +682,6 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
                 ),
                 2,
             )
-            opening_observation = _observation(hand_count=20, step_no=0)
-            opening_observation["my_info"]["hand_cards"] = ["3S", "9S", "SJ", "BJ"] + [
-                card
-                for rank in ("4", "5", "6", "7", "8", "10", "J", "Q")
-                for card in (f"{rank}S", f"{rank}H")
-            ]
-            with mock.patch(
-                "agents.deepseek_ai.evaluate_hand",
-                return_value={"label": "strong", "control_score": 24},
-            ):
-                self.assertEqual(
-                    agent.select_action(
-                        opening_observation,
-                        [
-                            _action(1, "single", ["3"], ["3S"]),
-                            _action(2, "single", ["9"], ["9S"]),
-                            _action(3, "single", ["SJ"], ["SJ"]),
-                        ],
-                    ),
-                    1,
-                )
-
         pipeline.assert_not_called()
         formatter.assert_not_called()
         self.assertIsNone(agent.last_card_confidence)

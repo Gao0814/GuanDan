@@ -176,6 +176,7 @@ class TestStrategyRouter(unittest.TestCase):
                 "table_leader_player_id": 3, "table_leader_relation": "teammate", "table_leader_is_urgent": False,
                 "hand_strength": "non_weak", "hand_total_score": 50, "hand_control_score": 10, "diagnostics": [],
                 "opponents_all_active": True, "teammate_big_joker_opportunity": False, "short_endgame_minimum_groups": False,
+                "candidate_relation_kinds": [],
             },
         )
 
@@ -197,6 +198,7 @@ class TestStrategyRouter(unittest.TestCase):
                 "table_leader_player_id": 4, "table_leader_relation": "opponent", "table_leader_is_urgent": True,
                 "hand_strength": "non_weak", "hand_total_score": 50, "hand_control_score": 10, "diagnostics": [],
                 "opponents_all_active": True, "teammate_big_joker_opportunity": False, "short_endgame_minimum_groups": False,
+                "candidate_relation_kinds": [],
             },
         )
 
@@ -215,6 +217,7 @@ class TestStrategyRouter(unittest.TestCase):
                 "table_leader_player_id": None, "table_leader_relation": None, "table_leader_is_urgent": False,
                 "hand_strength": "non_weak", "hand_total_score": 50, "hand_control_score": 10, "diagnostics": [],
                 "opponents_all_active": True, "teammate_big_joker_opportunity": False, "short_endgame_minimum_groups": False,
+                "candidate_relation_kinds": [],
             },
         )
 

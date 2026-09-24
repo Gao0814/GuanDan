@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agents.action_structure import CANDIDATE_RELATION_KINDS
 from agents.strategy_router import StrategyIntentContext
 
 
@@ -15,6 +16,18 @@ _INTENT_TEXT = {
     "block_opponent": "阻断对手",
     "support_teammate": "支援队友",
     "control": "控制牌权",
+}
+RELATION_PROMPT_TEXT = {
+    "natural_single_cost": "不拆已成同点组的低成本自然单张与较高自然单张的取舍，仍核对顺子等余组变化",
+    "single_control_resource": "自然小单与消耗控制资源单张的取舍",
+    "natural_pair_single": "自然对子清理与同点单张拆分的取舍",
+    "natural_group_single": "自然对子/三张与普通单张的清理和余组取舍",
+    "bomb_residual": "四/五炸资源成本与残余结构的取舍",
+    "wildcard_resource": "自然牌型与通配资源消耗的取舍",
+    "teammate_control_resource": "队友控桌时让牌与消耗控制资源的取舍",
+    "teammate_table_choice": "队友控桌时让牌与本家合法接牌的取舍",
+    "danger_block_resource": "危险对手控桌时阻断与资源成本的取舍",
+    "danger_block_choice": "危险对手控桌时pass与合法压制候选的取舍",
 }
 _REASON_DETAILS = {
     "can_finish_now": ("run_out", "本次可直接出完"),
@@ -61,6 +74,7 @@ class StrategyIntentPromptPayload:
     text: str
     char_count: int
     diagnostics: tuple[str, ...]
+    candidate_relation_kinds: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -72,6 +86,7 @@ class StrategyIntentPromptPayload:
             "text": self.text,
             "char_count": self.char_count,
             "diagnostics": list(self.diagnostics),
+            "candidate_relation_kinds": list(self.candidate_relation_kinds),
         }
 
 
@@ -183,6 +198,35 @@ def _valid_table_fields(context: StrategyIntentContext) -> bool:
     return True
 
 
+def _valid_candidate_relations(context: StrategyIntentContext) -> bool:
+    kinds = context.candidate_relation_kinds
+    if type(kinds) is not tuple:
+        return False
+    if any(type(kind) is not str or kind not in CANDIDATE_RELATION_KINDS for kind in kinds):
+        return False
+    if len(set(kinds)) != len(kinds):
+        return False
+    if tuple(kind for kind in CANDIDATE_RELATION_KINDS if kind in kinds) != kinds:
+        return False
+    free_lead_kinds = {
+        "natural_single_cost", "single_control_resource", "natural_pair_single", "natural_group_single", "bomb_residual",
+    }
+    if any(kind in free_lead_kinds for kind in kinds) and context.is_free_lead is not True:
+        return False
+    kind_set = set(kinds)
+    if kind_set & {"teammate_control_resource", "teammate_table_choice"} and not (
+        context.is_free_lead is False and context.table_leader_relation == "teammate"
+    ):
+        return False
+    if kind_set & {"danger_block_resource", "danger_block_choice"} and not (
+        context.is_free_lead is False
+        and context.table_leader_relation == "opponent"
+        and context.table_leader_is_urgent is True
+    ):
+        return False
+    return True
+
+
 def _expected_reason(context: StrategyIntentContext) -> str:
     """Apply the router's fixed priority using only validated context fields."""
 
@@ -255,6 +299,7 @@ def build_strategy_intent_prompt_payload(
         or type(context.table_leader_is_urgent) is not bool
         or not _valid_player_fields(context)
         or not _valid_table_fields(context)
+        or not _valid_candidate_relations(context)
     ):
         diagnostics.add("invalid_context_fields")
     if context.teammate_big_joker_opportunity and not (
@@ -287,6 +332,11 @@ def build_strategy_intent_prompt_payload(
 
     assert reason is not None
     _, reason_text = _REASON_DETAILS[reason]
+    relation_line = ""
+    if context.candidate_relation_kinds:
+        relation_line = "\n公开候选关系：" + "；".join(
+            RELATION_PROMPT_TEXT[kind] for kind in context.candidate_relation_kinds
+        )
     text = "\n".join(
         (
             f"范围：{context.phase}",
@@ -294,7 +344,7 @@ def build_strategy_intent_prompt_payload(
             f"公开依据：{reason_text}",
             "边界：这是公开局面下的策略偏好，不是隐藏牌事实或合法性结论；只能从候选动作中选择。",
         )
-    )
+    ) + relation_line
     if len(text) > max_chars:
         return _omitted({"prompt_budget_exceeded"})
     return StrategyIntentPromptPayload(
@@ -306,4 +356,5 @@ def build_strategy_intent_prompt_payload(
         text=text,
         char_count=len(text),
         diagnostics=(),
+        candidate_relation_kinds=context.candidate_relation_kinds,
     )

@@ -14,7 +14,7 @@ import time
 from typing import TYPE_CHECKING, Callable, Protocol
 from urllib import request as urllib_request
 
-from agents.action_structure import FreeLeadResidualStructure, select_candidate_structure_representatives, summarize_candidate_contrasts, summarize_candidate_structures, summarize_free_lead_residual_structures
+from agents.action_structure import FreeLeadResidualStructure, representative_candidate_contrasts, select_candidate_structure_representatives, summarize_candidate_contrasts, summarize_candidate_structures, summarize_free_lead_residual_structures
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
 
 if TYPE_CHECKING:
@@ -101,6 +101,7 @@ _SCENE_TAG_ORDER = (
     "wildcard_action_present",
     "strategy_intent",
     "strategy_domains",
+    "candidate_relation_kinds",
 )
 
 
@@ -487,6 +488,34 @@ class DeepSeekClient:
             return ()
 
     @staticmethod
+    def _relation_actions_by_groups(
+        legal_actions: list[dict[str, object]],
+        groups: tuple[tuple[int, int], ...],
+    ) -> tuple[dict[str, object], ...]:
+        if type(groups) is not tuple:
+            return ()
+        by_id: dict[int, dict[str, object]] = {}
+        for action in legal_actions:
+            if not isinstance(action, dict) or type(action.get("action_id")) is not int:
+                return ()
+            action_id = int(action["action_id"])
+            if action_id in by_id:
+                return ()
+            by_id[action_id] = action
+        selected: list[dict[str, object]] = []
+        for group in groups:
+            if (
+                type(group) is not tuple
+                or len(group) != 2
+                or any(type(action_id) is not int for action_id in group)
+                or group[0] == group[1]
+                or any(action_id not in by_id for action_id in group)
+            ):
+                return ()
+            selected.extend(by_id[action_id] for action_id in group)
+        return tuple(selected)
+
+    @staticmethod
     def _prefer_protected_actions(
         actions: list[dict[str, object]],
         protected_actions: tuple[dict[str, object], ...],
@@ -519,18 +548,26 @@ class DeepSeekClient:
         actions: list[dict[str, object]],
         canonical_actions: list[dict[str, object]],
         protected_action_ids: tuple[int, ...],
+        protected_relation_groups: tuple[tuple[int, int], ...] = (),
     ) -> list[dict[str, object]]:
         """Keep protected original actions through an unbounded first pass."""
         protected = DeepSeekClient._protected_actions_by_id(
             canonical_actions,
             protected_action_ids,
         )
-        if not protected:
+        relation_actions = DeepSeekClient._relation_actions_by_groups(
+            canonical_actions,
+            protected_relation_groups,
+        )
+        protected_actions = list(protected) + [
+            action for action in relation_actions if action not in protected
+        ]
+        if not protected_actions:
             return actions
-        protected_ids = {int(action["action_id"]) for action in protected}
+        protected_ids = {int(action["action_id"]) for action in protected_actions}
         by_signature: dict[tuple[object, ...], dict[str, object]] = {}
         ordered_signatures: list[tuple[object, ...]] = []
-        for action in actions + list(protected):
+        for action in actions + protected_actions:
             signature = DeepSeekClient._action_signature(action)
             existing = by_signature.get(signature)
             if existing is None:
@@ -736,6 +773,7 @@ class DeepSeekClient:
         constraint: str,
         hand_count: int | None,
         protected_action_ids: tuple[int, ...] = (),
+        protected_relation_groups: tuple[tuple[int, int], ...] = (),
     ) -> list[dict[str, object]]:
         """Return a bounded, representative prompt view of canonical actions.
 
@@ -754,9 +792,16 @@ class DeepSeekClient:
             actions,
             protected_action_ids,
         )
+        relation_actions = DeepSeekClient._relation_actions_by_groups(
+            actions,
+            protected_relation_groups,
+        )
+        protected_display_actions = list(protected_actions) + [
+            action for action in relation_actions if action not in protected_actions
+        ]
         unique_actions = DeepSeekClient._prefer_protected_actions(
             actions,
-            protected_actions,
+            tuple(protected_display_actions),
         )
         if len(unique_actions) <= PROMPT_MAX_CANDIDATE_ACTIONS:
             return unique_actions
@@ -804,7 +849,7 @@ class DeepSeekClient:
         # canonical actions.  Reserve those exact IDs before the established
         # bounded category fill, without changing the overall 80-action cap.
         # This is a candidate-visibility guarantee, not an action selector.
-        for action in protected_actions:
+        for action in protected_display_actions:
             reserve(action)
 
         def add_category(predicate: Callable[[dict[str, object]], bool]) -> None:
@@ -913,6 +958,7 @@ class DeepSeekClient:
         hand_count: int | None = None,
         phase_context: GamePhaseContext | None = None,
         protected_action_ids: tuple[int, ...] = (),
+        protected_relation_groups: tuple[tuple[int, int], ...] = (),
     ) -> list[dict[str, object]]:
         """Prune redundant actions to reduce context size for the model.
 
@@ -944,6 +990,7 @@ class DeepSeekClient:
             kept,
             legal_actions,
             protected_action_ids,
+            protected_relation_groups,
         )
 
     @staticmethod
@@ -955,6 +1002,7 @@ class DeepSeekClient:
         hand_count: int | None,
         phase_context: GamePhaseContext | None = None,
         strategy_recommendation: "StrategyRecommendation | None" = None,
+        observation: dict[str, object] | None = None,
     ) -> list[dict[str, object]]:
         """Build the one bounded canonical candidate set used by the model.
 
@@ -968,6 +1016,16 @@ class DeepSeekClient:
             legal_actions,
         )
         protected_ids = validated.action_ids if validated is not None else ()
+        contrasts = (
+            representative_candidate_contrasts(observation, legal_actions)
+            if observation is not None
+            else ()
+        )
+        protected_relation_groups = (
+            tuple(item.action_ids for item in contrasts)
+            if contrasts is not None
+            else ()
+        )
         first_pass = DeepSeekClient._prune_legal_actions(
             legal_actions,
             constraint,
@@ -975,12 +1033,14 @@ class DeepSeekClient:
             hand_count=hand_count,
             phase_context=phase_context,
             protected_action_ids=protected_ids,
+            protected_relation_groups=protected_relation_groups,
         )
         return DeepSeekClient._limit_prompt_actions(
             first_pass,
             constraint=constraint,
             hand_count=hand_count,
             protected_action_ids=protected_ids,
+            protected_relation_groups=protected_relation_groups,
         )
 
     @staticmethod
@@ -1196,10 +1256,21 @@ class DeepSeekClient:
             or payload.char_count <= 0
             or payload.char_count != len(payload.text)
             or payload.char_count > 800
+            or type(payload.candidate_relation_kinds) is not tuple
+        ):
+            return None
+        from agents.action_structure import CANDIDATE_RELATION_KINDS
+        from agents.strategy_intent_prompt import RELATION_PROMPT_TEXT
+
+        relation_kinds = payload.candidate_relation_kinds
+        if (
+            any(type(kind) is not str or kind not in CANDIDATE_RELATION_KINDS for kind in relation_kinds)
+            or len(set(relation_kinds)) != len(relation_kinds)
+            or tuple(kind for kind in CANDIDATE_RELATION_KINDS if kind in relation_kinds) != relation_kinds
         ):
             return None
         lines = payload.text.split("\n")
-        if len(lines) != 4:
+        if len(lines) != (5 if relation_kinds else 4):
             return None
         if lines[0] != f"范围：{payload.phase}":
             return None
@@ -1211,6 +1282,10 @@ class DeepSeekClient:
         }:
             return None
         if lines[3] != _STRATEGY_INTENT_BOUNDARY:
+            return None
+        if relation_kinds and lines[4] != "公开候选关系：" + "；".join(
+            RELATION_PROMPT_TEXT[kind] for kind in relation_kinds
+        ):
             return None
         return payload
 
@@ -1289,6 +1364,25 @@ class DeepSeekClient:
             strategy_recommendation,
             legal_actions,
         )
+        contrast_source_actions = (
+            residual_structure_source_actions
+            if residual_structure_source_actions is not None
+            else legal_actions
+        )
+        representative_contrasts = representative_candidate_contrasts(
+            {"my_info": my_info, "current_round": current_round, "other_players": other_players, "history": history},
+            contrast_source_actions,
+        )
+        available_ids = {
+            action.get("action_id")
+            for action in legal_actions
+            if type(action.get("action_id")) is int
+        }
+        prompt_relation_groups = tuple(
+            item.action_ids
+            for item in (representative_contrasts or ())
+            if set(item.action_ids).issubset(available_ids)
+        )
         prompt_actions = DeepSeekClient._limit_prompt_actions(
             legal_actions,
             constraint=constraint,
@@ -1298,6 +1392,7 @@ class DeepSeekClient:
                 if raw_validated_recommendation is not None
                 else ()
             ),
+            protected_relation_groups=prompt_relation_groups,
         )
         residual_facts = summarize_free_lead_residual_structures(
             {"my_info": my_info, "current_round": current_round},
@@ -1314,15 +1409,7 @@ class DeepSeekClient:
             {"my_info": my_info, "current_round": current_round, "other_players": other_players},
             prompt_actions,
         )
-        contrast_source_actions = (
-            residual_structure_source_actions
-            if residual_structure_source_actions is not None
-            else prompt_actions
-        )
-        all_contrasts = summarize_candidate_contrasts(
-            {"my_info": my_info, "current_round": current_round, "other_players": other_players},
-            contrast_source_actions,
-        )
+        all_contrasts = representative_contrasts
         prompt_action_ids = {
             action.get("action_id")
             for action in prompt_actions
@@ -1333,17 +1420,10 @@ class DeepSeekClient:
             # Keep one bounded, complete comparison per relation type.  A
             # contrast is never described when either original action fell
             # outside the actual model candidate set.
-            for kind in ("bomb_residual", "natural_pair_single"):
-                contrast = next(
-                    (
-                        item
-                        for item in all_contrasts
-                        if item.kind == kind and set(item.action_ids).issubset(prompt_action_ids)
-                    ),
-                    None,
-                )
-                if contrast is not None:
-                    visible_contrasts.append(contrast)
+            visible_contrasts.extend(
+                item for item in all_contrasts
+                if set(item.action_ids).issubset(prompt_action_ids)
+            )
 
         lines.append("【任务与硬约束】")
         lines.append("- legal_actions 是唯一合法动作来源，只能从【候选动作】中选择一个 action_id。")
@@ -1411,14 +1491,6 @@ class DeepSeekClient:
             lines.append(validated_confidence.text)
             lines.append("")
 
-        validated_strategy_intent = DeepSeekClient._validated_strategy_intent_prompt(
-            strategy_intent_prompt,
-        )
-        if validated_strategy_intent is not None:
-            lines.append("【策略意图】")
-            lines.append(validated_strategy_intent.text)
-            lines.append("")
-
         validated_recommendation = DeepSeekClient._validated_strategy_recommendation(
             strategy_recommendation, prompt_actions,
         )
@@ -1470,7 +1542,66 @@ class DeepSeekClient:
                         "结合传递牌型与清理低价值牌的取舍比较，不能推断队友暗牌。"
                         "立即出完、阻断或回手目标可以推翻这一对照。"
                     )
+                elif contrast.kind == "natural_group_single":
+                    teammate_text = (
+                        f"队友公开剩余{contrast.teammate_hand_count}张"
+                        if contrast.teammate_hand_count is not None
+                        else "队友公开剩余张数未知"
+                    )
+                    lines.append(
+                        f"自然组牌/普通单张对照：action_id={first_id} 是不拆已识别同点组合的自然对子或三张，"
+                        f"action_id={second_id} 是其他点数的自然单张；比较该组牌的清理、单张成本与整体余组变化，{teammate_text}。"
+                        "顺子等其他组合、立即出完、公开紧急性、协同或回手计划可推翻此比较；不把对子/三张设为固定先手。"
+                    )
+                elif contrast.kind == "natural_single_cost":
+                    lines.append(
+                        f"自然单张成本对照：action_id={first_id} 是较低且不拆已识别同点组的自然单张，"
+                        f"action_id={second_id} 是较高的自然单张；比较清理成本与保留试探/回手路线，"
+                        "仍须核对顺子等整体余组变化，不按固定点数排序，也不推断对手暗牌。队友或危险对手紧急、无回手资源或整体牌权计划可推翻此软比较。"
+                    )
+                elif contrast.kind == "single_control_resource":
+                    lines.append(
+                        f"单张资源对照：action_id={first_id} 清理结构安全自然小单，"
+                        f"action_id={second_id} 消耗一张公开可识别的控制资源；比较低成本与争取/保留后续牌权，"
+                        "不能保证夺回牌权，队友控桌、危险对手或回手计划可以推翻。"
+                    )
+                elif contrast.kind == "wildcard_resource":
+                    lines.append(
+                        f"通配资源对照：action_id={first_id} 与 action_id={second_id} 可形成相同公开声明牌型；"
+                        "自然路线保留逢人配，通配路线可能改善余牌结构；比较资源成本与结构收益，"
+                        "不把保留通配当硬规则，一次出完、阻断或牌权需求可以推翻。"
+                    )
+                elif contrast.kind == "teammate_control_resource":
+                    lines.append(
+                        f"队友控桌对照：action_id={first_id} 为pass，action_id={second_id} 消耗控制资源争夺牌权；"
+                        f"队友公开剩余{contrast.teammate_hand_count}张，比较让队友继续与本家争取牌权，"
+                        "不能推断队友暗牌；公开危险对手或本家走牌计划可推翻。"
+                    )
+                elif contrast.kind == "teammate_table_choice":
+                    lines.append(
+                        f"队友控桌对照：action_id={first_id} 为pass，action_id={second_id} 是本家可合法接牌；"
+                        f"队友公开剩余{contrast.teammate_hand_count}张，比较让队友继续与本家接牌，"
+                        "不能推断队友暗牌；公开危险对手或本家走牌计划可推翻。"
+                    )
+                elif contrast.kind == "danger_block_resource":
+                    lines.append(
+                        f"危险对手对照：action_id={first_id} 为pass，action_id={second_id} 消耗控制资源尝试阻断；"
+                        "按公开剩余张数比较阻断收益和控制成本，不保证压住后续牌权，队友更紧急或代价过高可推翻。"
+                    )
+                elif contrast.kind == "danger_block_choice":
+                    lines.append(
+                        f"危险对手对照：action_id={first_id} 为pass，action_id={second_id} 是本家可合法压制候选；"
+                        "比较公开阻断机会与牌型/结构成本，不保证后续牌权，队友更紧急或代价过高可推翻。"
+                    )
             lines.append("边界：这些是公开条件下的可撤回比较，不是动作指令。")
+            lines.append("")
+
+        validated_strategy_intent = DeepSeekClient._validated_strategy_intent_prompt(
+            strategy_intent_prompt,
+        )
+        if validated_strategy_intent is not None:
+            lines.append("【策略意图】")
+            lines.append(validated_strategy_intent.text)
             lines.append("")
 
         lines.append("【场景标签】")
@@ -1620,6 +1751,7 @@ class DeepSeekClient:
                 hand_count=hand_count,
                 phase_context=phase_context,
                 strategy_recommendation=strategy_recommendation,
+                observation=observation,
             )
         else:
             supplied_actions = self._canonical_subset_actions(
@@ -1637,20 +1769,33 @@ class DeepSeekClient:
                 if validated_recommendation is not None
                 else ()
             )
+            contrasts = representative_candidate_contrasts(observation, legal_actions)
+            relation_groups = (
+                tuple(item.action_ids for item in contrasts)
+                if contrasts is not None
+                else ()
+            )
             protected_actions = self._protected_actions_by_id(
                 legal_actions,
                 protected_ids,
             )
+            relation_actions = self._relation_actions_by_groups(legal_actions, relation_groups)
             present_ids = {int(action["action_id"]) for action in supplied_actions}
             candidate_actions = supplied_actions + [
                 action for action in protected_actions
                 if int(action["action_id"]) not in present_ids
             ]
+            present_ids.update(int(action["action_id"]) for action in protected_actions)
+            candidate_actions.extend([
+                action for action in relation_actions
+                if int(action["action_id"]) not in present_ids
+            ])
             pruned_actions = self._limit_prompt_actions(
                 candidate_actions,
                 constraint=constraint,
                 hand_count=hand_count,
                 protected_action_ids=protected_ids,
+                protected_relation_groups=relation_groups,
             )
 
         user_message = self._build_structured_prompt(

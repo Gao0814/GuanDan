@@ -599,6 +599,7 @@ class DeepSeekAIAgent(BaseAgent):
             hand_count=hand_count,
             phase_context=phase_context,
             strategy_recommendation=strategy_recommendation,
+            observation=observation,
         )
 
         history = dict(observation.get("history", {}))

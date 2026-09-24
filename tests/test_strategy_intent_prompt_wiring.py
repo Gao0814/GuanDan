@@ -363,6 +363,29 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
                     baseline,
                 )
 
+        relation_payload = build_strategy_intent_prompt_payload(
+            replace(_intent(), candidate_relation_kinds=("natural_group_single",))
+        )
+        self.assertEqual(relation_payload.status, "ready")
+        self.assertEqual(relation_payload.candidate_relation_kinds, ("natural_group_single",))
+        relation_prompt = DeepSeekClient._build_structured_prompt(
+            **kwargs,
+            strategy_intent_prompt=relation_payload,
+        )
+        self.assertIn(relation_payload.text, relation_prompt)
+        self.assertIn("自然对子/三张与普通单张的清理和余组取舍", relation_prompt)
+        for invalid in (
+            replace(relation_payload, candidate_relation_kinds=()),
+            replace(relation_payload, text=relation_payload.text.replace("普通单张", "任意动作")),
+            replace(relation_payload, candidate_relation_kinds=("unknown",)),
+            replace(relation_payload, candidate_relation_kinds=([],)),  # type: ignore[arg-type]
+        ):
+            with self.subTest(relation_payload=invalid):
+                self.assertEqual(
+                    DeepSeekClient._build_structured_prompt(**kwargs, strategy_intent_prompt=invalid),
+                    baseline,
+                )
+
     def test_confidence_and_strategy_sections_coexist_in_fixed_order(self) -> None:
         observation = _observation()
         confidence_text = "范围：critical_endgame_policy_diverse_v1\n说明：固定 confidence 测试文本"

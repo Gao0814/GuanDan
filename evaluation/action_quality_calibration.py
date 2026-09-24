@@ -70,16 +70,16 @@ _QUALITY_COMPARISONS = {
 # Frozen metadata only. Candidate/action IDs are deliberately not part of this
 # contract: each run takes the actual final IDs emitted by the existing queue.
 _H3_A8_CONTRACT = (
-    ("opening_low_cost_single", "opening", 53, 21),
-    ("opening_neutral_soft_pair", "opening", 83, 50),
+    ("opening_low_cost_single", "opening", 53, 23),
+    ("opening_neutral_soft_pair", "opening", 83, 51),
     ("midgame_1", "midgame", 6, 6),
     ("midgame_2", "midgame", 6, 6),
     ("endgame_1", "endgame", 9, 9),
     ("endgame_2", "near_open_endgame", 8, 4),
 )
 _H3_A9_CONTRACT = (
-    ("opening_1", "opening", 77, 51),
-    ("opening_2", "opening", 74, 47),
+    ("opening_1", "opening", 77, 53),
+    ("opening_2", "opening", 74, 48),
     ("midgame_1", "midgame", 25, 13),
     ("midgame_2", "midgame", 11, 11),
     ("endgame_1", "critical_endgame", 8, 8),

@@ -83,6 +83,18 @@ _RANK_VALUES = {
     "SJ": 16, "BJ": 17,
 }
 _TEAM_BY_PLAYER = {1: "team_13", 2: "team_24", 3: "team_13", 4: "team_24"}
+CANDIDATE_RELATION_KINDS = (
+    "natural_single_cost",
+    "single_control_resource",
+    "natural_pair_single",
+    "natural_group_single",
+    "bomb_residual",
+    "wildcard_resource",
+    "teammate_control_resource",
+    "teammate_table_choice",
+    "danger_block_resource",
+    "danger_block_choice",
+)
 
 
 def _is_int(value: object) -> bool:
@@ -484,6 +496,7 @@ def summarize_candidate_contrasts(
     bombs_by_rank: dict[str, dict[int, CandidateStructure]] = {}
     pairs_by_rank: dict[str, CandidateStructure] = {}
     singles_by_rank: dict[str, CandidateStructure] = {}
+    all_singles: list[CandidateStructure] = []
     for fact in facts:
         action = actions_by_id.get(fact.action_id)
         if action is None or not fact.is_free_lead:
@@ -500,6 +513,7 @@ def summarize_candidate_contrasts(
             rank = _natural_same_rank(action, count=1)
             if rank is not None:
                 singles_by_rank.setdefault(rank, fact)
+                all_singles.append(fact)
 
     contrasts: list[CandidateContrast] = []
     for rank in sorted(bombs_by_rank, key=lambda item: _RANK_VALUES[item]):
@@ -522,7 +536,11 @@ def summarize_candidate_contrasts(
     for rank in sorted(set(pairs_by_rank) & set(singles_by_rank), key=lambda item: _RANK_VALUES[item]):
         pair = pairs_by_rank[rank]
         single = singles_by_rank[rank]
-        if pair.clears_played_rank_groups and single.fragments_played_rank_group:
+        if (
+            pair.clears_played_rank_groups
+            and single.fragments_played_rank_group
+            and not pair.consumes_control_resource
+        ):
             contrasts.append(
                 CandidateContrast(
                     "natural_pair_single",
@@ -530,7 +548,221 @@ def summarize_candidate_contrasts(
                     pair.teammate_hand_count,
                 )
             )
+
+    # A broader group-vs-single route covers natural pairs/triples even when
+    # the ordinary singleton is a different rank.  Prefer the exact same-rank
+    # pair/single contrast above when no other rank provides a distinct route.
+    natural_groups = sorted(
+        (
+            fact for fact in facts
+            if fact.is_free_lead
+            and fact.pattern in {"pair", "triple"}
+            and not fact.uses_wildcard
+            and not fact.finishes_hand
+            and fact.clears_played_rank_groups
+        ),
+        key=lambda fact: ({"pair": 0, "triple": 1}[fact.pattern], fact.residual_singleton_rank_count, fact.action_id),
+    )
+    group_singles = sorted(
+        (
+            fact for fact in all_singles
+            if not fact.finishes_hand and not fact.fragments_played_rank_group
+        ),
+        key=lambda fact: (fact.natural_single_rank_value or 99, fact.action_id),
+    )
+    for group in natural_groups:
+        group_rank = _natural_same_rank(actions_by_id[group.action_id], count=group.carrier_count)
+        if group_rank is None:
+            continue
+        separate_single = next(
+            (
+                fact for fact in group_singles
+                if _natural_same_rank(actions_by_id[fact.action_id], count=1) != group_rank
+            ),
+            None,
+        )
+        if separate_single is not None:
+            contrasts.append(
+                CandidateContrast(
+                    "natural_group_single",
+                    (group.action_id, separate_single.action_id),
+                    group.teammate_hand_count,
+                )
+            )
+            break
+
+    # This relation only certifies that a single does not fragment an already
+    # held same-rank group.  It does not certify that a card has no possible
+    # sequence role: sequence alternatives are evaluated from their own
+    # canonical actions and remain an explicit counterexample in the prompt.
+    safe_singles: list[CandidateStructure] = []
+    control_singles: list[CandidateStructure] = []
+    for fact in all_singles:
+        action = actions_by_id[fact.action_id]
+        carrier = action.get("carrier_cards")
+        if not isinstance(carrier, list) or len(carrier) != 1:
+            continue
+        if (
+            not fact.uses_wildcard
+            and not fact.fragments_played_rank_group
+        ):
+            if fact.consumes_control_resource:
+                control_singles.append(fact)
+            else:
+                safe_singles.append(fact)
+    safe_singles.sort(key=lambda item: (item.natural_single_rank_value or 99, item.action_id))
+    if len(safe_singles) >= 2:
+        # Pair the cheapest natural singleton with a deterministic middle
+        # alternative.  The relation does not encode which should be chosen.
+        middle = safe_singles[len(safe_singles) // 2]
+        contrasts.append(
+            CandidateContrast(
+                "natural_single_cost",
+                (safe_singles[0].action_id, middle.action_id),
+                safe_singles[0].teammate_hand_count,
+            )
+        )
+    if safe_singles and control_singles:
+        control_singles.sort(
+            key=lambda item: (item.natural_single_rank_value or 99, item.action_id)
+        )
+        contrasts.append(
+            CandidateContrast(
+                "single_control_resource",
+                (safe_singles[0].action_id, control_singles[0].action_id),
+                safe_singles[0].teammate_hand_count,
+            )
+        )
+
+    # Compare a natural and wildcard realization only when the public
+    # declaration, pattern, and carrier length match exactly.
+    realizations: dict[tuple[str, tuple[str, ...], int], dict[bool, CandidateStructure]] = {}
+    for fact in facts:
+        action = actions_by_id[fact.action_id]
+        declared = action.get("declared_cards")
+        if not isinstance(declared, list) or not declared:
+            continue
+        declaration = tuple(
+            sorted(_declared_multiset_key(str(card), fact.pattern) for card in declared)
+        )
+        key = (fact.pattern, declaration, fact.carrier_count)
+        realizations.setdefault(key, {}).setdefault(fact.uses_wildcard, fact)
+    for key in sorted(realizations):
+        options = realizations[key]
+        natural = options.get(False)
+        wildcard = options.get(True)
+        if natural is not None and wildcard is not None:
+            contrasts.append(
+                CandidateContrast(
+                    "wildcard_resource",
+                    (natural.action_id, wildcard.action_id),
+                    natural.teammate_hand_count,
+                )
+            )
+
+    # On a follow, derive the table leader only from a matching public history
+    # action.  Missing or mismatched history omits the relationship entirely.
+    observation_map = observation if isinstance(observation, Mapping) else {}
+    current_round = observation_map.get("current_round")
+    history = observation_map.get("history")
+    if isinstance(current_round, Mapping) and isinstance(history, Mapping):
+        table_action = current_round.get("table_action")
+        history_actions = history.get("actions")
+        round_no = current_round.get("round_no")
+        player_id = observation_map.get("my_info", {}).get("player_id") if isinstance(observation_map.get("my_info"), Mapping) else None
+        if (
+            current_round.get("constraint") != "free"
+            and isinstance(table_action, Mapping)
+            and isinstance(history_actions, list)
+            and _is_int(round_no)
+            and _is_int(player_id)
+        ):
+            leaders = [
+                item for item in history_actions
+                if isinstance(item, Mapping)
+                and item.get("round_no") == round_no
+                and item.get("declared_pattern") != "pass"
+                and all(item.get(key) == table_action.get(key) for key in (
+                    "declared_pattern", "declared_cards", "carrier_cards",
+                ))
+                and all(
+                    key not in item or item.get(key) == table_action.get(key)
+                    for key in ("wildcard_count", "wildcard_info", "display_text")
+                )
+            ]
+            leader_id = leaders[-1].get("player_id") if leaders else None
+            my_team = observation_map.get("my_info", {}).get("team") if isinstance(observation_map.get("my_info"), Mapping) else None
+            player_by_id = {
+                item.get("player_id"): item
+                for item in observation_map.get("other_players", [])
+                if isinstance(item, Mapping)
+            } if isinstance(observation_map.get("other_players"), list) else {}
+            leader = player_by_id.get(leader_id)
+            is_teammate_leader = isinstance(leader, Mapping) and leader.get("team") == my_team
+            is_urgent_opponent = (
+                isinstance(leader, Mapping)
+                and leader.get("team") != my_team
+                and _is_int(leader.get("hand_count"))
+                and 0 < int(leader["hand_count"]) <= 2
+            )
+            pass_fact = next((fact for fact in facts if fact.pattern == "pass"), None)
+            resource_facts = sorted(
+                (
+                    fact for fact in facts
+                    if fact.pattern != "pass"
+                    and (
+                        fact.consumes_control_resource
+                        or fact.uses_wildcard
+                        or fact.pattern in {"bomb", "straight_flush", "joker_bomb"}
+                    )
+                ),
+                key=lambda fact: (not fact.consumes_control_resource, fact.carrier_count, fact.action_id),
+            )
+            nonpass_facts = sorted(
+                (fact for fact in facts if fact.pattern != "pass"),
+                key=lambda fact: (fact.carrier_count, fact.action_id),
+            )
+            if pass_fact is not None and (resource_facts or nonpass_facts):
+                if is_teammate_leader:
+                    kind = "teammate_control_resource" if resource_facts else "teammate_table_choice"
+                elif is_urgent_opponent:
+                    kind = "danger_block_resource" if resource_facts else "danger_block_choice"
+                else:
+                    kind = None
+                if kind is not None:
+                    selected_action = resource_facts[0] if resource_facts else nonpass_facts[0]
+                    contrasts.append(
+                        CandidateContrast(
+                            kind,
+                            (pass_fact.action_id, selected_action.action_id),
+                            pass_fact.teammate_hand_count,
+                        )
+                    )
+
+    contrasts.sort(
+        key=lambda item: (
+            CANDIDATE_RELATION_KINDS.index(item.kind) if item.kind in CANDIDATE_RELATION_KINDS else len(CANDIDATE_RELATION_KINDS),
+            item.action_ids,
+        )
+    )
     return tuple(contrasts)
+
+
+def representative_candidate_contrasts(
+    observation: object,
+    legal_actions: object,
+) -> tuple[CandidateContrast, ...] | None:
+    """Return the first complete, stable contrast of each public relation kind."""
+    contrasts = summarize_candidate_contrasts(observation, legal_actions)
+    if contrasts is None:
+        return None
+    representatives: list[CandidateContrast] = []
+    seen: set[str] = set()
+    for contrast in contrasts:
+        if contrast.kind not in seen:
+            representatives.append(contrast)
+            seen.add(contrast.kind)
+    return tuple(representatives)
 
 
 def select_candidate_structure_representatives(

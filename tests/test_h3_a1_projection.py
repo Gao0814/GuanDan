@@ -200,13 +200,13 @@ class H3A1ProjectionTests(unittest.TestCase):
         advisor = RAGAdvisor(KnowledgeRetriever(KnowledgeBaseLoader(Path("rag")).load_all_documents()))
         context = advisor.get_rag_context(observation=observation, legal_actions=actions, hand_eval={"label": "medium"}, top_k=20)
         hit = next(item for item in context["experience_hits"] if item["source_id"] == "exp_card_memory_001")
-        self.assertIn("王、级牌、A、10、5", hit["snippet"])
-        self.assertIn("不能当作炸弹或持牌事实", hit["snippet"])
+        self.assertIn("本规则双副牌内实际公开出现的牌", hit["snippet"])
+        self.assertIn("未见牌不等于某人持有", hit["snippet"])
         prompt = DeepSeekClient._build_structured_prompt(
             my_info=observation["my_info"], current_round=observation["current_round"],
             other_players=observation["other_players"], history=observation["history"], legal_actions=actions, rag_context=context,
         )
-        self.assertIn("不能当作炸弹或持牌事实", prompt)
+        self.assertIn("不得据此断言炸弹、控制牌或搭档偏好", prompt)
 
     def test_guidance_validation_rejects_unknown_and_preserves_four_five_bomb_comparison(self) -> None:
         observation = _observation(["7S", "7H", "7C", "7D", "7S", "9S"])

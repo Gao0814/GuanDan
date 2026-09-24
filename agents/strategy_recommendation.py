@@ -99,6 +99,7 @@ def build_strategy_recommendation(
         domains.add("teammate_coordination"); objectives.add("support_teammate")
     if intent == "block_opponent" or any(fact.minimum_opponent_hand_count is not None and fact.minimum_opponent_hand_count <= 2 for fact in facts):
         domains.add("danger_opponent_block"); objectives.add("block_opponent")
+    relation_kinds = {contrast.kind for contrast in contrasts}
     if is_free and any(fact.natural_single_rank_value is not None for fact in facts):
         domains.add("uncertainty_probe")
 
@@ -139,11 +140,16 @@ def build_strategy_recommendation(
     )
     contrast_priority: tuple[str, ...] = ()
     if not higher_public_priority:
-        contrast_priority = (
-            ("natural_pair_single", "bomb_residual")
-            if teammate_cleanup_priority
-            else ("bomb_residual",)
-        )
+        if teammate_cleanup_priority:
+            contrast_priority = ("natural_pair_single", "bomb_residual")
+        elif "bomb_residual" in relation_kinds:
+            contrast_priority = ("bomb_residual", "natural_single_cost", "single_control_resource")
+        elif "natural_single_cost" in relation_kinds:
+            contrast_priority = ("natural_single_cost", "single_control_resource")
+        elif "single_control_resource" in relation_kinds:
+            contrast_priority = ("single_control_resource", "wildcard_resource")
+        else:
+            contrast_priority = ()
     for kind in contrast_priority:
         for contrast in contrasts:
             if contrast.kind != kind:
@@ -156,6 +162,9 @@ def build_strategy_recommendation(
                 break
         if len(selected) == 3:
             break
+    # The ranked shortlist surfaces an exact relation when the complete pair
+    # fits; otherwise it leaves the relationship to the independently bounded
+    # prompt contrast while still retaining one low-cost singleton candidate.
     for fact in safe_singles + pairs:
         if fact.action_id not in selected:
             selected.append(fact.action_id)

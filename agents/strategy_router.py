@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
+from agents.action_structure import CANDIDATE_RELATION_KINDS, summarize_candidate_contrasts
 from agents.conditional_pressure_pass_policy import teammate_big_joker_opportunity
 from agents.game_phase import CRITICAL_ENDGAME, ENDGAME, MIDGAME, NEAR_OPEN_ENDGAME, OPENING, GamePhaseContext
 from agents.short_endgame_planner import minimum_group_free_lead_action_ids
@@ -77,6 +78,7 @@ class StrategyIntentContext:
     opponents_all_active: bool = False
     teammate_big_joker_opportunity: bool = False
     short_endgame_minimum_groups: bool = False
+    candidate_relation_kinds: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -104,6 +106,7 @@ class StrategyIntentContext:
             "opponents_all_active": self.opponents_all_active,
             "teammate_big_joker_opportunity": self.teammate_big_joker_opportunity,
             "short_endgame_minimum_groups": self.short_endgame_minimum_groups,
+            "candidate_relation_kinds": list(self.candidate_relation_kinds),
         }
 
 
@@ -467,6 +470,12 @@ def route_strategy_intent(
     short_endgame_minimum_groups_available = (
         minimum_group_free_lead_action_ids(observation, legal_actions, my_player_id) is not None
     )
+    candidate_contrasts = summarize_candidate_contrasts(observation, legal_actions)
+    candidate_relation_kinds = (
+        tuple(dict.fromkeys(item.kind for item in candidate_contrasts))
+        if candidate_contrasts is not None
+        else ()
+    )
 
     if can_finish_now:
         intent, reason_codes = RUN_OUT, ("can_finish_now",)
@@ -519,4 +528,5 @@ def route_strategy_intent(
         opponents_all_active=opponents_all_active,
         teammate_big_joker_opportunity=teammate_big_joker_opportunity_available,
         short_endgame_minimum_groups=short_endgame_minimum_groups_available,
+        candidate_relation_kinds=candidate_relation_kinds,
     )

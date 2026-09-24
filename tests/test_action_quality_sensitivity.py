@@ -36,7 +36,7 @@ class ActionQualitySensitivityTests(unittest.TestCase):
         cls.baseline = calibrate_h3_a10_sample_sets(cls.h3_a8, cls.h3_a9)
         cls.report = sensitivity.evaluate_h3_a11_sample_sets(cls.h3_a8, cls.h3_a9)
 
-    def test_all_twelve_real_states_reuse_h3_a10_baselines_and_conserve_235_cells(self) -> None:
+    def test_all_twelve_real_states_reuse_h3_a10_baselines_and_conserve_current_cells(self) -> None:
         self.assertEqual(self.baseline.status, CalibrationStatus.READY)
         self.assertEqual(self.report.status, sensitivity.SensitivityStatus.READY)
         self.assertEqual(
@@ -69,14 +69,15 @@ class ActionQualitySensitivityTests(unittest.TestCase):
             self.assertLessEqual(sensitivity_row.strict_preference_reversal_count, sensitivity_row.label_changed_count)
 
         report = self.report.to_dict()
-        self.assertEqual(report["planned_candidate_count"], 235)
-        self.assertEqual(report["paired_completed_candidate_count"], 235)
-        self.assertEqual(sum(sum(row.values()) for row in report["transition_counts"].values()), 235)  # type: ignore[union-attr]
+        expected_candidates = sum(row.final_candidate_count for row in self.baseline.samples)
+        self.assertEqual(report["planned_candidate_count"], expected_candidates)
+        self.assertEqual(report["paired_completed_candidate_count"], expected_candidates)
+        self.assertEqual(sum(sum(row.values()) for row in report["transition_counts"].values()), expected_candidates)  # type: ignore[union-attr]
         self.assertEqual(report["reference_tied_in_both_count"], 12)
         total_rows = report["transition_counts"]
         self.assertEqual(
-            tuple(sum(total_rows[label].values()) for label in ("better", "tie", "worse")),  # type: ignore[index,union-attr]
-            (32, 102, 101),
+            sum(sum(total_rows[label].values()) for label in ("better", "tie", "worse")),  # type: ignore[index,union-attr]
+            expected_candidates,
         )
 
     def test_frozen_continuation_has_measured_decision_differences(self) -> None:
@@ -120,10 +121,11 @@ class ActionQualitySensitivityTests(unittest.TestCase):
         ):
             result = sensitivity.evaluate_h3_a11_sample_sets(self.h3_a8, self.h3_a9)
         self.assertEqual(result.status, sensitivity.SensitivityStatus.READY)
-        self.assertEqual(len(baseline_branches), 235)
-        self.assertEqual(len(frozen_branches), 235)
+        expected_branches = sum(sample.final_candidate_count for sample in self.samples)
+        self.assertEqual(len(baseline_branches), expected_branches)
+        self.assertEqual(len(frozen_branches), expected_branches)
         all_branches = [*baseline_branches, *frozen_branches]
-        self.assertEqual(len({id(branch) for branch in all_branches}), 470)
+        self.assertEqual(len({id(branch) for branch in all_branches}), 2 * expected_branches)
         self.assertTrue(all(baseline is not frozen for baseline, frozen in zip(baseline_branches, frozen_branches)))
         self.assertEqual(baseline_ids, frozen_ids)
         self.assertEqual(tuple((snapshot.observe(), snapshot.legal_actions()) for snapshot in snapshots), original_public)

@@ -1,7 +1,11 @@
 """Engine-backed regressions for public model-before action contrasts."""
 
 from copy import deepcopy
+import json
+from pathlib import Path
+import re
 import unittest
+from unittest.mock import patch
 
 from agents.action_structure import (
     select_candidate_structure_representatives,
@@ -14,6 +18,10 @@ from agents.game_phase import classify_game_phase
 from agents.strategy_recommendation import build_strategy_recommendation
 from engine.cards import Card
 from engine.game import GuanDanGame
+from evaluation.h3_model_probe_fixtures import build_h3_model_probe_fixtures
+from rag.kb_loader import KnowledgeBaseLoader
+from rag.retriever import KnowledgeRetriever
+from agents.rag_advisor import RAGAdvisor
 
 
 def _cards(tokens: list[str]) -> tuple[Card, ...]:
@@ -69,7 +77,68 @@ class _RecordingClient:
         return DeepSeekSuggestion(self.action_id, None)
 
 
+class _RequestCapturingTransport:
+    """No-network SSE transport that inspects the actual production request."""
+
+    def __init__(self, action_id: int) -> None:
+        self.action_id = action_id
+        self.calls = 0
+        self.prompt = ""
+        self.candidate_ids: tuple[int, ...] = ()
+
+    def __call__(self, request: object, timeout: float) -> str:
+        self.calls += 1
+        raw = getattr(request, "data", None)
+        if not isinstance(raw, bytes):
+            raise OSError("request_body_missing")
+        envelope = json.loads(raw.decode("utf-8"))
+        messages = envelope.get("messages")
+        if not isinstance(messages, list):
+            raise OSError("request_messages_missing")
+        users = [item for item in messages if isinstance(item, dict) and item.get("role") == "user"]
+        if len(users) != 1 or not isinstance(users[0].get("content"), str):
+            raise OSError("request_user_prompt_missing")
+        self.prompt = users[0]["content"]
+        start = self.prompt.find("【候选动作】")
+        end = self.prompt.find("【规则库依据】")
+        if start < 0 or end <= start:
+            raise OSError("request_candidates_missing")
+        rows = re.findall(r"#(\d+)\s+action_id=(\d+)\s+\|", self.prompt[start:end])
+        if not rows or any(left != right for left, right in rows):
+            raise OSError("request_candidates_invalid")
+        self.candidate_ids = tuple(int(left) for left, _ in rows)
+        if self.action_id not in self.candidate_ids:
+            raise OSError("response_action_not_displayed")
+        content = json.dumps({"action_id": self.action_id}, separators=(",", ":"))
+        chunk = json.dumps({"choices": [{"delta": {"content": content}}]})
+        return f"data: {chunk}\n\ndata: [DONE]\n"
+
+
+class _CapturingProductionClient(DeepSeekClient):
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        self.captured_kwargs: dict[str, object] = {}
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+
+    def suggest_action_id(self, **kwargs: object) -> DeepSeekSuggestion:
+        self.captured_kwargs = dict(kwargs)
+        return super().suggest_action_id(**kwargs)
+
+
 class StrategyRelationshipContrastTests(unittest.TestCase):
+    def test_natural_pair_rag_opportunity_is_broader_than_same_rank_pair_single_contrast(self) -> None:
+        game = _game(["2S", "2C", "3S", "4H"])
+        observation = game.reset()
+        actions = game.legal_actions()
+        contrasts = summarize_candidate_contrasts(observation, actions)
+        applicability = RAGAdvisor._candidate_applicability(observation, actions)
+
+        self.assertIsNotNone(contrasts)
+        self.assertIsNotNone(applicability)
+        assert contrasts is not None and applicability is not None
+        self.assertNotIn("natural_pair_single", {item.kind for item in contrasts})
+        self.assertTrue(applicability["natural_pair"])
+        self.assertFalse(applicability["natural_pair_single"])
+
     def test_engine_bomb_contrast_protects_both_ids_and_explains_public_tradeoff(self) -> None:
         game = _game(["7S", "7H", "7C", "7D", "7S", "3S", "4H"])
         observation = game.reset()
@@ -175,6 +244,32 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
         self.assertLessEqual(len(recommendation.action_ids), 3)
         self.assertLessEqual(len(recommendation.objective_codes), 4)
 
+    def test_follow_contrasts_require_matching_public_history_and_cover_nonresource_blocks(self) -> None:
+        fixtures = build_h3_model_probe_fixtures()
+        teammate = fixtures[4]
+        danger = fixtures[5]
+        teammate_contrasts = summarize_candidate_contrasts(teammate.observation, teammate.legal_actions)
+        danger_contrasts = summarize_candidate_contrasts(danger.observation, danger.legal_actions)
+        assert teammate_contrasts is not None and danger_contrasts is not None
+        self.assertIn("teammate_control_resource", {item.kind for item in teammate_contrasts})
+        self.assertIn("danger_block_choice", {item.kind for item in danger_contrasts})
+
+        mismatched_history = deepcopy(teammate.observation)
+        history_actions = mismatched_history["history"]["actions"]
+        leader = next(item for item in history_actions if item["declared_pattern"] != "pass")
+        leader["carrier_cards"] = ["AS"]
+        after_mismatch = summarize_candidate_contrasts(mismatched_history, teammate.legal_actions)
+        assert after_mismatch is not None
+        self.assertNotIn("teammate_control_resource", {item.kind for item in after_mismatch})
+
+        inconsistent_optional_field = deepcopy(teammate.observation)
+        history_actions = inconsistent_optional_field["history"]["actions"]
+        leader = next(item for item in history_actions if item["declared_pattern"] != "pass")
+        leader["wildcard_count"] = 1
+        after_optional_mismatch = summarize_candidate_contrasts(inconsistent_optional_field, teammate.legal_actions)
+        assert after_optional_mismatch is not None
+        self.assertNotIn("teammate_control_resource", {item.kind for item in after_optional_mismatch})
+
     def test_overflow_keeps_engine_backed_bomb_contrast_within_existing_80_budget(self) -> None:
         hand = ["7S", "7H", "7C", "7D", "7S", "QS", "QH"]
         for rank in ("3", "4", "5", "6", "8", "9"):
@@ -240,6 +335,140 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
                     self.assertEqual(agent.select_action(observation, actions), action_id)
                     self.assertEqual(agent.last_decision_source, "model")
                     self.assertTrue(set(contrast.action_ids).issubset({item["action_id"] for item in client.prompt_actions}))
+
+    def test_real_client_request_unifies_router_rag_recommendation_and_public_contrast(self) -> None:
+        fixtures = build_h3_model_probe_fixtures()
+        cases = (
+            (fixtures[0], "bomb_residual", "四/五炸对照", "四/五炸资源成本与残余结构的取舍", "炸弹与通配牌管理", "exp_bomb_wildcard_001"),
+            (fixtures[1], "natural_single_cost", "自然单张成本对照", "不拆已成同点组的低成本自然单张", "自然单张成本与试探路线", "exp_soft_single_cost_probe_001"),
+            (fixtures[2], "natural_pair_single", "同点数对子/单张对照", "自然对子清理与同点单张拆分", "传递牌型与清理低价值牌", None),
+            (fixtures[3], "natural_group_single", "自然组牌/普通单张对照", "自然对子/三张与普通单张的清理和余组取舍", "可撤回的对子试探假设", "exp_soft_pair_probe_001"),
+            (fixtures[4], "teammate_control_resource", "队友控桌对照", "队友控桌时让牌与消耗控制资源的取舍", "队友协同与让牌", None),
+            (fixtures[5], "danger_block_choice", "危险对手对照", "危险对手控桌时pass与合法压制候选的取舍", "危险对手阻断", None),
+            (fixtures[7], "wildcard_resource", "通配资源对照", "自然牌型与通配资源消耗", "炸弹与通配牌管理", "exp_bomb_wildcard_001"),
+        )
+        advisor = RAGAdvisor(
+            KnowledgeRetriever(KnowledgeBaseLoader(Path("rag")).load_all_documents())
+        )
+        safe_config = type(
+            "OfflineConfig",
+            (),
+            {"card_tracking_enabled": False, "hand_evaluation_enabled": True, "opening_formula_enabled": True},
+        )()
+
+        for fixture, relation_kind, relation_marker, intent_marker, knowledge_marker, expected_source in cases:
+            with self.subTest(scenario=fixture.name):
+                contrasts = summarize_candidate_contrasts(fixture.observation, fixture.legal_actions)
+                assert contrasts is not None
+                contrast = next(item for item in contrasts if item.kind == relation_kind)
+                transport = _RequestCapturingTransport(contrast.action_ids[0])
+                client = _CapturingProductionClient(
+                    "offline-test-key", "https://offline.invalid", "offline-test",
+                    max_retries=0, transport=transport,
+                )
+                with patch("agents.deepseek_ai.AppConfig.from_env", return_value=safe_config):
+                    agent = DeepSeekAIAgent(
+                        1, client, rag_advisor=advisor, rag_top_k=3,
+                        hand_evaluation_enabled=True, opening_formula_enabled=True,
+                        strategy_router_shadow_enabled=True, strategy_intent_prompt_enabled=True,
+                        strategy_recommendation_enabled=True,
+                    )
+                    selected_id = agent.select_action(fixture.observation, fixture.legal_actions)
+
+                self.assertEqual(transport.calls, 1)
+                self.assertEqual(selected_id, contrast.action_ids[0])
+                self.assertEqual(agent.last_decision_source, "model")
+                self.assertIn(relation_marker, transport.prompt)
+                intent = agent.last_strategy_intent
+                self.assertIsNotNone(intent)
+                assert intent is not None
+                self.assertIn(relation_kind, intent.candidate_relation_kinds)
+                self.assertEqual(agent.last_strategy_intent_prompt.status, "ready")
+                self.assertTrue(agent.last_strategy_intent_prompt.text)
+                self.assertIn(intent_marker, agent.last_strategy_intent_prompt.text)
+                self.assertIn(agent.last_strategy_intent_prompt.text, transport.prompt)
+                captured = client.captured_kwargs
+                rag_context = captured.get("rag_context")
+                self.assertIsInstance(rag_context, dict)
+                assert isinstance(rag_context, dict)
+                scene_tags = rag_context.get("scene_tags")
+                self.assertIsInstance(scene_tags, dict)
+                assert isinstance(scene_tags, dict)
+                self.assertIn(relation_kind, str(scene_tags.get("candidate_relation_kinds", "")).split(","))
+                self.assertEqual(scene_tags.get("strategy_intent"), intent.intent)
+                experience_hits = rag_context.get("experience_hits")
+                self.assertIsInstance(experience_hits, list)
+                assert isinstance(experience_hits, list)
+                hit_ids = {item.get("source_id") for item in experience_hits if isinstance(item, dict)}
+                if expected_source is not None:
+                    self.assertIn(expected_source, hit_ids)
+                    self.assertIn("可撤回软假设：", transport.prompt)
+                    self.assertIn(knowledge_marker, transport.prompt)
+                else:
+                    self.assertNotIn("可撤回软假设：", transport.prompt)
+                if relation_kind == "natural_group_single":
+                    applicability = RAGAdvisor._candidate_applicability(
+                        fixture.observation, fixture.legal_actions
+                    )
+                    self.assertIsNotNone(applicability)
+                    assert applicability is not None
+                    self.assertTrue(applicability["natural_group_single"])
+                self.assertNotIn("source_tier", transport.prompt)
+                self.assertNotIn("王春国", transport.prompt)
+                self.assertNotIn("https://", transport.prompt)
+                self.assertLessEqual(len(transport.candidate_ids), PROMPT_MAX_CANDIDATE_ACTIONS)
+                self.assertEqual(len(transport.candidate_ids), len(set(transport.candidate_ids)))
+                self.assertTrue(set(transport.candidate_ids).issubset({int(a["action_id"]) for a in fixture.legal_actions}))
+                recommendation = agent.last_strategy_recommendation
+                validated = DeepSeekClient._validated_strategy_recommendation(
+                    recommendation, fixture.legal_actions
+                )
+                self.assertIsNotNone(validated)
+                assert validated is not None
+                self.assertTrue(set(validated.action_ids).issubset(transport.candidate_ids))
+
+    def test_medium_opening_group_relation_activates_matching_b_principle_in_final_request(self) -> None:
+        fixture = build_h3_model_probe_fixtures()[3]
+        contrasts = summarize_candidate_contrasts(fixture.observation, fixture.legal_actions)
+        assert contrasts is not None
+        contrast = next(item for item in contrasts if item.kind == "natural_group_single")
+        transport = _RequestCapturingTransport(contrast.action_ids[0])
+        client = _CapturingProductionClient(
+            "offline-test-key", "https://offline.invalid", "offline-test",
+            max_retries=0, transport=transport,
+        )
+        safe_config = type(
+            "OfflineConfig",
+            (),
+            {"card_tracking_enabled": False, "hand_evaluation_enabled": True, "opening_formula_enabled": True},
+        )()
+        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=safe_config), patch(
+            "agents.deepseek_ai.evaluate_hand", return_value={"label": "medium", "control_score": 40}
+        ):
+            agent = DeepSeekAIAgent(
+                1, client, rag_advisor=RAGAdvisor(
+                    KnowledgeRetriever(KnowledgeBaseLoader(Path("rag")).load_all_documents())
+                ),
+                rag_top_k=3, hand_evaluation_enabled=True, opening_formula_enabled=True,
+                strategy_router_shadow_enabled=True, strategy_intent_prompt_enabled=True,
+                strategy_recommendation_enabled=True,
+            )
+            selected_id = agent.select_action(fixture.observation, fixture.legal_actions)
+
+        self.assertEqual(transport.calls, 1)
+        self.assertEqual(selected_id, contrast.action_ids[0])
+        self.assertEqual(agent.last_decision_source, "model")
+        self.assertIn("自然组牌/普通单张对照", transport.prompt)
+        captured = client.captured_kwargs
+        rag_context = captured.get("rag_context")
+        assert isinstance(rag_context, dict)
+        hits = rag_context.get("experience_hits")
+        assert isinstance(hits, list)
+        self.assertIn(
+            "exp_lead_opening_medium_001",
+            {item.get("source_id") for item in hits if isinstance(item, dict)},
+        )
+        self.assertIn("中性开局表达", transport.prompt)
 
     def test_malformed_payload_and_tight_representative_budget_fail_closed_without_half_contrast(self) -> None:
         game = _game(["5S", "5H", "3S", "4H"])

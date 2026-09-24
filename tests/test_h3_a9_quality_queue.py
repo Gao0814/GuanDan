@@ -100,7 +100,7 @@ class H3A9QualityQueueTests(unittest.TestCase):
         self.assertEqual(tuple(sample.phase for sample in self.samples[4:]), ("critical_endgame", "near_open_endgame"))
         self.assertEqual(
             tuple((sample.canonical_candidate_count, sample.final_candidate_count) for sample in self.samples),
-            ((77, 51), (74, 47), (25, 13), (11, 11), (8, 8), (9, 9)),
+            ((77, 53), (74, 48), (25, 13), (11, 11), (8, 8), (9, 9)),
         )
 
     def test_every_sample_replays_from_a_complete_seeded_opening(self) -> None:

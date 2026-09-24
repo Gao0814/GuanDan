@@ -192,6 +192,23 @@ class TestExperienceProvenance(unittest.TestCase):
             (root / "experience_provenance.json").unlink()
             self.assertEqual(KnowledgeBaseLoader(root).load_experience_documents(), ())
 
+    def test_corroborating_registry_links_must_resolve_to_active_strategy_sources(self) -> None:
+        document = _CORPUS_TEMPLATE.format(entry_id="active")
+        linked = _record("active")
+        linked["corroborating_source_ids"] = ["missing-source"]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_rag(root, [document], [linked])
+            self.assertEqual(KnowledgeBaseLoader(root).load_experience_documents(), ())
+
+        linked = _record("active")
+        registry_only = _record("registry-only", status="registry_only", claim_type="publication_record")
+        linked["corroborating_source_ids"] = ["registry-only"]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_rag(root, [document], [linked, registry_only])
+            self.assertEqual(KnowledgeBaseLoader(root).load_experience_documents(), ())
+
     def test_governance_changes_do_not_change_retrieval_or_prompt_bytes(self) -> None:
         outputs: list[tuple[dict[str, object], str]] = []
         for marker in ("audit-marker-a", "audit-marker-b"):
@@ -240,6 +257,7 @@ class TestExperienceProvenance(unittest.TestCase):
                 "exp_endgame_run_out_001",
                 "exp_card_memory_001",
                 "exp_soft_pair_probe_001",
+                "exp_soft_single_cost_probe_001",
             },
         )
         for doc in loaded:
@@ -265,7 +283,10 @@ class TestExperienceProvenance(unittest.TestCase):
             },
         )
         soft = [doc for doc in loaded if doc.metadata.get("guidance_mode") == "soft_hypothesis"]
-        self.assertEqual([doc.doc_id for doc in soft], ["exp_bomb_wildcard_001", "exp_soft_pair_probe_001"])
+        self.assertEqual(
+            [doc.doc_id for doc in soft],
+            ["exp_bomb_wildcard_001", "exp_soft_pair_probe_001", "exp_soft_single_cost_probe_001"],
+        )
         records = {record["entry_id"]: record for record in json.loads((Path("rag") / "experience_provenance.json").read_text(encoding="utf-8"))["records"]}
         self.assertEqual(records["exp_bomb_wildcard_001"]["source_tier"], "C")
 

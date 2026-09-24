@@ -63,14 +63,14 @@ class ActionQualityCalibrationTests(unittest.TestCase):
         self.assertEqual(
             tuple((row.phase, row.canonical_candidate_count, row.final_candidate_count) for row in self.report.samples),
             (
-                ("opening", 53, 21),
-                ("opening", 83, 50),
+                ("opening", 53, 23),
+                ("opening", 83, 51),
                 ("midgame", 6, 6),
                 ("midgame", 6, 6),
                 ("endgame", 9, 9),
                 ("near_open_endgame", 8, 4),
-                ("opening", 77, 51),
-                ("opening", 74, 47),
+                ("opening", 77, 53),
+                ("opening", 74, 48),
                 ("midgame", 25, 13),
                 ("midgame", 11, 11),
                 ("critical_endgame", 8, 8),
@@ -88,9 +88,10 @@ class ActionQualityCalibrationTests(unittest.TestCase):
                 "worse_than_reference": sum(row.worse_than_reference for row in self.report.samples),
             },
         )
-        self.assertEqual(sum(self.report.to_dict()["comparison_counts"].values()), 235)  # type: ignore[union-attr]
+        expected_candidates = sum(row.final_candidate_count for row in self.report.samples)
+        self.assertEqual(sum(self.report.to_dict()["comparison_counts"].values()), expected_candidates)  # type: ignore[union-attr]
         self.assertEqual(self.report.completed_sample_count, 12)
-        self.assertEqual(self.report.completed_candidate_count, 235)
+        self.assertEqual(self.report.completed_candidate_count, expected_candidates)
         self.assertGreaterEqual(sum(row.tie_with_reference for row in self.report.samples), 12)
 
     def test_public_entrypoint_uses_the_two_frozen_queues(self) -> None:

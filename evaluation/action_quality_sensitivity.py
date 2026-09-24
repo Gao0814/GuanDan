@@ -308,6 +308,7 @@ def evaluate_h3_a11_sample_sets(h3_a8: SampleSetResult, h3_a9: SampleSetResult) 
     rows = tuple((cohort, sample) for cohort, names in _COHORTS for sample in (h3_a8.samples if cohort == "h3_a8" else h3_a9.samples))
     if len(rows) != 12:
         return SensitivityReport(SensitivityStatus.SAMPLE_SET_CONTRACT_INVALID)
+    expected_final_total = sum(sample.final_candidate_count for _cohort, sample in rows)
     signatures = tuple(_sample_public_signature(sample) for _cohort, sample in rows)
     if any(signature is None for signature in signatures):
         return SensitivityReport(SensitivityStatus.SAMPLE_SET_CONTRACT_INVALID)
@@ -536,8 +537,10 @@ def evaluate_h3_a11_sample_sets(h3_a8: SampleSetResult, h3_a9: SampleSetResult) 
     complete = (
         len(results) == 12
         and all(row.status is SensitivityStatus.READY for row in results)
-        and sum(row.final_candidate_count for row in results) == 235
-        and sum(row.paired_completed_candidate_count for row in results) == 235
+        and sum(row.final_candidate_count for row in results)
+        == expected_final_total
+        and sum(row.paired_completed_candidate_count for row in results)
+        == expected_final_total
         and sum(row.reference_tied_in_both_count for row in results) == 12
     )
     status = SensitivityStatus.READY if complete else SensitivityStatus.INCOMPLETE

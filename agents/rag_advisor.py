@@ -5,7 +5,7 @@ import re
 
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase, phase_matches
 from agents.opening_strategy import normalize_hand_strength
-from agents.action_structure import summarize_candidate_structures
+from agents.action_structure import summarize_candidate_contrasts, summarize_candidate_structures
 from rag.kb_loader import KnowledgeDocument
 from rag.retriever import KnowledgeRetriever
 
@@ -35,7 +35,22 @@ _TAG_WEIGHTS = {
     "phase": (10.0, 2.0),
 }
 _PRIORITY_WEIGHTS = {"high": 1.5, "medium": 0.75, "low": 0.25}
-_CANDIDATE_REQUIREMENTS = frozenset({"bomb_or_wildcard", "natural_pair"})
+_CANDIDATE_REQUIREMENTS = frozenset(
+    {
+        "bomb_or_wildcard",
+        "natural_pair",
+        "natural_pair_single",
+        "natural_group_single",
+        "natural_single_cost",
+        "single_control_resource",
+        "wildcard_resource",
+        "bomb_residual",
+        "teammate_control_resource",
+        "teammate_table_choice",
+        "danger_block_resource",
+        "danger_block_choice",
+    }
+)
 _KNOWLEDGE_METADATA_KEYS = frozenset(
     {
         "scene",
@@ -170,9 +185,14 @@ class RAGAdvisor:
                 and carrier_ranks[0] not in {"SJ", "BJ"}
             ):
                 has_natural_pair = True
+        contrasts = summarize_candidate_contrasts(observation, legal_actions)
+        if contrasts is None:
+            return None
+        contrast_kinds = {contrast.kind for contrast in contrasts}
         return {
             "bomb_or_wildcard": has_bomb_or_wildcard,
             "natural_pair": has_natural_pair,
+            **{kind: kind in contrast_kinds for kind in _CANDIDATE_REQUIREMENTS if kind not in {"bomb_or_wildcard", "natural_pair"}},
         }
 
     @classmethod
@@ -192,6 +212,17 @@ class RAGAdvisor:
             and all(applicability.get(requirement) is True for requirement in requirements)
         )
 
+    @classmethod
+    def _matched_requirement_count(
+        cls,
+        metadata: dict[str, str],
+        applicability: dict[str, bool] | None,
+    ) -> int:
+        requirements = cls._metadata_values(metadata, "candidate_requirements")
+        if not requirements or applicability is None:
+            return 0
+        return len(requirements) if all(applicability.get(item) is True for item in requirements) else 0
+
     @staticmethod
     def _ascii_tokens(text: str) -> set[str]:
         return set(re.findall(r"[a-z0-9_]+", text.lower()))
@@ -206,6 +237,7 @@ class RAGAdvisor:
         legal_actions: list[dict[str, object]],
         hand_eval: dict[str, object] | None = None,
         phase_context: GamePhaseContext | None = None,
+        candidate_relation_kinds: tuple[str, ...] = (),
     ) -> dict[str, object]:
         my_info = dict(observation.get("my_info", {}))
         current_round = dict(observation.get("current_round", {}))
@@ -268,6 +300,7 @@ class RAGAdvisor:
             "can_play_out_all": can_play_out_all,
             "can_bomb_response": can_bomb_response,
             "wildcard_action_present": has_action_wildcard,
+            "candidate_relation_kinds": ",".join(candidate_relation_kinds),
         }
 
     @staticmethod
@@ -287,6 +320,19 @@ class RAGAdvisor:
             topics.add("wildcard")
         if bool(scene_tags.get("has_joker_control")):
             topics.update({"joker", "joker_bomb", "control"})
+        relations = set(RAGAdvisor._metadata_values(scene_tags, "candidate_relation_kinds"))
+        if relations & {"natural_single_cost", "single_control_resource"}:
+            topics.update({"opening", "singles", "control", "probe"})
+        if relations & {"natural_pair_single", "natural_group_single"}:
+            topics.update({"pair", "structure", "probe"})
+        if "bomb_residual" in relations:
+            topics.update({"bomb", "structure", "control"})
+        if "wildcard_resource" in relations:
+            topics.update({"wildcard", "structure", "control"})
+        if relations & {"teammate_control_resource", "teammate_table_choice"}:
+            topics.update({"teammate", "support", "control", "pass"})
+        if relations & {"danger_block_resource", "danger_block_choice"}:
+            topics.update({"opponent_pressure", "block", "control"})
         intent = str(scene_tags.get("strategy_intent", ""))
         if intent == "support_teammate":
             topics.update({"teammate", "support"})
@@ -310,6 +356,21 @@ class RAGAdvisor:
             zh_terms.append("王")
         if scene_tags.get("can_bomb_response"):
             zh_terms.append("跨型压制")
+        relation_terms = {
+            "natural_single_cost": "低成本单张 中间单张",
+            "single_control_resource": "自然小单 控制牌 回手",
+            "natural_pair_single": "自然对子 单张 拆组 清理",
+            "natural_group_single": "自然对子 三张 普通单张 清理 余组",
+            "bomb_residual": "四炸 五炸 残余孤张",
+            "wildcard_resource": "逢人配 自然路线 通配资源",
+            "teammate_control_resource": "队友控桌 pass 让牌 控制资源",
+            "teammate_table_choice": "队友控桌 pass 让牌 争夺牌权",
+            "danger_block_resource": "危险对手 阻断 pass 控制资源",
+            "danger_block_choice": "危险对手 阻断 pass 合法压制",
+        }
+        for relation in RAGAdvisor._metadata_values(scene_tags, "candidate_relation_kinds"):
+            if relation in relation_terms:
+                zh_terms.extend(relation_terms[relation].split())
         return " ".join(parts + zh_terms)
 
     @staticmethod
@@ -402,6 +463,10 @@ class RAGAdvisor:
             score += tag_score
 
         score += cls._keyword_score(doc, query, desired_topics)
+        # A fully satisfied, source-authored candidate gate is positive
+        # evidence that this claim belongs in the current context.  This
+        # remains semantic metadata; provenance never participates in scoring.
+        score += 18.0 * cls._matched_requirement_count(doc.metadata, candidate_applicability)
         requested_domains = cls._metadata_values(scene_tags, "strategy_domains")
         doc_domains = cls._metadata_values(doc.metadata, "strategy_domain")
         # Domains are public runtime semantics, not provenance.  They provide
@@ -563,7 +628,17 @@ class RAGAdvisor:
         strategy_context: object = None,
         strategy_recommendation: object = None,
     ) -> dict[str, object]:
-        scene_tags = self._scene_tags(observation, legal_actions, hand_eval, phase_context)
+        from agents.action_structure import summarize_candidate_contrasts
+
+        contrasts = summarize_candidate_contrasts(observation, legal_actions)
+        relation_kinds = (
+            tuple(dict.fromkeys(item.kind for item in contrasts))
+            if contrasts is not None
+            else ()
+        )
+        scene_tags = self._scene_tags(
+            observation, legal_actions, hand_eval, phase_context, relation_kinds
+        )
         candidate_applicability = self._candidate_applicability(observation, legal_actions)
         intent = getattr(strategy_context, "intent", None)
         if isinstance(intent, str) and intent in {"run_out", "control", "support_teammate", "block_opponent"}:

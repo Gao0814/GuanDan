@@ -3,7 +3,7 @@ import unittest
 from unittest import mock
 
 from agents.deepseek_ai import DeepSeekAIAgent
-from agents.deepseek_client import DeepSeekClient, PROMPT_MAX_CANDIDATE_ACTIONS
+from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion, PROMPT_MAX_CANDIDATE_ACTIONS
 from agents.strategy_recommendation import StrategyRecommendation
 
 
@@ -414,17 +414,25 @@ class TestActionPruning(unittest.TestCase):
 
     def test_opening_formula_uses_raw_legal_actions_even_if_prune_hides_action(self) -> None:
         observation = _observation(hand_count=20)
-        observation["my_info"]["hand_cards"] = ["3S", "9S", "SJ", "BJ"] + [
+        observation["my_info"]["hand_cards"] = ["3S", "9S", "9H", "SJ", "BJ"] + [
             card
-            for rank in ("4", "5", "6", "7", "8", "10", "J", "Q")
+            for rank in ("4", "5", "6", "7", "8", "10", "J")
             for card in (f"{rank}S", f"{rank}H")
-        ]
+        ] + ["QH"]
         legal_actions = [
             _action(1, "single", ["3"], ["3S"]),
             _action(2, "single", ["9"], ["9S"]),
             _action(3, "single", ["SJ"], ["SJ"]),
         ]
-        client = RaisingClient()
+        class SelectedClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def suggest_action_id(self, **_kwargs: object):
+                self.calls += 1
+                return DeepSeekSuggestion(1, None)
+
+        client = SelectedClient()
         rag = CountingRAGAdvisor()
         agent = DeepSeekAIAgent(
             player_id=1,
@@ -445,11 +453,11 @@ class TestActionPruning(unittest.TestCase):
             chosen = agent.select_action(observation, legal_actions)
 
         self.assertEqual(chosen, 1)
-        self.assertEqual(agent.last_decision_source, "local_opening_formula")
-        prune_mock.assert_not_called()
-        self.assertEqual(client.calls, 0)
-        self.assertEqual(rag.rule_calls, 0)
-        self.assertEqual(rag.experience_calls, 0)
+        self.assertEqual(agent.last_decision_source, "model")
+        prune_mock.assert_called_once()
+        self.assertEqual(client.calls, 1)
+        self.assertEqual(rag.rule_calls, 1)
+        self.assertEqual(rag.experience_calls, 1)
 
     def test_deepseek_response_must_use_the_prompt_candidate_subset(self) -> None:
         captured: dict[str, object] = {}

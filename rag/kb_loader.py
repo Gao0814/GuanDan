@@ -70,7 +70,23 @@ _STRATEGY_DOMAINS = frozenset({
     "uncertainty_probe",
 })
 _GUIDANCE_MODES = frozenset({"source_principle", "soft_hypothesis"})
-_CANDIDATE_REQUIREMENTS = frozenset({"bomb_or_wildcard", "natural_pair"})
+_CANDIDATE_REQUIREMENTS = frozenset(
+    {
+        "bomb_or_wildcard",
+        "natural_pair",
+        "natural_pair_single",
+        "natural_group_single",
+        "natural_single_cost",
+        "single_control_resource",
+        "wildcard_resource",
+        "bomb_residual",
+        "teammate_control_resource",
+        "teammate_table_choice",
+        "danger_block_resource",
+        "danger_block_choice",
+    }
+)
+_PROVENANCE_OPTIONAL_FIELDS = frozenset({"corroborating_source_ids"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,7 +231,11 @@ class KnowledgeBaseLoader:
 
     @classmethod
     def _valid_provenance_record(cls, record: object) -> bool:
-        if not isinstance(record, Mapping) or set(record) != _PROVENANCE_REQUIRED_FIELDS:
+        if (
+            not isinstance(record, Mapping)
+            or not _PROVENANCE_REQUIRED_FIELDS.issubset(set(record))
+            or set(record) - (_PROVENANCE_REQUIRED_FIELDS | _PROVENANCE_OPTIONAL_FIELDS)
+        ):
             return False
         if any(
             type(record.get(field)) is not str or not str(record.get(field)).strip()
@@ -233,14 +253,27 @@ class KnowledgeBaseLoader:
         ):
             return False
         if evidence_status == "active":
-            return (source_tier, claim_type) in {
+            if (source_tier, claim_type) not in {
                 ("B", "strategy"),
                 ("C", "strategy"),
                 ("project_boundary", "project_boundary"),
-            }
-        if evidence_status == "candidate":
-            return source_tier in {"B", "C"} and claim_type == "strategy"
-        return claim_type in {"rule_reference", "publication_record", "system_design"}
+            }:
+                return False
+        elif evidence_status == "candidate":
+            if source_tier not in {"B", "C"} or claim_type != "strategy":
+                return False
+        elif claim_type not in {"rule_reference", "publication_record", "system_design"}:
+            return False
+        if "corroborating_source_ids" in record:
+            refs = record.get("corroborating_source_ids")
+            if (
+                not isinstance(refs, list)
+                or not refs
+                or any(type(item) is not str or not item.strip() for item in refs)
+                or len(refs) != len(set(refs))
+            ):
+                return False
+        return True
 
     def _load_experience_provenance(self) -> dict[str, Mapping[str, object]]:
         registry_path = (self._rag_root / _EXP_PROVENANCE_REL_PATH).resolve()
@@ -268,6 +301,16 @@ class KnowledgeBaseLoader:
                 invalid_ids.add(entry_id)
                 continue
             records[entry_id] = raw_record
+        for entry_id, record in tuple(records.items()):
+            refs = record.get("corroborating_source_ids", [])
+            if any(
+                type(ref) is not str
+                or ref not in records
+                or records[ref].get("evidence_status") != "active"
+                or records[ref].get("claim_type") != "strategy"
+                for ref in refs
+            ):
+                invalid_ids.add(entry_id)
         for entry_id in invalid_ids:
             records.pop(entry_id, None)
         return records

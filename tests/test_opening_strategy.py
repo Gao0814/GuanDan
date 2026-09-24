@@ -64,8 +64,8 @@ def _observation(
 
 def _strong_fixture() -> tuple[dict[str, object], list[dict[str, object]]]:
     observation = _observation(
-        ["4S", "QS", "AS", "AH", "SJ", "7S", "7H", "7C"]
-        + ["6S", "6H", "6C", "6D", "8S", "8H", "8C", "8D", "9S", "9H", "10S", "10H"]
+        ["4S", "QS", "QH", "AS", "AH", "SJ", "7S", "7H", "7C"]
+        + ["6H", "6C", "6D", "8S", "8H", "8C", "8D", "9S", "9H", "10S", "10H"]
     )
     actions = [
         _action(11, "single", ["Q"], ["QS"]),
@@ -109,7 +109,7 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
         self.assertEqual(normalize_hand_strength({"label": "", "total_score": 19}), "weak")
         self.assertEqual(normalize_hand_strength(None), "medium")
 
-    def test_strong_control_with_return_resource_selects_unique_natural_small_single(self) -> None:
+    def test_strong_opening_with_group_vs_single_conflict_is_left_to_model(self) -> None:
         observation, actions = _strong_fixture()
         before = (deepcopy(observation), deepcopy(actions))
 
@@ -120,8 +120,7 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
             classify_game_phase(observation),
         )
 
-        self.assertEqual(chosen, 7)
-        self.assertNotEqual(chosen, 11)
+        self.assertIsNone(chosen)
         self.assertEqual((observation, actions), before)
 
     def test_joker_level_wildcard_and_partial_groups_are_not_formula_targets(self) -> None:
@@ -138,7 +137,7 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
             self.strategy.select_action(observation, actions, {"label": "strong", "control_score": 24})
         )
 
-    def test_two_wildcard_candidate_is_valid_but_not_a_formula_target(self) -> None:
+    def test_wildcard_tradeoff_is_left_to_model_before_path(self) -> None:
         observation, actions = _strong_fixture()
         observation["my_info"]["hand_cards"].extend(["2H", "2H"])
         observation["my_info"]["hand_count"] += 2
@@ -155,10 +154,10 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
                 ],
             )
         )
+        actions.append(_action(31, "pair", ["8", "8"], ["8S", "8H"]))
 
-        self.assertEqual(
-            self.strategy.select_action(observation, actions, {"label": "strong", "control_score": 24}),
-            7,
+        self.assertIsNone(
+            self.strategy.select_action(observation, actions, {"label": "strong", "control_score": 24})
         )
 
     def test_single_used_by_natural_sequence_is_not_formula_target(self) -> None:
@@ -174,13 +173,14 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
             _action(5, "straight", ["3", "4", "5", "6", "7"], ["3S", "4H", "5C", "6D", "7S"]),
         ]
 
-        self.assertEqual(
-            self.strategy.select_action(observation, actions, {"label": "strong", "control_score": 24}),
-            2,
-        )
-        actions = [action for action in actions if action["action_id"] != 3]
         self.assertIsNone(
             self.strategy.select_action(observation, actions, {"label": "strong", "control_score": 24})
+        )
+        actions = [action for action in actions if action["action_id"] != 3]
+        # Removing one alternative still leaves a public low-cost-vs-sequence
+        # role conflict; the new C-tier soft comparison is model-before only.
+        self.assertIsNone(
+            self.strategy.select_action(observation, actions, {"label": "strong", "control_score": 24}),
         )
 
     def test_medium_weak_or_missing_return_resource_is_not_formulaized(self) -> None:

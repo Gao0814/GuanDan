@@ -302,11 +302,21 @@ class _BucketAccumulator:
 def _expected_on_prompt(off_prompt: str, text: object) -> str:
     if not isinstance(text, str):
         return off_prompt
-    marker = "【场景标签】"
-    insertion = f"【残局牌面信念】\n{text}\n\n"
-    if off_prompt.count(marker) != 1:
+    marker = "\n\n【"
+    tracking_heading = "【记牌信息】\n"
+    if off_prompt.count(tracking_heading) == 1:
+        section_start = off_prompt.index(tracking_heading) + len(tracking_heading)
+        next_heading = off_prompt.find(marker, section_start)
+    else:
+        scene_heading = "【场景标签】"
+        next_heading = off_prompt.find(scene_heading)
+        marker = scene_heading
+    if next_heading < 0:
         return off_prompt
-    return off_prompt.replace(marker, insertion + marker, 1)
+    insertion = f"【残局牌面信念】\n{text}\n\n"
+    if marker == "\n\n【":
+        return off_prompt[:next_heading] + "\n\n" + insertion + off_prompt[next_heading + 2 :]
+    return off_prompt[:next_heading] + insertion + off_prompt[next_heading:]
 
 
 def _overall_bucket(buckets: Mapping[str, _BucketAccumulator]) -> ConfidencePromptCoverageBucket:

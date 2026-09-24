@@ -310,6 +310,7 @@ class RecommendationCandidateClosureTests(unittest.TestCase):
             hand_count=int(my_info["hand_count"]),
             phase_context=classify_game_phase(observation),
             strategy_recommendation=recommendation,
+            observation=observation,
         )
         returned_id = int(expected_actions[-1]["action_id"])
         captured: dict[str, object] = {}

@@ -321,6 +321,7 @@ class TestStrategyIntentPrompt(unittest.TestCase):
                         )),
                         "char_count": payload.char_count,
                         "diagnostics": [],
+                        "candidate_relation_kinds": [],
                     },
                 )
 
@@ -387,6 +388,8 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             replace(base, opponents_all_active=1),  # type: ignore[arg-type]
             replace(base, teammate_big_joker_opportunity=1),  # type: ignore[arg-type]
             replace(base, short_endgame_minimum_groups=1),  # type: ignore[arg-type]
+            replace(base, candidate_relation_kinds=([],)),  # type: ignore[arg-type]
+            replace(base, candidate_relation_kinds=("natural_pair_single", "natural_single_cost")),
             replace(base, table_leader_relation="opponent", table_leader_player_id=None),
             replace(base, table_leader_relation=[]),  # type: ignore[arg-type]
             replace(base, is_free_lead=True, table_leader_relation="opponent", table_leader_player_id=2),

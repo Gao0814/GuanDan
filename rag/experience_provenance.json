@@ -24,6 +24,7 @@
       "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml",
       "locator": "正文关于定位、组牌目标及强牌小单首攻的段落",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening"]},
+      "corroborating_source_ids": ["source_guandanmaster_play_order_001"],
       "evidence_status": "active"
     },
     {
@@ -86,14 +87,16 @@
       "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
       "title": "如何打好一把掼蛋的前半程", "publication": "京报体育, 2024-02-22",
       "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml", "locator": "正文关于前半程权衡与观察的段落",
-      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response"]}, "evidence_status": "active"
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response"]},
+      "corroborating_source_ids": ["source_guandanmaster_control_001"], "evidence_status": "active"
     },
     {
       "entry_id": "exp_midgame_teammate_001",
       "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
       "title": "如何打好一把掼蛋的前半程", "publication": "京报体育, 2024-02-22",
       "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml", "locator": "正文关于搭档协同与让牌的段落",
-      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response"]}, "evidence_status": "active"
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response"]},
+      "corroborating_source_ids": ["source_guandanmaster_partner_001"], "evidence_status": "active"
     },
     {
       "entry_id": "exp_midgame_block_001",
@@ -107,7 +110,8 @@
       "source_tier": "C", "claim_type": "strategy", "author_or_institution": "唐人游转载，原作者未确认",
       "title": "掼蛋宝典－最权威的掼蛋技巧", "publication": "唐人游公开网页转载",
       "url_or_bibliography": "https://guandan.uc55.com/Rule/Detail/201009_000206.html", "locator": "通常保留炸弹的定性段落；无统计方法",
-      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response", "endgame"]}, "evidence_status": "active"
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response", "endgame"]},
+      "corroborating_source_ids": ["source_guandanmaster_bomb_timing_001"], "evidence_status": "active"
     },
     {
       "entry_id": "exp_card_memory_001",
@@ -115,6 +119,79 @@
       "title": "掼蛋需记牌", "publication": "京报体育, 2024-02-21",
       "url_or_bibliography": "https://news.bjd.com.cn/2024/02/21/10706126.shtml", "locator": "正文关于王、级牌、A、10、5与断张的段落",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]}, "evidence_status": "active"
+    },
+    {
+      "entry_id": "exp_soft_single_cost_probe_001",
+      "source_tier": "C",
+      "claim_type": "strategy",
+      "author_or_institution": "用户提供文本；原作者与原始出处未核实",
+      "title": "掼蛋出牌策略详细版",
+      "publication": "用户提供的仓库外文本；未提供公开书目信息",
+      "url_or_bibliography": "未提供公开URL",
+      "locator": "关于中间单张成本、低成本试探与回手路线的定性段落",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening", "lead"]},
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "source_guandanmaster_play_order_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "掼蛋大师网站；未核实单篇作者",
+      "title": "出牌顺序策略", "publication": "掼蛋大师策略栏目",
+      "url_or_bibliography": "https://guandanmaster.org/strategy/play-order-strategy.html",
+      "locator": "关于结合公开牌型结构与场面角色调整出牌次序的正文；仅作辅助来源，不添加重复RAG条目",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening", "lead"]},
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "source_guandanmaster_control_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "掼蛋大师网站；未核实单篇作者",
+      "title": "控牌策略", "publication": "掼蛋大师策略栏目",
+      "url_or_bibliography": "https://guandanmaster.org/strategy/control-tactics.html",
+      "locator": "关于公开控桌关系与控制成本的正文；合并到既有控制原则",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response"]},
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "source_guandanmaster_bomb_timing_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "掼蛋大师网站；未核实单篇作者",
+      "title": "炸弹时机", "publication": "掼蛋大师策略栏目",
+      "url_or_bibliography": "https://guandanmaster.org/strategy/bomb-timing.html",
+      "locator": "关于炸弹资源与后续结构的条件化正文；排除绝对化必须炸指令",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response", "endgame"]},
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "source_guandanmaster_partner_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "掼蛋大师网站；未核实单篇作者",
+      "title": "搭档配合", "publication": "掼蛋大师策略栏目",
+      "url_or_bibliography": "https://guandanmaster.org/strategy/partner-cooperation.html",
+      "locator": "关于公开队友控桌、让牌和危险对手权衡的正文；不采用暗牌偏好推断",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response"]},
+      "evidence_status": "active"
+    },
+    {
+      "entry_id": "candidate_guandanmaster_endgame_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "掼蛋大师网站；未核实单篇作者",
+      "title": "残局攻略", "publication": "掼蛋大师策略栏目",
+      "url_or_bibliography": "https://guandanmaster.org/strategy/endgame-guide.html",
+      "locator": "具体案例依赖示例暗牌并含绝对化断言；仅登记，泛化部分并入既有B级残局边界",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["endgame"]},
+      "evidence_status": "candidate"
+    },
+    {
+      "entry_id": "candidate_smzdm_strategy_100_001",
+      "source_tier": "C", "claim_type": "strategy",
+      "author_or_institution": "金牌掼蛋账号；百条原始作者及资质未核实",
+      "title": "掼蛋赢牌技巧100条，快速收藏",
+      "publication": "什么值得买，2024-08-19",
+      "url_or_bibliography": "https://post.smzdm.com/p/a5xk3dpl/",
+      "locator": "仅核对公开可见的部分条目；不将与用户文本高度匹配推断为作者归属或全篇证据",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]},
+      "evidence_status": "candidate"
     },
     {
       "entry_id": "registry_book_wang_xiong_2024",
