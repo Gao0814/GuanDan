@@ -111,7 +111,11 @@
       "title": "掼蛋宝典－最权威的掼蛋技巧", "publication": "唐人游公开网页转载",
       "url_or_bibliography": "https://guandan.uc55.com/Rule/Detail/201009_000206.html", "locator": "通常保留炸弹的定性段落；无统计方法",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response", "endgame"]},
-      "corroborating_source_ids": ["source_guandanmaster_bomb_timing_001"], "evidence_status": "active"
+      "corroborating_source_ids": [
+        "source_guandanmaster_bomb_timing_001",
+        "candidate_smzdm_strategy_100_001",
+        "source_user_supplied_strategy_100_001"
+      ], "evidence_status": "active"
     },
     {
       "entry_id": "exp_card_memory_001",
@@ -189,7 +193,7 @@
       "title": "掼蛋出牌策略详细版",
       "publication": "用户提供的仓库外文本；无公开书目信息",
       "url_or_bibliography": "未提供公开URL",
-      "locator": "只读核对#4、#51、#55、#73；不主张其与公开稿同源或能证明原始作者归属",
+      "locator": "只读核对#3、#4、#51、#55、#58、#73、#77；不主张其与公开稿同源或能证明原始作者归属",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening", "lead"]},
       "evidence_status": "active"
     },
@@ -200,7 +204,7 @@
       "title": "掼蛋赢牌技巧100条，快速收藏",
       "publication": "什么值得买，2024-08-19",
       "url_or_bibliography": "https://post.smzdm.com/p/a5xk3dpl/",
-      "locator": "仅激活已核对的公开可见#4、#51、#55、#73条件化片段；不推断原作者资质或全篇证据",
+      "locator": "仅激活已核对的公开可见#3、#4、#51、#55、#58、#73、#77条件化片段；不推断原作者资质或全篇证据",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]},
       "evidence_status": "active"
     },

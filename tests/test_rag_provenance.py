@@ -298,6 +298,14 @@ class TestExperienceProvenance(unittest.TestCase):
         records = {record["entry_id"]: record for record in json.loads((Path("rag") / "experience_provenance.json").read_text(encoding="utf-8"))["records"]}
         self.assertEqual(records["exp_bomb_wildcard_001"]["source_tier"], "C")
         self.assertEqual(
+            set(records["exp_bomb_wildcard_001"]["corroborating_source_ids"]),
+            {
+                "source_guandanmaster_bomb_timing_001",
+                "candidate_smzdm_strategy_100_001",
+                "source_user_supplied_strategy_100_001",
+            },
+        )
+        self.assertEqual(
             records["source_user_supplied_strategy_100_001"]["evidence_status"],
             "active",
         )
