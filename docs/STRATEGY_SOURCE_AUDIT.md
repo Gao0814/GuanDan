@@ -108,3 +108,5 @@ seed `47004` 当时的自由首出 Q 不是一个只需微调分数的孤立反�
 网站文章同样按页而非按域名处理：出牌顺序、控牌、炸弹时机、搭档配合、残局的**规则一致片段**为上表主张簇的 C 级补充，重复内容合并；[常见错误](https://guandanmaster.org/strategy/common-mistakes.html)与[决策树](https://guandanmaster.org/strategy/decision-tree.html)主要是已有目标或绝对化短句，不单列高权重条目；记牌、炸弹顺子页已发现的错误片段排除；[对手读牌](https://guandanmaster.org/strategy/reading-opponents.html)和[在线心得](https://guandanmaster.org/strategy/online-play-tips.html)中的暗牌确定性、操作延迟和表情信号不属于可用公开输入；[团队案例](https://guandanmaster.org/strategy/teamwork-cases.html)与[实战案例](https://guandanmaster.org/strategy/case-analysis.html)没有可核验的完整局面/合法动作，不作为公式或胜率证据。上述筛选允许 Coding Codex 对未列战术页作只读核对，但不得凭目录标题扩写打法。
 
 本次规划吸收只改变任务输入。完成同一轮来源化实施与回归后，才只读后验复核旧局的四/五炸残余、Q/低成本单张、单张/对子清理；旧动作本身不是新模型输出或策略收益证明。
+
+`9d89595` 的首次实现复审提醒：上表 28 项是待核对的条件化主张，不是“每项已在生产 prompt 激活”的统计。该提交实际新增 1 个经验条目和 10 类公开候选关系；至少小/大钢板与三带二携带对子梯度尚无可见的关系级映射。后续应按具体公开候选和最终 Request 验证每一项，不能只报告上表的原始规划分类数量。开局快捷路径的 200 状态零命中回归也须先纠正，再判断这些新关系是否应影响本地公式。
