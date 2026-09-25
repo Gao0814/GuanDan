@@ -16,7 +16,25 @@
 
 Botzone 主线使用人工创建的四人无贡桌，并在 connector 中**显式选择 `--agent deepseek`**。CLI 的 `--agent` 默认值仍是 `rule`，所以不能省略该选项来启动 DeepSeek。
 
-### 1. 准备固定 workspace 与本地配置
+### 所有者自用：一条命令启动轻量试局
+
+在仓库根目录的 Windows PowerShell 中运行：
+
+```powershell
+.\scripts\run_manual_botzone.ps1
+```
+
+启动器使用仓库 `.venv`（若存在）或 `python`，先只读核对 CLI 参数，再对个人 workspace 做零网络配置预检，随后以前台方式启动一个显式 `--agent deepseek` connector。预检成功本身不表示已连接；请等 Botzone 本地 AI 页面显示“已连接”，再由你手动创建四人、级牌 `2`、无需进贡的单局并点击开始。启动器不会操作网页。
+
+个人运行证据固定保存在仓库外 `D:\VsCodeProject\GuanDanManualWorkspace`，与 Codex 正式 workspace `D:\VsCodeProject\BotzoneWorkspace` 分开。下次启动时，只有个人根路径、归属标记、白名单目录/文件类型和 connector 状态全部通过检查，且零网络配置预检成功，启动器才会把上次个人目录移入 Windows 回收站并重建；任何未知对象或检查/回收失败都会停止并保留旧内容。**如果本次发现问题或希望 Codex 复查，先不要再次运行启动器**，否则它会按规则回收上一轮个人目录。
+
+该检查只能发现本机可归属的 connector；Botzone 本地 AI 连接端点可能被另一台主机同时使用，跨主机并行无法由本机进程检查保证。不要让个人试局与 Codex connector 同时连接同一个端点。个人启动器把 `DEEPSEEK_MAX_RETRIES=0` 只设到本次 connector 子进程，退出后恢复；URL 与 DeepSeek 凭据继续走现有私密配置，不写入命令行示例或日志。
+
+### Codex 监督运行：固定审计 workspace
+
+以下是与个人启动器分离的正式/Codex 监督流程；不要把两种 workspace 混用。
+
+#### 1. 准备固定 workspace 与本地配置
 
 运行状态与证据只放在仓库外固定目录 `D:\VsCodeProject\BotzoneWorkspace`，不要新建其他 `Botzone*` 顶层目录。`state`、`audit`、`streams` 是该 workspace 下允许使用的子目录：
 
@@ -33,7 +51,7 @@ $env:BOTZONE_STATE_DIR = "$workspace\state"
 
 每次运行前，确认本轮选用的 audit、history、trace、stdout 和 stderr 路径均不存在。当前 CLI 会原子替换已有 audit/history 文件；decision trace 若已存在则拒绝启动。若固定 workspace 留有上一轮证据，不要覆盖或自行清空；先结束当前工作，再按 `botzone-workspace-recycle` Skill 对已审计证据单独处理。
 
-### 2. 做零网络配置预检——它不表示已连接
+#### 2. 做零网络配置预检——它不表示已连接
 
 ```powershell
 python -m integrations.botzone `
@@ -44,7 +62,7 @@ python -m integrations.botzone `
 
 预检读取 Botzone URL/state 配置，检查 state 目录并验证 DeepSeek Agent 组合；成功输出 `preflight_ready`。此模式在创建 Botzone HTTP transport 前返回，不发起 Botzone 长轮询或 DeepSeek 请求，**`preflight_ready` 不是“已连接”证明**。
 
-### 3. 前台启动真实 connector，并等到页面确认连接
+#### 3. 前台启动真实 connector，并等到页面确认连接
 
 先确认下面五个目标证据不存在：`audit\completion-audit.json`、`history.txt`、`decision-trace.json`、`streams\stdout.txt`、`streams\stderr.txt`。正式单局还应遵守 `botzone-manual-live` Skill 的 workspace、预算、监测和证据门槛。以下示例不含 URL、密钥或固定 seed；它只启动 connector，建桌和点击开始由项目所有者在页面手动完成。
 
