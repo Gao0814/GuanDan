@@ -254,15 +254,28 @@ function Get-ManualBotzoneArguments {
     return $arguments.ToArray()
   }
   if ($RunToken -notmatch '^[0-9a-f]{32}$') { throw 'run_token_invalid' }
-  $arguments.Add('--timeout-seconds'); $arguments.Add('30')
-  $arguments.Add('--max-cycles'); $arguments.Add('100')
-  $arguments.Add('--max-wall-seconds'); $arguments.Add('600')
+  $arguments.Add('--max-cycles'); $arguments.Add('80')
+  $arguments.Add('--max-wall-seconds'); $arguments.Add('1800')
   $arguments.Add('--stop-after-finished'); $arguments.Add('1')
   $arguments.Add('--audit-file'); $arguments.Add((Join-Path $root 'audit\completion-audit.json'))
   $arguments.Add('--history-file'); $arguments.Add((Join-Path $root 'history.txt'))
   $arguments.Add('--decision-trace-file'); $arguments.Add((Join-Path $root 'decision-trace.json'))
   $arguments.Add('--run-token'); $arguments.Add($RunToken)
   return $arguments.ToArray()
+}
+
+function Get-ManualBotzoneExitCategory {
+  param([Parameter(Mandatory = $true)][int]$ExitCode)
+
+  switch ($ExitCode) {
+    0 { return 'finished' }
+    2 { return 'configuration_error' }
+    4 { return 'transport_error' }
+    5 { return 'protocol_error' }
+    6 { return 'limit_reached' }
+    130 { return 'interrupted' }
+    default { return 'other_exit' }
+  }
 }
 
 function Assert-ManualBotzoneFreshOutputs {
@@ -381,6 +394,7 @@ Export-ModuleMember -Function @(
   'Assert-NoManualBotzoneConnector',
   'Assert-ManualBotzoneFreshOutputs',
   'Get-ManualBotzoneArguments',
+  'Get-ManualBotzoneExitCategory',
   'Initialize-ManualBotzoneWorkspace',
   'Invoke-ManualBotzoneConnectorProcess',
   'Invoke-ManualBotzonePreflight',

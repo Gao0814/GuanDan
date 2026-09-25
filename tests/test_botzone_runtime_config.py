@@ -5,12 +5,44 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 import re
+from unittest.mock import patch
 
 from integrations.botzone.runtime_config import RuntimeConfigError, load_runtime_config
 from integrations.botzone.__main__ import main
 
 
 class BotzoneRuntimeConfigTests(unittest.TestCase):
+    def test_runtime_timeout_defaults_to_thirty_seconds(self) -> None:
+        config = load_runtime_config(
+            local_ai_url="https://synthetic.invalid/poll",
+            state_directory="state",
+            environ={},
+        )
+        self.assertEqual(config.timeout_seconds, 30)
+
+    def test_cli_uses_thirty_second_timeout_when_option_is_omitted(self) -> None:
+        observed: dict[str, object] = {}
+
+        def fake_load_runtime_config(**kwargs: object) -> object:
+            observed.update(kwargs)
+            return object()
+
+        output = StringIO()
+        with (
+            patch("integrations.botzone.__main__.load_runtime_config", side_effect=fake_load_runtime_config),
+            patch("integrations.botzone.__main__.preflight_state_directory"),
+            patch("integrations.botzone.__main__.prepare_agent_factory"),
+            redirect_stdout(output),
+        ):
+            status = main(
+                ["--preflight-only", "--agent", "deepseek", "--state-dir", "synthetic-state"],
+                environ={"BOTZONE_LOCAL_AI_URL": "https://synthetic.invalid/poll"},
+            )
+
+        self.assertEqual(status, 0)
+        self.assertEqual(observed.get("timeout_seconds"), 30)
+        self.assertEqual(output.getvalue(), "preflight_ready\n")
+
     def test_runtime_config_error_has_only_fixed_category(self) -> None:
         self.assertEqual(RuntimeConfigError("invalid_timeout").category, "invalid_timeout")
         self.assertEqual(RuntimeConfigError("synthetic-secret").category, "invalid_configuration")

@@ -92,7 +92,8 @@ try {
   }.GetNewClosure()
   if ($null -eq $connectorExit) { throw 'connector_exit_unavailable' }
   $exitCode = [int]$connectorExit
-  Write-Host "连接器已退出（exit $exitCode）。本次个人证据保留在 $expectedWorkspace。"
+  $exitCategory = Get-ManualBotzoneExitCategory -ExitCode $exitCode
+  Write-Host "连接器已退出（exit=$exitCode；category=$exitCategory）。本次个人证据保留在 $expectedWorkspace。"
 } catch {
   $safeCode = [string]$_.Exception.Message
   if ($safeCode -notmatch '^(workspace|connector|preflight|run_token|launcher|python|cli)_[a-z_]+$') {

@@ -106,9 +106,19 @@ try {
     }
     Assert-ManualTest -Condition ($allPersonal -and $joined.Contains((Join-Path $root 'audit\completion-audit.json')) -and $joined.Contains((Join-Path $root 'decision-trace.json')) -and $joined.Contains((Join-Path $root 'history.txt'))) -Name 'outputs_under_personal_root'
     Assert-ManualTest -Condition (-not $joined.Contains('BotzoneWorkspace') -and -not $joined.Contains('--url') -and -not $joined.Contains('--preflight-only')) -Name 'no_codex_root_or_private_config_args'
-    foreach ($requiredArgument in @('--timeout-seconds|30', '--max-cycles|100', '--max-wall-seconds|600', '--stop-after-finished|1', '--run-token|' + ('b' * 32))) {
-      Assert-ManualTest -Condition $joined.Contains($requiredArgument) -Name 'connector_cli_argument'
-    }
+    $expectedConnectorArguments = @(
+      '--agent', 'deepseek',
+      '--state-dir', (Join-Path $root 'state'),
+      '--max-cycles', '80',
+      '--max-wall-seconds', '1800',
+      '--stop-after-finished', '1',
+      '--audit-file', (Join-Path $root 'audit\completion-audit.json'),
+      '--history-file', (Join-Path $root 'history.txt'),
+      '--decision-trace-file', (Join-Path $root 'decision-trace.json'),
+      '--run-token', ('b' * 32)
+    )
+    Assert-ManualTest -Condition (($args -join '|') -ceq ($expectedConnectorArguments -join '|')) -Name 'connector_arguments_match_shared_profile_except_paths'
+    Assert-ManualTest -Condition (-not $joined.Contains('--timeout-seconds') -and -not $joined.Contains('--preflight-only')) -Name 'connector_uses_default_timeout_and_not_preflight'
     Assert-ManualTest -Condition ((@(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly) -join '|').Contains('--preflight-only')) -Name 'preflight_is_separate'
     $preflightArgs = @(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly)
     Assert-ManualTest -Condition ($preflightArgs[3] -ceq (Join-Path $root 'state')) -Name 'preflight_state_is_personal'
@@ -302,6 +312,23 @@ try {
     }
   }
 
+  Invoke-ManualTest 'connector_exit_categories_are_fixed_and_low_risk' {
+    $expectedCategories = @{
+      0 = 'finished'
+      2 = 'configuration_error'
+      4 = 'transport_error'
+      5 = 'protocol_error'
+      6 = 'limit_reached'
+      130 = 'interrupted'
+      99 = 'other_exit'
+    }
+    foreach ($code in $expectedCategories.Keys) {
+      Assert-ManualTest -Condition ((Get-ManualBotzoneExitCategory -ExitCode $code) -ceq $expectedCategories[$code]) -Name 'fixed_exit_category'
+    }
+    $launcherSource = [System.IO.File]::ReadAllText($launcherPath)
+    Assert-ManualTest -Condition ($launcherSource.Contains('Get-ManualBotzoneExitCategory -ExitCode $exitCode') -and $launcherSource.Contains('exit=$exitCode') -and $launcherSource.Contains('category=$exitCategory')) -Name 'launcher_prints_fixed_exit_code_and_category'
+  }
+
   Invoke-ManualTest 'launcher_powershell_syntax' {
     $tokens = $null
     $parseErrors = $null
@@ -330,19 +357,25 @@ try {
     $testCommand = Join-Path $compatScripts 'run_manual_botzone.cmd'
     $testStub = Join-Path $compatScripts 'run_manual_botzone.ps1'
     Copy-Item -LiteralPath $commandPath -Destination $testCommand
-    $stubText = "Write-Output 'UNSIGNED_TEST_STUB_RAN'`r`nexit 37`r`n"
+    $stubText = "Write-Output 'UNSIGNED_TEST_STUB_RAN'`r`nif (`$args.Count -ne 0) { exit 38 }`r`nexit 37`r`n"
     [System.IO.File]::WriteAllText($testStub, $stubText, [System.Text.Encoding]::ASCII)
 
     $parentProcessPolicyBefore = [string](Get-ExecutionPolicy -Scope Process)
     $machinePolicyBefore = [string](Get-ExecutionPolicy -Scope LocalMachine)
     $entryText = [System.IO.File]::ReadAllText($testCommand)
     Assert-ManualTest -Condition ($entryText.Contains('-ExecutionPolicy Bypass') -and $entryText.Contains('-File "%~dp0run_manual_botzone.ps1"') -and -not $entryText.Contains('Set-ExecutionPolicy')) -Name 'cmd_uses_child_only_bypass_for_fixed_script'
-    $commandLine = '""' + $testCommand + '""'
+    $commandLine = '""' + $testCommand + '" --no-pause"'
     $childOutput = @(& $env:ComSpec /d /c $commandLine 2>&1)
     $childExitCode = $LASTEXITCODE
     $safeOutput = $childOutput -join "`n"
     Assert-ManualTest -Condition ($childExitCode -eq 37) -Name 'cmd_returns_child_exit_code'
     Assert-ManualTest -Condition $safeOutput.Contains('UNSIGNED_TEST_STUB_RAN') -Name 'cmd_runs_unsigned_scratch_script'
+    Assert-ManualTest -Condition (-not $safeOutput.Contains('Press any key')) -Name 'no_pause_switch_supports_automation'
+    $defaultCommandLine = '""' + $testCommand + '" < NUL"'
+    $defaultOutput = @(& $env:ComSpec /d /c $defaultCommandLine 2>&1)
+    $defaultExitCode = $LASTEXITCODE
+    $defaultSafeOutput = $defaultOutput -join "`n"
+    Assert-ManualTest -Condition ($defaultExitCode -eq 37 -and $defaultSafeOutput.Contains('Press any key to close this window')) -Name 'double_click_mode_shows_result_and_waits'
     Assert-ManualTest -Condition ([string](Get-ExecutionPolicy -Scope Process) -ceq $parentProcessPolicyBefore -and [string](Get-ExecutionPolicy -Scope LocalMachine) -ceq $machinePolicyBefore) -Name 'cmd_does_not_change_parent_or_machine_policy'
   }
 
@@ -409,9 +442,8 @@ elif mode == "connector":
     expected_arguments = [
         "--agent", "deepseek",
         "--state-dir", state_dir,
-        "--timeout-seconds", "30",
-        "--max-cycles", "100",
-        "--max-wall-seconds", "600",
+        "--max-cycles", "80",
+        "--max-wall-seconds", "1800",
         "--stop-after-finished", "1",
         "--audit-file", os.path.join(root, "audit", "completion-audit.json"),
         "--history-file", os.path.join(root, "history.txt"),
@@ -421,9 +453,9 @@ elif mode == "connector":
     checks = {
         "agent": value("--agent") == "deepseek",
         "state": value("--state-dir") == state_dir,
-        "timeout": value("--timeout-seconds") == "30",
-        "cycles": value("--max-cycles") == "100",
-        "wall": value("--max-wall-seconds") == "600",
+        "timeout_default": "--timeout-seconds" not in args,
+        "cycles": value("--max-cycles") == "80",
+        "wall": value("--max-wall-seconds") == "1800",
         "stop": value("--stop-after-finished") == "1",
         "paths": value("--audit-file") == os.path.join(root, "audit", "completion-audit.json") and value("--history-file") == os.path.join(root, "history.txt") and value("--decision-trace-file") == os.path.join(root, "decision-trace.json"),
         "token_shape": run_token is not None and len(run_token) == 32 and all(character in "0123456789abcdef" for character in run_token),
@@ -499,7 +531,7 @@ set "MANUAL_LAUNCHER_EXPECTED_PYTHON=$testPython"
 set "MANUAL_LAUNCHER_EXPECTED_STATE_DIR=$fakeState"
 set "MANUAL_LAUNCHER_EXPECTED_WORKSPACE=$fakeWorkspace"
 set "MANUAL_LAUNCHER_PROBE_RESULT=$resultPath"
-call "$testCommand"
+call "$testCommand" --no-pause
 set "_probe_exit=%ERRORLEVEL%"
 endlocal & exit /b %_probe_exit%
 "@
@@ -527,7 +559,7 @@ endlocal & exit /b %_probe_exit%
     Assert-ManualTest -Condition ($records[0].argument_checks.exact) -Name 'preflight_arguments_match'
     Assert-ManualTest -Condition ($records[1].argument_checks.agent) -Name 'connector_agent_argument_match'
     Assert-ManualTest -Condition ($records[1].argument_checks.state) -Name 'connector_state_argument_match'
-    Assert-ManualTest -Condition ($records[1].argument_checks.timeout) -Name 'connector_timeout_argument_match'
+    Assert-ManualTest -Condition ($records[1].argument_checks.timeout_default) -Name 'connector_default_timeout_argument_match'
     Assert-ManualTest -Condition ($records[1].argument_checks.cycles) -Name 'connector_cycles_argument_match'
     Assert-ManualTest -Condition ($records[1].argument_checks.wall) -Name 'connector_wall_argument_match'
     Assert-ManualTest -Condition ($records[1].argument_checks.stop) -Name 'connector_stop_argument_match'
