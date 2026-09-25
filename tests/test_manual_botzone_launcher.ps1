@@ -346,6 +346,202 @@ try {
     Assert-ManualTest -Condition ([string](Get-ExecutionPolicy -Scope Process) -ceq $parentProcessPolicyBefore -and [string](Get-ExecutionPolicy -Scope LocalMachine) -ceq $machinePolicyBefore) -Name 'cmd_does_not_change_parent_or_machine_policy'
   }
 
+  Invoke-ManualTest 'synthetic_endpoint_and_proxy_reach_python_for_preflight_and_run' {
+    $compatRoot = Join-Path $scratchRoot 'env-chain'
+    $compatScripts = Join-Path $compatRoot 'scripts'
+    [void][System.IO.Directory]::CreateDirectory($compatScripts)
+    $testCommand = Join-Path $compatScripts 'run_manual_botzone.cmd'
+    $testStub = Join-Path $compatScripts 'run_manual_botzone.ps1'
+    $testHarness = Join-Path $compatRoot 'invoke-synthetic.cmd'
+    $probePath = Join-Path $compatScripts 'probe.py'
+    $resultPath = Join-Path $compatScripts 'probe-results.jsonl'
+    $fakeWorkspace = Join-Path $compatRoot 'fake-workspace'
+    $fakeState = Join-Path $fakeWorkspace 'state'
+    Copy-Item -LiteralPath $commandPath -Destination $testCommand
+
+    $projectPython = Join-Path (Split-Path -Parent $PSScriptRoot) '.venv\Scripts\python.exe'
+    if (Test-Path -LiteralPath $projectPython -PathType Leaf) {
+      $testPython = [System.IO.Path]::GetFullPath($projectPython)
+    } else {
+      $pythonCommand = Get-Command -Name 'python' -CommandType Application -ErrorAction Stop
+      $testPython = $pythonCommand.Source
+    }
+
+    $probeText = @'
+import json
+import os
+import sys
+
+mode = sys.argv[1] if len(sys.argv) > 1 else "invalid"
+args = sys.argv[2:]
+expected_environment = {
+    "BOTZONE_LOCAL_AI_URL": "https://synthetic.botzone.invalid/poll",
+    "HTTP_PROXY": "http://127.0.0.1:18765",
+    "HTTPS_PROXY": "http://127.0.0.1:18765",
+    "ALL_PROXY": "socks5://127.0.0.1:18766",
+    "NO_PROXY": "synthetic.botzone.invalid",
+}
+environment_match = all(os.environ.get(key) == value for key, value in expected_environment.items())
+cwd_match = os.getcwd() == os.environ.get("MANUAL_LAUNCHER_EXPECTED_CWD")
+python_match = os.path.normcase(os.path.abspath(sys.executable)) == os.path.normcase(os.path.abspath(os.environ.get("MANUAL_LAUNCHER_EXPECTED_PYTHON", "")))
+retry_expected = "0" if mode == "connector" else "17"
+retry_match = os.environ.get("DEEPSEEK_MAX_RETRIES") == retry_expected
+state_dir = os.environ.get("MANUAL_LAUNCHER_EXPECTED_STATE_DIR")
+
+def value(option):
+    try:
+        return args[args.index(option) + 1]
+    except (ValueError, IndexError):
+        return None
+
+if mode == "preflight":
+    checks = {
+        "agent": args[:2] == ["--agent", "deepseek"],
+        "state": value("--state-dir") == state_dir,
+        "preflight": args.count("--preflight-only") == 1,
+        "runtime_only_absent": all(option not in args for option in ("--timeout-seconds", "--max-cycles", "--max-wall-seconds", "--audit-file", "--history-file", "--decision-trace-file", "--run-token")),
+        "exact": args == ["--agent", "deepseek", "--state-dir", state_dir, "--preflight-only"],
+    }
+    result = "preflight_ready"
+elif mode == "connector":
+    root = os.environ.get("MANUAL_LAUNCHER_EXPECTED_WORKSPACE")
+    run_token = value("--run-token")
+    expected_arguments = [
+        "--agent", "deepseek",
+        "--state-dir", state_dir,
+        "--timeout-seconds", "30",
+        "--max-cycles", "100",
+        "--max-wall-seconds", "600",
+        "--stop-after-finished", "1",
+        "--audit-file", os.path.join(root, "audit", "completion-audit.json"),
+        "--history-file", os.path.join(root, "history.txt"),
+        "--decision-trace-file", os.path.join(root, "decision-trace.json"),
+        "--run-token", run_token,
+    ]
+    checks = {
+        "agent": value("--agent") == "deepseek",
+        "state": value("--state-dir") == state_dir,
+        "timeout": value("--timeout-seconds") == "30",
+        "cycles": value("--max-cycles") == "100",
+        "wall": value("--max-wall-seconds") == "600",
+        "stop": value("--stop-after-finished") == "1",
+        "paths": value("--audit-file") == os.path.join(root, "audit", "completion-audit.json") and value("--history-file") == os.path.join(root, "history.txt") and value("--decision-trace-file") == os.path.join(root, "decision-trace.json"),
+        "token_shape": run_token is not None and len(run_token) == 32 and all(character in "0123456789abcdef" for character in run_token),
+        "preflight_absent": "--preflight-only" not in args,
+        "exact": args == expected_arguments,
+    }
+    result = "fake_connector_done"
+elif mode == "after":
+    checks = {"empty": not args}
+    result = "post_connector_done"
+else:
+    checks = {"invalid_mode": False}
+    result = "invalid_probe_mode"
+
+record = {
+    "mode": mode if mode in {"preflight", "connector", "after"} else "invalid",
+    "environment_match": bool(environment_match),
+    "cwd_match": bool(cwd_match),
+    "python_match": bool(python_match),
+    "retry_match": bool(retry_match),
+    "argument_checks": checks,
+}
+with open(os.environ["MANUAL_LAUNCHER_PROBE_RESULT"], "a", encoding="utf-8") as handle:
+    handle.write(json.dumps(record, sort_keys=True) + "\n")
+print(result)
+sys.exit(0 if environment_match and cwd_match and python_match and retry_match and all(checks.values()) else 23)
+'@
+    [System.IO.File]::WriteAllText($probePath, $probeText, [System.Text.Encoding]::UTF8)
+
+    $modulePathLiteral = "'" + $modulePath.Replace("'", "''") + "'"
+    $pythonPathLiteral = "'" + $testPython.Replace("'", "''") + "'"
+    $probePathLiteral = "'" + $probePath.Replace("'", "''") + "'"
+    $workspaceLiteral = "'" + $fakeWorkspace.Replace("'", "''") + "'"
+    $fakePowerShellText = @"
+Import-Module $modulePathLiteral -Force -ErrorAction Stop
+`$pythonPath = $pythonPathLiteral
+`$probe = $probePathLiteral
+`$workspace = $workspaceLiteral
+`$stateDirectory = Join-Path `$workspace 'state'
+`$preflightArguments = @(Get-ManualBotzoneArguments -WorkspaceRoot `$workspace -PreflightOnly)
+`$connectorArguments = @(Get-ManualBotzoneArguments -WorkspaceRoot `$workspace -RunToken ('a' * 32))
+`$preflightInvoker = {
+  param([string[]]`$Arguments)
+  `$output = @(& `$pythonPath -B `$probe preflight @Arguments)
+  `$code = `$LASTEXITCODE
+  return [pscustomobject]@{ ExitCode = `$code; Output = `$output }
+}.GetNewClosure()
+[void](Invoke-ManualBotzonePreflight -Arguments `$preflightArguments -Invoker `$preflightInvoker)
+`$connectorInvoker = {
+  `$output = @(& `$pythonPath -B `$probe connector @connectorArguments)
+  return `$LASTEXITCODE
+}.GetNewClosure()
+`$connectorExit = Invoke-ManualBotzoneConnectorProcess -Invoker `$connectorInvoker
+if (`$connectorExit -ne 0) { exit 41 }
+`$afterExit = & `$pythonPath -B `$probe after
+if (`$LASTEXITCODE -ne 0) { exit 42 }
+exit 0
+"@
+    [System.IO.File]::WriteAllText($testStub, $fakePowerShellText, [System.Text.Encoding]::ASCII)
+
+    $expectedCwd = [System.IO.Path]::GetFullPath((Get-Location).Path)
+    $harnessText = @"
+@echo off
+setlocal
+set "BOTZONE_LOCAL_AI_URL=https://synthetic.botzone.invalid/poll"
+set "HTTP_PROXY=http://127.0.0.1:18765"
+set "HTTPS_PROXY=http://127.0.0.1:18765"
+set "ALL_PROXY=socks5://127.0.0.1:18766"
+set "NO_PROXY=synthetic.botzone.invalid"
+set "DEEPSEEK_MAX_RETRIES=17"
+set "MANUAL_LAUNCHER_EXPECTED_CWD=$expectedCwd"
+set "MANUAL_LAUNCHER_EXPECTED_PYTHON=$testPython"
+set "MANUAL_LAUNCHER_EXPECTED_STATE_DIR=$fakeState"
+set "MANUAL_LAUNCHER_EXPECTED_WORKSPACE=$fakeWorkspace"
+set "MANUAL_LAUNCHER_PROBE_RESULT=$resultPath"
+call "$testCommand"
+set "_probe_exit=%ERRORLEVEL%"
+endlocal & exit /b %_probe_exit%
+"@
+    [System.IO.File]::WriteAllText($testHarness, $harnessText, [System.Text.Encoding]::ASCII)
+
+    $childOutput = @(& $env:ComSpec /d /c ('""' + $testHarness + '""') 2>&1)
+    $childExitCode = $LASTEXITCODE
+    $safeOutput = $childOutput -join "`n"
+    $records = @()
+    if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
+      $records = @(Get-Content -LiteralPath $resultPath | ForEach-Object { ConvertFrom-Json -InputObject $_ })
+    }
+    $productionLauncherSource = [System.IO.File]::ReadAllText($launcherPath)
+    $productionModuleSource = [System.IO.File]::ReadAllText($modulePath)
+    $preflightInvokeIndex = $productionLauncherSource.IndexOf('& $pythonPath -B -m integrations.botzone @Arguments 2>$null', [System.StringComparison]::Ordinal)
+    $connectorInvokeIndex = $productionLauncherSource.IndexOf('& $pythonPath -B -m integrations.botzone @connectorArguments 1> $paths.Stdout 2> $paths.Stderr', [System.StringComparison]::Ordinal)
+    $repositoryPushIndex = $productionLauncherSource.IndexOf('Push-Location -LiteralPath $repositoryRoot', [System.StringComparison]::Ordinal)
+    $preflightArgsIndex = $productionModuleSource.IndexOf('$preflightArgs = @(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly)', [System.StringComparison]::Ordinal)
+    $preflightInvokerIndex = $productionLauncherSource.IndexOf('-PreflightInvoker $preflightInvoker', [System.StringComparison]::Ordinal)
+    $runtimeArgsIndex = $productionLauncherSource.IndexOf('$connectorArguments = @(Get-ManualBotzoneArguments -WorkspaceRoot $expectedWorkspace -RunToken $runToken)', [System.StringComparison]::Ordinal)
+    Assert-ManualTest -Condition ($childExitCode -eq 0) -Name 'synthetic_chain_exits_successfully'
+    Assert-ManualTest -Condition ($records.Count -eq 3 -and $records[0].mode -ceq 'preflight' -and $records[1].mode -ceq 'connector' -and $records[2].mode -ceq 'after') -Name 'synthetic_preflight_run_order'
+    Assert-ManualTest -Condition (@($records | Where-Object { -not $_.environment_match -or -not $_.cwd_match }).Count -eq 0) -Name 'synthetic_url_proxy_and_cwd_reach_python'
+    Assert-ManualTest -Condition (@($records | Where-Object { -not $_.python_match }).Count -eq 0) -Name 'same_python_executable_reaches_each_phase'
+    Assert-ManualTest -Condition ($records[0].argument_checks.exact) -Name 'preflight_arguments_match'
+    Assert-ManualTest -Condition ($records[1].argument_checks.agent) -Name 'connector_agent_argument_match'
+    Assert-ManualTest -Condition ($records[1].argument_checks.state) -Name 'connector_state_argument_match'
+    Assert-ManualTest -Condition ($records[1].argument_checks.timeout) -Name 'connector_timeout_argument_match'
+    Assert-ManualTest -Condition ($records[1].argument_checks.cycles) -Name 'connector_cycles_argument_match'
+    Assert-ManualTest -Condition ($records[1].argument_checks.wall) -Name 'connector_wall_argument_match'
+    Assert-ManualTest -Condition ($records[1].argument_checks.stop) -Name 'connector_stop_argument_match'
+    Assert-ManualTest -Condition ($records[1].argument_checks.paths) -Name 'connector_paths_argument_match'
+    Assert-ManualTest -Condition ($records[1].argument_checks.token_shape) -Name 'connector_run_token_argument_shape_match'
+    Assert-ManualTest -Condition ($records[1].argument_checks.preflight_absent) -Name 'connector_preflight_switch_absent'
+    Assert-ManualTest -Condition ($records[1].argument_checks.exact) -Name 'connector_arguments_exact_and_ordered'
+    Assert-ManualTest -Condition ($records[2].argument_checks.empty) -Name 'post_probe_arguments_match'
+    Assert-ManualTest -Condition ($records[0].retry_match -and $records[1].retry_match -and $records[2].retry_match) -Name 'retry_override_only_wraps_connector_process'
+    Assert-ManualTest -Condition ($safeOutput -notmatch 'synthetic\.botzone|127\.0\.0\.1|18765|18766|socks5') -Name 'synthetic_private_values_not_echoed'
+    Assert-ManualTest -Condition ($repositoryPushIndex -ge 0 -and $preflightInvokeIndex -gt $repositoryPushIndex -and $connectorInvokeIndex -gt $repositoryPushIndex) -Name 'production_phases_share_repository_working_directory'
+    Assert-ManualTest -Condition ($preflightArgsIndex -ge 0 -and $preflightInvokerIndex -ge 0 -and $runtimeArgsIndex -ge 0) -Name 'production_builds_distinct_preflight_and_runtime_arguments'
+  }
+
   Write-Output "SUMMARY tests=$testCount assertions=$assertionCount"
 } catch {
   Write-Output "FAIL $($_.Exception.Message)"
