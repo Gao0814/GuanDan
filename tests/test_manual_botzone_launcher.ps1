@@ -3,6 +3,7 @@ Set-StrictMode -Version Latest
 
 $modulePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/manual_botzone_workspace.psm1'
 $launcherPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/run_manual_botzone.ps1'
+$commandPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/run_manual_botzone.cmd'
 Import-Module -Name $modulePath -Force -WarningAction SilentlyContinue
 $testRoot = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $scratchName = '.manual-launcher-scratch-' + [guid]::NewGuid().ToString('N')
@@ -310,6 +311,39 @@ try {
     $parseErrors = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($modulePath, [ref]$tokens, [ref]$parseErrors)
     Assert-ManualTest -Condition ($parseErrors.Count -eq 0) -Name 'module_parses'
+
+    $windowsPowerShell = Get-Command -Name 'powershell.exe' -CommandType Application -ErrorAction Stop
+    $quotedLauncher = "'" + $launcherPath.Replace("'", "''") + "'"
+    $quotedModule = "'" + $modulePath.Replace("'", "''") + "'"
+    $parseProbe = '$files=@(' + $quotedLauncher + ',' + $quotedModule + '); foreach ($file in $files) { ' +
+      '$parseTokens=$null; $parseErrors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile($file,[ref]$parseTokens,[ref]$parseErrors); ' +
+      'if ($parseErrors.Count -ne 0) { exit 11 } }; Write-Output ''PS51_PARSE_OK'''
+    $windowsOutput = @(& $windowsPowerShell.Source -NoLogo -NoProfile -ExecutionPolicy Bypass -Command $parseProbe 2>$null)
+    $windowsExitCode = $LASTEXITCODE
+    Assert-ManualTest -Condition ($windowsExitCode -eq 0 -and ($windowsOutput -join "`n").Contains('PS51_PARSE_OK')) -Name 'windows_powershell_51_parses_files'
+  }
+
+  Invoke-ManualTest 'cmd_entry_uses_process_bypass_and_propagates_exit' {
+    $compatRoot = Join-Path $scratchRoot 'cmd-entry'
+    $compatScripts = Join-Path $compatRoot 'scripts'
+    [void][System.IO.Directory]::CreateDirectory($compatScripts)
+    $testCommand = Join-Path $compatScripts 'run_manual_botzone.cmd'
+    $testStub = Join-Path $compatScripts 'run_manual_botzone.ps1'
+    Copy-Item -LiteralPath $commandPath -Destination $testCommand
+    $stubText = "Write-Output 'UNSIGNED_TEST_STUB_RAN'`r`nexit 37`r`n"
+    [System.IO.File]::WriteAllText($testStub, $stubText, [System.Text.Encoding]::ASCII)
+
+    $parentProcessPolicyBefore = [string](Get-ExecutionPolicy -Scope Process)
+    $machinePolicyBefore = [string](Get-ExecutionPolicy -Scope LocalMachine)
+    $entryText = [System.IO.File]::ReadAllText($testCommand)
+    Assert-ManualTest -Condition ($entryText.Contains('-ExecutionPolicy Bypass') -and $entryText.Contains('-File "%~dp0run_manual_botzone.ps1"') -and -not $entryText.Contains('Set-ExecutionPolicy')) -Name 'cmd_uses_child_only_bypass_for_fixed_script'
+    $commandLine = '""' + $testCommand + '""'
+    $childOutput = @(& $env:ComSpec /d /c $commandLine 2>&1)
+    $childExitCode = $LASTEXITCODE
+    $safeOutput = $childOutput -join "`n"
+    Assert-ManualTest -Condition ($childExitCode -eq 37) -Name 'cmd_returns_child_exit_code'
+    Assert-ManualTest -Condition $safeOutput.Contains('UNSIGNED_TEST_STUB_RAN') -Name 'cmd_runs_unsigned_scratch_script'
+    Assert-ManualTest -Condition ([string](Get-ExecutionPolicy -Scope Process) -ceq $parentProcessPolicyBefore -and [string](Get-ExecutionPolicy -Scope LocalMachine) -ceq $machinePolicyBefore) -Name 'cmd_does_not_change_parent_or_machine_policy'
   }
 
   Write-Output "SUMMARY tests=$testCount assertions=$assertionCount"

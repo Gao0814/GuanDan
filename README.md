@@ -18,13 +18,15 @@ Botzone 主线使用人工创建的四人无贡桌，并在 connector 中**显�
 
 ### 所有者自用：一条命令启动轻量试局
 
-在仓库根目录的 Windows PowerShell 中运行：
+在仓库根目录的 Windows PowerShell 5.1 中运行：
 
 ```powershell
-.\scripts\run_manual_botzone.ps1
+.\scripts\run_manual_botzone.cmd
 ```
 
 启动器使用仓库 `.venv`（若存在）或 `python`，先只读核对 CLI 参数，再对个人 workspace 做零网络配置预检，随后以前台方式启动一个显式 `--agent deepseek` connector。预检成功本身不表示已连接；请等 Botzone 本地 AI 页面显示“已连接”，再由你手动创建四人、级牌 `2`、无需进贡的单局并点击开始。启动器不会操作网页。
+
+`.cmd` 入口以 `-ExecutionPolicy Bypass` 启动一个仅供本次调用的 Windows PowerShell 子进程，并原样返回脚本退出码；不会修改 LocalMachine、CurrentUser 或持久策略。若企业组策略仍禁止该进程运行，应停止并联系管理员，不要尝试全局放宽执行策略。
 
 个人运行证据固定保存在仓库外 `D:\VsCodeProject\GuanDanManualWorkspace`，与 Codex 正式 workspace `D:\VsCodeProject\BotzoneWorkspace` 分开。下次启动时，只有个人根路径、归属标记、白名单目录/文件类型和 connector 状态全部通过检查，且零网络配置预检成功，启动器才会把上次个人目录移入 Windows 回收站并重建；任何未知对象或检查/回收失败都会停止并保留旧内容。**如果本次发现问题或希望 Codex 复查，先不要再次运行启动器**，否则它会按规则回收上一轮个人目录。
 
