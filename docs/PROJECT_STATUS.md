@@ -1,9 +1,12 @@
 # 项目状态看板
 
-## 当前阶段：个人试局离线差异检查 inconclusive，待规划受控连接对照；多牌型开局暂停（2026-09-25）
+## 当前阶段：个人启动器按同一 connector 收敛，真实连通待验证；多牌型开局暂停（2026-09-25）
 
-- `6794db5 test: verify manual launcher environment forwarding` 仅新增个人启动器离线测试。规划 Codex 独立审阅完整测试 diff，并在 PowerShell 7、Windows PowerShell 5.1 各复跑 15 组/68 断言、禁用 dotenv 的 Botzone runtime 配置测试 5 项和 CLI `--help`，均通过；`git show --check` 通过。合成 URL/代理环境从 `.cmd` 传到 fake Python 的预检、connector 与退出后探针；解释器、工作目录、参数隔离和重试环境恢复均守恒。生产接线通过静态文本核对，但未运行真实 launcher 或网络，故只能排除已测范围内显见的参数/环境丢失，**不能证明真实 Botzone 连通或定位 20 次 timeout 根因**。本任务没有可据以修复的确定性业务缺陷，不能把 600 秒上限或静默输出当成网络根因；下一步若要区分旧成功路径与个人路径，需单独设计并获所有者确认的受控真实连接 A/B，不应继续叠加猜测性代码任务。
-- 当前个人工作根在本地 13:02:24 已被重新创建，只含归属标记、空 `audit/state` 与两个 0 B stream 文件；当前无 connector，先前第二次的 710 B audit 不在活动目录。该时间早于 `6794db5` 的 14:04 提交和规划 Codex 本轮离线测试，不能归因于本次测试；重建来源和是否曾真正启动第三次 connector 未证，不去回收站搜索或推断。上方第二次 audit 的 hash/聚合只保留为此前已完成的只读记录，后续不得把该 audit 误称为当前目录中仍存在。当前无待执行 Coding Prompt；受控 A/B 前必须重新盘点证据与 workspace，Codex 正式运行只能使用固定 workspace，旧证据清理须独立遵守项目 Skill。
+- 项目所有者明确选择更简单的执行边界：保持 Codex 已有直接 connector 路径与固定证据目录不变，个人 `.cmd` 只作为独立证据目录的入口；不额外改变连接方式、URL/密钥或运行预算。现有 CLI 两条路径已共用 `integrations.botzone`，差异在包装器、解释器选择、100/600 与旧成功执行的 80/1800 参数及输出呈现。默认请求超时都是 30 秒；这些差异尚未证明是 20 次 transport timeout 的根因。下一项 Coding Prompt 已写入 `docs/NEXT_PROMPT.md`，要求将个人入口最小收敛到旧调用参数，仅替换个人 evidence 路径并保留轮换安全，提交后由所有者另行确认页面真实连接。
+- 所有者又双击一次个人入口并报告仍未显示“已连接”，命令窗口可能自行关闭。规划 Codex 于本地 14:40 只读检查：个人 workspace 在 14:37 重建，含归属标记、空 `audit/state` 和两个 0 B stream；当时没有启动器或 connector 进程，也没有 audit。由于没有运行末尾输出，不能确定窗口关闭原因或将本次归为 600 秒墙钟退出；不再用本次空目录推断 Botzone 配置错误。
+
+- `6794db5 test: verify manual launcher environment forwarding` 仅新增个人启动器离线测试。规划 Codex 独立审阅完整测试 diff，并在 PowerShell 7、Windows PowerShell 5.1 各复跑 15 组/68 断言、禁用 dotenv 的 Botzone runtime 配置测试 5 项和 CLI `--help`，均通过；`git show --check` 通过。合成 URL/代理环境从 `.cmd` 传到 fake Python 的预检、connector 与退出后探针；解释器、工作目录、参数隔离和重试环境恢复均守恒。生产接线通过静态文本核对，但未运行真实 launcher 或网络，故只能排除已测范围内显见的参数/环境丢失，**不能证明真实 Botzone 连通或定位 20 次 timeout 根因**。当时没有可据以修复的确定性业务缺陷，不能把 600 秒上限或静默输出当成网络根因；原计划先做受控真实连接 A/B，现由上方所有者明确的启动器收敛任务取代。
+- 本地 13:02:24 的一次旧检查曾见个人工作根被重新创建，只含归属标记、空 `audit/state` 与两个 0 B stream 文件；当时无 connector，先前第二次的 710 B audit 不在活动目录。该时间早于 `6794db5` 的 14:04 提交和规划 Codex 离线测试，不能归因于测试；重建来源未证，不去回收站搜索或推断。上方第二次 audit 的 hash/聚合只保留为此前已完成的只读记录，后续不得把该 audit 误称为当前目录中仍存在。受控 A/B 若在后续单独开展，仍须重新盘点证据与 workspace；Codex 正式运行只能使用固定 workspace，旧证据清理须独立遵守项目 Skill。
 
 - 项目所有者明确纠正：既有 Botzone 本地 AI URL/密钥未更改，设置一次后无需反复点击提交；此前 Codex 在该账号上已成功连接。规划 Codex 接受此事实，不再把“未重复提交页面配置”当作此次失败的优先解释。当前连接失败仍是**启动器/运行环境差异待定位**，而非已证实的 Botzone 设置错误或某一具体代码行缺陷。仓库对比确认从上次成功对局检查点 `8fb5b40` 至今，`integrations/botzone/`、`agents/`、`config.py` 未变。旧 seed `47005` 执行 Prompt 对同一 connector 设 `--max-cycles 80`、`--max-wall-seconds 1800`、默认请求 timeout 30 秒；个人脚本设 100/600/30，并从 `.cmd` 子 PowerShell 选择 `.venv` Python、继承该进程环境与代理。当前用户级 Botzone URL/代理变量均存在，失败期间观察到本机回环代理连接；旧成功进程的环境/代理路由未留可比证据，不能断言与本次相同。原定禁网差异任务已由 `6794db5` 执行且 inconclusive；下一步不再发同类 Coding 任务，也不能以延长时间冒充根因修复。
 
