@@ -8,7 +8,7 @@
 
 本项目不是完整的多局升级/贡还比赛引擎。当前 Botzone 主线明确限定为四人、需要进贡为否的单局 play 子集。
 
-最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：seed `47005` 单局的六份固定 Codex workspace evidence 仍保留，平台结果为 `platform_error`；额外的空 `D:\VsCodeProject\BotzoneState` 已单独回收。规划 Codex 曾从固定 workspace 短时启动同一个 connector，项目所有者确认页面“已连接”；其新 probe artifact 与旧六份证据共存。随后项目所有者刷新页面，确认个人脚本也显示“已连接”，因此暂停两条启动路径的连接差异排查，不把刷新现象当作已证实的网络或代码根因。`b17c2d9` 已使开局本地直选以完整公开关系而非展示代表关系判定取舍，相关 78 项、主规则 39 项及全量 828 项测试独立通过；600 个初始牌局中仅 17 次小单直选、无对子或三张直选。项目所有者已选择强化 DeepSeek 的开局模型前建议，而非放宽本地直选门槛；直接执行任务见 `docs/NEXT_PROMPT.md`。后续如需 live，必须重新盘点 workspace，不能把此处历史快照当作新 inventory 或建目录指令。
+最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：seed `47005` 单局的六份固定 Codex workspace evidence 仍保留，平台结果为 `platform_error`；额外的空 `D:\VsCodeProject\BotzoneState` 已单独回收。规划 Codex 曾从固定 workspace 短时启动同一个 connector，项目所有者确认页面“已连接”；其新 probe artifact 与旧六份证据共存。随后项目所有者刷新页面，确认个人脚本也显示“已连接”，因此暂停两条启动路径的连接差异排查，不把刷新现象当作已证实的网络或代码根因。`b17c2d9` 已使本地开局直选采用完整关系门槛；`ad7524e` 加入模型前跨牌型指引，规划独立复跑 70 项相关、39 项主规则和 831 项全量测试。但该新指引在实际 Botzone DeepSeek factory 默认 RAG top‑1 下于三个固定开局只覆盖一场；recommendation 缺席时另有旧判据被误省略的回归。当前须先执行 `docs/NEXT_PROMPT.md` 的同一任务纠偏，不把执行报告中的三次单点成功/耗时当作实际 factory 路径覆盖或时延改善证明。后续如需 live，必须重新盘点 workspace，不能把此处历史快照当作新 inventory 或建目录指令。
 
 ## 2. Current Repository State
 
