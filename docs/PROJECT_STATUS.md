@@ -1,8 +1,10 @@
 # 项目状态看板
 
-## 当前阶段：个人启动器按同一 connector 收敛，真实连通待验证；多牌型开局暂停（2026-09-25）
+## 当前阶段：个人启动器离线复审通过，真实连通待所有者验证；多牌型开局暂停（2026-09-25）
 
-- 项目所有者明确选择更简单的执行边界：保持 Codex 已有直接 connector 路径与固定证据目录不变，个人 `.cmd` 只作为独立证据目录的入口；不额外改变连接方式、URL/密钥或运行预算。现有 CLI 两条路径已共用 `integrations.botzone`，差异在包装器、解释器选择、100/600 与旧成功执行的 80/1800 参数及输出呈现。默认请求超时都是 30 秒；这些差异尚未证明是 20 次 transport timeout 的根因。下一项 Coding Prompt 已写入 `docs/NEXT_PROMPT.md`，要求将个人入口最小收敛到旧调用参数，仅替换个人 evidence 路径并保留轮换安全，提交后由所有者另行确认页面真实连接。
+- `239a2e3 fix: align personal Botzone launcher profile` 已完成个人入口参数收敛。规划 Codex 独立检查完整 diff、仓库 clean、`git show --check`、CLI 30 秒默认超时和退出码映射；PowerShell 5.1/7 各复跑 16 组/74 断言，禁用 dotenv 的 Botzone 相关回归 48 项通过。个人入口现沿用旧成功直接调用的显式 `deepseek`、80 cycles、1800 秒上限、默认 30 秒超时与一次完成停止；`.cmd` 默认等待按键，`--no-pause` 供自动化。提交没有改 Codex 固定路径、Botzone CLI/传输层、Agent 或私密配置。离线检查未运行真实 preflight/connector、Botzone、DeepSeek 或网络，也未访问两个真实 workspace；因此只封板启动参数与离线可观察性，不宣称页面连通或 20 次 timeout 根因已修复。下一步由所有者在可轮换个人证据的前提下单独试运行；若仍未连接，保留该次个人目录及低敏退出信息再规划对照，不再叠加无证据代码改动。当前没有待执行 Coding Prompt。
+
+- 项目所有者明确选择更简单的执行边界：保持 Codex 已有直接 connector 路径与固定证据目录不变，个人 `.cmd` 只作为独立证据目录的入口；不额外改变连接方式、URL/密钥或运行预算。两条路径本来已共用 `integrations.botzone`，当时差异在包装器、解释器选择、100/600 与旧成功执行的 80/1800 参数及输出呈现。默认请求超时都是 30 秒；这些差异尚未证明是 20 次 transport timeout 的根因。当时据此提出的 Coding Prompt 已由上方 `239a2e3` 完成；页面真实连接仍待所有者确认。
 - 所有者又双击一次个人入口并报告仍未显示“已连接”，命令窗口可能自行关闭。规划 Codex 于本地 14:40 只读检查：个人 workspace 在 14:37 重建，含归属标记、空 `audit/state` 和两个 0 B stream；当时没有启动器或 connector 进程，也没有 audit。由于没有运行末尾输出，不能确定窗口关闭原因或将本次归为 600 秒墙钟退出；不再用本次空目录推断 Botzone 配置错误。
 
 - `6794db5 test: verify manual launcher environment forwarding` 仅新增个人启动器离线测试。规划 Codex 独立审阅完整测试 diff，并在 PowerShell 7、Windows PowerShell 5.1 各复跑 15 组/68 断言、禁用 dotenv 的 Botzone runtime 配置测试 5 项和 CLI `--help`，均通过；`git show --check` 通过。合成 URL/代理环境从 `.cmd` 传到 fake Python 的预检、connector 与退出后探针；解释器、工作目录、参数隔离和重试环境恢复均守恒。生产接线通过静态文本核对，但未运行真实 launcher 或网络，故只能排除已测范围内显见的参数/环境丢失，**不能证明真实 Botzone 连通或定位 20 次 timeout 根因**。当时没有可据以修复的确定性业务缺陷，不能把 600 秒上限或静默输出当成网络根因；原计划先做受控真实连接 A/B，现由上方所有者明确的启动器收敛任务取代。
