@@ -8,7 +8,7 @@
 
 本项目不是完整的多局升级/贡还比赛引擎。当前 Botzone 主线明确限定为四人、需要进贡为否的单局 play 子集。
 
-最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：2026-09-25 的 seed `47005` 单局已形成六份固定 Codex workspace evidence，平台结果为 `platform_error`；额外的空 `D:\VsCodeProject\BotzoneState` 目录已按所有者要求单独移入回收站，固定 workspace 旧 evidence 仍保留。项目所有者已暂停多牌型开局任务。个人试局启动器由 `7b432ff` 实现，`0177abc` 修复 Windows PowerShell 5.1 入口兼容性；但所有者两次启动均未看到页面“已连接”，第二次只读 audit 为 20 次长轮询超时、0 对局请求、0 模型请求。所有者确认页面 URL/密钥未变，无需重复提交；当前转入启动器/进程环境/代理差异排查，个人目录保留，不重开覆盖。以下早期“当前”措辞均是当时的历史快照，不得作为下一次 live 的 workspace inventory 或建目录指令。
+最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：2026-09-25 的 seed `47005` 单局已形成六份固定 Codex workspace evidence，平台结果为 `platform_error`；额外的空 `D:\VsCodeProject\BotzoneState` 目录已按所有者要求单独移入回收站，固定 workspace 旧 evidence 仍保留。项目所有者已暂停多牌型开局任务。个人启动器经 `7b432ff`/`0177abc` 实现，两次所有者连接均未确认“已连接”，第二次 audit 的 20 次长轮询均超时。`6794db5` 的合成环境/参数回归经规划独立复审通过，但真实连接根因仍未定位。当前个人目录已在本地 13:02 重新创建，不再含此前 audit；来源未证，不可声称异常证据仍在活动目录。后续受控真实连接 A/B 需单独规划，不能重复提交未改的页面配置，也不能重用旧证据假设。以下早期“当前”措辞均是当时的历史快照，不得作为下一次 live 的 workspace inventory 或建目录指令。
 
 ## 2. Current Repository State
 
