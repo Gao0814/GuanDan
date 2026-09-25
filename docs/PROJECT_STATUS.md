@@ -1,6 +1,14 @@
 # 项目状态看板
 
-## 当前阶段：固定 workspace 已清空，人工 DeepSeek 单局已授权、待执行（2026-09-24）
+## 当前阶段：seed `47005` 单局证据已审计，文档纠偏待执行（2026-09-25）
+
+- `47005` 人工 DeepSeek 单局的六份固定 workspace evidence 均由规划 Codex 按精确路径、普通非链接文件属性、字节数和完整 SHA-256 独立复核。v8 audit：exit 0、`finished_target`、9 cycles、request/response/Header `2/2/2`、qualified finish 1、6 次 transport timeout、0 failure、1 次模型 success、0 fallback、1 条 `model` ACK；v1 trace 的唯一序号与 canonical 选中动作一致，v4 tombstone 与 audit token 一致。平台结果为 `platform_error`，history 标记 `terminal_tail_may_be_unobserved`，不作为正常胜负或策略收益证据。`platform_error` 是平台异常的分类；当前 audit 没有逐次模型耗时或异常方身份，不能从“页面看似未出牌”推断是 DeepSeek 思考时间导致结束。一次模型成功和 ACK 证明至少有一项本家合法决策已进入 connector 确认链；不证明平台已展示完整动作尾部。
+- 对该条 ACK 的公开初始局面只读复算：step 0、自由领牌、27 张、77 个 canonical 候选、手牌强度为 `strong`；当前公式即使启用，也因**没有结构安全的自然单张**而返回 `None`，并非权重偏低。实际 trace 的 source=`model`，与该结果相容；但 evidence 未记录运行时 `OPENING_FORMULA_ENABLED` 值，因此不声称已证明它当时启用。模型最终选择了合法单张，不能据此判定其思考时长。禁用 dotenv 的开局/预检相关 16 项回归通过。
+- README 的现行操作说明确实有可复现的文档漂移：推荐 `D:\BotzoneState\GuanDan` 与 `D:\BotzoneAudit` 两个旧顶层目录，违反固定 `D:\VsCodeProject\BotzoneWorkspace` 策略；DeepSeek 小节只有 `--preflight-only --agent deepseek`，而 `integrations/botzone/__main__.py` 在此分支于构造 transport 前返回 `preflight_ready`，它按设计**不能连接**。README 已写明预检不联网，问题是缺少显式 `--agent deepseek` 的真实 connector 启动与“已连接”后人工建桌步骤；不能因此把预检改成联网。下一 Coding 任务只修用户入门文档及确有同类错误的活跃指导文件，不修改 CLI 默认值、开局公式或模型路径。见 `docs/NEXT_PROMPT.md`。
+- 独立检查发现 `D:\VsCodeProject\BotzoneState` 是 2026-09-25 10:01 创建的普通**空目录**，与报告中“直属 `Botzone*` 只有 `BotzoneWorkspace`”不符；固定 workspace 自身仍精确为 `audit/state/streams` 三目录及六份已核对文件，未发现项目 connector。该额外空目录来源未证，规划任务不删除或归因；它违反当前单顶层目录约束，未来 live 前须另行核实并处理。Git HEAD 仍为 `8fb5b40` 且工作树 clean。本轮未重开对局、未调用模型或网络。
+- 六份保留 evidence 的精确 inventory（相对 `D:\VsCodeProject\BotzoneWorkspace`）：`audit/completion-audit.json` 760 B / `08fc065b848c2424056597ab004dd4bfc0ae43aa2866f9789f743c0677f6ef70`；`decision-trace.json` 30241 B / `cdd62538407e6aa53afe2aec1e152efb77a39d5e0538dc19cf7637c5334a3614`；`history.txt` 1801 B / `23b82f859eebe2e04fee8f1239bf78f6f6fa6730ed3989af07f994d946e7c76f`；`state/ee344a43a75a792d59e85b97878d167a2d65f543c0369e77ee19e7d6d99e0865.json` 115 B / `0cb3ceb3ce39c07f743d17dbaa94cfff689ef4f00689f6790aab63e3e4e53b1f`；`streams/stdout.txt` 76 B / `f5867316b7c6d242d420b76600161fb324a65dcce013dbe3d1ba6f77f23d9718`；`streams/stderr.txt` 0 B / `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。不得在当前文档任务中清理或改写。
+
+以下为 `47005` 单局前的规划记录；其中“待执行单局”已由上方结果取代。
 
 - seed `47004` 的独立 evidence 回收任务已按报告完成：六个精确目标逐文件经 Windows 回收站 API 处理，永久删除 0，未运行 live/connector/preflight/模型。规划 Codex 随后只读复核：Git HEAD 仍为 `6981394` 且工作树 clean；`D:\VsCodeProject` 直属 `Botzone*` 仅有普通非链接的固定 workspace；其递归内容精确只有空的普通非链接目录 `audit`、`state`、`streams`，六条旧路径均不存在。进程筛查没有可归属 connector（唯一命中是本次检查用的 `pwsh`）。路径缺失与目录状态是独立观测；回收站 API 调用及逐项哈希以前述执行报告为证，不声称规划 Codex 重新验证了回收站内部记录。
 - 项目所有者现已明确授权一次人工 Botzone DeepSeek 单局，涵盖该单局可能达到 10 次或更多的真实模型请求；不延伸为第二桌、批量实验或独立额外诊断。`docs/NEXT_PROMPT.md` 已改为这一局的独立执行 Prompt，使用当前固定空 workspace、级牌 `2`、四人、无贡、玩家 1/seat 0、`deepseek`，模型重试固定为 0。人工页面连接确认后执行 Codex 才发送建桌 seed，项目所有者手动建桌和开始；本规划任务不启动 connector、preflight 或网络。完成后先审计 evidence，再判断策略输入与原始选择，不把单局胜负当作收益证明。当前范围内无已知 workspace 准备风险；策略质量与实际时延仍待验证。
