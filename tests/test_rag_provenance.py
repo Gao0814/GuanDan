@@ -249,6 +249,7 @@ class TestExperienceProvenance(unittest.TestCase):
                 "exp_general_boundary_001",
                 "exp_lead_opening_strong_001",
                 "exp_lead_opening_medium_001",
+                "exp_lead_opening_shape_001",
                 "exp_lead_opening_weak_001",
                 "exp_midgame_control_001",
                 "exp_midgame_teammate_001",

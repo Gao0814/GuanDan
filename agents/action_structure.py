@@ -6,6 +6,8 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from agents.game_phase import OPENING, classify_game_phase
+
 
 _NORMAL_RANKS = frozenset({"3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"})
 _SUITS = frozenset({"S", "H", "C", "D"})
@@ -128,6 +130,7 @@ CANDIDATE_RELATION_KINDS = (
     "single_control_resource",
     "natural_pair_single",
     "natural_group_single",
+    "natural_sequence_single",
     "bomb_strength_resource",
     "sequence_structure_loss",
     "triple_split_repartition",
@@ -947,6 +950,66 @@ def summarize_candidate_contrasts(
                 )
             )
             break
+
+    # A natural singleton can also be one card of an available natural
+    # straight.  Do not blanket-protect that card as an untouchable sequence
+    # member: expose one bounded, complete comparison between the canonical
+    # straight and its canonical single so the model can weigh clearing the
+    # run against a low-cost probe and the residual hand.
+    sequence_single_pairs: list[tuple[CandidateStructure, CandidateStructure]] = []
+    try:
+        opening_lead = (
+            isinstance(observation, Mapping)
+            and classify_game_phase(observation).phase == OPENING
+            and isinstance(current_round, Mapping)
+            and current_round.get("constraint") == "free"
+            and current_round.get("table_action") is None
+        )
+    except Exception:
+        opening_lead = False
+    for sequence_fact in facts:
+        if (
+            not opening_lead
+            or not sequence_fact.is_free_lead
+            or sequence_fact.pattern != "straight"
+            or sequence_fact.uses_wildcard
+            or sequence_fact.finishes_hand
+        ):
+            continue
+        sequence_action = actions_by_id.get(sequence_fact.action_id)
+        sequence_carrier = sequence_action.get("carrier_cards") if sequence_action is not None else None
+        if not isinstance(sequence_carrier, list):
+            continue
+        sequence_ranks = {_rank_of(card) for card in sequence_carrier}
+        for single_fact in all_singles:
+            if (
+                single_fact.finishes_hand
+                or single_fact.uses_wildcard
+                or single_fact.fragments_played_rank_group
+                or single_fact.consumes_control_resource
+            ):
+                continue
+            single_action = actions_by_id.get(single_fact.action_id)
+            single_rank = _natural_same_rank(single_action or {}, count=1)
+            if single_rank is not None and single_rank in sequence_ranks:
+                sequence_single_pairs.append((sequence_fact, single_fact))
+    if sequence_single_pairs:
+        sequence_fact, single_fact = min(
+            sequence_single_pairs,
+            key=lambda pair: (
+                pair[1].natural_single_rank_value or 99,
+                pair[0].estimated_remaining_rank_groups,
+                pair[0].action_id,
+                pair[1].action_id,
+            ),
+        )
+        contrasts.append(
+            CandidateContrast(
+                "natural_sequence_single",
+                (sequence_fact.action_id, single_fact.action_id),
+                sequence_fact.teammate_hand_count,
+            )
+        )
 
     # Compare a natural sequence that breaks a complete same-rank group with
     # the canonical pair/triple action that clears that exact group.  The

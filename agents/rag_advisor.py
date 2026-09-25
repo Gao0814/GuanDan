@@ -41,6 +41,7 @@ _CANDIDATE_REQUIREMENTS = frozenset(
         "natural_pair",
         "natural_pair_single",
         "natural_group_single",
+        "natural_sequence_single",
         "bomb_strength_resource",
         "natural_single_cost",
         "straight_strength",
@@ -52,6 +53,7 @@ _CANDIDATE_REQUIREMENTS = frozenset(
         "single_control_resource",
         "wildcard_resource",
         "bomb_residual",
+        "opening_natural_shape",
         "teammate_control_resource",
         "teammate_table_choice",
         "danger_block_resource",
@@ -60,6 +62,7 @@ _CANDIDATE_REQUIREMENTS = frozenset(
 )
 _RELATION_SPECIFIC_SOFT_REQUIREMENTS = frozenset(
     {
+        "natural_single_cost",
         "bomb_strength_resource",
         "bomb_residual",
         "triple_split_repartition",
@@ -206,10 +209,33 @@ class RAGAdvisor:
         if contrasts is None:
             return None
         contrast_kinds = {contrast.kind for contrast in contrasts}
+        current_round = observation.get("current_round")
+        try:
+            is_opening_free_lead = (
+                classify_game_phase(observation).phase == "opening"
+                and isinstance(current_round, dict)
+                and current_round.get("constraint") == "free"
+                and current_round.get("table_action") is None
+            )
+        except Exception:
+            is_opening_free_lead = False
+        has_structure_safe_opening_shape = is_opening_free_lead and any(
+            fact.is_free_lead
+            and fact.pattern in {"pair", "triple", "straight"}
+            and not fact.uses_wildcard
+            and not fact.fragments_played_rank_group
+            and not fact.finishes_hand
+            for fact in facts
+        )
         return {
             "bomb_or_wildcard": has_bomb_or_wildcard,
             "natural_pair": has_natural_pair,
-            **{kind: kind in contrast_kinds for kind in _CANDIDATE_REQUIREMENTS if kind not in {"bomb_or_wildcard", "natural_pair"}},
+            "opening_natural_shape": has_structure_safe_opening_shape,
+            **{
+                kind: kind in contrast_kinds
+                for kind in _CANDIDATE_REQUIREMENTS
+                if kind not in {"bomb_or_wildcard", "natural_pair", "opening_natural_shape"}
+            },
         }
 
     @classmethod
@@ -342,9 +368,14 @@ class RAGAdvisor:
             topics.update({"opening", "singles", "control", "probe"})
         if relations & {
             "natural_pair_single", "natural_group_single", "sequence_structure_loss",
+            "natural_sequence_single",
             "triple_split_repartition", "triple_pair_kicker_gradient",
         }:
             topics.update({"pair", "structure", "probe"})
+        if "natural_sequence_single" in relations:
+            topics.update({"straight", "singles"})
+            if scene == "lead_opening" and phase == "opening":
+                topics.add("opening")
         if "straight_strength" in relations:
             topics.update({"straight", "structure", "control"})
         if "steel_plate_strength" in relations:
@@ -389,6 +420,7 @@ class RAGAdvisor:
             "single_control_resource": "自然小单 控制牌 回手",
             "natural_pair_single": "自然对子 单张 拆组 清理",
             "natural_group_single": "自然对子 三张 普通单张 清理 余组",
+            "natural_sequence_single": "自然顺子 顺子内自然单张 清理 低成本试探 残余结构",
             "straight_strength": "小顺 大顺 强弱 清理 保留 余组",
             "sequence_structure_loss": "顺子 拆组 残余对子 三张 余组",
             "triple_split_repartition": "三张 拆单 三带二 两组牌结构 重组",
@@ -541,6 +573,10 @@ class RAGAdvisor:
             score, _, _ = scored
             document_requirements = self._metadata_values(doc.metadata, "candidate_requirements")
             exact_relations = active_relations & document_requirements & _RELATION_SPECIFIC_SOFT_REQUIREMENTS
+            if "natural_pair" in document_requirements:
+                exact_relations.update(
+                    active_relations & {"natural_pair_single", "natural_group_single"}
+                )
             if "bomb_or_wildcard" in document_requirements:
                 if "bomb_strength_resource" in active_relations:
                     exact_relations.add("bomb_strength_resource")

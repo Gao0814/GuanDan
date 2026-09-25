@@ -54,6 +54,25 @@ candidate_requirements: [natural_group_single]
 适用条件：中性牌力的自由首出，且canonical动作中存在自然对子/三张和结构安全单张。策略目标：在表达牌型、清理孤张和保留回手间比较。建议倾向：将对子/三张作为可核验路线，而不是“先出对子”的公式。反例与调整：较低成本单张、已成组合受损、队友控桌或危险对手接近走完都可推翻该倾向。
 
 ---
+id: exp_lead_opening_shape_001
+corpus: experience
+scene: [lead_opening]
+phase: [opening]
+hand_strength: [any]
+action_context: [free_lead]
+topic: [opening, pair, triple, straight, hand_structure, control]
+priority: high
+keywords_cn: [开局, 首出, 对子, 三张, 顺子, 余组, 回手]
+strategy_domain: [opening_free_lead, hand_structure, control_return_resource]
+guidance_mode: source_principle
+candidate_requirements: [opening_natural_shape]
+---
+
+# 开局成型牌型与余组比较
+
+适用条件：开局自由首出，完整canonical候选中存在不使用逢人配、且不拆已识别同点组的自然对子、三张或顺子。策略目标：结合公开牌力与余牌结构选择首出表达，同时保留可核验的控制或回手路线。建议倾向：比较小单、成型组牌或顺子出后剩余点数组、孤张、拆组与资源成本；只有公开结构形成清晰且唯一的结构优势时才适合简化为本地定式，候选取舍不清则交由模型。反例与调整：顺子可能拆对子/三张，成型组牌可能损害更好的回手、队友协同或控制资源；未识别到用途不证明留牌未来无用，立即出完和公开紧急性也可改变判断。
+
+---
 id: exp_lead_opening_weak_001
 corpus: experience
 scene: [lead_opening]

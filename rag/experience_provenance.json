@@ -40,6 +40,18 @@
       "evidence_status": "active"
     },
     {
+      "entry_id": "exp_lead_opening_shape_001",
+      "source_tier": "B",
+      "claim_type": "strategy",
+      "author_or_institution": "王春国",
+      "title": "如何打好一把掼蛋的前半程",
+      "publication": "京报体育, 2024-02-22",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml",
+      "locator": "正文关于按牌力定位、自然对子/三张/顺子首攻与回手安排的条件性描述",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead_opening"]},
+      "evidence_status": "active"
+    },
+    {
       "entry_id": "exp_lead_opening_weak_001",
       "source_tier": "B",
       "claim_type": "strategy",

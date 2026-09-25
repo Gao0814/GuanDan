@@ -1036,11 +1036,13 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
         assert isinstance(rag_context, dict)
         hits = rag_context.get("experience_hits")
         assert isinstance(hits, list)
-        self.assertIn(
-            "exp_lead_opening_medium_001",
-            {item.get("source_id") for item in hits if isinstance(item, dict)},
+        hit_ids = {item.get("source_id") for item in hits if isinstance(item, dict)}
+        self.assertTrue(
+            hit_ids & {"exp_lead_opening_medium_001", "exp_lead_opening_shape_001"}
         )
-        self.assertIn("中性开局表达", transport.prompt)
+        self.assertTrue(
+            any(marker in transport.prompt for marker in ("中性开局表达", "开局成型牌型与余组比较"))
+        )
 
     def test_new_source_relationships_reach_real_request_with_both_canonical_sides(self) -> None:
         cases = (

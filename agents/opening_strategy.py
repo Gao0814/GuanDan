@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Sequence
 
-from agents.action_structure import representative_candidate_contrasts, summarize_candidate_structures
+from agents.action_structure import (
+    CandidateStructure,
+    representative_candidate_contrasts,
+    summarize_candidate_structures,
+)
 from agents.game_phase import GamePhaseContext, OPENING, classify_game_phase
 
 
@@ -48,9 +52,36 @@ _RANK_ORDER = {
 # The direct rule is intentionally narrower than the model-before knowledge.
 # All other public openings are routed to the existing RAG + DeepSeek path.
 OPENING_FORMULA_CONDITION_TABLE = (
-    ("direct", "B", "opening free lead; strong hand; one unique structure-safe natural small single; a separately playable return resource; no urgent player, finisher, or unresolved candidate relation"),
-    ("model_precept", "B/C", "multiple plausible lead shapes, pair/single or resource conflict, teammate/opponent urgency, or uncertain return plan; show source-conditioned alternatives to DeepSeek"),
-    ("not_applicable", "any", "follow play, non-opening phase, weak/medium/malformed public evidence, or no clear natural singleton"),
+    (
+        "direct_small_single",
+        "exp_lead_opening_strong_001",
+        "强牌开局自由首出；唯一最低自然单张、未处于实际展示的关系对照，且动作后还留有独立控制/压制回手资源时可本地直出；比较小单成本与资源路线",
+    ),
+    (
+        "direct_natural_shape",
+        "exp_lead_opening_shape_001, exp_lead_opening_weak_001",
+        "任意开局牌力；自然对子/三张/顺子在完整canonical集合中是唯一Pareto未支配路线，剩余分组、孤张、拆组、通配、控制和压制成本均不差，并保留独立回手路线时可直出",
+    ),
+    (
+        "model_single_tradeoff",
+        "exp_lead_opening_strong_001, exp_soft_single_cost_probe_001",
+        "低成本自然单张与较高单张/控制路线存在可见取舍时，将两侧原始候选及余组反例交给DeepSeek；软假设仅作可撤回输入",
+    ),
+    (
+        "model_group_and_sequence_tradeoff",
+        "exp_lead_opening_medium_001, exp_lead_opening_shape_001, exp_lead_opening_weak_001, exp_soft_pair_probe_001",
+        "自然对子/三张/顺子与小单、同点拆分、连续结构或回手路线并存时，展示实际canonical关系和动作后结构；不设单张或成组牌型的固定顺序，软假设仅补充可撤回观察",
+    ),
+    (
+        "model_resource_or_public_urgency",
+        "exp_general_boundary_001, exp_soft_straight_flush_bomb_cost_001, exp_bomb_wildcard_001",
+        "炸弹/通配/控制资源、公开队友协同或危险对手产生实质竞争时交给模型比较；炸弹软假设只在语料的对应条件/phase激活；紧急性、资源损失和可证回手作为反例，不推断暗牌",
+    ),
+    (
+        "not_applicable",
+        "any",
+        "跟牌、非开局、公开输入或canonical候选畸形、公开紧急性或未能证明来源条件/独立回手时不作本地开局直选；立即出完仍由既有高优先级捷径处理",
+    ),
 )
 
 
@@ -100,7 +131,15 @@ def normalize_hand_strength(hand_eval: dict[str, object] | None) -> str:
 
 
 class OpeningFormulaStrategy:
-    """Apply only the strong-control natural-small-single opening convention."""
+    """Apply narrow source-backed openings only when public evidence is decisive.
+
+    B-tier small-single guidance remains specific to strong hands.  For a
+    natural pair, triple, or straight, a local choice is permitted only when
+    it is the sole Pareto-undominated, structure-safe route across the full
+    canonical action set and leaves an independent public return resource.
+    Incomparable shapes and all material candidate relations remain model
+    choices.
+    """
 
     def _is_applicable(
         self,
@@ -139,9 +178,6 @@ class OpeningFormulaStrategy:
             return None
         hand, level_rank = validated
         strength = normalize_hand_strength(hand_eval)
-        if strength != "strong":
-            return None
-
         rank_counts = Counter(_rank_of(card) for card in hand.elements())
         facts = summarize_candidate_structures(observation, legal_actions)
         contrasts = representative_candidate_contrasts(observation, legal_actions)
@@ -152,47 +188,166 @@ class OpeningFormulaStrategy:
             for fact in facts
         ) or self._has_public_urgency(observation):
             return None
-        structured_tokens = {
-            str(card)
-            for action in legal_actions
-            if action["wildcard_count"] == 0
-            and len(action["carrier_cards"]) > 1
-            for card in action["carrier_cards"]
-        }
-        safe_singles: list[tuple[int, dict[str, object]]] = []
+        actions_by_id = {int(action["action_id"]): action for action in legal_actions}
+        facts_by_id = {fact.action_id: fact for fact in facts}
+
+        # B-tier strong-hand small-single convention: do not promote a low
+        # singleton if it is part of an observed relationship or has no
+        # independently playable return route after the proposed lead.
+        if strength == "strong":
+            safe_singles: list[tuple[int, dict[str, object]]] = []
+            for action in legal_actions:
+                if action["declared_pattern"] != "single" or action["wildcard_count"] != 0:
+                    continue
+                carriers = action["carrier_cards"]
+                declared = action["declared_cards"]
+                assert isinstance(carriers, list) and isinstance(declared, list)
+                if len(carriers) != 1 or len(declared) != 1:
+                    continue
+                carrier_rank = _rank_of(str(carriers[0]))
+                declared_rank = str(declared[0])
+                if _is_valid_token(declared_rank):
+                    declared_rank = _rank_of(declared_rank)
+                if (
+                    declared_rank != carrier_rank
+                    or carrier_rank in _CONTROL_RANKS
+                    or carrier_rank == level_rank
+                    or rank_counts.get(carrier_rank) != 1
+                ):
+                    continue
+                safe_singles.append((_RANK_ORDER[carrier_rank], action))
+
+            lowest = min((rank_value for rank_value, _ in safe_singles), default=None)
+            targets = [action for rank_value, action in safe_singles if rank_value == lowest]
+            if len(targets) == 1:
+                target_id = targets[0]["action_id"]
+                if (
+                    not any(target_id in contrast.action_ids for contrast in contrasts)
+                    and self._has_return_resource_after(
+                        observation, targets[0], legal_actions, facts_by_id,
+                    )
+                ):
+                    return target_id
+
+        # B-tier structure guidance is not a fixed pair/triple/straight order.
+        # A direct lead is allowed only when exactly one canonical action is
+        # undominated on both visible residual grouping measures and on the
+        # independently visible structure/resource costs.  Any incomparable
+        # route, including a materially relevant contrast, goes to the model.
+        frontier = [
+            fact for fact in facts
+            if not any(
+                other.action_id != fact.action_id
+                and self._profile_dominates(other, fact)
+                for other in facts
+            )
+        ]
+        if len(frontier) != 1:
+            return None
+        target_fact = frontier[0]
+        if (
+            target_fact.pattern not in {"pair", "triple", "straight"}
+            or target_fact.uses_wildcard
+            or target_fact.fragments_played_rank_group
+            or target_fact.consumes_control_resource
+            or target_fact.pattern in _PRESSURE_PATTERNS
+        ):
+            return None
+        if target_fact.pattern == "straight" and any(
+            contrast.kind == "natural_sequence_single"
+            and target_fact.action_id in contrast.action_ids
+            for contrast in contrasts
+        ):
+            # A straight versus one of its playable natural singletons is the
+            # exact low-cost-probe tradeoff the source asks us to expose. Keep
+            # it in the model path instead of resolving it by a local formula.
+            return None
+        target_action = actions_by_id.get(target_fact.action_id)
+        if target_action is None or not self._has_return_resource_after(
+            observation, target_action, legal_actions, facts_by_id,
+        ):
+            return None
+        return target_fact.action_id
+
+    @staticmethod
+    def _profile_dominates(left: CandidateStructure, right: CandidateStructure) -> bool:
+        """Compare source-backed costs without inventing scalar weights."""
+
+        left_profile = (
+            left.estimated_remaining_rank_groups,
+            left.residual_singleton_rank_count,
+            int(left.fragments_played_rank_group),
+            int(left.uses_wildcard),
+            int(left.consumes_control_resource),
+            int(left.pattern in _PRESSURE_PATTERNS),
+        )
+        right_profile = (
+            right.estimated_remaining_rank_groups,
+            right.residual_singleton_rank_count,
+            int(right.fragments_played_rank_group),
+            int(right.uses_wildcard),
+            int(right.consumes_control_resource),
+            int(right.pattern in _PRESSURE_PATTERNS),
+        )
+        return all(a <= b for a, b in zip(left_profile, right_profile)) and any(
+            a < b for a, b in zip(left_profile, right_profile)
+        )
+
+    @staticmethod
+    def _has_return_resource_after(
+        observation: Mapping[str, object],
+        selected_action: Mapping[str, object],
+        legal_actions: list[dict[str, object]],
+        facts_by_id: Mapping[int, CandidateStructure],
+    ) -> bool:
+        my_info = observation.get("my_info")
+        hand_cards = my_info.get("hand_cards") if isinstance(my_info, Mapping) else None
+        selected_carriers = selected_action.get("carrier_cards")
+        if (
+            not isinstance(hand_cards, list)
+            or any(not isinstance(card, str) for card in hand_cards)
+            or not isinstance(selected_carriers, list)
+        ):
+            return False
+        remaining = Counter(hand_cards)
+        remaining.subtract(selected_carriers)
+        if any(count < 0 for count in remaining.values()):
+            return False
+        remaining = Counter({card: count for card, count in remaining.items() if count > 0})
+        current_round = observation.get("current_round")
+        level_rank = current_round.get("current_level_rank") if isinstance(current_round, Mapping) else None
+        if not isinstance(level_rank, str):
+            return False
         for action in legal_actions:
-            if action["declared_pattern"] != "single" or action["wildcard_count"] != 0:
+            action_id = action.get("action_id")
+            if type(action_id) is not int or action_id == selected_action.get("action_id"):
                 continue
-            carriers = action["carrier_cards"]
-            declared = action["declared_cards"]
-            assert isinstance(carriers, list) and isinstance(declared, list)
-            if len(carriers) != 1 or len(declared) != 1:
-                continue
-            carrier_rank = _rank_of(str(carriers[0]))
-            declared_rank = str(declared[0])
-            if _is_valid_token(declared_rank):
-                declared_rank = _rank_of(declared_rank)
+            fact = facts_by_id.get(action_id)
+            carriers = action.get("carrier_cards")
             if (
-                declared_rank != carrier_rank
-                or carrier_rank in _CONTROL_RANKS
-                or carrier_rank == level_rank
-                or rank_counts.get(carrier_rank) != 1
-                or str(carriers[0]) in structured_tokens
+                fact is None
+                or action.get("wildcard_count") != 0
+                or not isinstance(carriers, list)
+                or not carriers
             ):
                 continue
-            safe_singles.append((_RANK_ORDER[carrier_rank], action))
-
-        lowest = min((rank_value for rank_value, _ in safe_singles), default=None)
-        targets = [action for rank_value, action in safe_singles if rank_value == lowest]
-        if len(targets) != 1 or not self._has_return_resource(observation, legal_actions):
-            return None
-        target_id = targets[0]["action_id"]
-        # Only yield when a complete public relation actually includes the
-        # proposed action.  Unrelated pair, bomb, or sequence comparisons in
-        # the same hand do not invalidate the B-tier small-single convention.
-        if any(target_id in contrast.action_ids for contrast in contrasts):
-            return None
-        return target_id
+            used = Counter(carriers)
+            if any(count > remaining.get(card, 0) for card, count in used.items()):
+                continue
+            if (
+                fact.pattern == "single"
+                and len(carriers) == 1
+                and fact.consumes_control_resource
+                and not fact.fragments_played_rank_group
+            ):
+                return True
+            if (
+                fact.pattern in _PRESSURE_PATTERNS
+                and not fact.fragments_played_rank_group
+                and fact.leaves_bomb_rank_singleton is not True
+            ):
+                return True
+        return False
 
     @staticmethod
     def _has_return_resource(

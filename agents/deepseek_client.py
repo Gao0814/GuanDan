@@ -79,7 +79,7 @@ _RANK_ORDER: dict[str, int] = {
 _PRESSURE_PATTERNS = {"bomb", "straight_flush", "joker_bomb"}
 _RESIDUAL_USE_RELATION_KINDS = frozenset(
     {
-        "natural_pair_single", "natural_group_single", "sequence_structure_loss",
+        "natural_pair_single", "natural_group_single", "natural_sequence_single", "sequence_structure_loss",
         "triple_split_repartition", "straight_flush_bomb_fragment", "straight_strength",
         "steel_plate_strength", "triple_pair_kicker_gradient", "natural_single_cost",
         "single_control_resource", "wildcard_resource", "bomb_strength_resource",
@@ -1670,6 +1670,13 @@ class DeepSeekClient:
                         f"action_id={second_id} 是其他点数的自然单张；比较该组牌的清理、单张成本与整体余组变化，{teammate_text}。"
                         "顺子等其他组合、立即出完、公开紧急性、协同或回手计划可推翻此比较；不把对子/三张设为固定先手。"
                     )
+                elif contrast.kind == "natural_sequence_single":
+                    lines.append(
+                        f"自然顺子/其中单张对照：action_id={first_id} 是当前合法的自然顺子，"
+                        f"action_id={second_id} 是该顺子所含点数之一的自然单张；比较一次清理完整顺子与低成本试探的取舍，"
+                        "不因一张牌能参与顺子就自动保留，也不因顺子一次出牌更多就必然优先。"
+                        "若顺子拆对子/三张、损害控制/回手、队友协同或公开紧急性要求，均可改变选择。"
+                    )
                 elif contrast.kind == "sequence_structure_loss":
                     lines.append(
                         f"自然顺子/连组与同点组对照：action_id={first_id} 会从一个仍可组成对子或三张的点数组取牌，"
@@ -1747,7 +1754,7 @@ class DeepSeekClient:
                         "比较公开阻断机会与牌型/结构成本，不保证后续牌权，队友更紧急或代价过高可推翻。"
                     )
                 if contrast.kind in {
-                    "natural_pair_single", "natural_group_single", "sequence_structure_loss",
+                    "natural_pair_single", "natural_group_single", "natural_sequence_single", "sequence_structure_loss",
                     "triple_split_repartition", "straight_flush_bomb_fragment",
                     "straight_strength", "steel_plate_strength", "triple_pair_kicker_gradient",
                     "natural_single_cost", "single_control_resource", "wildcard_resource",
