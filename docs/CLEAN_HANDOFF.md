@@ -8,7 +8,7 @@
 
 本项目不是完整的多局升级/贡还比赛引擎。当前 Botzone 主线明确限定为四人、需要进贡为否的单局 play 子集。
 
-最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：2026-09-25 的 seed `47005` 单局已形成六份固定 Codex workspace evidence，平台结果为 `platform_error`；额外的空 `D:\VsCodeProject\BotzoneState` 目录已按所有者要求单独移入回收站，固定 workspace 旧 evidence 仍保留。项目所有者已暂停多牌型开局任务。个人启动器经 `7b432ff`/`0177abc` 实现，两次所有者连接均未确认“已连接”，第二次 audit 的 20 次长轮询均超时。`6794db5` 合成环境回归通过；`239a2e3` 将个人入口收敛到旧成功调用的运行预算和 CLI 默认超时，并经规划独立离线复审通过，但真实连接根因与页面是否可连接均未验证。个人目录后续曾重建，不可声称旧异常 audit 仍在活动目录。下一步由所有者单独运行一次个人入口确认；如仍未连接，保留新证据并另行规划受控连接对照，不重复提交未改的页面配置。以下早期“当前”措辞均是当时的历史快照，不得作为下一次 live 的 workspace inventory 或建目录指令。
+最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：seed `47005` 单局的六份固定 Codex workspace evidence 仍保留且哈希未变，平台结果为 `platform_error`；额外的空 `D:\VsCodeProject\BotzoneState` 已单独回收。项目所有者已暂停多牌型开局任务。个人启动器经 `239a2e3` 收敛运行参数后，双击路径仍未见“已连接”；其最近一次由 Ctrl+C 触发批处理终止，故无新 audit。规划 Codex 随后从固定 workspace 以新 state/audit 路径短时启动同一个 connector，所有者明确确认页面“已连接”；新 audit 的 4 次空闲长轮询 timeout 与 0 次牌局请求不否定页面连接。新 probe artifact 与旧六份证据共存，后续 inventory 须以 `docs/PROJECT_STATUS.md` 顶部为准。下一步先做 Explorer 子进程与当前 User 级 URL/代理环境的无密值布尔比较；不能把根因归为已证实的启动器代码、平台设置或模型时延。以下早期“当前”措辞均是当时的历史快照，不得作为下一次 live 的 workspace inventory 或建目录指令。
 
 ## 2. Current Repository State
 

@@ -1,6 +1,9 @@
 # 项目状态看板
 
-## 当前阶段：个人启动器离线复审通过，真实连通待所有者验证；多牌型开局暂停（2026-09-25）
+## 当前阶段：Codex 路径已重新连接，个人双击路径差异待核对；多牌型开局暂停（2026-09-25）
+
+- 项目所有者要求先由 Codex 自己启动一次，仅验证连接、不建桌，再比较个人双击路径。规划 Codex 按 `botzone-manual-live` 的固定 workspace/单 connector/隐私边界执行短时连接检查：旧 seed `47005` 六份文件的普通非链接属性、大小和 SHA-256 事前事后均与登记值匹配，未清理或覆盖；新建独立 `state/connection-probe-20260925-1617` 空目录及新 audit `audit/connection-probe-20260925-1617.json`，不启用 history/trace。零网络预检为 `preflight_ready`，唯一 `deepseek` connector 在 4 cycles / 120 秒上限内运行；项目所有者明确确认页面显示“已连接”，未建桌。v7 新 audit 为 660 B、SHA-256 `efe15540e29300c0a200c89996344e241f253e8030b0f4466af88d029bd8f03b`，记录 exit 6 / `wall_limit_unfinished`、4 次空闲长轮询 timeout、0 failure、0 request/response/Header、0 decision/model/fallback；无残留进程。空闲长轮询 timeout 本身不等于页面未连接。Git HEAD/status 未变；当前 Codex 侧 connector 可建立页面连接，尚不能据此认定个人双击失败的确切原因。
+- 已确认的路径差异：两者使用同一 `integrations.botzone`、项目 `.venv` Python、仓库工作目录和默认 30 秒请求超时；个人双击进程由 9 月 17 日启动的 Explorer 衍生，Codex 连接检查由当前 Codex shell 衍生。Codex shell 的 `BOTZONE_LOCAL_AI_URL` 与常见代理变量和当前 User 级值只作布尔相等检查，均相等；个人运行进程已结束，实际继承值未记录，不能推断其等同。下一步先由所有者从 Windows Run/Explorer 新开 PowerShell 做仅输出 `True/False` 的进程/User 环境一致性检查，不输出 URL、密钥或代理值；若全相同，再规划一次更窄的串行连接差异测试，不凭猜测修改 Botzone 页面配置或生产策略。
 
 - `239a2e3 fix: align personal Botzone launcher profile` 已完成个人入口参数收敛。规划 Codex 独立检查完整 diff、仓库 clean、`git show --check`、CLI 30 秒默认超时和退出码映射；PowerShell 5.1/7 各复跑 16 组/74 断言，禁用 dotenv 的 Botzone 相关回归 48 项通过。个人入口现沿用旧成功直接调用的显式 `deepseek`、80 cycles、1800 秒上限、默认 30 秒超时与一次完成停止；`.cmd` 默认等待按键，`--no-pause` 供自动化。提交没有改 Codex 固定路径、Botzone CLI/传输层、Agent 或私密配置。离线检查未运行真实 preflight/connector、Botzone、DeepSeek 或网络，也未访问两个真实 workspace；因此只封板启动参数与离线可观察性，不宣称页面连通或 20 次 timeout 根因已修复。下一步由所有者在可轮换个人证据的前提下单独试运行；若仍未连接，保留该次个人目录及低敏退出信息再规划对照，不再叠加无证据代码改动。当前没有待执行 Coding Prompt。
 
