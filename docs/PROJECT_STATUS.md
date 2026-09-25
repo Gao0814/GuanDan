@@ -1,8 +1,11 @@
 # 项目状态看板
 
-## 当前阶段：个人试局隔离待 Coding，多牌型开局暂停（2026-09-25）
+## 当前阶段：个人试局启动器待兼容性纠错，多牌型开局暂停（2026-09-25）
 
-- 项目所有者明确暂停 `e054955` 规划的多牌型开局任务，不应把该 Prompt 交给 Coding Codex 执行。当前优先解决个人 Botzone 试局与 Codex 正式测试的操作/文件冲突。所有者同意独立固定目录 `D:\VsCodeProject\GuanDanManualWorkspace`：个人试局的上次 evidence 在未报告问题时可由下次试局覆盖；若发现问题，暂停下一次试局，保留当前目录供 Codex 只读复查。Codex 运行仍只使用 `D:\VsCodeProject\BotzoneWorkspace`，两类文件绝不混用。独立目录不隔离同一个 Botzone local-AI endpoint，同一连接不可同时运行个人与 Codex connector。当前只完成边界与下一 Coding Prompt，未创建个人目录、启动 connector、调用模型或网络。
+- `7b432ff feat: add isolated manual Botzone launcher` 已提交，文件范围仅为启动器模块、入口脚本、离线测试与 README。规划 Codex 独立复跑 PowerShell 7 假测试 13 组/43 断言、Botzone 配置测试 5 项、CLI `--help`，并检查提交/工作树；个人目录当前不存在，未运行真实预检、connector、模型或网络。隔离路径、归属标记、内容白名单、回收站轮换和问题后停止下一次运行的设计已有离线覆盖。
+- **首次所有者自测暂缓**：README 的 `.\scripts\run_manual_botzone.ps1` 在本机 Windows PowerShell 5.1 默认 `LocalMachine=AllSigned` 下不能直接执行；即使仅对该进程使用 `ExecutionPolicy Bypass`，5.1 解析无 BOM、含中文的入口脚本仍报 `Try statement is missing its Catch or Finally block`。同一文件以 UTF-8 正确解码后，5.1 的 `ParseInput` 为零错误，说明是脚本文件编码兼容问题。PowerShell 7 离线测试通过不能替代用户常用的 Windows PowerShell 入口验收。下一项 Coding 任务仅补单命令兼容入口、编码与跨版本禁网测试；修复复审前不要让所有者按 README 原命令开始试局。详见 `docs/NEXT_PROMPT.md`。
+
+- 项目所有者明确暂停 `e054955` 规划的多牌型开局任务，不应把该 Prompt 交给 Coding Codex 执行。当前优先解决个人 Botzone 试局与 Codex 正式测试的操作/文件冲突。所有者同意独立固定目录 `D:\VsCodeProject\GuanDanManualWorkspace`：个人试局的上次 evidence 在未报告问题时可由下次试局覆盖；若发现问题，暂停下一次试局，保留当前目录供 Codex 只读复查。Codex 运行仍只使用 `D:\VsCodeProject\BotzoneWorkspace`，两类文件绝不混用。独立目录不隔离同一个 Botzone local-AI endpoint，同一连接不可同时运行个人与 Codex connector。此段记录的是 `7b432ff` 实现前的规划边界；个人目录至本次复审仍未创建。
 
 - `f8f0e58` 仅修改 `README.md`，已将显式 `--agent deepseek` 的真实 connector、零网络预检和页面手动建桌分开，并去掉旧 Botzone 运行目录建议。规划 Codex 独立检查提交 diff、现行 CLI 分支和 Git clean 状态，禁用 dotenv 后相关开局/预检测试 16 项通过。用户只验证页面“已连接”时，可在连接配置就绪后运行不带 `--preflight-only` 的最简 DeepSeek connector，且不指定旧 audit/history/trace 路径；不要据此声称完成一局或留下了完整诊断证据。真正单局仍按 README/Skill 使用全新证据路径与人工配置确认。
 - 用户确认此前来源未明的 `D:\VsCodeProject\BotzoneState` 无需保留。规划 Codex 复核该精确目录为普通非链接、直属内容 0、无可归属 connector 后，仅将该空目录通过 Windows 回收站 API 回收；永久删除 0。固定 `D:\VsCodeProject\BotzoneWorkspace` 和其 seed `47005` 六份证据未触碰。不能对 workspace 使用“清空所有文件”的通配删除；这六份旧证据虽已审计，后续若清理仍须独立任务按精确 allowlist、字节数及 SHA-256 重新核对后回收。用户也可对只看连接的自测省略旧证据输出参数而保留现有文件。

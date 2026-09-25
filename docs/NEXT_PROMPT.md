@@ -1,15 +1,11 @@
-# Coding Codex 执行 Prompt：一键个人 Botzone 试局与证据隔离
+# Coding Codex 执行 Prompt：修复个人 Botzone 单命令入口的 Windows PowerShell 兼容性
 
-项目所有者已**暂停多牌型开局算法任务**，本次只实现他亲自运行的轻量 Botzone DeepSeek 试局入口。先读根 `AGENTS.md`、`.agents/skills/botzone-manual-live/SKILL.md` 的适用范围、`docs/PROJECT_STATUS.md` 顶部、`docs/CLEAN_HANDOFF.md` 顶部、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、`README.md`，再只读核对 `integrations/botzone/__main__.py`、`runtime_config.py`、现有 audit/history/decision-trace 写入与相关测试。检查 Git status/diff/HEAD；不要混入他人修改。
+先读取根 `AGENTS.md`、`docs/PROJECT_STATUS.md` 顶部、`docs/CLEAN_HANDOFF.md` 顶部、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`，核对当前 Git status/diff/HEAD。只处理 `7b432ff` 个人 Botzone 启动器的入口兼容问题；多牌型开局仍暂停。普通个人自测不属于 `.agents/skills/botzone-manual-live/SKILL.md` 的 Codex 监督 live 范围，也不得清理 Codex 固定 workspace。
 
-交付一个 Windows PowerShell 单命令个人启动器（建议 `scripts/run_manual_botzone.ps1`，可选配最小纯函数辅助），并在 `README.md` 给出简短用法。项目所有者从仓库根目录运行一次命令后，脚本自动完成必要的零网络配置预检、启动**一个**前台 `--agent deepseek` connector；页面显示“已连接”后，所有者自行建一张四人、级牌 `2`、无需进贡的单局并点击开始。个人试局无需 Codex 实验的 seed 预注册、逐项哈希 inventory 或逐局人工报告；不运行 `--preflight-only` 代替真实连接，也不自动操作网页。真实 connector 的 URL/DeepSeek 凭据仍走现有私密配置，不输出或持久化。
+规划复审已复现：PowerShell 7 的 `tests/test_manual_botzone_launcher.ps1` 为 13 组/43 断言通过，Botzone 配置测试 5 项和 CLI `--help` 通过；但本机 Windows PowerShell 5.1 的 `LocalMachine=AllSigned` 拒绝 README 所示直接执行 `.\scripts\run_manual_botzone.ps1`。以 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_manual_botzone_launcher.ps1` 运行时，12 组通过，最后的入口解析断言失败；5.1 对 `scripts/run_manual_botzone.ps1` 的 `ParseFile` 报第 87 行缺少 `Catch/Finally`、第 103 行多余 `}`。同一文件先按 UTF-8 正确解码再由 5.1 `ParseInput`，错误为零。该问题会让用户在常见 PS 环境中无法启动一次试局，不能用 PowerShell 7 的结果代替验收。
 
-个人工作根固定为 `D:\VsCodeProject\GuanDanManualWorkspace`，不得放入仓库、`D:\VsCodeProject\BotzoneWorkspace` 或任何其他 `Botzone*` 顶层目录。启动器须独立指定该根下的 state、audit、history、decision trace 等路径；默认保留足够让 Codex 事后复查异常的低敏/私有证据，但不保存 prompt、模型自由文本、密钥、连接 URL、Cookie 或响应正文。终端给出简短连接/结束提示；文件只留在个人根，不进入 Git。Codex 正式 workspace、seed `47005` 六份 evidence、旧 H3 ledger 和系统 Temp 全部不得读取、清理、覆盖或用作启动器的工作位置。
+交付一个真正可从 Windows PowerShell 5.1 用**单条命令**调用的个人入口。建议增加极薄的 `scripts/run_manual_botzone.cmd`，它仅调用仓库内固定的 `.ps1`，用仅作用于本次子进程的执行策略覆盖本机 `AllSigned`，透传退出码；同时把 `.ps1` 保存为 Windows PowerShell 5.1 能从文件正确解析的编码（例如 UTF-8 BOM）或采用等效兼容方案。README 的所有者一条命令改为实际可运行的入口，并简要说明企业组策略若禁止进程级覆盖时应停止，不建议全局放宽策略。不得通过下载、签名伪造、全局/CurrentUser 策略修改或隐藏执行失败来绕过限制。
 
-用户同意“无问题则下一局覆盖上一局；有问题则停止下一局并让 Codex 读取”。实现可恢复的自动轮换：新个人根不存在时创建带明确归属标记的目录；根已存在时，只有在解析后的**绝对路径精确等于上述个人根**、普通非链接、归属标记有效、内容均为启动器预期对象且没有运行中项目 connector 时，才将旧个人目录通过 Windows 回收站 API 移走并重建。不得用 `Remove-Item -Recurse`、通配删除、永久删除或仅凭名称前缀清理；未知文件、链接、目标漂移、回收失败都应原地停止并保留全部旧内容。尽可能在回收旧证据之前完成可做的无网络配置/命令预检。若所有者发现问题或请求复查，当前个人目录保持原样，Codex 可在该问题任务中只读访问；不要求用户提交每局报告。明确告诉用户：下一次个人启动会回收上次目录，因此报告问题后先不要重开。
+只改入口、README 和对应离线测试的最小范围。保持现有个人路径 `D:\VsCodeProject\GuanDanManualWorkspace`、Codex 路径隔离、归属/白名单/回收站门槛、先预检后连接、前台单 connector、真实证据与私密配置边界不变。不要修改业务策略、引擎、Botzone 协议、`.env`、项目 Skills 或规划文档。跨版本测试至少覆盖 PowerShell 7 与 Windows PowerShell 5.1 文件解析、实际单命令入口的进程级策略行为及退出码传递；测试只能使用 scratch/fake 或安全静态核对，绝不调用真实 launcher 流程、真实 preflight、connector、Botzone、DeepSeek、网络，也不创建或访问个人/Codex workspace。若本机策略无法模拟某种路径，明确标注未验证，不得宣称真实连接已成功。
 
-独立目录只能隔离文件，不能隔离同一个 Botzone 本地 AI 端点。启动器应在开始前和真正启动前检查本机是否已有可归属项目 connector，命中则停止，且不要输出它的命令行或私密参数；README 提醒同一 Botzone 连接不能与 Codex 测试并行，跨主机并行无法靠本机进程检查保证。个人运行无需调用正式 `botzone-manual-live` 审计流程；但保持“先连接、后人工建桌/开始”、只有一个 connector、异常时保留证据等基本边界。推荐进程级设置 `DEEPSEEK_MAX_RETRIES=0` 并在退出后恢复；不要改变全局配置或 CLI 默认 `rule` 事实。
-
-只改个人启动器、对应的离线测试/测试辅助及 README 最小用法；不要修改 engine、AI 策略、RAG、Botzone wire/session/runner 行为、`.env`、规划 docs 或项目 Skill。测试须在临时 scratch 目录和禁网/fake connector 下覆盖首次创建、第二次回收并重建、归属标记缺失/未知文件/链接/路径漂移/回收失败时 fail closed、运行中 connector 拒绝、URL/密钥不泄漏、审计路径仅指向个人根；不得在测试中触碰真实个人目录或 Codex workspace。做 PowerShell 语法检查、实际 CLI 参数只读核对、直接相关离线测试、`git diff --check`；纯脚本无法在当前环境完成的检查要诚实说明。**不要运行真实 preflight、connector、Botzone、浏览器、DeepSeek 或网络，不要创建真实个人工作根，也不要清理任何现存仓库外文件。**
-
-只暂存提交自己的脚本、README 和相关测试，报告一条最终用户命令、覆盖/冻结规则、离线验证、commit、Git status、保留外部修改，以及个人目录仍未真实创建。不要宣称已完成一次现场连接或真实对局。此前多牌型开局 Prompt 保留在规划 commit `e054955` 的历史中，未获所有者恢复指令前不得执行。
+复跑现有 PowerShell 13 组/43 断言（可扩展）、禁用 dotenv 的 `tests.test_botzone_runtime_config`、CLI `--help`、`git diff --check`。只暂存/提交自己修改的脚本、README 和测试；报告复现与修复后的两版 PowerShell 结果、唯一推荐用户命令、commit、最终 Git status 和保留的外部修改。个人目录当前不存在，不要在本任务创建或轮换它。修复提交后等待规划 Codex 独立复审，再安排所有者首次自测。
