@@ -1,6 +1,10 @@
 # 项目状态看板
 
-## 当前阶段：Codex 路径已重新连接，个人双击路径差异待核对；多牌型开局暂停（2026-09-25）
+## 当前阶段：恢复多牌型开局选择；个人连接差异排查暂停（2026-09-25）
+
+- 项目所有者在刷新 Botzone 页面后确认，个人脚本也显示“已连接”。此前“Codex 路径可连接而个人路径不能连接”的页面差异已不再成立；刷新与连接状态变化的因果根因未证实，不继续安排 Explorer 环境对照、修改页面 URL/密钥或连接器代码。项目所有者要求恢复原来的“多牌型开局选择”任务，现行 Coding 执行 Prompt 见 `docs/NEXT_PROMPT.md`。本次只更新规划上下文，不启动 live，也不触碰两处 workspace。
+
+以下连接差异排查及“暂停开局”的文字是当时的历史快照，其旧“下一步”安排已由上方决定取代。
 
 - 项目所有者要求先由 Codex 自己启动一次，仅验证连接、不建桌，再比较个人双击路径。规划 Codex 按 `botzone-manual-live` 的固定 workspace/单 connector/隐私边界执行短时连接检查：旧 seed `47005` 六份文件的普通非链接属性、大小和 SHA-256 事前事后均与登记值匹配，未清理或覆盖；新建独立 `state/connection-probe-20260925-1617` 空目录及新 audit `audit/connection-probe-20260925-1617.json`，不启用 history/trace。零网络预检为 `preflight_ready`，唯一 `deepseek` connector 在 4 cycles / 120 秒上限内运行；项目所有者明确确认页面显示“已连接”，未建桌。v7 新 audit 为 660 B、SHA-256 `efe15540e29300c0a200c89996344e241f253e8030b0f4466af88d029bd8f03b`，记录 exit 6 / `wall_limit_unfinished`、4 次空闲长轮询 timeout、0 failure、0 request/response/Header、0 decision/model/fallback；无残留进程。空闲长轮询 timeout 本身不等于页面未连接。Git HEAD/status 未变；当前 Codex 侧 connector 可建立页面连接，尚不能据此认定个人双击失败的确切原因。
 - 已确认的路径差异：两者使用同一 `integrations.botzone`、项目 `.venv` Python、仓库工作目录和默认 30 秒请求超时；个人双击进程由 9 月 17 日启动的 Explorer 衍生，Codex 连接检查由当前 Codex shell 衍生。Codex shell 的 `BOTZONE_LOCAL_AI_URL` 与常见代理变量和当前 User 级值只作布尔相等检查，均相等；个人运行进程已结束，实际继承值未记录，不能推断其等同。下一步先由所有者从 Windows Run/Explorer 新开 PowerShell 做仅输出 `True/False` 的进程/User 环境一致性检查，不输出 URL、密钥或代理值；若全相同，再规划一次更窄的串行连接差异测试，不凭猜测修改 Botzone 页面配置或生产策略。
