@@ -1,9 +1,13 @@
 # 项目状态看板
 
-## 当前阶段：个人试局启动器待兼容性纠错，多牌型开局暂停（2026-09-25）
+## 当前阶段：个人试局启动器离线复审通过，待所有者首次自测；多牌型开局暂停（2026-09-25）
+
+- `0177abc fix: support Windows PowerShell manual launcher` 已修正上一轮发现的单命令入口缺口：新增 `.cmd` 包装器仅为本次 Windows PowerShell 子进程设置执行策略并传递退出码，`.ps1` 加 UTF-8 BOM，README 将唯一推荐命令改为 `.\scripts\run_manual_botzone.cmd`。规划 Codex 独立审阅四文件 diff、文件 BOM、包装器与测试，复跑 PowerShell 7 和 Windows PowerShell 5.1 各 14 组/48 断言、禁用 dotenv 的配置测试 5 项、Botzone CLI `--help` 和 `git show --check`，均通过；5.1 在本机 `LocalMachine=AllSigned` 下通过 scratch 假脚本验证进程级覆盖与退出码 37。未运行真实启动器、预检、connector、模型或网络，个人目录仍不存在。该修复可按离线入口范围封板，但真实首次连接、目录创建和回收站轮换仍需所有者亲自使用时验证。若首次自测发现问题，立即停止下一次启动并保留个人目录供只读复查；企业组策略禁止进程级覆盖时停止，不全局修改策略。当前没有已知离线入口功能缺陷。
+
+以下两条为 `0177abc` 之前的复审记录；其中“首次所有者自测暂缓”已由上方离线复审结果取代。
 
 - `7b432ff feat: add isolated manual Botzone launcher` 已提交，文件范围仅为启动器模块、入口脚本、离线测试与 README。规划 Codex 独立复跑 PowerShell 7 假测试 13 组/43 断言、Botzone 配置测试 5 项、CLI `--help`，并检查提交/工作树；个人目录当前不存在，未运行真实预检、connector、模型或网络。隔离路径、归属标记、内容白名单、回收站轮换和问题后停止下一次运行的设计已有离线覆盖。
-- **首次所有者自测暂缓**：README 的 `.\scripts\run_manual_botzone.ps1` 在本机 Windows PowerShell 5.1 默认 `LocalMachine=AllSigned` 下不能直接执行；即使仅对该进程使用 `ExecutionPolicy Bypass`，5.1 解析无 BOM、含中文的入口脚本仍报 `Try statement is missing its Catch or Finally block`。同一文件以 UTF-8 正确解码后，5.1 的 `ParseInput` 为零错误，说明是脚本文件编码兼容问题。PowerShell 7 离线测试通过不能替代用户常用的 Windows PowerShell 入口验收。下一项 Coding 任务仅补单命令兼容入口、编码与跨版本禁网测试；修复复审前不要让所有者按 README 原命令开始试局。详见 `docs/NEXT_PROMPT.md`。
+- **当时的首次所有者自测暂缓结论**：README 的 `.\scripts\run_manual_botzone.ps1` 在本机 Windows PowerShell 5.1 默认 `LocalMachine=AllSigned` 下不能直接执行；即使仅对该进程使用 `ExecutionPolicy Bypass`，5.1 解析无 BOM、含中文的入口脚本仍报 `Try statement is missing its Catch or Finally block`。同一文件以 UTF-8 正确解码后，5.1 的 `ParseInput` 为零错误，说明是脚本文件编码兼容问题。PowerShell 7 离线测试通过不能替代用户常用的 Windows PowerShell 入口验收。该兼容性缺口现由 `0177abc` 修复，保留此记录用于解释旧命令为何被替换。
 
 - 项目所有者明确暂停 `e054955` 规划的多牌型开局任务，不应把该 Prompt 交给 Coding Codex 执行。当前优先解决个人 Botzone 试局与 Codex 正式测试的操作/文件冲突。所有者同意独立固定目录 `D:\VsCodeProject\GuanDanManualWorkspace`：个人试局的上次 evidence 在未报告问题时可由下次试局覆盖；若发现问题，暂停下一次试局，保留当前目录供 Codex 只读复查。Codex 运行仍只使用 `D:\VsCodeProject\BotzoneWorkspace`，两类文件绝不混用。独立目录不隔离同一个 Botzone local-AI endpoint，同一连接不可同时运行个人与 Codex connector。此段记录的是 `7b432ff` 实现前的规划边界；个人目录至本次复审仍未创建。
 

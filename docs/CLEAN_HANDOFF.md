@@ -8,7 +8,7 @@
 
 本项目不是完整的多局升级/贡还比赛引擎。当前 Botzone 主线明确限定为四人、需要进贡为否的单局 play 子集。
 
-最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：2026-09-25 的 seed `47005` 单局已形成六份固定 Codex workspace evidence，平台结果为 `platform_error`；额外的空 `D:\VsCodeProject\BotzoneState` 目录已按所有者要求单独移入回收站，固定 workspace 旧 evidence 仍保留。项目所有者已暂停多牌型开局任务。个人试局启动器已由 `7b432ff` 实现，但规划复审发现 Windows PowerShell 5.1 默认签名策略及无 BOM 中文入口脚本的兼容性缺口，首次所有者自测应等待下一 Coding 任务修复；个人目录尚未创建。以下早期“当前”措辞均是当时的历史快照，不得作为下一次 live 的 workspace inventory 或建目录指令。
+最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：2026-09-25 的 seed `47005` 单局已形成六份固定 Codex workspace evidence，平台结果为 `platform_error`；额外的空 `D:\VsCodeProject\BotzoneState` 目录已按所有者要求单独移入回收站，固定 workspace 旧 evidence 仍保留。项目所有者已暂停多牌型开局任务。个人试局启动器由 `7b432ff` 实现，`0177abc` 修复 Windows PowerShell 5.1 入口兼容性并经规划 Codex 双版本禁网复审通过；唯一推荐命令是仓库根目录运行 `.\scripts\run_manual_botzone.cmd`。真实首次连接与个人目录创建尚未验证，出现问题时不得重开覆盖证据。以下早期“当前”措辞均是当时的历史快照，不得作为下一次 live 的 workspace inventory 或建目录指令。
 
 ## 2. Current Repository State
 
