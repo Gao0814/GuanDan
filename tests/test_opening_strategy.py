@@ -101,42 +101,6 @@ class RecordingRAGAdvisor:
         return {"scene_tags": {}, "rule_hits": [], "experience_hits": [], "query": ""}
 
 
-def _public_formula_target_id(
-    observation: dict[str, object], actions: list[dict[str, object]]
-) -> int | None:
-    """Mirror only the public target predicate for a multi-seed conflict assertion."""
-
-    my_info = observation["my_info"]
-    round_context = observation["current_round"]
-    assert isinstance(my_info, dict) and isinstance(round_context, dict)
-    hand = Counter(
-        card if card in {"SJ", "BJ"} else str(card)[:-1]
-        for card in my_info["hand_cards"]
-    )
-    rank_order = {rank: index for index, rank in enumerate(("3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"), start=3)}
-    level_rank = str(round_context["current_level_rank"])
-    safe: list[tuple[int, int]] = []
-    for action in actions:
-        carrier = action["carrier_cards"]
-        declared = action["declared_cards"]
-        if action["declared_pattern"] != "single" or action["wildcard_count"] != 0 or len(carrier) != 1 or len(declared) != 1:
-            continue
-        token = str(carrier[0])
-        rank = token if token in {"SJ", "BJ"} else token[:-1]
-        declared_rank = str(declared[0])
-        declared_rank = declared_rank if declared_rank in rank_order else declared_rank[:-1]
-        if (
-            declared_rank == rank and rank not in {"A", "2", "SJ", "BJ"}
-            and rank != level_rank and hand.get(rank) == 1
-        ):
-            safe.append((rank_order[rank], int(action["action_id"])))
-    if not safe:
-        return None
-    lowest = min(rank for rank, _ in safe)
-    targets = [action_id for rank, action_id in safe if rank == lowest]
-    return targets[0] if len(targets) == 1 else None
-
-
 class TestOpeningFormulaStrategy(unittest.TestCase):
     def setUp(self) -> None:
         self.strategy = OpeningFormulaStrategy()
@@ -163,8 +127,10 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
         self.assertIsNone(chosen)
         self.assertEqual((observation, actions), before)
 
-    def test_full_engine_openings_choose_only_from_clear_public_routes(self) -> None:
-        direct_count = 0
+    def test_full_engine_openings_preserve_small_singles_and_allow_clear_groups(self) -> None:
+        from agents.opening_strategy import _CONTROL_RANKS, _rank_of
+
+        selected_patterns: Counter[str] = Counter()
         relevant_conflict_count = 0
         state_count = 200
         for seed in range(state_count):
@@ -190,45 +156,51 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
             self.assertIsNotNone(facts)
             self.assertIsNotNone(contrasts)
             assert facts is not None and contrasts is not None
-            target_id = _public_formula_target_id(observation, actions)
-            if target_id is None or any(fact.finishes_hand for fact in facts):
-                continue
-            if self.strategy._has_public_urgency(observation) or not self.strategy._has_return_resource(observation, actions):
-                continue
-            target_is_in_visible_relation = any(target_id in contrast.action_ids for contrast in contrasts)
             selected = self.strategy.select_action(observation, actions, hand_eval)
-            if target_is_in_visible_relation:
-                relevant_conflict_count += 1
-            if selected == target_id:
-                self.assertFalse(target_is_in_visible_relation)
-                direct_count += 1
-            elif selected is not None:
-                selected_action = next(item for item in actions if item["action_id"] == selected)
-                self.assertIn(selected_action["declared_pattern"], {"pair", "triple", "straight"})
-                selected_fact = next(fact for fact in facts if fact.action_id == selected)
-                frontier = [
-                    fact for fact in facts
-                    if not any(
-                        other.action_id != fact.action_id
-                        and self.strategy._profile_dominates(other, fact)
-                        for other in facts
-                    )
-                ]
-                self.assertEqual(frontier, [selected_fact])
-                self.assertTrue(
-                    self.strategy._has_return_resource_after(
-                        observation,
-                        selected_action,
-                        actions,
-                        {fact.action_id: fact for fact in facts},
-                    )
+            relevant_conflict_count += len(contrasts)
+            if selected is None:
+                continue
+            selected_action = next(item for item in actions if item["action_id"] == selected)
+            selected_pattern = str(selected_action["declared_pattern"])
+            selected_patterns[selected_pattern] += 1
+            rank_counts = Counter(_rank_of(card) for card in my_info["hand_cards"])
+            self.assertIn(selected, {item["action_id"] for item in actions})
+            self.assertFalse(any(fact.finishes_hand for fact in facts))
+            self.assertFalse(self.strategy._has_public_urgency(observation))
+            self.assertTrue(
+                self.strategy._has_return_resource_after(
+                    observation,
+                    selected_action,
+                    actions,
+                    {fact.action_id: fact for fact in facts},
                 )
-                direct_count += 1
+            )
+            self.assertFalse(any(selected in contrast.action_ids for contrast in contrasts))
+            if selected_pattern == "single":
+                carriers = selected_action["carrier_cards"]
+                rank = _rank_of(carriers[0])
+                structured_tokens = {
+                    card
+                    for action in actions
+                    if action["wildcard_count"] == 0 and len(action["carrier_cards"]) > 1
+                    for card in action["carrier_cards"]
+                }
+                self.assertEqual(rank_counts[rank], 1)
+                self.assertNotIn(rank, _CONTROL_RANKS)
+                self.assertNotIn(carriers[0], structured_tokens)
+                self.assertNotEqual(rank, current_round["current_level_rank"])
+            else:
+                self.assertIn(selected_pattern, {"pair", "triple"})
+                carriers = selected_action["carrier_cards"]
+                carrier_ranks = {_rank_of(card) for card in carriers}
+                self.assertEqual(len(carrier_ranks), 1)
+                self.assertEqual(rank_counts[next(iter(carrier_ranks))], len(carriers))
 
-        # The 0..199 real initial deals currently provide no isolated local
-        # formula route; the separate full-deal relation fixtures below prove
-        # clear pair/triple direct cases without tuning to a seed count.
-        self.assertEqual(direct_count, 0)
+        # The previously available 10 small-single choices in this same range
+        # remain available, while genuine complete-group routes also occur.
+        self.assertEqual(selected_patterns["single"], 10)
+        self.assertGreater(selected_patterns["pair"] + selected_patterns["triple"], 0)
+        self.assertEqual(sum(selected_patterns.values()), 13)
         self.assertGreater(relevant_conflict_count, 0)
 
     def test_joker_level_wildcard_and_partial_groups_are_not_formula_targets(self) -> None:

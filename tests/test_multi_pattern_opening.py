@@ -134,7 +134,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
     def setUp(self) -> None:
         self.strategy = OpeningFormulaStrategy()
 
-    def test_full_deals_select_clear_pair_and_triple_but_route_sequence_tradeoffs_to_model(self) -> None:
+    def test_full_deal_group_routes_with_material_contrasts_stay_with_the_model(self) -> None:
         for expected_pattern, game in _shape_games():
             with self.subTest(pattern=expected_pattern):
                 observation = game.reset()
@@ -148,20 +148,21 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 self.assertEqual(current_round["constraint"], "free")
                 hand_eval = evaluate_hand(observation, actions)
                 chosen = self.strategy.select_action(observation, actions, hand_eval)
+                self.assertIsNone(chosen)
+                contrasts = summarize_candidate_contrasts(observation, actions)
+                self.assertIsNotNone(contrasts)
+                assert contrasts is not None
+                target_actions = [item for item in actions if item["declared_pattern"] == expected_pattern]
+                self.assertTrue(target_actions)
+                self.assertTrue(
+                    any(
+                        action["action_id"] in contrast.action_ids
+                        for action in target_actions
+                        for contrast in contrasts
+                    )
+                )
                 if expected_pattern == "straight":
-                    # The straight competes with playable low-cost singles
-                    # from its own ranks, so the source-backed relation is
-                    # shown to DeepSeek rather than locally resolved.
-                    self.assertIsNone(chosen)
-                    contrasts = summarize_candidate_contrasts(observation, actions)
-                    self.assertIsNotNone(contrasts)
-                    assert contrasts is not None
                     self.assertTrue(any(item.kind == "natural_sequence_single" for item in contrasts))
-                else:
-                    self.assertIsNotNone(chosen)
-                    chosen_action = next(item for item in actions if item["action_id"] == chosen)
-                    self.assertEqual(chosen_action["declared_pattern"], expected_pattern)
-                    self.assertIn(chosen, {item["action_id"] for item in actions})
                 self.assertIsNotNone(summarize_candidate_structures(observation, actions))
 
     def test_full_opening_can_select_a_unique_low_single_with_independent_bomb_return(self) -> None:
@@ -188,10 +189,73 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 assert contrasts is not None
                 self.assertFalse(any(selected in item.action_ids for item in contrasts))
 
-    def test_structural_choice_is_not_gated_on_a_scalar_hand_strength_label(self) -> None:
-        _, game = _shape_games()[1]
+    def test_structured_lower_single_is_filtered_before_probe_ranking(self) -> None:
+        from agents.opening_strategy import _CONTROL_RANKS, _RANK_ORDER, _rank_of
+
+        game = GuanDanGame(seed=33, current_level_rank="2")
         observation = game.reset()
         actions = game.legal_actions()
+        hand_counts = Counter(_rank_of(card) for card in observation["my_info"]["hand_cards"])
+        structured_tokens = {
+            card
+            for action in actions
+            if action["wildcard_count"] == 0 and len(action["carrier_cards"]) > 1
+            for card in action["carrier_cards"]
+        }
+        natural_singletons = []
+        for action in actions:
+            carriers = action["carrier_cards"]
+            declared = action["declared_cards"]
+            if (
+                action["declared_pattern"] != "single"
+                or action["wildcard_count"] != 0
+                or len(carriers) != 1
+                or len(declared) != 1
+            ):
+                continue
+            rank = _rank_of(carriers[0])
+            if (
+                declared[0] not in {rank, carriers[0]}
+                or hand_counts[rank] != 1
+                or rank in _CONTROL_RANKS
+            ):
+                continue
+            natural_singletons.append(action)
+        lowest_overall = min(
+            natural_singletons,
+            key=lambda action: _RANK_ORDER[_rank_of(action["carrier_cards"][0])],
+        )
+        selected = self.strategy.select_action(
+            observation,
+            actions,
+            evaluate_hand(observation, actions),
+        )
+        self.assertIsNotNone(selected)
+        selected_action = next(action for action in actions if action["action_id"] == selected)
+        self.assertEqual(selected_action["declared_pattern"], "single")
+        lowest_token = lowest_overall["carrier_cards"][0]
+        selected_token = selected_action["carrier_cards"][0]
+        self.assertIn(lowest_token, structured_tokens)
+        self.assertNotIn(selected_token, structured_tokens)
+        self.assertGreater(
+            _RANK_ORDER[_rank_of(selected_token)],
+            _RANK_ORDER[_rank_of(lowest_token)],
+        )
+        contrasts = representative_candidate_contrasts(observation, actions)
+        self.assertIsNotNone(contrasts)
+        assert contrasts is not None
+        self.assertFalse(any(selected in item.action_ids for item in contrasts))
+
+    def test_structural_choice_is_not_gated_on_a_scalar_hand_strength_label(self) -> None:
+        # This is a genuine full initial deal with one applicable, complete
+        # group route and no structure-safe singleton competitor.
+        game = GuanDanGame(seed=89, current_level_rank="2")
+        observation = game.reset()
+        actions = game.legal_actions()
+        self.assertEqual(observation["my_info"]["hand_count"], 27)
+        self.assertEqual([player["hand_count"] for player in observation["other_players"]], [27, 27, 27])
+        self.assertEqual(observation["current_round"]["step_no"], 0)
+        selected_ids = []
         for label in ("strong", "medium", "weak"):
             with self.subTest(label=label):
                 chosen = self.strategy.select_action(
@@ -199,10 +263,40 @@ class MultiPatternOpeningTests(unittest.TestCase):
                     actions,
                     {"label": label, "total_score": 50, "control_score": 8},
                 )
+                self.assertIn(chosen, {item["action_id"] for item in actions})
+                selected_ids.append(chosen)
                 self.assertEqual(
                     next(item["declared_pattern"] for item in actions if item["action_id"] == chosen),
                     "triple",
                 )
+        self.assertEqual(len(set(selected_ids)), 1)
+        transport = _CapturingTransport()
+        client = _CapturingClient(
+            "offline-test-key",
+            "https://offline.invalid",
+            "offline-test-model",
+            max_retries=0,
+            transport=transport,
+        )
+        rag_root = Path(__file__).resolve().parents[1] / "rag"
+        advisor = RAGAdvisor(
+            KnowledgeRetriever(KnowledgeBaseLoader(rag_root).load_all_documents())
+        )
+        agent = DeepSeekAIAgent(
+            1,
+            client,
+            rag_advisor=advisor,
+            hand_evaluation_enabled=True,
+            opening_formula_enabled=True,
+        )
+        chosen = agent.select_action(observation, actions)
+        self.assertIn(chosen, {item["action_id"] for item in actions})
+        self.assertEqual(agent.last_decision_source, "local_opening_formula")
+        self.assertEqual(
+            next(item["declared_pattern"] for item in actions if item["action_id"] == chosen),
+            "triple",
+        )
+        self.assertEqual(transport.calls, 0)
 
     def test_material_opening_tradeoff_reaches_real_client_request_and_preserves_model_id(self) -> None:
         game = GuanDanGame(seed=29, current_level_rank="2")
@@ -296,13 +390,17 @@ class MultiPatternOpeningTests(unittest.TestCase):
             {item.get("source_id") for item in context["experience_hits"]},
         )
 
-    def test_seeded_initial_deal_distribution_is_stable_and_bounded(self) -> None:
+    def test_held_out_initial_deal_interval_revalidates_non_single_coverage(self) -> None:
         formula_patterns: Counter[str] = Counter()
         no_direct = 0
-        for seed in range(200):
+        state_count = 200
+        for seed in range(5000, 5200):
             game = GuanDanGame(seed=seed, current_level_rank="2")
             observation = game.reset()
             actions = game.legal_actions()
+            self.assertEqual(observation["my_info"]["hand_count"], 27)
+            self.assertEqual([player["hand_count"] for player in observation["other_players"]], [27, 27, 27])
+            self.assertEqual(observation["current_round"]["step_no"], 0)
             chosen = self.strategy.select_action(observation, actions, evaluate_hand(observation, actions))
             if chosen is None:
                 no_direct += 1
@@ -311,9 +409,9 @@ class MultiPatternOpeningTests(unittest.TestCase):
             formula_patterns[str(action["declared_pattern"])] += 1
             self.assertIn(chosen, {item["action_id"] for item in actions})
 
-        self.assertEqual(no_direct, 200)
-        self.assertEqual(formula_patterns, Counter())
-        self.assertEqual(sum(formula_patterns.values()) + no_direct, 200)
+        self.assertGreaterEqual(formula_patterns["single"], 14)
+        self.assertGreater(formula_patterns["pair"] + formula_patterns["triple"], 0)
+        self.assertEqual(sum(formula_patterns.values()) + no_direct, state_count)
 
 
 if __name__ == "__main__":

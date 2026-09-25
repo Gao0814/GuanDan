@@ -55,12 +55,12 @@ OPENING_FORMULA_CONDITION_TABLE = (
     (
         "direct_small_single",
         "exp_lead_opening_strong_001",
-        "强牌开局自由首出；唯一最低自然单张、未处于实际展示的关系对照，且动作后还留有独立控制/压制回手资源时可本地直出；比较小单成本与资源路线",
+        "强牌开局自由首出；先排除参与任何已识别自然组合的单张，再在仍可独立出手且出后保留回手资源的候选中比较；唯一最低者不处于实际关系对照时可本地直出",
     ),
     (
         "direct_natural_shape",
         "exp_lead_opening_shape_001, exp_lead_opening_weak_001",
-        "任意开局牌力；自然对子/三张/顺子在完整canonical集合中是唯一Pareto未支配路线，剩余分组、孤张、拆组、通配、控制和压制成本均不差，并保留独立回手路线时可直出",
+        "任意开局牌力；不存在适用的安全自然单张路线，且完整canonical集合只留下一个未参与关系冲突的自然对子/三张完整清理路线；无拆组/资源损失并保留独立回手资源时可本地直出，否则交模型",
     ),
     (
         "model_single_tradeoff",
@@ -133,12 +133,13 @@ def normalize_hand_strength(hand_eval: dict[str, object] | None) -> str:
 class OpeningFormulaStrategy:
     """Apply narrow source-backed openings only when public evidence is decisive.
 
-    B-tier small-single guidance remains specific to strong hands.  For a
-    natural pair, triple, or straight, a local choice is permitted only when
-    it is the sole Pareto-undominated, structure-safe route across the full
-    canonical action set and leaves an independent public return resource.
-    Incomparable shapes and all material candidate relations remain model
-    choices.
+    B-tier small-single guidance remains specific to strong hands.  Its
+    applicability is checked before ranking: a singleton that participates
+    in a natural multi-card action is not a clean probe candidate.  A natural
+    pair or triple is considered only when no such clean singleton route is
+    available and exactly one complete, relation-free group route remains.
+    Ambiguous shapes and any relation involving the proposed action remain
+    model choices.
     """
 
     def _is_applicable(
@@ -190,108 +191,94 @@ class OpeningFormulaStrategy:
             return None
         actions_by_id = {int(action["action_id"]): action for action in legal_actions}
         facts_by_id = {fact.action_id: fact for fact in facts}
+        structured_tokens = {
+            str(card)
+            for fact in facts
+            if fact.carrier_count > 1 and not fact.uses_wildcard
+            for card in actions_by_id[fact.action_id]["carrier_cards"]
+        }
 
         # B-tier strong-hand small-single convention: do not promote a low
         # singleton if it is part of an observed relationship or has no
         # independently playable return route after the proposed lead.
-        if strength == "strong":
-            safe_singles: list[tuple[int, dict[str, object]]] = []
-            for action in legal_actions:
-                if action["declared_pattern"] != "single" or action["wildcard_count"] != 0:
-                    continue
-                carriers = action["carrier_cards"]
-                declared = action["declared_cards"]
-                assert isinstance(carriers, list) and isinstance(declared, list)
-                if len(carriers) != 1 or len(declared) != 1:
-                    continue
-                carrier_rank = _rank_of(str(carriers[0]))
-                declared_rank = str(declared[0])
-                if _is_valid_token(declared_rank):
-                    declared_rank = _rank_of(declared_rank)
-                if (
-                    declared_rank != carrier_rank
-                    or carrier_rank in _CONTROL_RANKS
-                    or carrier_rank == level_rank
-                    or rank_counts.get(carrier_rank) != 1
-                ):
-                    continue
-                safe_singles.append((_RANK_ORDER[carrier_rank], action))
+        applicable_singles: list[tuple[int, dict[str, object]]] = []
+        for action in legal_actions:
+            if action["declared_pattern"] != "single" or action["wildcard_count"] != 0:
+                continue
+            carriers = action["carrier_cards"]
+            declared = action["declared_cards"]
+            assert isinstance(carriers, list) and isinstance(declared, list)
+            if len(carriers) != 1 or len(declared) != 1 or str(carriers[0]) in structured_tokens:
+                continue
+            carrier_rank = _rank_of(str(carriers[0]))
+            declared_rank = str(declared[0])
+            if _is_valid_token(declared_rank):
+                declared_rank = _rank_of(declared_rank)
+            if (
+                declared_rank != carrier_rank
+                or carrier_rank in _CONTROL_RANKS
+                or carrier_rank == level_rank
+                or rank_counts.get(carrier_rank) != 1
+                or not self._has_return_resource_after(
+                    observation, action, legal_actions, facts_by_id,
+                )
+            ):
+                continue
+            applicable_singles.append((_RANK_ORDER[carrier_rank], action))
 
-            lowest = min((rank_value for rank_value, _ in safe_singles), default=None)
-            targets = [action for rank_value, action in safe_singles if rank_value == lowest]
+        if strength == "strong" and applicable_singles:
+            lowest = min(rank_value for rank_value, _ in applicable_singles)
+            targets = [action for rank_value, action in applicable_singles if rank_value == lowest]
             if len(targets) == 1:
                 target_id = targets[0]["action_id"]
-                if (
-                    not any(target_id in contrast.action_ids for contrast in contrasts)
-                    and self._has_return_resource_after(
-                        observation, targets[0], legal_actions, facts_by_id,
-                    )
-                ):
+                if not any(target_id in contrast.action_ids for contrast in contrasts):
                     return target_id
+                # A conflict attached to the actual lowest applicable probe is
+                # still a model choice; do not quietly choose a higher one.
+                return None
 
-        # B-tier structure guidance is not a fixed pair/triple/straight order.
-        # A direct lead is allowed only when exactly one canonical action is
-        # undominated on both visible residual grouping measures and on the
-        # independently visible structure/resource costs.  Any incomparable
-        # route, including a materially relevant contrast, goes to the model.
-        frontier = [
-            fact for fact in facts
-            if not any(
-                other.action_id != fact.action_id
-                and self._profile_dominates(other, fact)
-                for other in facts
-            )
-        ]
-        if len(frontier) != 1:
+        # The B-tier structure source supports a clean natural group when no
+        # structure-safe natural singleton route competes with it.  Do not
+        # rank different shapes or ranks by a synthetic score: exactly one
+        # complete, non-resource, relation-free route is the only local case.
+        if applicable_singles:
             return None
-        target_fact = frontier[0]
-        if (
-            target_fact.pattern not in {"pair", "triple", "straight"}
-            or target_fact.uses_wildcard
-            or target_fact.fragments_played_rank_group
-            or target_fact.consumes_control_resource
-            or target_fact.pattern in _PRESSURE_PATTERNS
-        ):
-            return None
-        if target_fact.pattern == "straight" and any(
-            contrast.kind == "natural_sequence_single"
-            and target_fact.action_id in contrast.action_ids
-            for contrast in contrasts
-        ):
-            # A straight versus one of its playable natural singletons is the
-            # exact low-cost-probe tradeoff the source asks us to expose. Keep
-            # it in the model path instead of resolving it by a local formula.
-            return None
-        target_action = actions_by_id.get(target_fact.action_id)
-        if target_action is None or not self._has_return_resource_after(
-            observation, target_action, legal_actions, facts_by_id,
-        ):
-            return None
-        return target_fact.action_id
+        group_routes: list[CandidateStructure] = []
+        for fact in facts:
+            if (
+                fact.pattern not in {"pair", "triple"}
+                or fact.finishes_hand
+                or fact.uses_wildcard
+                or fact.fragments_played_rank_group
+                or fact.consumes_control_resource
+                or not fact.clears_played_rank_groups
+            ):
+                continue
+            action = actions_by_id[fact.action_id]
+            carriers = action.get("carrier_cards")
+            if not isinstance(carriers, list) or not carriers:
+                return None
+            carrier_ranks = {_rank_of(card) for card in carriers}
+            if len(carrier_ranks) != 1:
+                continue
+            rank = next(iter(carrier_ranks))
+            if (
+                rank in _CONTROL_RANKS
+                or rank == level_rank
+                or rank_counts.get(rank) != len(carriers)
+                or any(fact.action_id in contrast.action_ids for contrast in contrasts)
+                or not self._has_return_resource_after(
+                    observation, action, legal_actions, facts_by_id,
+                )
+            ):
+                continue
+            group_routes.append(fact)
 
-    @staticmethod
-    def _profile_dominates(left: CandidateStructure, right: CandidateStructure) -> bool:
-        """Compare source-backed costs without inventing scalar weights."""
-
-        left_profile = (
-            left.estimated_remaining_rank_groups,
-            left.residual_singleton_rank_count,
-            int(left.fragments_played_rank_group),
-            int(left.uses_wildcard),
-            int(left.consumes_control_resource),
-            int(left.pattern in _PRESSURE_PATTERNS),
-        )
-        right_profile = (
-            right.estimated_remaining_rank_groups,
-            right.residual_singleton_rank_count,
-            int(right.fragments_played_rank_group),
-            int(right.uses_wildcard),
-            int(right.consumes_control_resource),
-            int(right.pattern in _PRESSURE_PATTERNS),
-        )
-        return all(a <= b for a, b in zip(left_profile, right_profile)) and any(
-            a < b for a, b in zip(left_profile, right_profile)
-        )
+        # Multiple physical realizations of the same semantic group are not
+        # broken by suit or action order; ambiguity remains with the model.
+        if len(group_routes) != 1:
+            return None
+        return group_routes[0].action_id
 
     @staticmethod
     def _has_return_resource_after(
