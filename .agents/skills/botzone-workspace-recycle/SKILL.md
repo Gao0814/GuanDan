@@ -7,6 +7,8 @@ description: Recycle an already audited allowlist of artifacts from the fixed Bo
 
 Remove only the audited files named by the task prompt from `D:\VsCodeProject\BotzoneWorkspace` through recoverable Windows Recycle Bin operations. The prompt must supply the exact allowlist, expected sizes/hashes, preserved directories, and final inventory.
 
+This skill never targets the owner's separate `D:\VsCodeProject\GuanDanManualWorkspace`. Personal quick-test rollover is governed by the dedicated launcher and the `AGENTS.md` exception; do not mix its files into this allowlist.
+
 ## Preconditions
 
 - Read the applicable `AGENTS.md`, `docs/CLEAN_HANDOFF.md`, and current status document.

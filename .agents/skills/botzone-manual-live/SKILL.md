@@ -1,11 +1,13 @@
 ---
 name: botzone-manual-live
-description: Run and supervise one manually configured Botzone GuanDan live game with the local connector and auditable evidence. Use for single-game smoke or history/decision-trace sampling; do not use for batch capacity runs or workspace cleanup.
+description: Codex-supervise one manually configured Botzone GuanDan live game with the fixed audited workspace. Use for Codex-run single-game smoke or history/decision-trace sampling; not owner self-operated quick tests, batch capacity runs, or workspace cleanup.
 ---
 
 # Botzone Manual Live
 
 Execute one user-configured Botzone game while keeping connector state and evidence attributable. The task prompt supplies the agent mode, seed, seat, fixed profile, budgets, expected starting inventory, and requested artifacts.
+
+This skill governs Codex-supervised live runs in `D:\VsCodeProject\BotzoneWorkspace`. It does not impose audit-heavy run procedures on the owner's self-operated quick-test area `D:\VsCodeProject\GuanDanManualWorkspace`. The owner may overwrite a non-issue personal run on the next run; if an issue is reported, leave its evidence untouched for read-only Codex review. Never mix the two workspaces or poll the same Botzone local-AI connection concurrently.
 
 ## Load context
 

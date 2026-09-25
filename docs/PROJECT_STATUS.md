@@ -1,6 +1,8 @@
 # 项目状态看板
 
-## 当前阶段：README 纠偏已复审，多牌型开局待 Coding（2026-09-25）
+## 当前阶段：个人试局隔离待 Coding，多牌型开局暂停（2026-09-25）
+
+- 项目所有者明确暂停 `e054955` 规划的多牌型开局任务，不应把该 Prompt 交给 Coding Codex 执行。当前优先解决个人 Botzone 试局与 Codex 正式测试的操作/文件冲突。所有者同意独立固定目录 `D:\VsCodeProject\GuanDanManualWorkspace`：个人试局的上次 evidence 在未报告问题时可由下次试局覆盖；若发现问题，暂停下一次试局，保留当前目录供 Codex 只读复查。Codex 运行仍只使用 `D:\VsCodeProject\BotzoneWorkspace`，两类文件绝不混用。独立目录不隔离同一个 Botzone local-AI endpoint，同一连接不可同时运行个人与 Codex connector。当前只完成边界与下一 Coding Prompt，未创建个人目录、启动 connector、调用模型或网络。
 
 - `f8f0e58` 仅修改 `README.md`，已将显式 `--agent deepseek` 的真实 connector、零网络预检和页面手动建桌分开，并去掉旧 Botzone 运行目录建议。规划 Codex 独立检查提交 diff、现行 CLI 分支和 Git clean 状态，禁用 dotenv 后相关开局/预检测试 16 项通过。用户只验证页面“已连接”时，可在连接配置就绪后运行不带 `--preflight-only` 的最简 DeepSeek connector，且不指定旧 audit/history/trace 路径；不要据此声称完成一局或留下了完整诊断证据。真正单局仍按 README/Skill 使用全新证据路径与人工配置确认。
 - 用户确认此前来源未明的 `D:\VsCodeProject\BotzoneState` 无需保留。规划 Codex 复核该精确目录为普通非链接、直属内容 0、无可归属 connector 后，仅将该空目录通过 Windows 回收站 API 回收；永久删除 0。固定 `D:\VsCodeProject\BotzoneWorkspace` 和其 seed `47005` 六份证据未触碰。不能对 workspace 使用“清空所有文件”的通配删除；这六份旧证据虽已审计，后续若清理仍须独立任务按精确 allowlist、字节数及 SHA-256 重新核对后回收。用户也可对只看连接的自测省略旧证据输出参数而保留现有文件。
