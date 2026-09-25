@@ -21,7 +21,11 @@ from agents.opening_strategy import OpeningFormulaStrategy, normalize_hand_stren
 from agents.rag_advisor import RAGAdvisor
 from engine.cards import Card, build_double_deck
 from engine.game import GuanDanGame
-from evaluation.h3_model_probe_fixtures import build_h3_model_probe_fixtures
+from evaluation.h3_model_probe_fixtures import (
+    ProbeFixture,
+    build_h3_model_probe_fixtures,
+    build_h3_model_probe_opening_fixtures,
+)
 from rag.kb_loader import KnowledgeBaseLoader
 from rag.retriever import KnowledgeRetriever
 
@@ -82,6 +86,41 @@ class _OfflineConfig:
     card_tracking_enabled = False
     hand_evaluation_enabled = True
     opening_formula_enabled = True
+
+
+def _opening_advisor() -> RAGAdvisor:
+    rag_root = Path(__file__).resolve().parents[1] / "rag"
+    return RAGAdvisor(KnowledgeRetriever(KnowledgeBaseLoader(rag_root).load_all_documents()))
+
+
+def _run_opening_request(
+    fixture: ProbeFixture,
+    *,
+    advisor: object | None = None,
+    opening_formula_enabled: bool = True,
+) -> tuple[DeepSeekAIAgent, _CapturingClient, _CapturingTransport, int]:
+    transport = _CapturingTransport()
+    client = _CapturingClient(
+        "offline-test-key",
+        "https://offline.invalid",
+        "offline-test-model",
+        max_retries=0,
+        transport=transport,
+    )
+    with patch("agents.deepseek_ai.AppConfig.from_env", return_value=_OfflineConfig()):
+        agent = DeepSeekAIAgent(
+            1,
+            client,
+            rag_advisor=advisor,  # type: ignore[arg-type]
+            rag_top_k=3,
+            hand_evaluation_enabled=True,
+            opening_formula_enabled=opening_formula_enabled,
+            strategy_router_shadow_enabled=True,
+            strategy_intent_prompt_enabled=True,
+            strategy_recommendation_enabled=True,
+        )
+        chosen = agent.select_action(fixture.observation, fixture.legal_actions)
+    return agent, client, transport, chosen
 
 
 class _CapturingTransport:
@@ -470,6 +509,207 @@ class MultiPatternOpeningTests(unittest.TestCase):
             )
         )
         self.assertTrue(any(marker in transport.prompt for marker in ("反例", "可以推翻", "可推翻")))
+
+    def test_cross_pattern_opening_guidance_is_bound_to_the_actual_request(self) -> None:
+        fixtures = list(build_h3_model_probe_opening_fixtures())
+        game = GuanDanGame(seed=29, current_level_rank="2")
+        observation = game.reset()
+        fixtures.append(
+            ProbeFixture(
+                "seed29", observation, game.legal_actions(), game_snapshot=game,
+            )
+        )
+        expected = {
+            "low_cost_single": (53, 23, 9882),
+            "neutral_soft_pair": (83, 51, 15233),
+            "seed29": (80, 50, 15680),
+        }
+        covered_patterns: set[str] = set()
+        for fixture in fixtures:
+            with self.subTest(scene=fixture.name):
+                agent, client, transport, chosen = _run_opening_request(
+                    fixture, advisor=_opening_advisor(),
+                )
+                prompt = transport.prompt
+                self.assertIsNotNone(prompt)
+                assert prompt is not None
+                canonical_count, final_count, baseline_chars = expected[fixture.name]
+                final_ids = set(transport.candidate_ids)
+                raw_ids = {item["action_id"] for item in fixture.legal_actions}
+                final_actions = [
+                    item for item in fixture.legal_actions
+                    if item["action_id"] in final_ids
+                ]
+                recommendation = agent.last_strategy_recommendation
+                recommendation_ids = set(getattr(recommendation, "action_ids", ()))
+                rag_context = client.suggestion_kwargs.get("rag_context")
+                self.assertIsInstance(rag_context, dict)
+                assert isinstance(rag_context, dict)
+                experience_hits = rag_context.get("experience_hits")
+                self.assertIsInstance(experience_hits, list)
+                assert isinstance(experience_hits, list)
+                has_opening_source = any(
+                    isinstance(hit, dict)
+                    and isinstance(hit.get("metadata"), dict)
+                    and hit["metadata"].get("guidance_mode") == "source_principle"
+                    and "opening_free_lead" in {
+                        value.strip()
+                        for value in str(hit["metadata"].get("strategy_domain", "")).split(",")
+                    }
+                    for hit in experience_hits
+                )
+
+                self.assertEqual(len(fixture.legal_actions), canonical_count)
+                self.assertEqual(len(final_ids), final_count)
+                self.assertLessEqual(len(final_ids), 80)
+                self.assertEqual(len(final_ids), len(final_actions))
+                self.assertTrue(final_ids.issubset(raw_ids))
+                self.assertTrue(recommendation_ids.issubset(final_ids))
+                self.assertEqual(transport.calls, 1)
+                self.assertEqual(transport.prompt, prompt)
+                self.assertEqual(chosen, transport.action_id)
+                self.assertIn(chosen, final_ids)
+                self.assertEqual(agent.last_decision_source, "model")
+                self.assertEqual(getattr(agent.last_strategy_intent, "status", None), "available")
+                self.assertTrue(has_opening_source)
+                self.assertIn("开局跨牌型取舍", prompt)
+                guidance_line = next(
+                    line for line in prompt.splitlines()
+                    if "开局跨牌型取舍" in line
+                )
+                for pattern, label in (
+                    ("single", "单张"), ("pair", "对子"),
+                    ("triple", "三张"), ("straight", "顺子"),
+                ):
+                    if any(
+                        action.get("declared_pattern") == pattern
+                        and action.get("wildcard_count") == 0
+                        for action in final_actions
+                    ):
+                        covered_patterns.add(pattern)
+                        self.assertIn(label, guidance_line)
+                self.assertIn("无固定牌型先后", prompt)
+                self.assertIn("公开协同/紧急性", prompt)
+                self.assertIn("未知用途按未知", prompt)
+                self.assertIn("可推翻", prompt)
+                if any(
+                    isinstance(hit, dict)
+                    and isinstance(hit.get("metadata"), dict)
+                    and hit["metadata"].get("guidance_mode") == "soft_hypothesis"
+                    for hit in experience_hits
+                ):
+                    self.assertIn("可撤回软假设：", prompt)
+                self.assertLessEqual(len(prompt), baseline_chars)
+
+                contrasts = representative_candidate_contrasts(
+                    fixture.observation, fixture.legal_actions,
+                )
+                self.assertIsNotNone(contrasts)
+                assert contrasts is not None
+                relation_section = prompt.split("【公开关系对照】", 1)[1].split("\n【", 1)[0]
+                visible_pair_lines = [
+                    line for line in relation_section.splitlines()
+                    if "action_id=" in line
+                ]
+                visible_contrasts = [
+                    contrast for contrast in contrasts
+                    if set(contrast.action_ids).issubset(final_ids)
+                ]
+                self.assertTrue(visible_contrasts)
+                for contrast in visible_contrasts:
+                    self.assertTrue(
+                        any(
+                            all(f"action_id={action_id}" in line for action_id in contrast.action_ids)
+                            for line in visible_pair_lines
+                        )
+                    )
+        self.assertTrue({"single", "pair", "triple", "straight"}.issubset(covered_patterns))
+
+    def test_medium_opening_uses_actual_soft_evidence_without_local_action(self) -> None:
+        game = GuanDanGame(seed=68, current_level_rank="2")
+        observation = game.reset()
+        fixture = ProbeFixture(
+            "medium_opening", observation, game.legal_actions(), game_snapshot=game,
+        )
+        agent, client, transport, chosen = _run_opening_request(
+            fixture, advisor=_opening_advisor(),
+        )
+        rag_context = client.suggestion_kwargs.get("rag_context")
+        self.assertIsInstance(rag_context, dict)
+        assert isinstance(rag_context, dict)
+        hits = rag_context.get("experience_hits")
+        self.assertIsInstance(hits, list)
+        assert isinstance(hits, list)
+        self.assertEqual((rag_context.get("scene_tags") or {}).get("phase"), "opening")
+        self.assertEqual((client.suggestion_kwargs.get("hand_evaluation") or {}).get("label"), "中等")
+        self.assertEqual(agent.last_decision_source, "model")
+        self.assertEqual(transport.calls, 1)
+        self.assertIn(chosen, transport.candidate_ids)
+        self.assertLessEqual(len(transport.candidate_ids), 80)
+        self.assertIn("开局跨牌型取舍", transport.prompt)
+        self.assertTrue(
+            any(
+                isinstance(hit, dict)
+                and hit.get("source_id") == "exp_soft_single_cost_probe_001"
+                and isinstance(hit.get("metadata"), dict)
+                and hit["metadata"].get("guidance_mode") == "soft_hypothesis"
+                for hit in hits
+            )
+        )
+        self.assertIn("可撤回软假设：", transport.prompt)
+
+    def test_opening_guidance_is_independent_of_local_formula_and_fails_closed_outside_scope(self) -> None:
+        opening_fixture = build_h3_model_probe_opening_fixtures()[1]
+        advisor = _opening_advisor()
+        agent, _client, transport, chosen = _run_opening_request(
+            opening_fixture,
+            advisor=advisor,
+            opening_formula_enabled=False,
+        )
+        self.assertFalse(agent.opening_formula_enabled)
+        self.assertEqual(agent.last_decision_source, "model")
+        self.assertEqual(transport.calls, 1)
+        self.assertEqual(chosen, transport.action_id)
+        self.assertIn("开局跨牌型取舍", transport.prompt)
+
+        non_opening = next(
+            fixture for fixture in build_h3_model_probe_fixtures()
+            if fixture.name == "pair_cleanup"
+        )
+        non_opening_agent, _non_opening_client, non_opening_transport, _chosen = _run_opening_request(
+            non_opening, advisor=advisor,
+        )
+        self.assertNotEqual(
+            getattr(non_opening_agent.last_strategy_intent, "phase", None),
+            "opening",
+        )
+        self.assertNotIn("开局跨牌型取舍", non_opening_transport.prompt)
+
+        class _WithoutOpeningEvidence:
+            def get_rag_context(self, **kwargs: object) -> dict[str, object]:
+                context = advisor.get_rag_context(**kwargs)
+                hits = context.get("experience_hits", [])
+                context["experience_hits"] = [
+                    hit for hit in hits
+                    if not (
+                        isinstance(hit, dict)
+                        and isinstance(hit.get("metadata"), dict)
+                        and hit["metadata"].get("guidance_mode") in {
+                            "source_principle", "soft_hypothesis",
+                        }
+                        and "opening_free_lead" in {
+                            value.strip()
+                            for value in str(hit["metadata"].get("strategy_domain", "")).split(",")
+                        }
+                    )
+                ]
+                return context
+
+        no_source_agent, _no_source_client, no_source_transport, _chosen = _run_opening_request(
+            opening_fixture, advisor=_WithoutOpeningEvidence(),
+        )
+        self.assertEqual(no_source_agent.last_decision_source, "model")
+        self.assertNotIn("开局跨牌型取舍", no_source_transport.prompt)
 
     def test_opening_shape_source_does_not_activate_in_public_endgame(self) -> None:
         fixture = build_h3_model_probe_fixtures()[6]

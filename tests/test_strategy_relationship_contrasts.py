@@ -562,7 +562,11 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
                 self.assertEqual(len(set(transport.candidate_ids)), candidate_count)
                 self.assertLessEqual(len(transport.prompt), char_budget)
                 self.assertNotIn("出后用途=", transport.prompt)
-                self.assertIn("留牌边际判据", transport.prompt)
+                if "开局跨牌型取舍" in transport.prompt:
+                    self.assertIn("比较出后余组/孤张与拆组成本", transport.prompt)
+                    self.assertNotIn("留牌边际判据", transport.prompt)
+                else:
+                    self.assertIn("留牌边际判据", transport.prompt)
                 self.assertIn("留牌事实", transport.prompt)
                 self.assertEqual(agent.last_decision_source, "model")
                 self.assertEqual(

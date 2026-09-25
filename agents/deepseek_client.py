@@ -1307,6 +1307,83 @@ class DeepSeekClient:
         return lines
 
     @staticmethod
+    def _opening_cross_pattern_guidance(
+        *,
+        current_round: dict[str, object],
+        phase_context: GamePhaseContext | None,
+        candidate_facts: tuple[CandidateStructure, ...] | None,
+        rag_context: dict[str, object] | None,
+    ) -> str | None:
+        """Return a compact opening guide only when public evidence supports it.
+
+        This is model-before guidance, not a local selector.  It is tied to the
+        actual bounded candidate set and to accepted opening RAG evidence. A
+        C-tier hit remains visibly retractable in the evidence section; this
+        summary never turns it into a local decision or fixed ranking.
+        """
+        if (
+            not isinstance(phase_context, GamePhaseContext)
+            or phase_context.phase != "opening"
+            or current_round.get("constraint") != "free"
+            or current_round.get("table_action") is not None
+            or candidate_facts is None
+            or not isinstance(rag_context, dict)
+        ):
+            return None
+        scene_tags = rag_context.get("scene_tags")
+        if (
+            not isinstance(scene_tags, dict)
+            or scene_tags.get("scene") != "lead_opening"
+            or scene_tags.get("phase") != "opening"
+            or scene_tags.get("action_context") != "free_lead"
+        ):
+            return None
+
+        has_opening_evidence = False
+        for item in DeepSeekClient._rag_items(rag_context, "experience_hits"):
+            metadata = item.get("metadata")
+            if not isinstance(metadata, dict):
+                continue
+            domains = metadata.get("strategy_domain")
+            domain_values = (
+                {part.strip() for part in domains.split(",") if part.strip()}
+                if isinstance(domains, str)
+                else set()
+            )
+            if (
+                metadata.get("guidance_mode") in {"source_principle", "soft_hypothesis"}
+                and "opening_free_lead" in domain_values
+            ):
+                has_opening_evidence = True
+                break
+        if not has_opening_evidence:
+            return None
+
+        pattern_labels = {
+            "single": "单张",
+            "pair": "对子",
+            "triple": "三张",
+            "straight": "顺子",
+        }
+        visible_patterns = {
+            fact.pattern
+            for fact in candidate_facts
+            if fact.pattern in pattern_labels and not fact.uses_wildcard
+        }
+        if len(visible_patterns) < 2:
+            return None
+        visible_text = "、".join(
+            pattern_labels[pattern]
+            for pattern in ("single", "pair", "triple", "straight")
+            if pattern in visible_patterns
+        )
+        return (
+            f"开局跨牌型取舍（展示含{visible_text}）：比较出后余组/孤张与拆组成本；"
+            "结构安全小单可低成本试探，成组牌/顺子可清理牌型但无固定牌型先后。"
+            "可证回手/控制或公开协同/紧急性可推翻局部优势；未知用途按未知，不推断未来牌权。"
+        )
+
+    @staticmethod
     def _format_hand_evaluation(hand_evaluation: dict[str, object] | None) -> list[str]:
         if not isinstance(hand_evaluation, dict):
             return ["（无）"]
@@ -1565,6 +1642,12 @@ class DeepSeekClient:
             if candidate_facts is not None
             else {}
         )
+        opening_cross_pattern_guidance = DeepSeekClient._opening_cross_pattern_guidance(
+            current_round=current_round,
+            phase_context=phase_context,
+            candidate_facts=candidate_facts,
+            rag_context=rag_context,
+        )
         all_contrasts = representative_contrasts
         prompt_action_ids = {
             action.get("action_id")
@@ -1674,11 +1757,16 @@ class DeepSeekClient:
             }
             lines.append("目标：" + "；".join(objective_text[item] for item in validated_recommendation.objective_codes))
             lines.append("反例检查：" + "；".join(check_text[item] for item in validated_recommendation.countercheck_codes))
+            if opening_cross_pattern_guidance is not None:
+                lines.append(opening_cross_pattern_guidance)
             lines.append("")
 
         if visible_contrasts:
             lines.append("【公开关系对照】")
-            if any(item.kind in _RESIDUAL_USE_RELATION_KINDS for item in visible_contrasts):
+            if (
+                opening_cross_pattern_guidance is None
+                and any(item.kind in _RESIDUAL_USE_RELATION_KINDS for item in visible_contrasts)
+            ):
                 lines.append(
                     "留牌边际判据：少出留下的牌只有在当前可识别的自然组合、可能回手/控制资源或公开协同用途足以抵消余组/孤张与资源成本时，才构成保留理由；"
                     "组合线索可能重叠、需拆别组或无后续牌权，并不自动等于高价值。若没有可证用途且留牌增加负担，另一侧又不损更高价值结构/控制资源，可有条件倾向一并打出；"
