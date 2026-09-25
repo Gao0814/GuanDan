@@ -556,8 +556,14 @@ class RAGAdvisor:
             return ()
 
         desired_topics = self._topics_from_scene_tags(scene_tags)
-        candidates: list[tuple[int, float, int, KnowledgeDocument]] = []
+        candidates: list[tuple[int, float, int, KnowledgeDocument, bool]] = []
         active_relations = self._metadata_values(scene_tags, "candidate_relation_kinds")
+        opening_free_lead = (
+            layer == "experience"
+            and scene_tags.get("scene") == "lead_opening"
+            and scene_tags.get("phase") == "opening"
+            and scene_tags.get("action_context") == "free_lead"
+        )
         for idx, doc in enumerate(self._retriever.documents):
             if doc.layer != layer:
                 continue
@@ -582,15 +588,32 @@ class RAGAdvisor:
                     exact_relations.add("bomb_strength_resource")
                 if "bomb_residual" in active_relations:
                     exact_relations.add("bomb_residual")
-            # Reserve the top of the bounded result for semantically exact,
-            # currently proven soft hypotheses; rank among them by the same
-            # public semantic score. Provenance never participates here.
-            candidates.append((0 if exact_relations else 1, -score, idx, doc))
+            # In an opening free lead, reserve one top slot for an applicable
+            # source principle so top_k=1 (the production factory default)
+            # still has an authored opening basis. Remaining slots retain the
+            # normal relationship/score order, so this does not crowd out all
+            # matching soft hypotheses at larger top_k values. This only
+            # reorders already-admitted semantic candidates; provenance never
+            # participates.
+            is_opening_source_principle = (
+                opening_free_lead
+                and doc.metadata.get("guidance_mode") == "source_principle"
+                and "opening_free_lead"
+                in self._metadata_values(doc.metadata, "strategy_domain")
+            )
+            candidates.append((0 if exact_relations else 1, -score, idx, doc, is_opening_source_principle))
 
         candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+        if opening_free_lead:
+            source_index = next(
+                (index for index, item in enumerate(candidates) if item[4]),
+                None,
+            )
+            if source_index is not None and source_index > 0:
+                candidates.insert(0, candidates.pop(source_index))
 
         evidence: list[RAGEvidence] = []
-        for _, negative_score, _, doc in candidates[:top_k]:
+        for _, negative_score, _, doc, _ in candidates[:top_k]:
             score = -negative_score
             metadata = dict(doc.metadata)
             metadata.update(

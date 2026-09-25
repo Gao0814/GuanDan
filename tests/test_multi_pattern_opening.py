@@ -6,6 +6,7 @@ from collections import Counter
 import json
 from pathlib import Path
 import re
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -16,9 +17,11 @@ from agents.action_structure import (
 )
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient
+from agents.game_phase import classify_game_phase
 from agents.hand_evaluator import evaluate_hand
 from agents.opening_strategy import OpeningFormulaStrategy, normalize_hand_strength
 from agents.rag_advisor import RAGAdvisor
+from agents.strategy_recommendation import StrategyRecommendation
 from engine.cards import Card, build_double_deck
 from engine.game import GuanDanGame
 from evaluation.h3_model_probe_fixtures import (
@@ -28,6 +31,7 @@ from evaluation.h3_model_probe_fixtures import (
 )
 from rag.kb_loader import KnowledgeBaseLoader
 from rag.retriever import KnowledgeRetriever
+from integrations.botzone.agent_runtime import build_agent_factory
 
 
 def _complete_game_with_hand(spec: tuple[tuple[str, int], ...]) -> GuanDanGame:
@@ -83,6 +87,11 @@ def _shape_games() -> tuple[tuple[str, GuanDanGame], ...]:
 
 
 class _OfflineConfig:
+    deepseek_api_key = "offline-test-key"
+    deepseek_base_url = "https://offline.invalid"
+    deepseek_model = "offline-test-model"
+    deepseek_timeout = 1.0
+    deepseek_max_retries = 0
     card_tracking_enabled = False
     hand_evaluation_enabled = True
     opening_formula_enabled = True
@@ -98,6 +107,8 @@ def _run_opening_request(
     *,
     advisor: object | None = None,
     opening_formula_enabled: bool = True,
+    rag_top_k: int = 3,
+    strategy_recommendation_enabled: bool = True,
 ) -> tuple[DeepSeekAIAgent, _CapturingClient, _CapturingTransport, int]:
     transport = _CapturingTransport()
     client = _CapturingClient(
@@ -112,14 +123,52 @@ def _run_opening_request(
             1,
             client,
             rag_advisor=advisor,  # type: ignore[arg-type]
-            rag_top_k=3,
+            rag_top_k=rag_top_k,
             hand_evaluation_enabled=True,
             opening_formula_enabled=opening_formula_enabled,
             strategy_router_shadow_enabled=True,
             strategy_intent_prompt_enabled=True,
-            strategy_recommendation_enabled=True,
+            strategy_recommendation_enabled=strategy_recommendation_enabled,
         )
         chosen = agent.select_action(fixture.observation, fixture.legal_actions)
+    return agent, client, transport, chosen
+
+
+def _run_factory_opening_request(
+    fixture: ProbeFixture,
+    *,
+    strategy_recommendation_enabled: bool = True,
+    advisor: object | None = None,
+) -> tuple[DeepSeekAIAgent, _CapturingClient, _CapturingTransport, int]:
+    """Exercise the production Botzone factory while keeping transport offline."""
+
+    transport = _CapturingTransport()
+    created: dict[str, _CapturingClient] = {}
+
+    def client_factory(**kwargs: object) -> _CapturingClient:
+        client = _CapturingClient(**kwargs, transport=transport)
+        created["client"] = client
+        return client
+
+    def agent_factory(**kwargs: object) -> DeepSeekAIAgent:
+        return DeepSeekAIAgent(
+            **kwargs,
+            strategy_recommendation_enabled=strategy_recommendation_enabled,
+        )
+
+    factory = build_agent_factory(
+        "deepseek",
+        config_loader=_OfflineConfig,
+        client_factory=client_factory,
+        deepseek_agent_factory=agent_factory,
+        rag_factory=lambda: advisor if advisor is not None else _opening_advisor(),
+    )
+    with patch("agents.deepseek_ai.AppConfig.from_env", return_value=_OfflineConfig()):
+        agent = factory(1)
+        chosen = agent.select_action(fixture.observation, fixture.legal_actions)
+    client = created["client"]
+    if not isinstance(agent, DeepSeekAIAgent):
+        raise AssertionError("factory_agent_type_invalid")
     return agent, client, transport, chosen
 
 
@@ -625,6 +674,206 @@ class MultiPatternOpeningTests(unittest.TestCase):
                     )
         self.assertTrue({"single", "pair", "triple", "straight"}.issubset(covered_patterns))
 
+    def test_botzone_factory_top_one_retrieval_keeps_opening_guidance_in_actual_request(self) -> None:
+        fixtures = list(build_h3_model_probe_opening_fixtures())
+        game = GuanDanGame(seed=29, current_level_rank="2")
+        observation = game.reset()
+        fixtures.append(
+            ProbeFixture("seed29", observation, game.legal_actions(), game_snapshot=game)
+        )
+        expected = {
+            "low_cost_single": (53, 23, 8832),
+            "neutral_soft_pair": (83, 51, 14316),
+            "seed29": (80, 50, 14763),
+        }
+
+        for fixture in fixtures:
+            with self.subTest(scene=fixture.name):
+                agent, client, transport, chosen = _run_factory_opening_request(fixture)
+                raw_ids = {item["action_id"] for item in fixture.legal_actions}
+                final_ids = set(transport.candidate_ids)
+                canonical_count, final_count, baseline_chars = expected[fixture.name]
+                rag_context = client.suggestion_kwargs.get("rag_context")
+                self.assertIsInstance(rag_context, dict)
+                assert isinstance(rag_context, dict)
+                hits = rag_context.get("experience_hits")
+                self.assertIsInstance(hits, list)
+                assert isinstance(hits, list)
+                self.assertEqual(agent.rag_top_k, 1)
+                self.assertEqual(len(hits), 1)
+                self.assertEqual(len(fixture.legal_actions), canonical_count)
+                self.assertEqual(len(final_ids), final_count)
+                self.assertLessEqual(len(final_ids), 80)
+                self.assertEqual(len(final_ids), len(transport.candidate_ids))
+                self.assertTrue(final_ids.issubset(raw_ids))
+                self.assertEqual(transport.calls, 1)
+                self.assertEqual(chosen, transport.action_id)
+                self.assertIn(chosen, final_ids)
+                self.assertEqual(agent.last_decision_source, "model")
+                recommendation_ids = set(
+                    getattr(agent.last_strategy_recommendation, "action_ids", ())
+                )
+                self.assertTrue(recommendation_ids.issubset(final_ids))
+                self.assertEqual(
+                    (rag_context.get("scene_tags") or {}).get("scene"),
+                    "lead_opening",
+                )
+                self.assertEqual(
+                    (rag_context.get("scene_tags") or {}).get("phase"),
+                    "opening",
+                )
+                self.assertTrue(
+                    any(
+                        isinstance(hit, dict)
+                        and isinstance(hit.get("metadata"), dict)
+                        and hit["metadata"].get("guidance_mode") == "source_principle"
+                        and "opening_free_lead" in {
+                            part.strip()
+                            for part in str(hit["metadata"].get("strategy_domain", "")).split(",")
+                        }
+                        for hit in hits
+                    )
+                )
+
+                prompt = transport.prompt
+                self.assertIn("【规则库依据】", prompt)
+                self.assertIn("开局跨牌型取舍", prompt)
+                self.assertIn("可推翻", prompt)
+                self.assertIn("【公开关系对照】", prompt)
+                source_hit = next(
+                    hit for hit in hits
+                    if isinstance(hit, dict)
+                    and isinstance(hit.get("metadata"), dict)
+                    and hit["metadata"].get("guidance_mode") == "source_principle"
+                )
+                source_title, source_body = DeepSeekClient._rag_title_and_body(source_hit)
+                self.assertTrue(source_title)
+                self.assertIn(source_title, prompt)
+                self.assertTrue(source_body)
+                self.assertIn(source_body[:80], prompt)
+                relation_section = prompt.split("【公开关系对照】", 1)[1].split("\n【", 1)[0]
+                visible_contrasts = [
+                    contrast
+                    for contrast in representative_candidate_contrasts(
+                        fixture.observation, fixture.legal_actions,
+                    ) or ()
+                    if set(contrast.action_ids).issubset(final_ids)
+                ]
+                self.assertTrue(visible_contrasts)
+                for contrast in visible_contrasts:
+                    self.assertTrue(
+                        any(
+                            all(f"action_id={action_id}" in line for action_id in contrast.action_ids)
+                            for line in relation_section.splitlines()
+                            if "action_id=" in line
+                        )
+                    )
+                # This is a prompt-size regression budget, not a latency claim.
+                self.assertLessEqual(len(prompt), baseline_chars + 100)
+
+    def test_opening_guide_survives_disabled_unavailable_and_invalid_recommendations(self) -> None:
+        fixture = build_h3_model_probe_opening_fixtures()[1]
+        unavailable = StrategyRecommendation(
+            "unavailable", "public_strategy_recommendation_v2", (), (), (), (),
+        )
+        invalid = StrategyRecommendation(
+            "ready", "public_strategy_recommendation_v2", (999999,),
+            ("protect_structure",), ("check_structure_loss",), ("opening_free_lead",),
+        )
+
+        class _EmptyAdvisor:
+            def get_rag_context(self, **_: object) -> dict[str, object]:
+                return {
+                    "scene_tags": {},
+                    "rule_hits": [],
+                    "experience_hits": [],
+                    "query": "",
+                }
+
+        cases = (
+            ("disabled", False, None, _opening_advisor(), True),
+            ("unavailable", True, unavailable, _opening_advisor(), True),
+            ("invalid", True, invalid, _opening_advisor(), True),
+            ("invalid_without_source", True, invalid, _EmptyAdvisor(), False),
+        )
+        for name, enabled, payload, advisor, guide_expected in cases:
+            with self.subTest(recommendation=name):
+                with patch(
+                    "agents.strategy_recommendation.build_strategy_recommendation",
+                    return_value=payload,
+                ):
+                    agent, _client, transport, chosen = _run_opening_request(
+                        fixture,
+                        advisor=advisor,
+                        strategy_recommendation_enabled=enabled,
+                    )
+                self.assertEqual(transport.calls, 1)
+                self.assertEqual(agent.last_decision_source, "model")
+                self.assertEqual(chosen, transport.action_id)
+                self.assertIn(chosen, transport.candidate_ids)
+                self.assertIn("【公开关系对照】", transport.prompt)
+                if guide_expected:
+                    self.assertIn("开局跨牌型取舍", transport.prompt)
+                    self.assertNotIn("留牌边际判据：", transport.prompt)
+                else:
+                    self.assertNotIn("开局跨牌型取舍", transport.prompt)
+                    self.assertIn("留牌边际判据：", transport.prompt)
+                if name == "disabled":
+                    self.assertFalse(agent.strategy_recommendation_enabled)
+                    self.assertIsNone(agent.last_strategy_recommendation)
+                else:
+                    self.assertEqual(
+                        getattr(agent.last_strategy_recommendation, "status", None),
+                        payload.status,
+                    )
+
+    def test_old_residual_criterion_remains_when_opening_guide_is_not_rendered(self) -> None:
+        fixture = build_h3_model_probe_opening_fixtures()[1]
+
+        class _EmptyAdvisor:
+            def get_rag_context(self, **_: object) -> dict[str, object]:
+                return {
+                    "scene_tags": {},
+                    "rule_hits": [],
+                    "experience_hits": [],
+                    "query": "",
+                }
+
+        agent, _client, transport, chosen = _run_factory_opening_request(
+            fixture, advisor=_EmptyAdvisor(),
+        )
+        self.assertEqual(transport.calls, 1)
+        self.assertEqual(agent.last_decision_source, "model")
+        self.assertEqual(chosen, transport.action_id)
+        self.assertNotIn("开局跨牌型取舍", transport.prompt)
+        self.assertIn("留牌边际判据：", transport.prompt)
+
+    def test_opening_guide_requires_two_pattern_families_in_final_candidate_facts(self) -> None:
+        fixture = build_h3_model_probe_opening_fixtures()[1]
+        _agent, client, transport, _chosen = _run_factory_opening_request(fixture)
+        context = client.suggestion_kwargs.get("rag_context")
+        final_ids = set(transport.candidate_ids)
+        final_actions = [
+            action for action in fixture.legal_actions
+            if action["action_id"] in final_ids
+        ]
+        facts = summarize_candidate_structures(fixture.observation, final_actions)
+        self.assertIsInstance(context, dict)
+        self.assertIsNotNone(facts)
+        assert isinstance(context, dict) and facts is not None
+        singles_only = tuple(
+            fact for fact in facts
+            if fact.pattern == "single" and not fact.uses_wildcard
+        )
+        guide = DeepSeekClient._opening_cross_pattern_guidance(
+            current_round=fixture.observation["current_round"],
+            phase_context=classify_game_phase(fixture.observation),
+            candidate_facts=singles_only,
+            rag_context=context,
+        )
+        self.assertIsNone(guide)
+        self.assertIn("开局跨牌型取舍", transport.prompt)
+
     def test_medium_opening_uses_actual_soft_evidence_without_local_action(self) -> None:
         game = GuanDanGame(seed=68, current_level_rank="2")
         observation = game.reset()
@@ -710,6 +959,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
         )
         self.assertEqual(no_source_agent.last_decision_source, "model")
         self.assertNotIn("开局跨牌型取舍", no_source_transport.prompt)
+        self.assertIn("留牌边际判据：", no_source_transport.prompt)
 
     def test_opening_shape_source_does_not_activate_in_public_endgame(self) -> None:
         fixture = build_h3_model_probe_fixtures()[6]

@@ -1738,33 +1738,36 @@ class DeepSeekClient:
             recommended_ids=validated_recommendation.action_ids if validated_recommendation is not None else (),
             contrast_action_id_groups=tuple(item.action_ids for item in visible_contrasts),
         ) if candidate_facts is not None else ()
-        if validated_recommendation is not None:
+        opening_cross_pattern_guidance_rendered = False
+        if validated_recommendation is not None or opening_cross_pattern_guidance is not None:
             lines.append("【模型前建议】")
-            if validated_recommendation.action_ids:
-                lines.append("优先核验候选 action_id：" + ", ".join(str(item) for item in validated_recommendation.action_ids))
-            lines.append("策略域：" + "、".join(validated_recommendation.strategy_domains))
-            objective_text = {
-                "finish_now": "核对一次出完", "protect_structure": "减少结构拆分",
-                "low_cost_probe": "降低试探成本", "preserve_control": "保留控制资源",
-                "contest_follow": "比较跟牌牌权", "support_teammate": "支援队友",
-                "block_opponent": "阻断危险对手", "manage_bomb_wildcard": "管理炸弹与通配",
-                "plan_endgame": "规划残局分组",
-            }
-            check_text = {
-                "check_public_urgency": "公开剩余张数和紧急性", "check_trick_ownership": "牌权计划",
-                "check_structure_loss": "组合与拆分损失", "check_control_cost": "控制资源消耗",
-                "check_rule_pressure": "规则压制关系",
-            }
-            lines.append("目标：" + "；".join(objective_text[item] for item in validated_recommendation.objective_codes))
-            lines.append("反例检查：" + "；".join(check_text[item] for item in validated_recommendation.countercheck_codes))
+            if validated_recommendation is not None:
+                if validated_recommendation.action_ids:
+                    lines.append("优先核验候选 action_id：" + ", ".join(str(item) for item in validated_recommendation.action_ids))
+                lines.append("策略域：" + "、".join(validated_recommendation.strategy_domains))
+                objective_text = {
+                    "finish_now": "核对一次出完", "protect_structure": "减少结构拆分",
+                    "low_cost_probe": "降低试探成本", "preserve_control": "保留控制资源",
+                    "contest_follow": "比较跟牌牌权", "support_teammate": "支援队友",
+                    "block_opponent": "阻断危险对手", "manage_bomb_wildcard": "管理炸弹与通配",
+                    "plan_endgame": "规划残局分组",
+                }
+                check_text = {
+                    "check_public_urgency": "公开剩余张数和紧急性", "check_trick_ownership": "牌权计划",
+                    "check_structure_loss": "组合与拆分损失", "check_control_cost": "控制资源消耗",
+                    "check_rule_pressure": "规则压制关系",
+                }
+                lines.append("目标：" + "；".join(objective_text[item] for item in validated_recommendation.objective_codes))
+                lines.append("反例检查：" + "；".join(check_text[item] for item in validated_recommendation.countercheck_codes))
             if opening_cross_pattern_guidance is not None:
                 lines.append(opening_cross_pattern_guidance)
+                opening_cross_pattern_guidance_rendered = True
             lines.append("")
 
         if visible_contrasts:
             lines.append("【公开关系对照】")
             if (
-                opening_cross_pattern_guidance is None
+                not opening_cross_pattern_guidance_rendered
                 and any(item.kind in _RESIDUAL_USE_RELATION_KINDS for item in visible_contrasts)
             ):
                 lines.append(
