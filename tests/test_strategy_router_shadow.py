@@ -5,6 +5,7 @@ from unittest import mock
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from agents.game_phase import MIDGAME, GamePhaseContext
+from agents.opening_strategy import OpeningFormulaAnalysis
 from agents.strategy_router import StrategyIntentContext
 
 
@@ -136,7 +137,10 @@ class TestStrategyRouterShadow(unittest.TestCase):
             hand_evaluation_enabled=False,
             strategy_router_shadow_enabled=True,
         )
-        with mock.patch("agents.deepseek_ai.OpeningFormulaStrategy.select_action", return_value=1), mock.patch(
+        with mock.patch(
+            "agents.deepseek_ai.OpeningFormulaStrategy.analyze_action",
+            return_value=OpeningFormulaAnalysis(action_id=1),
+        ), mock.patch(
             "agents.strategy_router.route_strategy_intent"
         ) as router:
             self.assertEqual(agent.select_action(_observation(), [_action(1), _action(2)]), 1)

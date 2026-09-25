@@ -5,6 +5,7 @@ from unittest import mock
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from agents.card_confidence_prompt import CardConfidencePromptPayload
+from agents.opening_strategy import OpeningFormulaAnalysis
 from agents.strategy_intent_prompt import build_strategy_intent_prompt_payload
 from agents.strategy_router import StrategyIntentContext
 
@@ -183,7 +184,8 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
         with mock.patch("agents.strategy_router.route_strategy_intent") as router, mock.patch(
             "agents.strategy_intent_prompt.build_strategy_intent_prompt_payload"
         ) as formatter, mock.patch(
-            "agents.deepseek_ai.OpeningFormulaStrategy.select_action", return_value=2
+            "agents.deepseek_ai.OpeningFormulaStrategy.analyze_action",
+            return_value=OpeningFormulaAnalysis(action_id=2),
         ):
             self.assertEqual(agent.select_action(_observation(), [_action(1, "pass")]), 1)
             self.assertEqual(agent.select_action(_observation(hand_count=2), [_action(2, "pair", ["9S", "9H"])]), 2)

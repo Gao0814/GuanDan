@@ -11,6 +11,7 @@ from unittest.mock import patch
 from agents.base import require_legal_action_id
 from agents.deepseek_client import DeepSeekClient
 from agents.game_phase import classify_game_phase
+from agents.opening_strategy import OpeningFormulaAnalysis
 from agents.rag_advisor import RAGAdvisor
 from agents.rule_based_ai import RuleBasedAIAgent
 from engine.cards import build_double_deck, card_to_token
@@ -456,7 +457,10 @@ class ActionQualityProxyTests(unittest.TestCase):
         self.assertEqual(mutated.failure_code, "request_body_mutated")
 
         shortcut_transport = _FakeSSETransport(lambda ids: ids[0])
-        with patch("agents.opening_strategy.OpeningFormulaStrategy.select_action", return_value=reference_id):
+        with patch(
+            "agents.opening_strategy.OpeningFormulaStrategy.analyze_action",
+            return_value=OpeningFormulaAnalysis(action_id=reference_id),
+        ):
             with patch.object(proxy, "_rollout") as rollout:
                 shortcut = evaluate_quality_sample(sample, transport=shortcut_transport, advisor=self.advisor)
         rollout.assert_not_called()

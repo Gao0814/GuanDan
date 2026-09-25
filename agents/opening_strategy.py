@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from agents.action_structure import (
+    CandidateContrast,
     CandidateStructure,
     representative_candidate_contrasts,
+    summarize_candidate_contrasts,
     summarize_candidate_structures,
 )
 from agents.game_phase import GamePhaseContext, OPENING, classify_game_phase
@@ -48,6 +51,15 @@ _RANK_ORDER = {
     "SJ": 16,
     "BJ": 17,
 }
+MAX_OPENING_FORMULA_CONTRASTS = 12
+
+
+@dataclass(frozen=True, slots=True)
+class OpeningFormulaAnalysis:
+    """A local result plus full public contrasts relevant to model deferral."""
+
+    action_id: int | None = None
+    model_contrasts: tuple[CandidateContrast, ...] = ()
 
 # The direct rule is intentionally narrower than the model-before knowledge.
 # All other public openings are routed to the existing RAG + DeepSeek path.
@@ -55,12 +67,12 @@ OPENING_FORMULA_CONDITION_TABLE = (
     (
         "direct_small_single",
         "exp_lead_opening_strong_001",
-        "强牌开局自由首出；先排除参与任何已识别自然组合的单张，再在仍可独立出手且出后保留回手资源的候选中比较；唯一最低者不处于实际关系对照时可本地直出",
+        "强牌开局自由首出；先排除参与已识别自然组合的单张，再比较仍可独立出手且保留回手资源的候选；完整公开关系若仅是B级原则明确支持的低成本自然单张或保留控制资源取舍，且目标位于受支持一侧时可直出；通配、拆组或其他实质取舍交模型",
     ),
     (
         "direct_natural_shape",
         "exp_lead_opening_shape_001, exp_lead_opening_weak_001",
-        "任意开局牌力；不存在适用的安全自然单张路线，且完整canonical集合只留下一个未参与关系冲突的自然对子/三张完整清理路线；无拆组/资源损失并保留独立回手资源时可本地直出，否则交模型",
+        "任意开局牌力；不存在适用的安全自然单张路线，且在未按关系或展示预算过滤前，完整canonical集合只有一个自然对子/三张完整清理路线；该动作不参与任何已识别完整关系、无拆组/资源损失并保留独立回手资源时可本地直出，否则交模型",
     ),
     (
         "model_single_tradeoff",
@@ -137,9 +149,11 @@ class OpeningFormulaStrategy:
     applicability is checked before ranking: a singleton that participates
     in a natural multi-card action is not a clean probe candidate.  A natural
     pair or triple is considered only when no such clean singleton route is
-    available and exactly one complete, relation-free group route remains.
-    Ambiguous shapes and any relation involving the proposed action remain
-    model choices.
+    available and exactly one route exists in the unfiltered canonical group
+    set.  Local eligibility uses the complete public contrast set, never the
+    smaller prompt representatives.  A small singleton may resolve only the
+    source-supported low-cost-single or control-preservation comparison; any
+    other material relationship remains a model choice.
     """
 
     def _is_applicable(
@@ -174,21 +188,37 @@ class OpeningFormulaStrategy:
         hand_eval: dict[str, object] | None = None,
         phase_context: GamePhaseContext | None = None,
     ) -> object | None:
+        return self.analyze_action(
+            observation,
+            legal_actions,
+            hand_eval,
+            phase_context,
+        ).action_id
+
+    def analyze_action(
+        self,
+        observation: dict[str, object],
+        legal_actions: list[dict[str, object]],
+        hand_eval: dict[str, object] | None = None,
+        phase_context: GamePhaseContext | None = None,
+    ) -> OpeningFormulaAnalysis:
+        """Evaluate local eligibility and expose blocking relations to the model."""
+
         validated = self._validated_context(observation, legal_actions, phase_context)
         if validated is None:
-            return None
+            return OpeningFormulaAnalysis()
         hand, level_rank = validated
         strength = normalize_hand_strength(hand_eval)
         rank_counts = Counter(_rank_of(card) for card in hand.elements())
         facts = summarize_candidate_structures(observation, legal_actions)
-        contrasts = representative_candidate_contrasts(observation, legal_actions)
+        contrasts = summarize_candidate_contrasts(observation, legal_actions)
         if facts is None or contrasts is None:
-            return None
+            return OpeningFormulaAnalysis()
         if any(
             fact.finishes_hand
             for fact in facts
         ) or self._has_public_urgency(observation):
-            return None
+            return OpeningFormulaAnalysis()
         actions_by_id = {int(action["action_id"]): action for action in legal_actions}
         facts_by_id = {fact.action_id: fact for fact in facts}
         structured_tokens = {
@@ -231,18 +261,118 @@ class OpeningFormulaStrategy:
             targets = [action for rank_value, action in applicable_singles if rank_value == lowest]
             if len(targets) == 1:
                 target_id = targets[0]["action_id"]
-                if not any(target_id in contrast.action_ids for contrast in contrasts):
-                    return target_id
+                if self._small_single_relationships_are_source_supported(
+                    target_id, contrasts, facts_by_id,
+                ):
+                    return OpeningFormulaAnalysis(action_id=int(target_id))
                 # A conflict attached to the actual lowest applicable probe is
                 # still a model choice; do not quietly choose a higher one.
-                return None
+                representatives = representative_candidate_contrasts(observation, legal_actions)
+                return self._analysis_for_related_actions(
+                    (int(target_id),), contrasts, representatives,
+                )
 
         # The B-tier structure source supports a clean natural group when no
-        # structure-safe natural singleton route competes with it.  Do not
-        # rank different shapes or ranks by a synthetic score: exactly one
-        # complete, non-resource, relation-free route is the only local case.
+        # structure-safe natural singleton route competes with it.  Establish
+        # uniqueness over every otherwise eligible canonical route first; a
+        # relation does not erase an alternative from that comparison.
         if applicable_singles:
-            return None
+            # No group action is being proposed by the local formula here:
+            # either the hand role does not authorize a small-single choice,
+            # or multiple singleton routes already leave the decision open.
+            # Ordinary display representatives remain responsible for those
+            # model choices; only a specific rejected local target adds its
+            # complete blocking relationships below/above.
+            return OpeningFormulaAnalysis()
+        group_routes = self._eligible_natural_group_routes(
+            observation,
+            legal_actions,
+            facts,
+            facts_by_id,
+            actions_by_id,
+            rank_counts,
+            level_rank,
+        )
+        if group_routes is None:
+            return OpeningFormulaAnalysis()
+
+        # Multiple physical realizations of the same semantic group are not
+        # broken by suit or action order; ambiguity remains with the model.
+        # Count all otherwise eligible canonical group routes before applying
+        # relationship checks.  Filtering related alternatives first would
+        # turn display/summary coverage into false proof of uniqueness.
+        if len(group_routes) != 1:
+            representatives = representative_candidate_contrasts(observation, legal_actions)
+            representative_ids = {
+                action_id
+                for contrast in (representatives or ())
+                for action_id in contrast.action_ids
+            }
+            # If the former representative filter would have left one group
+            # route, expose the complete relations that made that apparent
+            # uniqueness unsafe.  Other already-ambiguous model cases keep
+            # the ordinary bounded representative projection.
+            display_unlinked_routes = tuple(
+                fact.action_id for fact in group_routes
+                if fact.action_id not in representative_ids
+            )
+            if len(display_unlinked_routes) == 1:
+                return self._analysis_for_related_actions(
+                    display_unlinked_routes, contrasts, representatives,
+                )
+            return OpeningFormulaAnalysis()
+        selected_group_id = group_routes[0].action_id
+        if any(selected_group_id in contrast.action_ids for contrast in contrasts):
+            representatives = representative_candidate_contrasts(observation, legal_actions)
+            return self._analysis_for_related_actions(
+                (selected_group_id,), contrasts, representatives,
+            )
+        return OpeningFormulaAnalysis(action_id=selected_group_id)
+
+    @staticmethod
+    def _analysis_for_related_actions(
+        action_ids: tuple[int, ...],
+        contrasts: tuple[CandidateContrast, ...],
+        representatives: tuple[CandidateContrast, ...] | None,
+    ) -> OpeningFormulaAnalysis:
+        if representatives is None:
+            return OpeningFormulaAnalysis()
+        represented_ids = {
+            candidate_id
+            for contrast in representatives
+            for candidate_id in contrast.action_ids
+        }
+        target_ids = set(action_ids).difference(represented_ids)
+        if not target_ids:
+            return OpeningFormulaAnalysis()
+        representative_pairs = {
+            (item.kind, item.action_ids) for item in representatives
+        }
+        related: list[CandidateContrast] = []
+        for contrast in contrasts:
+            if (
+                not target_ids.intersection(contrast.action_ids)
+                or (contrast.kind, contrast.action_ids) in representative_pairs
+            ):
+                continue
+            related.append(contrast)
+            if len(related) >= MAX_OPENING_FORMULA_CONTRASTS:
+                break
+        return OpeningFormulaAnalysis(model_contrasts=tuple(related))
+
+    @classmethod
+    def _eligible_natural_group_routes(
+        cls,
+        observation: Mapping[str, object],
+        legal_actions: list[dict[str, object]],
+        facts: tuple[CandidateStructure, ...],
+        facts_by_id: Mapping[int, CandidateStructure],
+        actions_by_id: Mapping[int, Mapping[str, object]],
+        rank_counts: Mapping[str, int],
+        level_rank: str,
+    ) -> tuple[CandidateStructure, ...] | None:
+        """Return all source-shaped natural group routes before relation gating."""
+
         group_routes: list[CandidateStructure] = []
         for fact in facts:
             if (
@@ -254,8 +384,8 @@ class OpeningFormulaStrategy:
                 or not fact.clears_played_rank_groups
             ):
                 continue
-            action = actions_by_id[fact.action_id]
-            carriers = action.get("carrier_cards")
+            action = actions_by_id.get(fact.action_id)
+            carriers = action.get("carrier_cards") if isinstance(action, Mapping) else None
             if not isinstance(carriers, list) or not carriers:
                 return None
             carrier_ranks = {_rank_of(card) for card in carriers}
@@ -266,19 +396,42 @@ class OpeningFormulaStrategy:
                 rank in _CONTROL_RANKS
                 or rank == level_rank
                 or rank_counts.get(rank) != len(carriers)
-                or any(fact.action_id in contrast.action_ids for contrast in contrasts)
-                or not self._has_return_resource_after(
+                or not cls._has_return_resource_after(
                     observation, action, legal_actions, facts_by_id,
                 )
             ):
                 continue
             group_routes.append(fact)
+        return tuple(group_routes)
 
-        # Multiple physical realizations of the same semantic group are not
-        # broken by suit or action order; ambiguity remains with the model.
-        if len(group_routes) != 1:
-            return None
-        return group_routes[0].action_id
+    @staticmethod
+    def _small_single_relationships_are_source_supported(
+        action_id: int,
+        contrasts: tuple[CandidateContrast, ...],
+        facts_by_id: Mapping[int, CandidateStructure],
+    ) -> bool:
+        """Allow only small-single comparisons whose direction has B-tier support."""
+
+        related = [contrast for contrast in contrasts if action_id in contrast.action_ids]
+        for contrast in related:
+            # The B-tier opening principle supports a lowest safe natural
+            # single over a middle-cost natural probe when control resources
+            # remain available.  This relation is explicitly ordered by the
+            # contrast builder, so accept only its cheaper side.
+            if contrast.kind == "natural_single_cost" and contrast.action_ids[0] == action_id:
+                continue
+            # The same B-tier source supports preserving an independently
+            # playable control card instead of spending it on an ordinary
+            # singleton.  Verify the compared route really consumes one.
+            if contrast.kind == "single_control_resource" and contrast.action_ids[0] == action_id:
+                alternative = facts_by_id.get(contrast.action_ids[1])
+                if alternative is not None and alternative.consumes_control_resource:
+                    continue
+            # In particular, wildcard/resource, group, sequence, and any
+            # unrecognized relationship remains a genuine trade-off for the
+            # model; C-tier soft hypotheses never authorize a direct choice.
+            return False
+        return True
 
     @staticmethod
     def _has_return_resource_after(

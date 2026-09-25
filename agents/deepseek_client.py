@@ -14,8 +14,19 @@ import time
 from typing import TYPE_CHECKING, Callable, Protocol
 from urllib import request as urllib_request
 
-from agents.action_structure import CandidateStructure, FreeLeadResidualStructure, representative_candidate_contrasts, select_candidate_structure_representatives, summarize_candidate_contrasts, summarize_candidate_structures, summarize_free_lead_residual_structures
+from agents.action_structure import (
+    CANDIDATE_RELATION_KINDS,
+    CandidateContrast,
+    CandidateStructure,
+    FreeLeadResidualStructure,
+    representative_candidate_contrasts,
+    select_candidate_structure_representatives,
+    summarize_candidate_contrasts,
+    summarize_candidate_structures,
+    summarize_free_lead_residual_structures,
+)
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
+from agents.opening_strategy import MAX_OPENING_FORMULA_CONTRASTS
 
 if TYPE_CHECKING:
     from agents.card_confidence_prompt import CardConfidencePromptPayload
@@ -1083,6 +1094,50 @@ class DeepSeekClient:
         )
 
     @staticmethod
+    def _prompt_candidate_contrasts(
+        observation: dict[str, object],
+        legal_actions: list[dict[str, object]],
+        opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
+    ) -> tuple[CandidateContrast, ...] | None:
+        """Merge bounded, validated local-formula blockers with display contrasts.
+
+        The opening formula evaluates the complete relation set, while the
+        ordinary prompt uses a smaller representative subset. If a complete
+        relation was the reason a local action was deferred, carry that exact
+        canonical contrast into candidate protection and the final prompt.
+        """
+
+        full_contrasts = summarize_candidate_contrasts(observation, legal_actions)
+        representatives = representative_candidate_contrasts(observation, legal_actions)
+        if full_contrasts is None or representatives is None:
+            return None
+        if (
+            type(opening_formula_contrasts) is not tuple
+            or len(opening_formula_contrasts) > MAX_OPENING_FORMULA_CONTRASTS
+            or any(
+                type(item) is not CandidateContrast
+                or item.kind not in CANDIDATE_RELATION_KINDS
+                or type(item.action_ids) is not tuple
+                or len(item.action_ids) != 2
+                or any(type(action_id) is not int for action_id in item.action_ids)
+                or item.action_ids[0] == item.action_ids[1]
+                or item not in full_contrasts
+                for item in opening_formula_contrasts
+            )
+        ):
+            opening_formula_contrasts = ()
+
+        merged: list[CandidateContrast] = []
+        seen: set[tuple[str, tuple[int, int]]] = set()
+        for contrast in (*opening_formula_contrasts, *representatives):
+            key = (contrast.kind, contrast.action_ids)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(contrast)
+        return tuple(merged)
+
+    @staticmethod
     def prepare_prompt_actions(
         legal_actions: list[dict[str, object]],
         *,
@@ -1092,6 +1147,7 @@ class DeepSeekClient:
         phase_context: GamePhaseContext | None = None,
         strategy_recommendation: "StrategyRecommendation | None" = None,
         observation: dict[str, object] | None = None,
+        opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
     ) -> list[dict[str, object]]:
         """Build the one bounded canonical candidate set used by the model.
 
@@ -1106,7 +1162,11 @@ class DeepSeekClient:
         )
         protected_ids = validated.action_ids if validated is not None else ()
         contrasts = (
-            representative_candidate_contrasts(observation, legal_actions)
+            DeepSeekClient._prompt_candidate_contrasts(
+                observation,
+                legal_actions,
+                opening_formula_contrasts,
+            )
             if observation is not None
             else ()
         )
@@ -1438,6 +1498,7 @@ class DeepSeekClient:
         strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None,
         strategy_recommendation: "StrategyRecommendation | None" = None,
         residual_structure_source_actions: list[dict[str, object]] | None = None,
+        opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
     ) -> str:
         """Build the final Step-H structured prompt from public payloads."""
         lines: list[str] = []
@@ -1458,9 +1519,10 @@ class DeepSeekClient:
             if residual_structure_source_actions is not None
             else legal_actions
         )
-        representative_contrasts = representative_candidate_contrasts(
+        representative_contrasts = DeepSeekClient._prompt_candidate_contrasts(
             {"my_info": my_info, "current_round": current_round, "other_players": other_players, "history": history},
             contrast_source_actions,
+            opening_formula_contrasts,
         )
         available_ids = {
             action.get("action_id")
@@ -1902,6 +1964,7 @@ class DeepSeekClient:
         card_confidence_prompt: "CardConfidencePromptPayload | None" = None,
         strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None,
         strategy_recommendation: "StrategyRecommendation | None" = None,
+        opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
     ) -> DeepSeekSuggestion:
         current_round = dict(observation.get("current_round", {}))
         step_no = self._coerce_int(current_round.get("step_no"), default=0)
@@ -1924,6 +1987,7 @@ class DeepSeekClient:
                 phase_context=phase_context,
                 strategy_recommendation=strategy_recommendation,
                 observation=observation,
+                opening_formula_contrasts=opening_formula_contrasts,
             )
         else:
             supplied_actions = self._canonical_subset_actions(
@@ -1941,7 +2005,11 @@ class DeepSeekClient:
                 if validated_recommendation is not None
                 else ()
             )
-            contrasts = representative_candidate_contrasts(observation, legal_actions)
+            contrasts = self._prompt_candidate_contrasts(
+                observation,
+                legal_actions,
+                opening_formula_contrasts,
+            )
             relation_groups = (
                 tuple(item.action_ids for item in contrasts)
                 if contrasts is not None
@@ -1984,6 +2052,7 @@ class DeepSeekClient:
             strategy_intent_prompt=strategy_intent_prompt,
             strategy_recommendation=strategy_recommendation,
             residual_structure_source_actions=legal_actions,
+            opening_formula_contrasts=opening_formula_contrasts,
         )
 
         if verbose:

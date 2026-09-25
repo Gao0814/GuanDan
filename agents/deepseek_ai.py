@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from config import AppConfig
 from agents.base import BaseAgent, require_legal_action_id
+from agents.action_structure import CandidateContrast
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from agents.game_phase import classify_game_phase
 from agents.hand_evaluator import evaluate_hand
@@ -491,14 +492,17 @@ class DeepSeekAIAgent(BaseAgent):
 
         phase_context = classify_game_phase(observation)
         opening_evaluation: dict[str, object] | None = None
+        opening_formula_contrasts: tuple[CandidateContrast, ...] = ()
         if self.opening_formula_enabled:
             opening_evaluation = evaluate_hand(observation, legal_actions)
-            opening_action_id = OpeningFormulaStrategy().select_action(
+            opening_analysis = OpeningFormulaStrategy().analyze_action(
                 observation,
                 legal_actions,
                 opening_evaluation,
                 phase_context=phase_context,
             )
+            opening_action_id = opening_analysis.action_id
+            opening_formula_contrasts = opening_analysis.model_contrasts
             if opening_action_id is not None:
                 chosen = require_legal_action_id(opening_action_id, legal_actions)
                 self.last_decision_source = "local_opening_formula"
@@ -600,6 +604,7 @@ class DeepSeekAIAgent(BaseAgent):
             phase_context=phase_context,
             strategy_recommendation=strategy_recommendation,
             observation=observation,
+            opening_formula_contrasts=opening_formula_contrasts,
         )
 
         history = dict(observation.get("history", {}))
@@ -732,6 +737,8 @@ class DeepSeekAIAgent(BaseAgent):
                 card_confidence_prompt=card_confidence_prompt,
                 strategy_intent_prompt=strategy_intent_prompt,
                 strategy_recommendation=strategy_recommendation,
+                residual_structure_source_actions=legal_actions,
+                opening_formula_contrasts=opening_formula_contrasts,
             )
             payload = {
                 "model": self.client._model,
@@ -775,6 +782,8 @@ class DeepSeekAIAgent(BaseAgent):
                 suggestion_kwargs["strategy_intent_prompt"] = strategy_intent_prompt
             if strategy_recommendation is not None:
                 suggestion_kwargs["strategy_recommendation"] = strategy_recommendation
+            if opening_formula_contrasts:
+                suggestion_kwargs["opening_formula_contrasts"] = opening_formula_contrasts
             suggestion = self.client.suggest_action_id(
                 **suggestion_kwargs,
             )
