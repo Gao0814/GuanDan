@@ -8,7 +8,7 @@
 
 本项目不是完整的多局升级/贡还比赛引擎。当前 Botzone 主线明确限定为四人、需要进贡为否的单局 play 子集。
 
-最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：2026-09-25 的 seed `47005` 单局已形成六份固定 workspace evidence，平台结果为 `platform_error`；另有一个来源未明的空 `D:\VsCodeProject\BotzoneState` 顶层目录待核实。以下早期“当前”措辞均是当时的历史快照，不得作为下一次 live 的 workspace inventory 或建目录指令。
+最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：2026-09-25 的 seed `47005` 单局已形成六份固定 workspace evidence，平台结果为 `platform_error`；`README.md` 的 DeepSeek connector 用法已由 `f8f0e58` 纠正。额外的空 `D:\VsCodeProject\BotzoneState` 目录已按所有者要求单独移入回收站，固定 workspace 旧 evidence 仍保留。下一 Coding 任务是多牌型开局选择，不是新 live。以下早期“当前”措辞均是当时的历史快照，不得作为下一次 live 的 workspace inventory 或建目录指令。
 
 ## 2. Current Repository State
 
