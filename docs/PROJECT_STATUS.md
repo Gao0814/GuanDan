@@ -1,6 +1,9 @@
 # 项目状态看板
 
-## 当前阶段：个人试局启动器离线复审通过，待所有者首次自测；多牌型开局暂停（2026-09-25）
+## 当前阶段：个人试局连接资格未通过，待核对 Botzone 页面配置；多牌型开局暂停（2026-09-25）
+
+- 所有者用个人启动器试运行两次，页面均未显示“已连接”；第二次启动已按设计把第一次的个人证据移入回收站，因此当前只复核第二次。截图中的两行仅为零网络预检通过和前台启动提示，并非连接成功。规划 Codex 对第二次个人目录做只读低敏检查：单个 connector 的 Windows 虚拟环境父子进程于本地 12:47:02 启动，至约 10 分钟墙钟上限自然退出；v8 audit 为普通文件 710 B，SHA-256 `fb865a475e3a2a5714b046aa6cc421a0c6ad25c982d95a2b45bc105f0bd2ec2e`。audit 记录 exit 6、`wall_limit_unfinished`、20 cycles、20 transport timeouts、0 transport failures、0 successful cycles、0 requests/responses/Headers、0 决策、0 模型请求；state 为空，history/trace 不存在，stderr 0 B，运行后无残留 connector。运行中曾见一个到本机回环代理端口的 TCP 连接，但这不证明 Botzone 端到端接纳了 URL。规划复审未读取或输出 URL、密钥、牌面或请求正文，也未改写个人/Codex workspace。
+- 结论仅限**连接资格未证实**：预检只验证 URL 语法、Agent 组合和本地存储，不发 Botzone GET；20 次长轮询超时不能区分页面配置未提交、进程环境中的 URL 与当前账号页面不一致、代理/网络路径或平台状态问题，更不能归因于 DeepSeek 时延或开局公式。官方 Botzone 页面提示使用前在“本地 AI 配置”点击提交；当前等待所有者确认页面是否明确为“未连接”、配置是否已提交并核对本机 URL 与当前账号页面一致（不发送 URL/密钥）。异常证据应保持不动，暂不第三次启动、不建桌，也不派发 Coding 改动；若确认配置无误仍失败，再据新门槛规划连接诊断。
 
 - `0177abc fix: support Windows PowerShell manual launcher` 已修正上一轮发现的单命令入口缺口：新增 `.cmd` 包装器仅为本次 Windows PowerShell 子进程设置执行策略并传递退出码，`.ps1` 加 UTF-8 BOM，README 将唯一推荐命令改为 `.\scripts\run_manual_botzone.cmd`。规划 Codex 独立审阅四文件 diff、文件 BOM、包装器与测试，复跑 PowerShell 7 和 Windows PowerShell 5.1 各 14 组/48 断言、禁用 dotenv 的配置测试 5 项、Botzone CLI `--help` 和 `git show --check`，均通过；5.1 在本机 `LocalMachine=AllSigned` 下通过 scratch 假脚本验证进程级覆盖与退出码 37。未运行真实启动器、预检、connector、模型或网络，个人目录仍不存在。该修复可按离线入口范围封板，但真实首次连接、目录创建和回收站轮换仍需所有者亲自使用时验证。若首次自测发现问题，立即停止下一次启动并保留个人目录供只读复查；企业组策略禁止进程级覆盖时停止，不全局修改策略。当前没有已知离线入口功能缺陷。
 
