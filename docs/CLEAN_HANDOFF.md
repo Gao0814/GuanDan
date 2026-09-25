@@ -8,7 +8,7 @@
 
 本项目不是完整的多局升级/贡还比赛引擎。当前 Botzone 主线明确限定为四人、需要进贡为否的单局 play 子集。
 
-最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：seed `47005` 单局的六份固定 Codex workspace evidence 仍保留，平台结果为 `platform_error`；额外的空 `D:\VsCodeProject\BotzoneState` 已单独回收。规划 Codex 曾从固定 workspace 短时启动同一个 connector，项目所有者确认页面“已连接”；其新 probe artifact 与旧六份证据共存。随后项目所有者刷新页面，确认个人脚本也显示“已连接”，因此暂停两条启动路径的连接差异排查，不把刷新现象当作已证实的网络或代码根因。`61566f1` 已接入多牌型来源和模型前关系，但本地开局从同批 200 局父提交直选 10 局退为 0 局，尚未完成真实初始牌局覆盖验收；下一项完整纠偏 Prompt 见 `docs/NEXT_PROMPT.md`。该算法任务不启动 Botzone 或触碰 Codex/个人 workspace。后续如需 live，必须重新盘点 workspace，不能把此处历史快照当作新 inventory 或建目录指令。
+最新工作状态以 `docs/PROJECT_STATUS.md` 顶部为准：seed `47005` 单局的六份固定 Codex workspace evidence 仍保留，平台结果为 `platform_error`；额外的空 `D:\VsCodeProject\BotzoneState` 已单独回收。规划 Codex 曾从固定 workspace 短时启动同一个 connector，项目所有者确认页面“已连接”；其新 probe artifact 与旧六份证据共存。随后项目所有者刷新页面，确认个人脚本也显示“已连接”，因此暂停两条启动路径的连接差异排查，不把刷新现象当作已证实的网络或代码根因。`8bf8dba` 已恢复原小单覆盖并使真实开局出现对子/三张直选；但开局公式仍把展示代表关系误用为完整取舍门槛，两段 400 局的 31 次直选中有 14 次所选 ID 在完整关系集中仍有对照，尚待修正。直接执行 Prompt 见 `docs/NEXT_PROMPT.md`；该算法任务不启动 Botzone 或触碰 Codex/个人 workspace。后续如需 live，必须重新盘点 workspace，不能把此处历史快照当作新 inventory 或建目录指令。
 
 ## 2. Current Repository State
 
