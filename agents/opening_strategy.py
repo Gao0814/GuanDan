@@ -72,7 +72,7 @@ OPENING_FORMULA_CONDITION_TABLE = (
     (
         "direct_natural_shape",
         "exp_lead_opening_shape_001, exp_lead_opening_weak_001",
-        "任意开局牌力；不存在适用的安全自然单张路线，且在未按关系或展示预算过滤前，完整canonical集合只有一个自然对子/三张完整清理路线；该动作不参与任何已识别完整关系、无拆组/资源损失并保留独立回手资源时可本地直出，否则交模型",
+        "任意开局牌力；不存在适用安全自然单张路线；完整公开自然单张/对子/三张/顺子路线的余组与孤张事实只有一个Pareto非支配路线，且它是完整清理的对子/三张或清除五个独立单张点数组的自然顺子；无拆组/资源损失并保留独立回手时，仅允许严格结构占优的B级组牌/同点自然单张对照或顺子/所含自然单张对照，炸弹、通配、协同、控制或其他未解决关系仍交模型",
     ),
     (
         "model_single_tradeoff",
@@ -145,15 +145,13 @@ def normalize_hand_strength(hand_eval: dict[str, object] | None) -> str:
 class OpeningFormulaStrategy:
     """Apply narrow source-backed openings only when public evidence is decisive.
 
-    B-tier small-single guidance remains specific to strong hands.  Its
+    B-tier small-single guidance remains specific to strong hands. Its
     applicability is checked before ranking: a singleton that participates
-    in a natural multi-card action is not a clean probe candidate.  A natural
-    pair or triple is considered only when no such clean singleton route is
-    available and exactly one route exists in the unfiltered canonical group
-    set.  Local eligibility uses the complete public contrast set, never the
-    smaller prompt representatives.  A small singleton may resolve only the
-    source-supported low-cost-single or control-preservation comparison; any
-    other material relationship remains a model choice.
+    in a natural multi-card action is not a clean probe candidate. A natural
+    group or straight can be selected only when public residual-structure
+    facts give it the unique Pareto-minimal route among clean natural routes,
+    it preserves an independent return, and the complete relation set has no
+    unresolved trade-off. Prompt representatives never affect this decision.
     """
 
     def _is_applicable(
@@ -272,10 +270,10 @@ class OpeningFormulaStrategy:
                     (int(target_id),), contrasts, representatives,
                 )
 
-        # The B-tier structure source supports a clean natural group when no
-        # structure-safe natural singleton route competes with it.  Establish
-        # uniqueness over every otherwise eligible canonical route first; a
-        # relation does not erase an alternative from that comparison.
+        # Compare all source-backed, natural singleton/group/straight routes
+        # on the same public residual facts. The two dimensions are kept
+        # separate: fewer estimated rank groups and fewer residual singletons
+        # must jointly dominate; there is no invented scalar weighting.
         if applicable_singles:
             # No group action is being proposed by the local formula here:
             # either the hand role does not authorize a small-single choice,
@@ -296,24 +294,38 @@ class OpeningFormulaStrategy:
         if group_routes is None:
             return OpeningFormulaAnalysis()
 
-        # Multiple physical realizations of the same semantic group are not
-        # broken by suit or action order; ambiguity remains with the model.
-        # Count all otherwise eligible canonical group routes before applying
-        # relationship checks.  Filtering related alternatives first would
-        # turn display/summary coverage into false proof of uniqueness.
-        if len(group_routes) != 1:
+        straight_routes = self._eligible_natural_straight_routes(
+            observation,
+            legal_actions,
+            facts,
+            facts_by_id,
+            actions_by_id,
+            rank_counts,
+            level_rank,
+        )
+        source_routes = self._eligible_natural_single_routes(
+            observation,
+            legal_actions,
+            facts,
+            facts_by_id,
+            actions_by_id,
+            rank_counts,
+            level_rank,
+        ) + group_routes + straight_routes
+        unique_frontier = self._unique_residual_frontier(source_routes)
+        if unique_frontier is None:
+            # Keep a bounded, complete blocker available to the model when a
+            # natural group route looked unique only after display pruning.
+            # This affects model input only; it never changes local eligibility.
             representatives = representative_candidate_contrasts(observation, legal_actions)
             representative_ids = {
                 action_id
                 for contrast in (representatives or ())
                 for action_id in contrast.action_ids
             }
-            # If the former representative filter would have left one group
-            # route, expose the complete relations that made that apparent
-            # uniqueness unsafe.  Other already-ambiguous model cases keep
-            # the ordinary bounded representative projection.
             display_unlinked_routes = tuple(
-                fact.action_id for fact in group_routes
+                fact.action_id
+                for fact in group_routes
                 if fact.action_id not in representative_ids
             )
             if len(display_unlinked_routes) == 1:
@@ -321,13 +333,261 @@ class OpeningFormulaStrategy:
                     display_unlinked_routes, contrasts, representatives,
                 )
             return OpeningFormulaAnalysis()
-        selected_group_id = group_routes[0].action_id
-        if any(selected_group_id in contrast.action_ids for contrast in contrasts):
+
+        selected_fact = unique_frontier
+        if selected_fact.pattern == "straight":
+            if not self._straight_relations_are_source_supported(
+                selected_fact.action_id,
+                contrasts,
+                actions_by_id,
+            ):
+                representatives = representative_candidate_contrasts(observation, legal_actions)
+                return self._analysis_for_related_actions(
+                    (selected_fact.action_id,), contrasts, representatives,
+                )
+            return OpeningFormulaAnalysis(action_id=selected_fact.action_id)
+
+        if selected_fact.pattern not in {"pair", "triple"}:
+            return OpeningFormulaAnalysis()
+        if selected_fact not in group_routes:
+            return OpeningFormulaAnalysis()
+
+        # The frontier uses the complete clean-route set, never display
+        # representatives. Only a strictly public, B-supported group cleanup
+        # relation may be resolved locally; every other full relation returns
+        # to the model.
+        selected_group_id = selected_fact.action_id
+        if not self._group_relations_are_source_supported(
+            selected_group_id,
+            contrasts,
+            facts_by_id,
+            actions_by_id,
+        ):
             representatives = representative_candidate_contrasts(observation, legal_actions)
             return self._analysis_for_related_actions(
                 (selected_group_id,), contrasts, representatives,
             )
         return OpeningFormulaAnalysis(action_id=selected_group_id)
+
+    @classmethod
+    def _eligible_natural_single_routes(
+        cls,
+        observation: Mapping[str, object],
+        legal_actions: list[dict[str, object]],
+        facts: tuple[CandidateStructure, ...],
+        facts_by_id: Mapping[int, CandidateStructure],
+        actions_by_id: Mapping[int, Mapping[str, object]],
+        rank_counts: Mapping[str, int],
+        level_rank: str,
+    ) -> tuple[CandidateStructure, ...]:
+        routes: list[CandidateStructure] = []
+        for fact in facts:
+            if (
+                fact.pattern != "single"
+                or fact.finishes_hand
+                or fact.uses_wildcard
+                or fact.fragments_played_rank_group
+                or fact.consumes_control_resource
+                or fact.natural_single_rank_value is None
+            ):
+                continue
+            action = actions_by_id.get(fact.action_id)
+            carriers = action.get("carrier_cards") if isinstance(action, Mapping) else None
+            declared = action.get("declared_cards") if isinstance(action, Mapping) else None
+            if (
+                not isinstance(carriers, list)
+                or len(carriers) != 1
+                or not isinstance(declared, list)
+                or len(declared) != 1
+            ):
+                continue
+            rank = _rank_of(str(carriers[0]))
+            declared_rank = _rank_of(str(declared[0]))
+            if (
+                declared_rank != rank
+                or rank_counts.get(rank) != 1
+                or rank in _CONTROL_RANKS
+                or rank == level_rank
+                or not cls._has_return_resource_after(
+                    observation, action, legal_actions, facts_by_id,
+                )
+            ):
+                continue
+            routes.append(fact)
+        return tuple(routes)
+
+    @staticmethod
+    def _unique_residual_frontier(
+        routes: tuple[CandidateStructure, ...],
+    ) -> CandidateStructure | None:
+        """Return a unique Pareto-minimal natural route, without scalar weights."""
+        if not routes:
+            return None
+        frontier = tuple(
+            route
+            for route in routes
+            if not any(
+                other.action_id != route.action_id
+                and other.estimated_remaining_rank_groups
+                <= route.estimated_remaining_rank_groups
+                and other.residual_singleton_rank_count
+                <= route.residual_singleton_rank_count
+                and (
+                    other.estimated_remaining_rank_groups
+                    < route.estimated_remaining_rank_groups
+                    or other.residual_singleton_rank_count
+                    < route.residual_singleton_rank_count
+                )
+                for other in routes
+            )
+        )
+        return frontier[0] if len(frontier) == 1 else None
+
+    @staticmethod
+    def _eligible_natural_straight_routes(
+        observation: Mapping[str, object],
+        legal_actions: list[dict[str, object]],
+        facts: tuple[CandidateStructure, ...],
+        facts_by_id: Mapping[int, CandidateStructure],
+        actions_by_id: Mapping[int, Mapping[str, object]],
+        rank_counts: Mapping[str, int],
+        level_rank: str,
+    ) -> tuple[CandidateStructure, ...]:
+        routes: list[CandidateStructure] = []
+        for fact in facts:
+            if (
+                fact.pattern != "straight"
+                or fact.finishes_hand
+                or fact.uses_wildcard
+                or fact.fragments_played_rank_group
+                or fact.consumes_control_resource
+                or not fact.clears_played_rank_groups
+            ):
+                continue
+            action = actions_by_id.get(fact.action_id)
+            carriers = action.get("carrier_cards") if isinstance(action, Mapping) else None
+            if not isinstance(carriers, list) or len(carriers) != 5:
+                continue
+            ranks = tuple(_rank_of(str(card)) for card in carriers)
+            if (
+                len(set(ranks)) != len(ranks)
+                or any(
+                    rank_counts.get(rank) != 1
+                    or rank in _CONTROL_RANKS
+                    or rank == level_rank
+                    for rank in ranks
+                )
+                or not OpeningFormulaStrategy._has_return_resource_after(
+                    observation, action, legal_actions, facts_by_id,
+                )
+            ):
+                continue
+            routes.append(fact)
+        return tuple(routes)
+
+    @staticmethod
+    def _straight_relations_are_source_supported(
+        action_id: int,
+        contrasts: tuple[CandidateContrast, ...],
+        actions_by_id: Mapping[int, Mapping[str, object]],
+    ) -> bool:
+        """Allow only the B-supported cleanup comparison with its singleton cards."""
+        related = [contrast for contrast in contrasts if action_id in contrast.action_ids]
+        for contrast in related:
+            if (
+                contrast.kind != "natural_sequence_single"
+                or contrast.action_ids[0] != action_id
+            ):
+                return False
+            other_id = contrast.action_ids[1] if contrast.action_ids[0] == action_id else contrast.action_ids[0]
+            other = actions_by_id.get(other_id)
+            carriers = other.get("carrier_cards") if isinstance(other, Mapping) else None
+            if (
+                not isinstance(other, Mapping)
+                or other.get("declared_pattern") != "single"
+                or other.get("wildcard_count") != 0
+                or not isinstance(carriers, list)
+                or len(carriers) != 1
+            ):
+                return False
+        return True
+
+    @staticmethod
+    def _group_relations_are_source_supported(
+        action_id: int,
+        contrasts: tuple[CandidateContrast, ...],
+        facts_by_id: Mapping[int, CandidateStructure],
+        actions_by_id: Mapping[int, Mapping[str, object]],
+    ) -> bool:
+        """Resolve only a strictly structure-dominant natural-group cleanup.
+
+        The B-tier structure principle permits a local choice only when the
+        public residual comparison is uniquely clear. A relation is not by
+        itself a veto, but any resource, sequence-fragment, wildcard, urgency,
+        or reversed/unknown relation remains a model decision.
+        """
+        related = [contrast for contrast in contrasts if action_id in contrast.action_ids]
+        group = facts_by_id.get(action_id)
+        group_action = actions_by_id.get(action_id)
+        if (
+            group is None
+            or group_action is None
+            or group.pattern not in {"pair", "triple"}
+            or not group.clears_played_rank_groups
+            or group.fragments_played_rank_group
+            or group.uses_wildcard
+            or group.consumes_control_resource
+        ):
+            return False
+        carriers = group_action.get("carrier_cards")
+        if (
+            group_action.get("declared_pattern") != group.pattern
+            or group_action.get("wildcard_count") != 0
+            or not isinstance(carriers, list)
+            or len(carriers) != group.carrier_count
+            or len({_rank_of(str(card)) for card in carriers}) != 1
+        ):
+            return False
+
+        for contrast in related:
+            if (
+                contrast.kind not in {"natural_pair_single", "natural_group_single"}
+                or contrast.action_ids[0] != action_id
+            ):
+                return False
+            other_id = contrast.action_ids[1]
+            other = facts_by_id.get(other_id)
+            other_action = actions_by_id.get(other_id)
+            other_carriers = other_action.get("carrier_cards") if other_action is not None else None
+            other_declared = other_action.get("declared_cards") if other_action is not None else None
+            if (
+                other is None
+                or other_action is None
+                or other.pattern != "single"
+                or other.finishes_hand
+                or other.uses_wildcard
+                or other.consumes_control_resource
+                or other_action.get("declared_pattern") != "single"
+                or other_action.get("wildcard_count") != 0
+                or not isinstance(other_carriers, list)
+                or len(other_carriers) != 1
+                or not isinstance(other_declared, list)
+                or len(other_declared) != 1
+            ):
+                return False
+            # A route's estimated groups are an ordering cue, not a promised
+            # exact turn count. Require strict improvement on at least one
+            # structural dimension and no regression on the other.
+            if not (
+                group.estimated_remaining_rank_groups <= other.estimated_remaining_rank_groups
+                and group.residual_singleton_rank_count <= other.residual_singleton_rank_count
+                and (
+                    group.estimated_remaining_rank_groups < other.estimated_remaining_rank_groups
+                    or group.residual_singleton_rank_count < other.residual_singleton_rank_count
+                )
+            ):
+                return False
+        return True
 
     @staticmethod
     def _analysis_for_related_actions(

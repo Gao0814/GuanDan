@@ -123,8 +123,9 @@ def _run_opening_request(
     opening_formula_enabled: bool = True,
     rag_top_k: int = 3,
     strategy_recommendation_enabled: bool = True,
+    selected_candidate_index: int = 0,
 ) -> tuple[DeepSeekAIAgent, _CapturingClient, _CapturingTransport, int]:
-    transport = _CapturingTransport()
+    transport = _CapturingTransport(selected_candidate_index=selected_candidate_index)
     client = _CapturingClient(
         "offline-test-key",
         "https://offline.invalid",
@@ -153,10 +154,11 @@ def _run_factory_opening_request(
     *,
     strategy_recommendation_enabled: bool = True,
     advisor: object | None = None,
+    selected_candidate_index: int = 0,
 ) -> tuple[DeepSeekAIAgent, _CapturingClient, _CapturingTransport, int]:
     """Exercise the production Botzone factory while keeping transport offline."""
 
-    transport = _CapturingTransport()
+    transport = _CapturingTransport(selected_candidate_index=selected_candidate_index)
     created: dict[str, _CapturingClient] = {}
 
     def client_factory(**kwargs: object) -> _CapturingClient:
@@ -189,11 +191,12 @@ def _run_factory_opening_request(
 class _CapturingTransport:
     """Capture the actual production Request and answer with a displayed ID."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, selected_candidate_index: int = 0) -> None:
         self.calls = 0
         self.prompt = ""
         self.candidate_ids: tuple[int, ...] = ()
         self.action_id: int | None = None
+        self.selected_candidate_index = selected_candidate_index
 
     def __call__(self, request: object, _timeout: float) -> str:
         self.calls += 1
@@ -216,7 +219,7 @@ class _CapturingTransport:
         if not rows or any(left != right for left, right in rows):
             raise OSError("offline_candidates_invalid")
         self.candidate_ids = tuple(int(left) for left, _ in rows)
-        self.action_id = self.candidate_ids[0]
+        self.action_id = self.candidate_ids[self.selected_candidate_index]
         response = json.dumps({"action_id": self.action_id}, separators=(",", ":"))
         chunk = json.dumps({"choices": [{"delta": {"content": response}}]})
         return f"data: {chunk}\n\ndata: [DONE]\n"
@@ -416,6 +419,174 @@ class MultiPatternOpeningTests(unittest.TestCase):
         self.assertTrue(
             all(route.action_id in transport.candidate_ids for route in routes or ())
         )
+
+    def test_unique_source_supported_natural_straights_are_real_local_opening_routes(self) -> None:
+        # These are ordinary full 27-card deals from the frozen development
+        # bands, not hand-authored winning hands or production seed rules.
+        for seed in (153, 5087, 5179):
+            with self.subTest(seed_band="development", sample=seed):
+                game = GuanDanGame(seed=seed, current_level_rank="2")
+                observation = game.reset()
+                actions = game.legal_actions()
+                self.assertEqual(observation["my_info"]["hand_count"], 27)
+                self.assertEqual([item["hand_count"] for item in observation["other_players"]], [27, 27, 27])
+                self.assertEqual(observation["current_round"]["step_no"], 0)
+
+                analysis = self.strategy.analyze_action(
+                    observation, actions, evaluate_hand(observation, actions),
+                )
+                self.assertIsNotNone(analysis.action_id)
+                action = next(item for item in actions if item["action_id"] == analysis.action_id)
+                self.assertEqual(action["declared_pattern"], "straight")
+                self.assertEqual(action["wildcard_count"], 0)
+                self.assertEqual(len({_rank for _rank in action["declared_cards"]}), 5)
+
+                facts = summarize_candidate_structures(observation, actions)
+                contrasts = summarize_candidate_contrasts(observation, actions)
+                self.assertIsNotNone(facts)
+                self.assertIsNotNone(contrasts)
+                assert facts is not None and contrasts is not None
+                selected_fact = next(fact for fact in facts if fact.action_id == analysis.action_id)
+                self.assertFalse(selected_fact.fragments_played_rank_group)
+                self.assertFalse(selected_fact.uses_wildcard)
+                self.assertFalse(selected_fact.consumes_control_resource)
+                self.assertTrue(selected_fact.clears_played_rank_groups)
+                related = [item for item in contrasts if selected_fact.action_id in item.action_ids]
+                self.assertTrue(
+                    all(item.kind == "natural_sequence_single" for item in related)
+                )
+                self.assertTrue(
+                    self.strategy._straight_relations_are_source_supported(
+                        selected_fact.action_id,
+                        contrasts,
+                        {int(item["action_id"]): item for item in actions},
+                    )
+                )
+
+                # Prompt display-representative count/order is not an input to
+                # this local eligibility result.
+                with patch(
+                    "agents.opening_strategy.representative_candidate_contrasts",
+                    return_value=(),
+                ):
+                    reordered_display_analysis = self.strategy.analyze_action(
+                        observation, actions, evaluate_hand(observation, actions),
+                    )
+                self.assertEqual(reordered_display_analysis.action_id, analysis.action_id)
+
+    def test_group_relation_needs_public_structure_proof_and_other_conflicts_still_defer(self) -> None:
+        from agents.opening_strategy import _rank_of
+
+        # These deterministic seeds locate ordinary engine-generated examples;
+        # the production rule depends on public facts, not the seed values.
+        for seed, expected_supported in ((58, True), (20115, False)):
+            with self.subTest(sample_class="supported" if expected_supported else "conflicted"):
+                game = GuanDanGame(seed=seed, current_level_rank="2")
+                observation = game.reset()
+                actions = game.legal_actions()
+                facts = summarize_candidate_structures(observation, actions)
+                contrasts = summarize_candidate_contrasts(observation, actions)
+                self.assertIsNotNone(facts)
+                self.assertIsNotNone(contrasts)
+                assert facts is not None and contrasts is not None
+                actions_by_id = {int(item["action_id"]): item for item in actions}
+                facts_by_id = {fact.action_id: fact for fact in facts}
+                rank_counts = Counter(
+                    _rank_of(card) for card in observation["my_info"]["hand_cards"]
+                )
+                group_routes = self.strategy._eligible_natural_group_routes(
+                    observation,
+                    actions,
+                    facts,
+                    facts_by_id,
+                    actions_by_id,
+                    rank_counts,
+                    str(observation["current_round"]["current_level_rank"]),
+                )
+                singles = self.strategy._eligible_natural_single_routes(
+                    observation,
+                    actions,
+                    facts,
+                    facts_by_id,
+                    actions_by_id,
+                    rank_counts,
+                    str(observation["current_round"]["current_level_rank"]),
+                )
+                straights = self.strategy._eligible_natural_straight_routes(
+                    observation,
+                    actions,
+                    facts,
+                    facts_by_id,
+                    actions_by_id,
+                    rank_counts,
+                    str(observation["current_round"]["current_level_rank"]),
+                )
+                winner = self.strategy._unique_residual_frontier(
+                    singles + (group_routes or ()) + straights
+                )
+                self.assertIsNotNone(winner)
+                assert winner is not None
+                self.assertIn(winner.pattern, {"pair", "triple"})
+                supported = self.strategy._group_relations_are_source_supported(
+                    winner.action_id,
+                    contrasts,
+                    facts_by_id,
+                    actions_by_id,
+                )
+                self.assertEqual(supported, expected_supported)
+
+                analysis = self.strategy.analyze_action(
+                    observation, actions, evaluate_hand(observation, actions),
+                )
+                if not expected_supported:
+                    self.assertIsNone(analysis.action_id)
+                else:
+                    # The B-tier strong-hand small-single convention may still
+                    # win its own separate, source-supported comparison.
+                    chosen = next(
+                        item for item in actions if item["action_id"] == analysis.action_id
+                    )
+                    self.assertEqual(chosen["declared_pattern"], "single")
+
+    def test_preregistered_holdout_interval_keeps_formula_fail_closed(self) -> None:
+        counts: Counter[str] = Counter()
+        for seed in range(90000, 90200):
+            game = GuanDanGame(seed=seed, current_level_rank="2")
+            observation = game.reset()
+            actions = game.legal_actions()
+            self.assertEqual(observation["my_info"]["hand_count"], 27)
+            self.assertEqual(
+                [player["hand_count"] for player in observation["other_players"]],
+                [27, 27, 27],
+            )
+            self.assertEqual(observation["current_round"]["step_no"], 0)
+            chosen = self.strategy.select_action(
+                observation, actions, evaluate_hand(observation, actions),
+            )
+            if chosen is None:
+                counts["model"] += 1
+                continue
+            selected = next(item for item in actions if item["action_id"] == chosen)
+            counts[str(selected["declared_pattern"])] += 1
+            self.assertIn(chosen, {item["action_id"] for item in actions})
+            if selected["declared_pattern"] == "single":
+                facts = summarize_candidate_structures(observation, actions)
+                contrasts = summarize_candidate_contrasts(observation, actions)
+                self.assertIsNotNone(facts)
+                self.assertIsNotNone(contrasts)
+                assert facts is not None and contrasts is not None
+                self.assertTrue(
+                    self.strategy._small_single_relationships_are_source_supported(
+                        int(chosen), contrasts, {fact.action_id: fact for fact in facts},
+                    )
+                )
+            else:
+                self.assertEqual(selected["declared_pattern"], "straight")
+
+        self.assertEqual(counts["single"], 5)
+        self.assertEqual(counts["straight"], 0)
+        self.assertEqual(counts["pair"] + counts["triple"], 0)
+        self.assertEqual(counts["model"], 195)
 
     def test_fourteen_omitted_full_relations_reach_actual_bounded_model_request(self) -> None:
         missed = (
@@ -694,6 +865,70 @@ class MultiPatternOpeningTests(unittest.TestCase):
                         )
                     )
         self.assertTrue({"single", "pair", "triple", "straight"}.issubset(covered_patterns))
+
+    def test_dense_full_opening_request_preserves_route_families_and_model_ids(self) -> None:
+        game = GuanDanGame(seed=0, current_level_rank="2")
+        observation = game.reset()
+        actions = game.legal_actions()
+        fixture = ProbeFixture("dense-opening", observation, actions, game_snapshot=game)
+        raw_families = {
+            (str(action["declared_pattern"]), int(action["wildcard_count"]) > 0)
+            for action in actions
+        }
+        self.assertGreater(len(actions), 80)
+
+        observations = []
+        for selection_index in (0, -1):
+            agent, _client, transport, chosen = _run_factory_opening_request(
+                fixture,
+                selected_candidate_index=selection_index,
+            )
+            final_ids = set(transport.candidate_ids)
+            final_actions = [item for item in actions if item["action_id"] in final_ids]
+            final_families = {
+                (str(action["declared_pattern"]), int(action["wildcard_count"]) > 0)
+                for action in final_actions
+            }
+            self.assertEqual(transport.calls, 1)
+            self.assertLessEqual(len(final_ids), 80)
+            self.assertEqual(len(final_ids), len(transport.candidate_ids))
+            self.assertTrue(final_ids.issubset({int(item["action_id"]) for item in actions}))
+            self.assertEqual(chosen, transport.action_id)
+            self.assertIn(chosen, final_ids)
+            self.assertEqual(agent.last_decision_source, "model")
+            recommendation_ids = set(
+                getattr(agent.last_strategy_recommendation, "action_ids", ())
+            )
+            self.assertTrue(recommendation_ids.issubset(final_ids))
+            # Every originally available action family has at least one actual
+            # canonical representative in the final prompt, even under the
+            # 80-item overflow budget.
+            self.assertTrue(raw_families.issubset(final_families))
+            expected_representatives = DeepSeekClient._opening_pattern_representative_ids(
+                observation, actions, classify_game_phase(observation),
+            )
+            self.assertTrue(set(expected_representatives).issubset(final_ids))
+
+            candidate_section = _prompt_section(transport.prompt, "候选动作")
+            displayed_ids = {
+                int(value) for value in re.findall(r"action_id=(\d+)", candidate_section)
+            }
+            self.assertEqual(displayed_ids, final_ids)
+            representative_contrasts = representative_candidate_contrasts(observation, actions) or ()
+            relation_section = _prompt_section(transport.prompt, "公开关系对照")
+            for contrast in representative_contrasts:
+                if set(contrast.action_ids).issubset(final_ids):
+                    self.assertTrue(
+                        any(
+                            all(f"action_id={action_id}" in line for action_id in contrast.action_ids)
+                            for line in relation_section.splitlines()
+                            if "action_id=" in line
+                        )
+                    )
+            observations.append((transport.candidate_ids, chosen))
+
+        self.assertEqual(observations[0][0], observations[1][0])
+        self.assertNotEqual(observations[0][1], observations[1][1])
 
     def test_botzone_factory_top_one_retrieval_keeps_opening_guidance_in_actual_request(self) -> None:
         fixtures = list(build_h3_model_probe_opening_fixtures())
@@ -1181,23 +1416,41 @@ class MultiPatternOpeningTests(unittest.TestCase):
                     )
                 )
             else:
-                self.assertIn(pattern, {"pair", "triple"})
-                self.assertFalse(any(chosen in item.action_ids for item in contrasts))
+                self.assertIn(pattern, {"pair", "triple", "straight"})
                 current_round = observation["current_round"]
-                routes = self.strategy._eligible_natural_group_routes(
-                    observation,
-                    actions,
-                    facts,
-                    {fact.action_id: fact for fact in facts},
-                    {int(item["action_id"]): item for item in actions},
-                    Counter(_rank_of(card) for card in observation["my_info"]["hand_cards"]),
-                    str(current_round["current_level_rank"]),
+                facts_by_id = {fact.action_id: fact for fact in facts}
+                actions_by_id = {int(item["action_id"]): item for item in actions}
+                rank_counts = Counter(_rank_of(card) for card in observation["my_info"]["hand_cards"])
+                group_routes = self.strategy._eligible_natural_group_routes(
+                    observation, actions, facts, facts_by_id, actions_by_id,
+                    rank_counts, str(current_round["current_level_rank"]),
                 )
-                self.assertIsNotNone(routes)
-                self.assertEqual(len(routes or ()), 1)
+                straight_routes = self.strategy._eligible_natural_straight_routes(
+                    observation, actions, facts, facts_by_id, actions_by_id,
+                    rank_counts, str(current_round["current_level_rank"]),
+                )
+                source_routes = self.strategy._eligible_natural_single_routes(
+                    observation, actions, facts, facts_by_id, actions_by_id,
+                    rank_counts, str(current_round["current_level_rank"]),
+                ) + (group_routes or ()) + straight_routes
+                self.assertEqual(
+                    self.strategy._unique_residual_frontier(source_routes).action_id,
+                    chosen,
+                )
+                if pattern == "straight":
+                    self.assertTrue(
+                        self.strategy._straight_relations_are_source_supported(
+                            chosen, contrasts, actions_by_id,
+                        )
+                    )
+                else:
+                    self.assertFalse(any(chosen in item.action_ids for item in contrasts))
+                    self.assertIsNotNone(group_routes)
+                    self.assertIn(next(fact for fact in facts if fact.action_id == chosen), group_routes or ())
 
         self.assertEqual(formula_patterns["single"], 6)
         self.assertEqual(formula_patterns["pair"] + formula_patterns["triple"], 0)
+        self.assertEqual(formula_patterns["straight"], 2)
         self.assertEqual(sum(formula_patterns.values()) + no_direct, state_count)
 
     def test_untuned_independent_initial_deal_interval_keeps_relationship_fail_closed(self) -> None:
@@ -1229,20 +1482,34 @@ class MultiPatternOpeningTests(unittest.TestCase):
                     )
                 )
             else:
-                self.assertIn(pattern, {"pair", "triple"})
-                self.assertFalse(any(chosen in item.action_ids for item in contrasts))
+                self.assertIn(pattern, {"pair", "triple", "straight"})
                 current_round = observation["current_round"]
-                routes = self.strategy._eligible_natural_group_routes(
-                    observation,
-                    actions,
-                    facts,
-                    {fact.action_id: fact for fact in facts},
-                    {int(item["action_id"]): item for item in actions},
-                    Counter(_rank_of(card) for card in observation["my_info"]["hand_cards"]),
-                    str(current_round["current_level_rank"]),
+                actions_by_id = {int(item["action_id"]): item for item in actions}
+                facts_by_id = {fact.action_id: fact for fact in facts}
+                rank_counts = Counter(_rank_of(card) for card in observation["my_info"]["hand_cards"])
+                group_routes = self.strategy._eligible_natural_group_routes(
+                    observation, actions, facts, facts_by_id, actions_by_id,
+                    rank_counts, str(current_round["current_level_rank"]),
                 )
-                self.assertIsNotNone(routes)
-                self.assertEqual(len(routes or ()), 1)
+                straight_routes = self.strategy._eligible_natural_straight_routes(
+                    observation, actions, facts, facts_by_id, actions_by_id,
+                    rank_counts, str(current_round["current_level_rank"]),
+                )
+                source_routes = self.strategy._eligible_natural_single_routes(
+                    observation, actions, facts, facts_by_id, actions_by_id,
+                    rank_counts, str(current_round["current_level_rank"]),
+                ) + (group_routes or ()) + straight_routes
+                winner = self.strategy._unique_residual_frontier(source_routes)
+                self.assertIsNotNone(winner)
+                self.assertEqual(winner.action_id, chosen)
+                if pattern == "straight":
+                    self.assertTrue(self.strategy._straight_relations_are_source_supported(
+                        chosen, contrasts, actions_by_id,
+                    ))
+                else:
+                    self.assertFalse(any(chosen in item.action_ids for item in contrasts))
+                    self.assertIsNotNone(group_routes)
+                    self.assertIn(next(fact for fact in facts if fact.action_id == chosen), group_routes or ())
 
         self.assertEqual(sum(formula_patterns.values()) + no_direct, 200)
 

@@ -606,6 +606,7 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
         def prune(
             actions, _constraint, *, step_no, hand_count, phase_context,
             protected_action_ids=(), protected_relation_groups=(),
+            protected_opening_action_ids=(),
         ):
             events.append("prune")
             return list(actions)

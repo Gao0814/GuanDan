@@ -94,13 +94,13 @@ class H3A9QualityQueueTests(unittest.TestCase):
         self.assertEqual(tuple(sample.source_seed for sample in self.samples), (920, 921, 922, 923, 924, 925))
         self.assertTrue(all(sample.source_seed in H3_A9_SEEDS for sample in self.samples))
         self.assertEqual(len({sample.source_seed for sample in self.samples}), 6)
-        self.assertEqual(tuple(sample.observation["current_round"]["step_no"] for sample in self.samples), (0, 0, 8, 8, 64, 64))  # type: ignore[index]
+        self.assertEqual(tuple(sample.observation["current_round"]["step_no"] for sample in self.samples), (0, 4, 8, 8, 64, 64))  # type: ignore[index]
         self.assertEqual(tuple(sample.phase for sample in self.samples[:2]), ("opening", "opening"))
         self.assertEqual(tuple(sample.phase for sample in self.samples[2:4]), ("midgame", "midgame"))
         self.assertEqual(tuple(sample.phase for sample in self.samples[4:]), ("critical_endgame", "near_open_endgame"))
         self.assertEqual(
             tuple((sample.canonical_candidate_count, sample.final_candidate_count) for sample in self.samples),
-            ((77, 53), (74, 49), (25, 13), (11, 11), (8, 8), (9, 9)),
+            ((77, 53), (3, 3), (25, 13), (11, 11), (8, 8), (9, 9)),
         )
 
     def test_every_sample_replays_from_a_complete_seeded_opening(self) -> None:

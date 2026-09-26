@@ -283,6 +283,48 @@ class TestActionPruning(unittest.TestCase):
         self.assertIn("action_id=1001", candidate_section)
         self.assertIn("action_id=1004", candidate_section)
 
+    def test_opening_route_budget_never_reserves_half_a_relation_pair(self) -> None:
+        finishers = [
+            _action(100 + index, "single", [f"finish-{index}"], [f"finish-{index}S"])
+            for index in range(56)
+        ]
+        recommendation_actions = [
+            _action(200 + index, "triple", [f"rec-{index}"] * 3, [f"rec-{index}S"] * 3)
+            for index in range(3)
+        ]
+        family_actions = [
+            _action(300 + index, "pair", [f"family-{index}"] * 2, [f"family-{index}S"] * 2)
+            for index in range(20)
+        ]
+        relation_actions = [
+            _action(400, "straight", ["3", "4", "5", "6", "7"], ["3S", "4S", "5S", "6S", "7S"]),
+            _action(401, "triple_with_pair", ["8", "8", "8", "9", "9"], ["8S", "8H", "8C", "9S", "9H"]),
+        ]
+        filler = [
+            _action(500 + index, "triple_with_pair", [f"fill-{index}"] * 5, [f"fill-{index}S"] * 5)
+            for index in range(10)
+        ]
+        all_actions = finishers + recommendation_actions + family_actions + relation_actions + filler
+        final = DeepSeekClient._limit_prompt_actions(
+            all_actions,
+            constraint="free",
+            hand_count=1,
+            protected_action_ids=(200, 201, 202),
+            protected_relation_groups=((400, 401),),
+            protected_opening_action_ids=tuple(range(300, 320)),
+        )
+        final_ids = {int(action["action_id"]) for action in final}
+
+        self.assertLessEqual(len(final_ids), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertTrue(set(range(100, 156)).issubset(final_ids))
+        self.assertTrue(set(range(200, 203)).issubset(final_ids))
+        self.assertTrue(set(range(300, 320)).issubset(final_ids))
+        # The relation needs two remaining slots, so neither endpoint is
+        # protected when the bounded opening view has only one slot left.
+        self.assertTrue({400, 401}.isdisjoint(final_ids))
+        signatures = [DeepSeekClient._action_signature(action) for action in final]
+        self.assertEqual(len(signatures), len(set(signatures)))
+
     def test_final_limit_bounds_wildcard_overflow_without_evicting_free_lead_pair(self) -> None:
         legal_actions = [
             _action(1, "single", ["3"], ["3S"]),

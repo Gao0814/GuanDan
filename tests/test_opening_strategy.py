@@ -132,7 +132,7 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
         self.assertIsNone(chosen)
         self.assertEqual((observation, actions), before)
 
-    def test_full_engine_openings_preserve_only_source_resolved_safe_singles(self) -> None:
+    def test_full_engine_openings_preserve_source_resolved_routes(self) -> None:
         from agents.opening_strategy import _CONTROL_RANKS, _rank_of
 
         selected_patterns: Counter[str] = Counter()
@@ -207,9 +207,15 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
                 self.assertNotIn(rank, _CONTROL_RANKS)
                 self.assertNotIn(carriers[0], structured_tokens)
                 self.assertNotEqual(rank, current_round["current_level_rank"])
-            else:
-                self.assertIn(selected_pattern, {"pair", "triple"})
-                self.assertFalse(related)
+            elif selected_pattern in {"pair", "triple"}:
+                self.assertTrue(
+                    self.strategy._group_relations_are_source_supported(
+                        int(selected),
+                        contrasts,
+                        {fact.action_id: fact for fact in facts},
+                        {int(action["action_id"]): action for action in actions},
+                    )
+                )
                 raw_group_routes = self.strategy._eligible_natural_group_routes(
                     observation,
                     actions,
@@ -225,13 +231,26 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
                 carrier_ranks = {_rank_of(card) for card in carriers}
                 self.assertEqual(len(carrier_ranks), 1)
                 self.assertEqual(rank_counts[next(iter(carrier_ranks))], len(carriers))
+            else:
+                self.assertEqual(selected_pattern, "straight")
+                self.assertTrue(
+                    self.strategy._straight_relations_are_source_supported(
+                        int(selected),
+                        contrasts,
+                        {int(action["action_id"]): action for action in actions},
+                    )
+                )
 
         # Complete wildcard/same-rank trade-offs now return to the model; the
         # independently source-resolved safe single routes remain local.
-        self.assertEqual(complete_interval_patterns, Counter({"model": 193, "single": 7}))
+        self.assertEqual(
+            complete_interval_patterns,
+            Counter({"model": 192, "single": 7, "straight": 1}),
+        )
         self.assertEqual(selected_patterns["single"], 7)
         self.assertEqual(selected_patterns["pair"] + selected_patterns["triple"], 0)
-        self.assertEqual(sum(selected_patterns.values()), 7)
+        self.assertEqual(selected_patterns["straight"], 1)
+        self.assertEqual(sum(selected_patterns.values()), 8)
         self.assertGreater(complete_relationship_count, 0)
 
     def test_previously_direct_group_routes_remain_ambiguous_in_full_canonical_set(self) -> None:
@@ -275,13 +294,17 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
                 self.assertTrue(
                     all(route.action_id in prompt_ids for route in routes or ())
                 )
-                self.assertIsNone(
-                    self.strategy.select_action(
-                        observation,
-                        actions,
-                        evaluate_hand(observation, actions),
-                    )
+                selected = self.strategy.select_action(
+                    observation,
+                    actions,
+                    evaluate_hand(observation, actions),
                 )
+                if selected is not None:
+                    selected_action = next(
+                        item for item in actions if item["action_id"] == selected
+                    )
+                    self.assertEqual(selected_action["declared_pattern"], "straight")
+                    self.assertNotIn(selected, {route.action_id for route in routes or ()})
 
     def test_fourteen_previously_unrepresented_full_relationships_are_not_local_choices(self) -> None:
         missed = (

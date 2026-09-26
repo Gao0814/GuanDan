@@ -106,6 +106,7 @@ _RESIDUAL_USE_RELATION_KINDS = frozenset(
 
 # Prompt limits are deliberately centralized so context growth stays auditable.
 PROMPT_MAX_CANDIDATE_ACTIONS = 80
+MAX_OPENING_PATTERN_REPRESENTATIVES = 20
 PROMPT_MAX_ACTION_DISPLAY_CHARS = 96
 PROMPT_MAX_ACTION_CARRIER_CHARS = 160
 PROMPT_MAX_WILDCARD_INFO_CHARS = 160
@@ -643,6 +644,8 @@ class DeepSeekClient:
     def _protected_actions_by_id(
         legal_actions: list[dict[str, object]],
         protected_action_ids: tuple[int, ...],
+        *,
+        max_count: int = 3,
     ) -> tuple[dict[str, object], ...]:
         """Resolve a small, exact canonical protection set or fail closed.
 
@@ -653,9 +656,11 @@ class DeepSeekClient:
         """
         if (
             type(protected_action_ids) is not tuple
-            or len(protected_action_ids) > 3
-            or len(set(protected_action_ids)) != len(protected_action_ids)
+            or type(max_count) is not int
+            or max_count < 0
+            or len(protected_action_ids) > max_count
             or any(type(action_id) is not int for action_id in protected_action_ids)
+            or len(set(protected_action_ids)) != len(protected_action_ids)
         ):
             return ()
         by_id: dict[int, dict[str, object]] = {}
@@ -733,6 +738,7 @@ class DeepSeekClient:
         canonical_actions: list[dict[str, object]],
         protected_action_ids: tuple[int, ...],
         protected_relation_groups: tuple[tuple[int, int], ...] = (),
+        protected_opening_action_ids: tuple[int, ...] = (),
     ) -> list[dict[str, object]]:
         """Keep protected original actions through an unbounded first pass."""
         protected = DeepSeekClient._protected_actions_by_id(
@@ -743,8 +749,13 @@ class DeepSeekClient:
             canonical_actions,
             protected_relation_groups,
         )
-        protected_actions = list(protected) + [
-            action for action in relation_actions if action not in protected
+        opening_actions = DeepSeekClient._protected_actions_by_id(
+            canonical_actions,
+            protected_opening_action_ids,
+            max_count=MAX_OPENING_PATTERN_REPRESENTATIVES,
+        )
+        protected_actions = list(protected) + list(opening_actions) + [
+            action for action in relation_actions if action not in protected and action not in opening_actions
         ]
         if not protected_actions:
             return actions
@@ -807,6 +818,91 @@ class DeepSeekClient:
         if DeepSeekClient._is_pass_action(action):
             return False
         return len(list(action.get("carrier_cards", []))) == hand_count
+
+    @staticmethod
+    def _opening_pattern_representative_ids(
+        observation: object,
+        legal_actions: list[dict[str, object]],
+        phase_context: GamePhaseContext | None = None,
+    ) -> tuple[int, ...]:
+        """Choose one stable public representative per opening pattern/resource family.
+
+        This only preserves real canonical alternatives in the model's bounded
+        view. It does not evaluate or select the action for play.
+        """
+        if not isinstance(observation, dict):
+            return ()
+        current_round = observation.get("current_round")
+        if not isinstance(current_round, dict):
+            return ()
+        try:
+            context = phase_context or classify_game_phase(observation)
+        except Exception:
+            return ()
+        if (
+            not isinstance(context, GamePhaseContext)
+            or context.phase != "opening"
+            or current_round.get("constraint") != "free"
+            or current_round.get("table_action") is not None
+        ):
+            return ()
+        facts = summarize_candidate_structures(observation, legal_actions)
+        if facts is None:
+            return ()
+        actions_by_id: dict[int, dict[str, object]] = {}
+        for action in legal_actions:
+            if not isinstance(action, dict) or type(action.get("action_id")) is not int:
+                return ()
+            action_id = int(action["action_id"])
+            if action_id in actions_by_id:
+                return ()
+            actions_by_id[action_id] = action
+        if any(fact.action_id not in actions_by_id for fact in facts):
+            return ()
+
+        pattern_order = (
+            "single", "pair", "triple", "straight", "triple_with_pair",
+            "pair_straight", "steel_plate", "bomb", "straight_flush", "joker_bomb",
+        )
+        by_family: dict[tuple[str, bool], list[CandidateStructure]] = {}
+        for fact in facts:
+            if fact.pattern not in pattern_order:
+                continue
+            by_family.setdefault((fact.pattern, fact.uses_wildcard), []).append(fact)
+
+        def representative_key(fact: CandidateStructure) -> tuple[object, ...]:
+            action = actions_by_id[fact.action_id]
+            declared = action.get("declared_cards")
+            carriers = action.get("carrier_cards")
+            declared_ranks = tuple(sorted(
+                (_RANK_ORDER.get(_rank_of(str(card)), 0) for card in declared)
+            )) if isinstance(declared, list) else ()
+            carrier_ranks = tuple(sorted(
+                (_RANK_ORDER.get(_rank_of(str(card)), 0) for card in carriers)
+            )) if isinstance(carriers, list) else ()
+            # Prefer an intact, natural, structurally compact example; ranks
+            # and the final canonical ID only stabilize equivalent display
+            # representatives and never select the play itself.
+            return (
+                fact.finishes_hand,
+                fact.fragments_played_rank_group,
+                fact.consumes_control_resource,
+                fact.estimated_remaining_rank_groups,
+                fact.residual_singleton_rank_count,
+                declared_ranks,
+                carrier_ranks,
+                fact.action_id,
+            )
+
+        selected: list[int] = []
+        for pattern in pattern_order:
+            for uses_wildcard in (False, True):
+                family = by_family.get((pattern, uses_wildcard), ())
+                if family:
+                    selected.append(int(min(family, key=representative_key).action_id))
+        if len(selected) > MAX_OPENING_PATTERN_REPRESENTATIVES:
+            return ()
+        return tuple(selected)
 
     @staticmethod
     def _has_wildcard(action: dict[str, object]) -> bool:
@@ -960,6 +1056,7 @@ class DeepSeekClient:
         hand_count: int | None,
         protected_action_ids: tuple[int, ...] = (),
         protected_relation_groups: tuple[tuple[int, int], ...] = (),
+        protected_opening_action_ids: tuple[int, ...] = (),
     ) -> list[dict[str, object]]:
         """Return a bounded, representative prompt view of canonical actions.
 
@@ -978,12 +1075,18 @@ class DeepSeekClient:
             actions,
             protected_action_ids,
         )
+        opening_actions = DeepSeekClient._protected_actions_by_id(
+            actions,
+            protected_opening_action_ids,
+            max_count=MAX_OPENING_PATTERN_REPRESENTATIVES,
+        )
         relation_actions = DeepSeekClient._relation_actions_by_groups(
             actions,
             protected_relation_groups,
         )
-        protected_display_actions = list(protected_actions) + [
-            action for action in relation_actions if action not in protected_actions
+        protected_display_actions = list(protected_actions) + list(opening_actions) + [
+            action for action in relation_actions
+            if action not in protected_actions and action not in opening_actions
         ]
         unique_actions = DeepSeekClient._prefer_protected_actions(
             actions,
@@ -998,9 +1101,38 @@ class DeepSeekClient:
             if len(selected) < PROMPT_MAX_CANDIDATE_ACTIONS:
                 selected.add(DeepSeekClient._action_signature(action))
 
+        def add_category(predicate: Callable[[dict[str, object]], bool]) -> None:
+            for action in sorted(unique_actions, key=DeepSeekClient._prune_sort_key):
+                if len(selected) >= PROMPT_MAX_CANDIDATE_ACTIONS:
+                    return
+                if predicate(action):
+                    reserve(action)
+
+        def reserve_relation_group(group: tuple[int, int]) -> None:
+            group_actions = DeepSeekClient._relation_actions_by_groups(unique_actions, (group,))
+            if len(group_actions) != 2:
+                return
+            signatures = tuple(DeepSeekClient._action_signature(action) for action in group_actions)
+            if len(set(signatures)) != 2:
+                return
+            missing = {signature for signature in signatures if signature not in selected}
+            if len(selected) + len(missing) <= PROMPT_MAX_CANDIDATE_ACTIONS:
+                selected.update(signatures)
+
         # Keep the first-pass transition recall meaningful in the final prompt.
         # These are representatives, not a new legality or strategy selector.
         if constraint == "free":
+            if protected_opening_action_ids:
+                # Full-deal opening family representation is part of this
+                # branch; immediate finishes remain first, then valid advice,
+                # one route per family, and only then complete relation pairs.
+                add_category(lambda action: DeepSeekClient._is_finishing_action(action, hand_count))
+                for action in protected_actions:
+                    reserve(action)
+                for action in opening_actions:
+                    reserve(action)
+                for group in protected_relation_groups:
+                    reserve_relation_group(group)
             natural_singles = sorted(
                 [
                     action
@@ -1023,6 +1155,13 @@ class DeepSeekClient:
                 reserve(natural_singles[0])
             if natural_pairs:
                 reserve(natural_pairs[0])
+            if not protected_opening_action_ids:
+                # Outside full-deal openings, preserve the established order:
+                # minimum natural lead representatives precede advice/relations.
+                for action in protected_actions:
+                    reserve(action)
+                for group in protected_relation_groups:
+                    reserve_relation_group(group)
         else:
             passes = sorted(
                 [action for action in unique_actions if DeepSeekClient._is_pass_action(action)],
@@ -1030,20 +1169,10 @@ class DeepSeekClient:
             )
             if passes:
                 reserve(passes[0])
-
-        # A validated model-before recommendation names at most three original
-        # canonical actions.  Reserve those exact IDs before the established
-        # bounded category fill, without changing the overall 80-action cap.
-        # This is a candidate-visibility guarantee, not an action selector.
-        for action in protected_display_actions:
-            reserve(action)
-
-        def add_category(predicate: Callable[[dict[str, object]], bool]) -> None:
-            for action in sorted(unique_actions, key=DeepSeekClient._prune_sort_key):
-                if len(selected) >= PROMPT_MAX_CANDIDATE_ACTIONS:
-                    return
-                if predicate(action):
-                    reserve(action)
+            for action in protected_actions:
+                reserve(action)
+            for group in protected_relation_groups:
+                reserve_relation_group(group)
 
         # The predicates are mutually exclusive so each slot has one auditable
         # priority.  Representatives reserved above remain protected.
@@ -1145,6 +1274,7 @@ class DeepSeekClient:
         phase_context: GamePhaseContext | None = None,
         protected_action_ids: tuple[int, ...] = (),
         protected_relation_groups: tuple[tuple[int, int], ...] = (),
+        protected_opening_action_ids: tuple[int, ...] = (),
     ) -> list[dict[str, object]]:
         """Prune redundant actions to reduce context size for the model.
 
@@ -1177,6 +1307,7 @@ class DeepSeekClient:
             legal_actions,
             protected_action_ids,
             protected_relation_groups,
+            protected_opening_action_ids,
         )
 
     @staticmethod
@@ -1261,6 +1392,11 @@ class DeepSeekClient:
             if contrasts is not None
             else ()
         )
+        protected_opening_action_ids = DeepSeekClient._opening_pattern_representative_ids(
+            observation,
+            legal_actions,
+            phase_context,
+        ) if observation is not None else ()
         first_pass = DeepSeekClient._prune_legal_actions(
             legal_actions,
             constraint,
@@ -1269,6 +1405,7 @@ class DeepSeekClient:
             phase_context=phase_context,
             protected_action_ids=protected_ids,
             protected_relation_groups=protected_relation_groups,
+            protected_opening_action_ids=protected_opening_action_ids,
         )
         return DeepSeekClient._limit_prompt_actions(
             first_pass,
@@ -1276,6 +1413,7 @@ class DeepSeekClient:
             hand_count=hand_count,
             protected_action_ids=protected_ids,
             protected_relation_groups=protected_relation_groups,
+            protected_opening_action_ids=protected_opening_action_ids,
         )
 
     @staticmethod
@@ -2239,9 +2377,19 @@ class DeepSeekClient:
                 if contrasts is not None
                 else ()
             )
+            opening_route_ids = self._opening_pattern_representative_ids(
+                observation,
+                legal_actions,
+                phase_context,
+            )
             protected_actions = self._protected_actions_by_id(
                 legal_actions,
                 protected_ids,
+            )
+            opening_route_actions = self._protected_actions_by_id(
+                legal_actions,
+                opening_route_ids,
+                max_count=MAX_OPENING_PATTERN_REPRESENTATIVES,
             )
             relation_actions = self._relation_actions_by_groups(legal_actions, relation_groups)
             present_ids = {int(action["action_id"]) for action in supplied_actions}
@@ -2250,6 +2398,11 @@ class DeepSeekClient:
                 if int(action["action_id"]) not in present_ids
             ]
             present_ids.update(int(action["action_id"]) for action in protected_actions)
+            candidate_actions.extend([
+                action for action in opening_route_actions
+                if int(action["action_id"]) not in present_ids
+            ])
+            present_ids.update(int(action["action_id"]) for action in opening_route_actions)
             candidate_actions.extend([
                 action for action in relation_actions
                 if int(action["action_id"]) not in present_ids
@@ -2260,6 +2413,7 @@ class DeepSeekClient:
                 hand_count=hand_count,
                 protected_action_ids=protected_ids,
                 protected_relation_groups=relation_groups,
+                protected_opening_action_ids=opening_route_ids,
             )
 
         user_message = self._build_structured_prompt(
