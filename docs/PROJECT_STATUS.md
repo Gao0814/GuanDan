@@ -1,6 +1,12 @@
 # 项目状态看板
 
-## 当前阶段：流式边界已复审，准备个人单局验收（2026-09-26）
+## 当前阶段：个人单局异常只读复审完成，平台中止根因未定（2026-09-26）
+
+- 项目所有者报告个人试局在一段时间不出牌后因页面“未知错误”中止。规划 Codex 只读核对 `D:\VsCodeProject\GuanDanManualWorkspace` 的归属标记、普通非链接属性、限定 inventory 与无运行中项目 connector；未启动下一局、清理或改写证据。当前六份运行文件为 audit 737 B / SHA-256 `bb2804ea9d8cff15a249fcb62613c2f6975380dff579057a593d5fba9ea67318`、ACK trace 59799 B / `127946cfa7a5fa1893c32ffb53f48184cb666d644a6abfd1b716036a325e76d8`、history 3244 B / `0d4ed86e58c57763e55cb6e95615ca8126cd99008823fe4cc01e7c2aca0b4877`、finished state 115 B / `8e9f0f9a6d5814b4b034c7b5bd8494f0646e9368080fcf36f42969913bcf7872`、stdout 154 B / `2e8483c80d19454ff231610a31e13c7bcc0b723ce7b773f27a19a5aa97787578`、stderr 0 B / 空文件标准哈希；归属标记 52 B，未修改。
+- v8 audit 为 exit 0 / `finished_target`，7 cycles、6/6/6 request/response/Header、1 次合格 finished；传输失败/超时与诊断项均为 0。DeepSeek 5 次 attempt 均 success、0 fallback，5 条 ACK trace 连续且各自选择唯一合法候选，source 均为 `model`；history 本家动作数 5、history/trace 写入状态均 `ok`，v4 finished tombstone 与 audit token 一致。这排除了本局“从未连接或从未出牌”、可见传输错误、非法 action ID 和本地未确认动作导致中止的直接证据，但不能证明页面每一次出牌展示都及时。
+- 唯一终局聚合分类为 `platform_error`，正常胜负数 0；history 标记 `terminal_tail_may_be_unobserved`。当前证据没有每次模型调用/提交/平台确认的时间戳、平台错误细节或其他玩家行为，所以不能确定错误由 DeepSeek 时延、本地 connector、Botzone 平台或其他席位触发；与旧 seed `47005` 的同类聚合结果也不构成同根因证明。当前判定为 `inconclusive: platform_error_trigger_unknown`，不授权凭猜测修改开局策略、模型参数或 connector。个人目录在项目所有者决定不再复查前必须保留，不能再启动会轮换它的个人脚本。下一步优先收集本局页面错误原文/截图及大致停顿时长；若无可追溯页面信息而仍要继续定位，再单独规划不保存私密文本的分段时延观测，不能从现有 audit 倒推出模型超时。当前没有已证实的生产缺陷或待派发的 Coding 修复 Prompt。
+
+以下较早的“准备个人单局验收”是执行前快照，不覆盖上述复审结论。
 
 - `d0cd02b fix: consume DeepSeek SSE through terminal event` 仅改 DeepSeek 客户端和对应测试，提交后工作树 clean。规划 Codex 独立核对完整 diff 与 [DeepSeek Chat Completions 官方文档](https://api-docs.deepseek.com/api/create-chat-completion/)：该接口用 `data: [DONE]` 终止流；新客户端逐行读取、在终止后关闭响应，缺失终止事件时 fail closed，不会因早期可解析 JSON 提前选动作。规划复跑有效定向 55 项、主规则 39 项、全量 842 项均通过；第一次定向命令误写了不存在的测试模块，已按实际模块名重跑，不计作代码失败。Coding 报告的六次真实请求均 success、零重试；规划未复发模型请求，单点时延不构成提速证明。基线 JSON 完整约 22–79 秒、`[DONE]` 到 EOF 至多 16 毫秒，说明主要等待不在收尾读取；新版仍约 20–42 秒才完成，当前范围内的可用性风险是模型生成时间波动，且 reasoning/content 累积尚无硬内存上限。seed `47005` 的 `platform_error` 仍未被证实由时延引起。下一步不是继续改毫秒级收尾或盲目降低模型推理，而是项目所有者在无待保留个人证据的前提下运行一次现有个人启动器；若有异常立即保留该局目录，按 `docs/NEXT_PROMPT.md` 做只读复审，若无异常不新增诊断任务。
 
