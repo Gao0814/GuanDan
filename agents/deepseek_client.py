@@ -385,31 +385,54 @@ class DeepSeekClient:
         action: dict[str, object],
         current_level_rank: str,
         residual_structure: FreeLeadResidualStructure | None = None,
+        *,
+        compact_opening: bool = False,
     ) -> str:
         action_id = action.get("action_id")
-        brief = DeepSeekClient._compact_action_text(
-            action,
-            current_level_rank,
-            str(action.get("declared_pattern", "")) == "straight_flush",
-        )
         pattern = str(action.get("declared_pattern", ""))
         wildcard_count = DeepSeekClient._coerce_int(action.get("wildcard_count"), default=0)
-        display_text = DeepSeekClient._bounded_text(
-            str(action.get("display_text", brief)),
-            PROMPT_MAX_ACTION_DISPLAY_CHARS,
-        )
         carrier_text = DeepSeekClient._bounded_text(
             DeepSeekClient._compact_json(action.get("carrier_cards", [])),
             PROMPT_MAX_ACTION_CARRIER_CHARS,
         )
         action_id_text = DeepSeekClient._compact_json(action_id)
-        fields = [
-            f"action_id={action_id_text}",
-            f"display={display_text}",
-            f"declared_pattern={pattern}",
-            f"carrier_cards={carrier_text}",
-            f"wildcard_count={wildcard_count}",
-        ]
+        if compact_opening:
+            # Opening candidates are already printed in canonical order. The
+            # engine display repeats the carrier and pattern, so keep the
+            # structured fields and omit that duplicate prose. A wildcard
+            # declaration is retained explicitly because its declared cards
+            # need not match its physical carriers.
+            fields = [
+                f"action_id={action_id_text}",
+                f"pattern={pattern}",
+                f"carrier_cards={carrier_text}",
+            ]
+            if wildcard_count:
+                fields.append(
+                    "declared_cards="
+                    + DeepSeekClient._bounded_text(
+                        DeepSeekClient._compact_json(action.get("declared_cards", [])),
+                        PROMPT_MAX_ACTION_CARRIER_CHARS,
+                    )
+                )
+            fields.append(f"wildcard_count={wildcard_count}")
+        else:
+            brief = DeepSeekClient._compact_action_text(
+                action,
+                current_level_rank,
+                pattern == "straight_flush",
+            )
+            display_text = DeepSeekClient._bounded_text(
+                str(action.get("display_text", brief)),
+                PROMPT_MAX_ACTION_DISPLAY_CHARS,
+            )
+            fields = [
+                f"action_id={action_id_text}",
+                f"display={display_text}",
+                f"declared_pattern={pattern}",
+                f"carrier_cards={carrier_text}",
+                f"wildcard_count={wildcard_count}",
+            ]
         wildcard_info = action.get("wildcard_info", [])
         if wildcard_info:
             fields.append(
@@ -420,13 +443,21 @@ class DeepSeekClient:
                 )
             )
         if residual_structure is not None:
-            clears = "是" if residual_structure.clears_played_rank_groups else "否"
-            fields.append(
-                "残余结构="
-                f"清空所出点数组:{clears},"
-                f"残余孤张点数:{residual_structure.residual_singleton_rank_count},"
-                f"估计剩余点数组:{residual_structure.estimated_remaining_rank_groups}"
-            )
+            if compact_opening:
+                fields.append(
+                    "after=clear_groups:"
+                    f"{str(residual_structure.clears_played_rank_groups).lower()},"
+                    f"singletons:{residual_structure.residual_singleton_rank_count},"
+                    f"groups_est:{residual_structure.estimated_remaining_rank_groups}"
+                )
+            else:
+                clears = "是" if residual_structure.clears_played_rank_groups else "否"
+                fields.append(
+                    "残余结构="
+                    f"清空所出点数组:{clears},"
+                    f"残余孤张点数:{residual_structure.residual_singleton_rank_count},"
+                    f"估计剩余点数组:{residual_structure.estimated_remaining_rank_groups}"
+                )
         prefix = f"#{action_id} " if action_id is not None else ""
         return prefix + " | ".join(fields)
 
@@ -806,6 +837,7 @@ class DeepSeekClient:
         hand_count: int | None,
         current_level_rank: str,
         residual_structures: dict[int, FreeLeadResidualStructure] | None = None,
+        compact_opening: bool = False,
     ) -> list[str]:
         scene = "lead" if constraint == "free" else "follow"
         buckets: dict[str, list[dict[str, object]]] = {
@@ -860,6 +892,7 @@ class DeepSeekClient:
                         action,
                         current_level_rank,
                         residual_structure,
+                        compact_opening=compact_opening,
                     )
                 )
             lines.append(f"{label}：{'、'.join(items)}")
@@ -1339,7 +1372,7 @@ class DeepSeekClient:
         ):
             return None
 
-        has_opening_evidence = False
+        has_opening_source_principle = False
         for item in DeepSeekClient._rag_items(rag_context, "experience_hits"):
             metadata = item.get("metadata")
             if not isinstance(metadata, dict):
@@ -1351,12 +1384,12 @@ class DeepSeekClient:
                 else set()
             )
             if (
-                metadata.get("guidance_mode") in {"source_principle", "soft_hypothesis"}
+                metadata.get("guidance_mode") == "source_principle"
                 and "opening_free_lead" in domain_values
             ):
-                has_opening_evidence = True
+                has_opening_source_principle = True
                 break
-        if not has_opening_evidence:
+        if not has_opening_source_principle:
             return None
 
         pattern_labels = {
@@ -1950,6 +1983,12 @@ class DeepSeekClient:
                 hand_count=hand_count,
                 current_level_rank=current_level_rank,
                 residual_structures=residual_structures,
+                compact_opening=(
+                    constraint == "free"
+                    and table_action is None
+                    and phase_context is not None
+                    and phase_context.phase == "opening"
+                ),
             )
         )
         if candidate_facts is not None:

@@ -556,7 +556,7 @@ class RAGAdvisor:
             return ()
 
         desired_topics = self._topics_from_scene_tags(scene_tags)
-        candidates: list[tuple[int, float, int, KnowledgeDocument, bool]] = []
+        candidates: list[tuple[int, float, int, KnowledgeDocument, bool, bool]] = []
         active_relations = self._metadata_values(scene_tags, "candidate_relation_kinds")
         opening_free_lead = (
             layer == "experience"
@@ -588,32 +588,67 @@ class RAGAdvisor:
                     exact_relations.add("bomb_strength_resource")
                 if "bomb_residual" in active_relations:
                     exact_relations.add("bomb_residual")
-            # In an opening free lead, reserve one top slot for an applicable
-            # source principle so top_k=1 (the production factory default)
-            # still has an authored opening basis. Remaining slots retain the
-            # normal relationship/score order, so this does not crowd out all
-            # matching soft hypotheses at larger top_k values. This only
-            # reorders already-admitted semantic candidates; provenance never
-            # participates.
+            # In an opening free lead, reserve the ordinary first slot for an
+            # applicable source principle. A conditional soft hypothesis is
+            # eligible for the companion slot only when its canonical public
+            # prerequisite and a matching relation are both present. At
+            # top_k=1 this adds at most one experience hit; larger budgets
+            # remain bounded by top_k. Provenance never participates.
             is_opening_source_principle = (
                 opening_free_lead
                 and doc.metadata.get("guidance_mode") == "source_principle"
                 and "opening_free_lead"
                 in self._metadata_values(doc.metadata, "strategy_domain")
             )
-            candidates.append((0 if exact_relations else 1, -score, idx, doc, is_opening_source_principle))
+            is_conditioned_opening_soft_hypothesis = (
+                opening_free_lead
+                and doc.metadata.get("guidance_mode") == "soft_hypothesis"
+                and bool(document_requirements)
+                and bool(exact_relations)
+            )
+            candidates.append(
+                (
+                    0 if exact_relations else 1,
+                    -score,
+                    idx,
+                    doc,
+                    is_opening_source_principle,
+                    is_conditioned_opening_soft_hypothesis,
+                )
+            )
 
         candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+        selected_candidates = candidates[:top_k]
         if opening_free_lead:
             source_index = next(
                 (index for index, item in enumerate(candidates) if item[4]),
                 None,
             )
-            if source_index is not None and source_index > 0:
-                candidates.insert(0, candidates.pop(source_index))
+            if source_index is not None:
+                source_candidate = candidates[source_index]
+                soft_candidate = next(
+                    (item for item in candidates if item[5]),
+                    None,
+                )
+                reserved = [source_candidate]
+                if soft_candidate is not None and soft_candidate[2] != source_candidate[2]:
+                    reserved.append(soft_candidate)
+                # The ordinary top-k remains unchanged. An applicable opening
+                # source principle may reserve one additional, relation-gated
+                # soft-hypothesis slot when top_k=1; for larger budgets both
+                # fit inside the existing budget. No provenance field affects
+                # eligibility, rank, or selection.
+                selected_candidates = list(reserved)
+                selected_indexes = {item[2] for item in reserved}
+                desired_count = max(top_k, len(selected_candidates))
+                selected_candidates.extend(
+                    item for item in candidates
+                    if item[2] not in selected_indexes
+                )
+                selected_candidates = selected_candidates[:desired_count]
 
         evidence: list[RAGEvidence] = []
-        for _, negative_score, _, doc, _ in candidates[:top_k]:
+        for _, negative_score, _, doc, _, _ in selected_candidates:
             score = -negative_score
             metadata = dict(doc.metadata)
             metadata.update(

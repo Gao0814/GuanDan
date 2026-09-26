@@ -238,6 +238,30 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
         self.assertIn("wildcard_count=0", prompt)
         self.assertIn("display=single:9", prompt)
 
+    def test_compact_opening_candidate_keeps_wildcard_declaration_without_duplicate_display(self) -> None:
+        entry = DeepSeekClient._action_summary_entry(
+            _action(
+                8,
+                "pair",
+                ["9", "9"],
+                ["9S", "2H"],
+                wildcard_count=1,
+                wildcard_info=[{"carrier_card": "2H", "declared_as": "9"}],
+                display_text="verbose display is redundant",
+            ),
+            "2",
+            compact_opening=True,
+        )
+
+        self.assertIn("#8 action_id=8", entry)
+        self.assertIn("pattern=pair", entry)
+        self.assertIn('carrier_cards=["9S","2H"]', entry)
+        self.assertIn('declared_cards=["9","9"]', entry)
+        self.assertIn("wildcard_count=1", entry)
+        self.assertIn('wildcard_info=[{"carrier_card":"2H","declared_as":"9"}]', entry)
+        self.assertNotIn("display=", entry)
+        self.assertNotIn("verbose display", entry)
+
     def test_prompt_forbids_constructing_illegal_actions(self) -> None:
         prompt = DeepSeekClient._build_structured_prompt(
             my_info=_observation()["my_info"],

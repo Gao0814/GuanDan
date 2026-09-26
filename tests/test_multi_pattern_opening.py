@@ -102,6 +102,20 @@ def _opening_advisor() -> RAGAdvisor:
     return RAGAdvisor(KnowledgeRetriever(KnowledgeBaseLoader(rag_root).load_all_documents()))
 
 
+def _prompt_section(prompt: str, heading: str) -> str:
+    lines = prompt.splitlines()
+    start = lines.index(f"【{heading}】")
+    end = next(
+        (
+            index
+            for index in range(start + 1, len(lines))
+            if lines[index].startswith("【") and lines[index].endswith("】")
+        ),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
+
+
 def _run_opening_request(
     fixture: ProbeFixture,
     *,
@@ -569,9 +583,9 @@ class MultiPatternOpeningTests(unittest.TestCase):
             )
         )
         expected = {
-            "low_cost_single": (53, 23, 9882),
-            "neutral_soft_pair": (83, 51, 15233),
-            "seed29": (80, 50, 15680),
+            "low_cost_single": (53, 23, 9882, "exp_soft_single_cost_probe_001"),
+            "neutral_soft_pair": (83, 51, 15233, "exp_soft_pair_probe_001"),
+            "seed29": (80, 50, 15680, "exp_soft_pair_probe_001"),
         }
         covered_patterns: set[str] = set()
         for fixture in fixtures:
@@ -582,7 +596,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 prompt = transport.prompt
                 self.assertIsNotNone(prompt)
                 assert prompt is not None
-                canonical_count, final_count, baseline_chars = expected[fixture.name]
+                canonical_count, final_count, baseline_chars, expected_soft_id = expected[fixture.name]
                 final_ids = set(transport.candidate_ids)
                 raw_ids = {item["action_id"] for item in fixture.legal_actions}
                 final_actions = [
@@ -597,6 +611,13 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 experience_hits = rag_context.get("experience_hits")
                 self.assertIsInstance(experience_hits, list)
                 assert isinstance(experience_hits, list)
+                self.assertEqual(len(experience_hits), 3)
+                self.assertEqual(agent.rag_top_k, 3)
+                experience_hit_ids = {
+                    hit.get("source_id") for hit in experience_hits if isinstance(hit, dict)
+                }
+                self.assertIn("exp_lead_opening_shape_001", experience_hit_ids)
+                self.assertIn(expected_soft_id, experience_hit_ids)
                 has_opening_source = any(
                     isinstance(hit, dict)
                     and isinstance(hit.get("metadata"), dict)
@@ -655,7 +676,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 )
                 self.assertIsNotNone(contrasts)
                 assert contrasts is not None
-                relation_section = prompt.split("【公开关系对照】", 1)[1].split("\n【", 1)[0]
+                relation_section = _prompt_section(prompt, "公开关系对照")
                 visible_pair_lines = [
                     line for line in relation_section.splitlines()
                     if "action_id=" in line
@@ -682,9 +703,9 @@ class MultiPatternOpeningTests(unittest.TestCase):
             ProbeFixture("seed29", observation, game.legal_actions(), game_snapshot=game)
         )
         expected = {
-            "low_cost_single": (53, 23, 8832),
-            "neutral_soft_pair": (83, 51, 14316),
-            "seed29": (80, 50, 14763),
+            "low_cost_single": (53, 23, 8840, 16336, "exp_soft_single_cost_probe_001", 3900, 4550, 680, 1520),
+            "neutral_soft_pair": (83, 51, 14286, 23358, "exp_soft_pair_probe_001", 8450, 9100, 650, 1460),
+            "seed29": (80, 50, 14733, 24723, "exp_soft_pair_probe_001", 8350, 9000, 650, 1460),
         }
 
         for fixture in fixtures:
@@ -692,7 +713,17 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 agent, client, transport, chosen = _run_factory_opening_request(fixture)
                 raw_ids = {item["action_id"] for item in fixture.legal_actions}
                 final_ids = set(transport.candidate_ids)
-                canonical_count, final_count, baseline_chars = expected[fixture.name]
+                (
+                    canonical_count,
+                    final_count,
+                    baseline_chars,
+                    baseline_bytes,
+                    expected_soft_id,
+                    candidate_char_budget,
+                    candidate_byte_budget,
+                    experience_char_budget,
+                    experience_byte_budget,
+                ) = expected[fixture.name]
                 rag_context = client.suggestion_kwargs.get("rag_context")
                 self.assertIsInstance(rag_context, dict)
                 assert isinstance(rag_context, dict)
@@ -700,7 +731,12 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 self.assertIsInstance(hits, list)
                 assert isinstance(hits, list)
                 self.assertEqual(agent.rag_top_k, 1)
-                self.assertEqual(len(hits), 1)
+                self.assertEqual(len(hits), 2)
+                hit_ids = {hit.get("source_id") for hit in hits if isinstance(hit, dict)}
+                self.assertEqual(
+                    hit_ids,
+                    {"exp_lead_opening_shape_001", expected_soft_id},
+                )
                 self.assertEqual(len(fixture.legal_actions), canonical_count)
                 self.assertEqual(len(final_ids), final_count)
                 self.assertLessEqual(len(final_ids), 80)
@@ -751,7 +787,20 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 self.assertIn(source_title, prompt)
                 self.assertTrue(source_body)
                 self.assertIn(source_body[:80], prompt)
-                relation_section = prompt.split("【公开关系对照】", 1)[1].split("\n【", 1)[0]
+                soft_hit = next(
+                    hit for hit in hits
+                    if isinstance(hit, dict) and hit.get("source_id") == expected_soft_id
+                )
+                soft_metadata = soft_hit.get("metadata")
+                self.assertIsInstance(soft_metadata, dict)
+                assert isinstance(soft_metadata, dict)
+                self.assertEqual(soft_metadata.get("guidance_mode"), "soft_hypothesis")
+                soft_title, soft_body = DeepSeekClient._rag_title_and_body(soft_hit)
+                self.assertIn(soft_title, prompt)
+                self.assertTrue(soft_body)
+                self.assertIn(soft_body[:80], prompt)
+                self.assertIn("可撤回软假设：", prompt)
+                relation_section = _prompt_section(prompt, "公开关系对照")
                 visible_contrasts = [
                     contrast
                     for contrast in representative_candidate_contrasts(
@@ -768,8 +817,127 @@ class MultiPatternOpeningTests(unittest.TestCase):
                             if "action_id=" in line
                         )
                     )
-                # This is a prompt-size regression budget, not a latency claim.
-                self.assertLessEqual(len(prompt), baseline_chars + 100)
+                candidate_section = _prompt_section(prompt, "候选动作")
+                self.assertNotIn("display=", candidate_section)
+                self.assertIn("pattern=", candidate_section)
+                self.assertIn("carrier_cards=", candidate_section)
+                experience_section = _prompt_section(prompt, "经验库依据")
+                # These are fixed pre-change budgets, not latency claims.
+                self.assertLessEqual(len(prompt), baseline_chars)
+                self.assertLessEqual(len(prompt.encode("utf-8")), baseline_bytes)
+                self.assertLessEqual(len(candidate_section), candidate_char_budget)
+                self.assertLessEqual(len(candidate_section.encode("utf-8")), candidate_byte_budget)
+                self.assertLessEqual(len(experience_section), experience_char_budget)
+                self.assertLessEqual(len(experience_section.encode("utf-8")), experience_byte_budget)
+
+    def test_opening_soft_slot_is_bounded_by_source_and_relation_evidence(self) -> None:
+        fixture = build_h3_model_probe_opening_fixtures()[0]
+        documents = list(_opening_advisor()._retriever.documents)
+        source_id = "exp_lead_opening_shape_001"
+        soft_ids = {
+            "exp_soft_pair_probe_001",
+            "exp_soft_single_cost_probe_001",
+            "exp_soft_straight_flush_bomb_cost_001",
+            "exp_soft_steel_plate_strength_001",
+            "exp_soft_triple_pair_gradient_001",
+            "exp_soft_triple_repartition_001",
+        }
+
+        no_source = RAGAdvisor(
+            KnowledgeRetriever(
+                tuple(
+                    doc for doc in documents
+                    if not (
+                        doc.metadata.get("guidance_mode") == "source_principle"
+                        and "opening_free_lead"
+                        in {part.strip() for part in doc.metadata.get("strategy_domain", "").split(",")}
+                    )
+                )
+            )
+        )
+        no_source_context = no_source.get_rag_context(
+            observation=fixture.observation,
+            legal_actions=fixture.legal_actions,
+            hand_eval=evaluate_hand(fixture.observation, fixture.legal_actions),
+            top_k=1,
+            phase_context=classify_game_phase(fixture.observation),
+        )
+        no_source_hits = no_source_context["experience_hits"]
+        self.assertEqual(len(no_source_hits), 1)
+        self.assertFalse(
+            any(
+                hit.get("metadata", {}).get("guidance_mode") == "source_principle"
+                for hit in no_source_hits
+            )
+        )
+        no_source_agent, no_source_client, no_source_transport, no_source_choice = (
+            _run_factory_opening_request(fixture, advisor=no_source)
+        )
+        self.assertEqual(no_source_agent.last_decision_source, "model")
+        self.assertEqual(no_source_choice, no_source_transport.action_id)
+        no_source_request_hits = no_source_client.suggestion_kwargs["rag_context"]["experience_hits"]
+        self.assertEqual(len(no_source_request_hits), 1)
+        self.assertEqual(no_source_request_hits[0].get("metadata", {}).get("guidance_mode"), "soft_hypothesis")
+        self.assertNotIn("开局跨牌型取舍", no_source_transport.prompt)
+        self.assertIn("留牌边际判据：", no_source_transport.prompt)
+
+        no_soft = RAGAdvisor(
+            KnowledgeRetriever(tuple(doc for doc in documents if doc.doc_id not in soft_ids))
+        )
+        no_soft_context = no_soft.get_rag_context(
+            observation=fixture.observation,
+            legal_actions=fixture.legal_actions,
+            hand_eval=evaluate_hand(fixture.observation, fixture.legal_actions),
+            top_k=1,
+            phase_context=classify_game_phase(fixture.observation),
+        )
+        no_soft_hits = no_soft_context["experience_hits"]
+        self.assertEqual(len(no_soft_hits), 1)
+        self.assertEqual(no_soft_hits[0].get("source_id"), source_id)
+
+        top_three = _opening_advisor().get_rag_context(
+            observation=fixture.observation,
+            legal_actions=fixture.legal_actions,
+            hand_eval=evaluate_hand(fixture.observation, fixture.legal_actions),
+            top_k=3,
+            phase_context=classify_game_phase(fixture.observation),
+        )["experience_hits"]
+        top_three_ids = {hit.get("source_id") for hit in top_three}
+        self.assertLessEqual(len(top_three), 3)
+        self.assertIn(source_id, top_three_ids)
+        self.assertTrue(top_three_ids & soft_ids)
+
+        advisor = _opening_advisor()
+        public_context = advisor.get_rag_context(
+            observation=fixture.observation,
+            legal_actions=fixture.legal_actions,
+            hand_eval=evaluate_hand(fixture.observation, fixture.legal_actions),
+            top_k=1,
+            phase_context=classify_game_phase(fixture.observation),
+        )
+        relationless_tags = dict(public_context["scene_tags"])
+        relationless_tags["candidate_relation_kinds"] = ""
+        relationless_hits = advisor._retrieve_tagged(
+            layer="experience",
+            scene_tags=relationless_tags,
+            query=advisor.build_query(relationless_tags),
+            top_k=1,
+            candidate_applicability=RAGAdvisor._candidate_applicability(
+                fixture.observation,
+                fixture.legal_actions,
+            ),
+        )
+        self.assertEqual(len(relationless_hits), 1)
+        self.assertTrue(
+            any(
+                item.source_id == source_id
+                and item.metadata.get("guidance_mode") == "source_principle"
+                for item in relationless_hits
+            )
+        )
+        self.assertFalse(
+            any(item.metadata.get("guidance_mode") == "soft_hypothesis" for item in relationless_hits)
+        )
 
     def test_opening_guide_survives_disabled_unavailable_and_invalid_recommendations(self) -> None:
         fixture = build_h3_model_probe_opening_fixtures()[1]
