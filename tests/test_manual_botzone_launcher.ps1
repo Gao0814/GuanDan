@@ -109,6 +109,8 @@ try {
     $expectedConnectorArguments = @(
       '--agent', 'deepseek',
       '--state-dir', (Join-Path $root 'state'),
+      '--decision-timeout-seconds', '119',
+      '--table-timeout-seconds', '120',
       '--max-cycles', '80',
       '--max-wall-seconds', '1800',
       '--stop-after-finished', '1',
@@ -119,10 +121,17 @@ try {
       '--stage-trace'
     )
     Assert-ManualTest -Condition (($args -join '|') -ceq ($expectedConnectorArguments -join '|')) -Name 'connector_arguments_match_shared_profile_except_paths'
-    Assert-ManualTest -Condition (-not $joined.Contains('--timeout-seconds') -and -not $joined.Contains('--preflight-only')) -Name 'connector_uses_default_timeout_and_not_preflight'
+    Assert-ManualTest -Condition (-not $joined.Contains('--timeout-seconds') -and -not $joined.Contains('--preflight-only')) -Name 'connector_uses_default_poll_timeout_and_not_preflight'
     Assert-ManualTest -Condition ((@(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly) -join '|').Contains('--preflight-only')) -Name 'preflight_is_separate'
     $preflightArgs = @(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly)
     Assert-ManualTest -Condition ($preflightArgs[3] -ceq (Join-Path $root 'state')) -Name 'preflight_state_is_personal'
+    $decisionIndex = [Array]::IndexOf($preflightArgs, '--decision-timeout-seconds')
+    $tableIndex = [Array]::IndexOf($preflightArgs, '--table-timeout-seconds')
+    Assert-ManualTest -Condition ($decisionIndex -ge 0 -and $tableIndex -ge 0 -and $preflightArgs[$decisionIndex + 1] -ceq '119' -and $preflightArgs[$tableIndex + 1] -ceq '120') -Name 'preflight_carries_same_decision_budget'
+    $customArgs = @(Get-ManualBotzoneArguments -WorkspaceRoot $root -RunToken ('b' * 32) -DecisionTimeoutSeconds '90' -TableTimeoutSeconds '130')
+    $customDecisionIndex = [Array]::IndexOf($customArgs, '--decision-timeout-seconds')
+    $customTableIndex = [Array]::IndexOf($customArgs, '--table-timeout-seconds')
+    Assert-ManualTest -Condition ($customArgs[$customDecisionIndex + 1] -ceq '90' -and $customArgs[$customTableIndex + 1] -ceq '130') -Name 'decision_budget_is_configurable_without_workspace_change'
   }
 
   Invoke-ManualTest 'second_run_preflights_then_recycles_and_rebuilds' {
@@ -437,8 +446,9 @@ if mode == "preflight":
         "agent": args[:2] == ["--agent", "deepseek"],
         "state": value("--state-dir") == state_dir,
         "preflight": args.count("--preflight-only") == 1,
+        "decision_budget": value("--decision-timeout-seconds") == "119" and value("--table-timeout-seconds") == "120",
         "runtime_only_absent": all(option not in args for option in ("--timeout-seconds", "--max-cycles", "--max-wall-seconds", "--audit-file", "--history-file", "--decision-trace-file", "--run-token", "--stage-trace")),
-        "exact": args == ["--agent", "deepseek", "--state-dir", state_dir, "--preflight-only"],
+        "exact": args == ["--agent", "deepseek", "--state-dir", state_dir, "--decision-timeout-seconds", "119", "--table-timeout-seconds", "120", "--preflight-only"],
     }
     result = "preflight_ready"
 elif mode == "connector":
@@ -447,6 +457,8 @@ elif mode == "connector":
     expected_arguments = [
         "--agent", "deepseek",
         "--state-dir", state_dir,
+        "--decision-timeout-seconds", "119",
+        "--table-timeout-seconds", "120",
         "--max-cycles", "80",
         "--max-wall-seconds", "1800",
         "--stop-after-finished", "1",
@@ -459,6 +471,7 @@ elif mode == "connector":
     checks = {
         "agent": value("--agent") == "deepseek",
         "state": value("--state-dir") == state_dir,
+        "decision_budget": value("--decision-timeout-seconds") == "119" and value("--table-timeout-seconds") == "120",
         "timeout_default": "--timeout-seconds" not in args,
         "cycles": value("--max-cycles") == "80",
         "wall": value("--max-wall-seconds") == "1800",
@@ -562,9 +575,10 @@ endlocal & exit /b %_probe_exit%
     $preflightInvokeIndex = $productionLauncherSource.IndexOf('& $pythonPath -B -m integrations.botzone @Arguments 2>$null', [System.StringComparison]::Ordinal)
     $connectorInvokeIndex = $productionLauncherSource.IndexOf('& $pythonPath -B -m integrations.botzone @connectorArguments 1> $paths.Stdout 2> $paths.Stderr', [System.StringComparison]::Ordinal)
     $repositoryPushIndex = $productionLauncherSource.IndexOf('Push-Location -LiteralPath $repositoryRoot', [System.StringComparison]::Ordinal)
-    $preflightArgsIndex = $productionModuleSource.IndexOf('$preflightArgs = @(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly)', [System.StringComparison]::Ordinal)
+    $preflightArgsIndex = $productionModuleSource.IndexOf('$preflightArgs = @(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly -DecisionTimeoutSeconds $DecisionTimeoutSeconds -TableTimeoutSeconds $TableTimeoutSeconds)', [System.StringComparison]::Ordinal)
     $preflightInvokerIndex = $productionLauncherSource.IndexOf('-PreflightInvoker $preflightInvoker', [System.StringComparison]::Ordinal)
-    $runtimeArgsIndex = $productionLauncherSource.IndexOf('$connectorArguments = @(Get-ManualBotzoneArguments -WorkspaceRoot $expectedWorkspace -RunToken $runToken)', [System.StringComparison]::Ordinal)
+    $runtimeArgsIndex = $productionLauncherSource.IndexOf('$connectorArguments = @(Get-ManualBotzoneArguments -WorkspaceRoot $expectedWorkspace -RunToken $runToken -DecisionTimeoutSeconds $decisionTimeoutSeconds -TableTimeoutSeconds $tableTimeoutSeconds)', [System.StringComparison]::Ordinal)
+    $decisionBudgetEnvCheck = $productionLauncherSource.Contains('MANUAL_BOTZONE_DECISION_TIMEOUT_SECONDS') -and -not $productionLauncherSource.Contains('MANUAL_BOTZONE_TABLE_TIMEOUT_SECONDS') -and $productionLauncherSource.Contains("{ '119' }") -and $productionLauncherSource.Contains('$tableTimeoutSeconds = ''120''')
     Assert-ManualTest -Condition ($childExitCode -eq 0) -Name 'synthetic_chain_exits_successfully'
     Assert-ManualTest -Condition ($records.Count -eq 3 -and $records[0].mode -ceq 'preflight' -and $records[1].mode -ceq 'connector' -and $records[2].mode -ceq 'after') -Name 'synthetic_preflight_run_order'
     Assert-ManualTest -Condition (@($records | Where-Object { -not $_.environment_match -or -not $_.cwd_match }).Count -eq 0) -Name 'synthetic_url_proxy_and_cwd_reach_python'
@@ -588,6 +602,7 @@ endlocal & exit /b %_probe_exit%
     Assert-ManualTest -Condition ($safeOutput -notmatch 'synthetic\.botzone|127\.0\.0\.1|18765|18766|socks5') -Name 'synthetic_private_values_not_echoed'
     Assert-ManualTest -Condition ($repositoryPushIndex -ge 0 -and $preflightInvokeIndex -gt $repositoryPushIndex -and $connectorInvokeIndex -gt $repositoryPushIndex) -Name 'production_phases_share_repository_working_directory'
     Assert-ManualTest -Condition ($preflightArgsIndex -ge 0 -and $preflightInvokerIndex -ge 0 -and $runtimeArgsIndex -ge 0) -Name 'production_builds_distinct_preflight_and_runtime_arguments'
+    Assert-ManualTest -Condition $decisionBudgetEnvCheck -Name 'production_launcher_defaults_and_reads_decision_budget'
   }
 
   Write-Output "SUMMARY tests=$testCount assertions=$assertionCount"

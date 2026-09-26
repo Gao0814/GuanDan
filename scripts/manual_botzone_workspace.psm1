@@ -241,7 +241,9 @@ function Get-ManualBotzoneArguments {
   param(
     [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
     [switch]$PreflightOnly,
-    [string]$RunToken
+    [string]$RunToken,
+    [string]$DecisionTimeoutSeconds = '119',
+    [string]$TableTimeoutSeconds = '120'
   )
 
   $root = ConvertTo-ManualWorkspaceFullPath -Path $WorkspaceRoot
@@ -249,6 +251,8 @@ function Get-ManualBotzoneArguments {
   $arguments = [System.Collections.Generic.List[string]]::new()
   $arguments.Add('--agent'); $arguments.Add('deepseek')
   $arguments.Add('--state-dir'); $arguments.Add($statePath)
+  $arguments.Add('--decision-timeout-seconds'); $arguments.Add($DecisionTimeoutSeconds)
+  $arguments.Add('--table-timeout-seconds'); $arguments.Add($TableTimeoutSeconds)
   if ($PreflightOnly) {
     $arguments.Add('--preflight-only')
     return $arguments.ToArray()
@@ -342,6 +346,8 @@ function Initialize-ManualBotzoneWorkspace {
     [Parameter(Mandatory = $true)][string]$ExpectedRoot,
     [Parameter(Mandatory = $true)][scriptblock]$PreflightInvoker,
     [Parameter(Mandatory = $true)][scriptblock]$ProcessProvider,
+    [string]$DecisionTimeoutSeconds = '119',
+    [string]$TableTimeoutSeconds = '120',
     [scriptblock]$RecycleInvoker
   )
 
@@ -351,7 +357,7 @@ function Initialize-ManualBotzoneWorkspace {
   $hadPreviousWorkspace = $null -ne $existingEntry
   if ($hadPreviousWorkspace) {
     [void](Assert-ManualWorkspaceInventory -WorkspaceRoot $root -ExpectedRoot $ExpectedRoot)
-    $preflightArgs = @(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly)
+    $preflightArgs = @(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly -DecisionTimeoutSeconds $DecisionTimeoutSeconds -TableTimeoutSeconds $TableTimeoutSeconds)
     [void](Invoke-ManualBotzonePreflight -Arguments $preflightArgs -Invoker $PreflightInvoker)
     Assert-NoManualBotzoneConnector -ProcessProvider $ProcessProvider
     [void](Assert-ManualWorkspaceInventory -WorkspaceRoot $root -ExpectedRoot $ExpectedRoot)
@@ -359,7 +365,7 @@ function Initialize-ManualBotzoneWorkspace {
   }
   [void](New-ManualWorkspaceRoot -WorkspaceRoot $root -ExpectedRoot $ExpectedRoot)
   if (-not $hadPreviousWorkspace) {
-    $preflightArgs = @(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly)
+    $preflightArgs = @(Get-ManualBotzoneArguments -WorkspaceRoot $root -PreflightOnly -DecisionTimeoutSeconds $DecisionTimeoutSeconds -TableTimeoutSeconds $TableTimeoutSeconds)
     [void](Invoke-ManualBotzonePreflight -Arguments $preflightArgs -Invoker $PreflightInvoker)
   }
   [void](Assert-ManualWorkspaceInventory -WorkspaceRoot $root -ExpectedRoot $ExpectedRoot)

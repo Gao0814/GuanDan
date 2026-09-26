@@ -9,9 +9,11 @@ import os
 import re
 import secrets
 import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final
+
+from decision_deadline import DecisionDeadline
 
 from .bot_io import BotReplay
 from .agent_observability import DECISION_SOURCES
@@ -120,6 +122,7 @@ class HandlerContext:
     latest_window: tuple[HistoryEntry, ...]
     global_state: GlobalState
     finished: bool
+    decision_deadline: DecisionDeadline | None = field(default=None, repr=False, compare=False)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -771,7 +774,13 @@ class SessionStore:
         self.save(next_record)
         return next_record
 
-    def handler_context(self, record: SessionRecord, request: DealRequest | PlayRequest) -> HandlerContext:
+    def handler_context(
+        self,
+        record: SessionRecord,
+        request: DealRequest | PlayRequest,
+        *,
+        decision_deadline: DecisionDeadline | None = None,
+    ) -> HandlerContext:
         return HandlerContext(
             match_key=record.match_id,
             request_digest=record.request_digest,
@@ -782,6 +791,7 @@ class SessionStore:
             latest_window=record.latest_window,
             global_state=record.global_state,
             finished=record.finished is not None,
+            decision_deadline=decision_deadline,
         )
 
     def reserve_handler(self, record: SessionRecord) -> SessionRecord:

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import threading
+
+from decision_deadline import DecisionDeadline, MODEL_RESPONSE_RESERVE_SECONDS
 
 from .stage_trace import StageTraceSink, record_stage
 
@@ -14,16 +17,39 @@ class AgentRuntimeError(ValueError):
 class _StrictDeepSeekClient:
     """Turn client faults or non-canonical suggestions into the agent fallback path."""
 
-    def __init__(self, delegate: object, *, stage_trace: StageTraceSink | None = None) -> None:
+    def __init__(
+        self,
+        delegate: object,
+        *,
+        stage_trace: StageTraceSink | None = None,
+        response_reserve_seconds: float = MODEL_RESPONSE_RESERVE_SECONDS,
+    ) -> None:
         self._delegate = delegate
         self._stage_trace = stage_trace
+        self._response_reserve_seconds = max(0.0, float(response_reserve_seconds))
         self.last_outcome: str | None = None
+        self._decision_deadline: DecisionDeadline | None = None
+        self._worker_lock = threading.Lock()
+        self._worker_active = False
+
+    @property
+    def decision_deadline(self) -> DecisionDeadline | None:
+        return self._decision_deadline
+
+    def set_decision_deadline(self, deadline: DecisionDeadline | float | None) -> None:
+        if deadline is None or isinstance(deadline, DecisionDeadline):
+            self._decision_deadline = deadline
+        else:
+            self._decision_deadline = DecisionDeadline(deadline)
 
     def suggest_action_id(self, **kwargs: object) -> object:
         from agents.deepseek_client import DeepSeekSuggestion
 
         self.last_outcome = None
         record_stage(self._stage_trace, "model_enter", "started")
+        deadline = self._decision_deadline
+        if deadline is not None:
+            return self._suggest_with_deadline(kwargs, deadline)
         try:
             suggestion = self._delegate.suggest_action_id(**kwargs)  # type: ignore[attr-defined]
         except TimeoutError:
@@ -51,6 +77,86 @@ class _StrictDeepSeekClient:
             return DeepSeekSuggestion(action_id=None, reasoning=None)
         # The connector only needs the canonical public action ID.  Dropping
         # free-form model text keeps it out of the match-scoped agent cache.
+        self.last_outcome = "success"
+        record_stage(self._stage_trace, "model_complete", "success")
+        return DeepSeekSuggestion(action_id=action_id, reasoning=None)
+
+    def _suggest_with_deadline(
+        self,
+        kwargs: dict[str, object],
+        deadline: DecisionDeadline,
+    ) -> object:
+        from agents.deepseek_client import DeepSeekSuggestion
+
+        try:
+            deadline.check(reserve_seconds=self._response_reserve_seconds)
+        except TimeoutError:
+            deadline.cancel()
+            self.last_outcome = "timeout"
+            record_stage(self._stage_trace, "model_complete", "timeout")
+            return DeepSeekSuggestion(action_id=None, reasoning=None)
+
+        with self._worker_lock:
+            if self._worker_active:
+                self.last_outcome = "timeout"
+                record_stage(self._stage_trace, "model_complete", "timeout")
+                return DeepSeekSuggestion(action_id=None, reasoning=None)
+            self._worker_active = True
+
+        completed = threading.Event()
+        result: dict[str, object] = {}
+
+        def invoke() -> None:
+            try:
+                call_kwargs = dict(kwargs)
+                call_kwargs["decision_deadline"] = deadline
+                result["suggestion"] = self._delegate.suggest_action_id(**call_kwargs)  # type: ignore[attr-defined]
+            except BaseException as exc:
+                result["error"] = exc
+            finally:
+                with self._worker_lock:
+                    self._worker_active = False
+                completed.set()
+
+        worker = threading.Thread(target=invoke, name="botzone-deepseek-decision", daemon=True)
+        try:
+            worker.start()
+        except Exception:
+            with self._worker_lock:
+                self._worker_active = False
+            self.last_outcome = "exception"
+            record_stage(self._stage_trace, "model_complete", "exception")
+            return DeepSeekSuggestion(action_id=None, reasoning=None)
+
+        worker.join(deadline.remaining(reserve_seconds=self._response_reserve_seconds))
+        if not completed.is_set() or deadline.is_expired(reserve_seconds=self._response_reserve_seconds):
+            deadline.cancel()
+            self.last_outcome = "timeout"
+            record_stage(self._stage_trace, "model_complete", "timeout")
+            return DeepSeekSuggestion(action_id=None, reasoning=None)
+
+        error = result.get("error")
+        if error is not None:
+            self.last_outcome = "timeout" if isinstance(error, TimeoutError) else "exception"
+            record_stage(self._stage_trace, "model_complete", self.last_outcome)
+            return DeepSeekSuggestion(action_id=None, reasoning=None)
+
+        suggestion = result.get("suggestion")
+        action_id = getattr(suggestion, "action_id", None)
+        legal_actions = kwargs.get("legal_actions")
+        if type(action_id) is not int or not isinstance(legal_actions, list):
+            self.last_outcome = "invalid_suggestion"
+            record_stage(self._stage_trace, "model_complete", "invalid_suggestion")
+            return DeepSeekSuggestion(action_id=None, reasoning=None)
+        legal_ids = {
+            action.get("action_id")
+            for action in legal_actions
+            if isinstance(action, dict) and type(action.get("action_id")) is int
+        }
+        if action_id not in legal_ids:
+            self.last_outcome = "invalid_suggestion"
+            record_stage(self._stage_trace, "model_complete", "invalid_suggestion")
+            return DeepSeekSuggestion(action_id=None, reasoning=None)
         self.last_outcome = "success"
         record_stage(self._stage_trace, "model_complete", "success")
         return DeepSeekSuggestion(action_id=action_id, reasoning=None)

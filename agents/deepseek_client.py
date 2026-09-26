@@ -15,6 +15,11 @@ import time
 from typing import TYPE_CHECKING, Callable, Protocol
 from urllib import request as urllib_request
 
+from decision_deadline import (
+    DecisionDeadline,
+    DecisionDeadlineExceeded,
+    MODEL_RESPONSE_RESERVE_SECONDS,
+)
 from agents.action_structure import (
     CANDIDATE_RELATION_KINDS,
     CandidateContrast,
@@ -183,17 +188,52 @@ class DeepSeekTransport(Protocol):
         ...
 
 
-def _default_transport(req: urllib_request.Request, timeout: float) -> Iterator[bytes]:
+def _default_transport(
+    req: urllib_request.Request,
+    timeout: float,
+    *,
+    decision_deadline: DecisionDeadline | None = None,
+) -> Iterator[bytes]:
     """Yield SSE lines and release the response as soon as its terminal event arrives."""
 
-    with urllib_request.urlopen(req, timeout=timeout) as response:
-        while True:
-            line = response.readline()
-            if not line:
-                return
-            yield line
-            if line.strip() == b"data: [DONE]":
-                return
+    effective_timeout = timeout
+    if decision_deadline is not None:
+        decision_deadline.check(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS)
+        effective_timeout = min(
+            effective_timeout,
+            decision_deadline.remaining(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS),
+        )
+    with urllib_request.urlopen(req, timeout=effective_timeout) as response:
+        unregister = (
+            decision_deadline.register_cancel_callback(response.close)
+            if decision_deadline is not None
+            else lambda: None
+        )
+        try:
+            while True:
+                if decision_deadline is not None:
+                    decision_deadline.check(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS)
+                    socket_timeout = min(
+                        timeout,
+                        decision_deadline.remaining(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS),
+                    )
+                    response_file = getattr(response, "fp", None)
+                    raw = getattr(response_file, "raw", None)
+                    sock = getattr(raw, "_sock", None)
+                    settimeout = getattr(sock, "settimeout", None)
+                    if not callable(settimeout):
+                        raise DecisionDeadlineExceeded("decision_deadline_socket_unavailable")
+                    settimeout(socket_timeout)
+                line = response.readline()
+                if decision_deadline is not None:
+                    decision_deadline.check(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS)
+                if not line:
+                    return
+                yield line
+                if line.strip() == b"data: [DONE]":
+                    return
+        finally:
+            unregister()
 
 
 class DeepSeekClient:
@@ -2054,14 +2094,33 @@ class DeepSeekClient:
             parts.append(f"...+{len(items) - max_items}")
         return ", ".join(parts)
 
-    def _stream_sse(self, req: urllib_request.Request, timeout: float) -> tuple[str, str]:
+    def _stream_sse(
+        self,
+        req: urllib_request.Request,
+        timeout: float,
+        *,
+        decision_deadline: DecisionDeadline | None = None,
+    ) -> tuple[str, str]:
         """Send a streaming request and accumulate content + reasoning_content from SSE chunks.
 
         Returns (content, reasoning_content).  Both are concatenated from all deltas.
         """
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
-        response_stream = self._transport(req, timeout)
+        if decision_deadline is not None:
+            decision_deadline.check(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS)
+            timeout = min(
+                timeout,
+                decision_deadline.remaining(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS),
+            )
+        if self._transport is _default_transport:
+            response_stream = self._transport(  # type: ignore[call-arg]
+                req,
+                timeout,
+                decision_deadline=decision_deadline,
+            )
+        else:
+            response_stream = self._transport(req, timeout)
         if isinstance(response_stream, bytes):
             lines: Iterable[str | bytes] = response_stream.decode("utf-8").splitlines()
         elif isinstance(response_stream, str):
@@ -2073,10 +2132,14 @@ class DeepSeekClient:
         terminal_received = False
         try:
             for raw_line in iterator:
+                if decision_deadline is not None:
+                    decision_deadline.check(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS)
                 if isinstance(raw_line, bytes):
                     raw_line = raw_line.decode("utf-8")
                 elif not isinstance(raw_line, str):
                     raise RuntimeError("deepseek streaming transport returned an invalid line")
+                if decision_deadline is not None:
+                    decision_deadline.check(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS)
                 line = raw_line.strip()
                 if not line or not line.startswith("data: "):
                     continue
@@ -2125,6 +2188,7 @@ class DeepSeekClient:
         strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None,
         strategy_recommendation: "StrategyRecommendation | None" = None,
         opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
+        decision_deadline: DecisionDeadline | None = None,
     ) -> DeepSeekSuggestion:
         current_round = dict(observation.get("current_round", {}))
         step_no = self._coerce_int(current_round.get("step_no"), default=0)
@@ -2284,14 +2348,35 @@ class DeepSeekClient:
         content: str = ""
         reasoning_text: str | None = None
         max_attempts = 1 + self._max_retries
+        stream_completed = False
         for attempt in range(max_attempts):
             try:
-                content, raw_reasoning = self._stream_sse(req, self._timeout_seconds)
+                if decision_deadline is not None:
+                    decision_deadline.check(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS)
+                if decision_deadline is None:
+                    # Keep the longstanding two-argument override contract for
+                    # test transports and client subclasses.  The deadline
+                    # keyword is only needed by the opt-in bounded path.
+                    content, raw_reasoning = self._stream_sse(
+                        req,
+                        self._timeout_seconds,
+                    )
+                else:
+                    content, raw_reasoning = self._stream_sse(
+                        req,
+                        self._timeout_seconds,
+                        decision_deadline=decision_deadline,
+                    )
                 reasoning_text = raw_reasoning.strip() if raw_reasoning.strip() else None
+                stream_completed = True
                 break
             except (TimeoutError, OSError) as exc:
                 last_error = exc
-                if attempt + 1 < max_attempts:
+                retry_window_open = (
+                    decision_deadline is None
+                    or decision_deadline.remaining(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS) > 2.0
+                )
+                if attempt + 1 < max_attempts and retry_window_open:
                     if verbose:
                         print(
                             f"{debug_prefix} 请求失败({exc.__class__.__name__})，2秒后重试"
@@ -2299,10 +2384,13 @@ class DeepSeekClient:
                             flush=True,
                         )
                     time.sleep(2)
-        else:
+        if not stream_completed:
             if last_error is not None:
                 raise last_error
             raise RuntimeError("deepseek streaming request returned no response")
+
+        if decision_deadline is not None:
+            decision_deadline.check(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS)
 
         if verbose and reasoning_text:
             print(f"{debug_prefix} 推理过程: {reasoning_text}", flush=True)

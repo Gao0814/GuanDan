@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+import math
 import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from decision_deadline import MODEL_RESPONSE_RESERVE_SECONDS
 from .http_transport import DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_TIMEOUT_SECONDS, TransportError, validate_https_url
 
 
@@ -19,6 +21,11 @@ _RUNTIME_CONFIG_CATEGORIES = frozenset(
         "invalid_response_limit",
         "invalid_failure_limit",
         "invalid_backoff",
+        "decision_budget_pair_required",
+        "decision_budget_requires_deepseek",
+        "invalid_decision_timeout",
+        "invalid_table_timeout",
+        "decision_table_margin_insufficient",
         "invalid_state_directory",
         "state_preflight_failed",
     }
@@ -48,13 +55,16 @@ class RuntimeConfig:
     max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
     max_consecutive_failures: int = 5
     backoff_seconds: int = 1
+    decision_timeout_seconds: float | None = None
+    table_timeout_seconds: float | None = None
 
     def __repr__(self) -> str:
         return (
             "RuntimeConfig(local_ai_url=<redacted>, "
             f"state_directory={self.state_directory!r}, timeout_seconds={self.timeout_seconds}, "
             f"max_response_bytes={self.max_response_bytes}, "
-            f"max_consecutive_failures={self.max_consecutive_failures}, backoff_seconds={self.backoff_seconds})"
+            f"max_consecutive_failures={self.max_consecutive_failures}, backoff_seconds={self.backoff_seconds}, "
+            f"decision_timeout_seconds={self.decision_timeout_seconds}, table_timeout_seconds={self.table_timeout_seconds})"
         )
 
 
@@ -66,6 +76,20 @@ def _positive_int(value: object, category: str) -> int:
     else:
         raise RuntimeConfigError(category)
     if result <= 0:
+        raise RuntimeConfigError(category)
+    return result
+
+
+def _positive_finite_seconds(value: object, category: str) -> float:
+    if isinstance(value, bool):
+        raise RuntimeConfigError(category)
+    if type(value) not in (int, float, str):
+        raise RuntimeConfigError(category)
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise RuntimeConfigError(category) from None
+    if not math.isfinite(result) or result <= 0:
         raise RuntimeConfigError(category)
     return result
 
@@ -85,6 +109,8 @@ def load_runtime_config(
     max_response_bytes: object = DEFAULT_MAX_RESPONSE_BYTES,
     max_consecutive_failures: object = 5,
     backoff_seconds: object = 1,
+    decision_timeout_seconds: object | None = None,
+    table_timeout_seconds: object | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> RuntimeConfig:
     """Read only the two named process variables; explicit arguments win."""
@@ -98,13 +124,35 @@ def load_runtime_config(
         private_url = validate_https_url(url)
     except TransportError:
         raise RuntimeConfigError("invalid_configuration") from None
+    if (decision_timeout_seconds is None) != (table_timeout_seconds is None):
+        raise RuntimeConfigError("decision_budget_pair_required")
+    decision_timeout: float | None = None
+    table_timeout: float | None = None
+    poll_timeout = _positive_int(timeout_seconds, "invalid_timeout")
+    if decision_timeout_seconds is not None and table_timeout_seconds is not None:
+        decision_timeout = _positive_finite_seconds(
+            decision_timeout_seconds,
+            "invalid_decision_timeout",
+        )
+        table_timeout = _positive_finite_seconds(table_timeout_seconds, "invalid_table_timeout")
+        if decision_timeout <= MODEL_RESPONSE_RESERVE_SECONDS:
+            raise RuntimeConfigError("invalid_decision_timeout")
+        # The model deadline is measured only after a play request has arrived;
+        # the poll read timeout is a separate wait for the next Botzone request.
+        # Keep a strict one-second gap before the configured table limit.  The
+        # agent runtime additionally stops waiting for the model five seconds
+        # before the decision deadline so its ordinary fallback can run.
+        if decision_timeout + 1.0 > table_timeout:
+            raise RuntimeConfigError("decision_table_margin_insufficient")
     return RuntimeConfig(
         local_ai_url=private_url,
         state_directory=Path(raw_state),
-        timeout_seconds=_positive_int(timeout_seconds, "invalid_timeout"),
+        timeout_seconds=poll_timeout,
         max_response_bytes=_positive_int(max_response_bytes, "invalid_response_limit"),
         max_consecutive_failures=_positive_int(max_consecutive_failures, "invalid_failure_limit"),
         backoff_seconds=_positive_int(backoff_seconds, "invalid_backoff"),
+        decision_timeout_seconds=decision_timeout,
+        table_timeout_seconds=table_timeout,
     )
 
 

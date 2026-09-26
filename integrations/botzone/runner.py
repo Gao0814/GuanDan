@@ -324,6 +324,8 @@ def build_foreground_runner(
         history_recorder=recorder,
         decision_trace_recorder=decision_trace_recorder,
         stage_trace=stage_trace,
+        decision_timeout_seconds=getattr(config, "decision_timeout_seconds", None),
+        clock=clock,
     )
     return ForegroundRunner(
         connector,

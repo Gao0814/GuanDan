@@ -22,6 +22,11 @@ _RUNTIME_PREFLIGHT_OUTPUTS = {
     "invalid_response_limit": "preflight_runtime_config_response_limit_invalid",
     "invalid_failure_limit": "preflight_runtime_config_failure_limit_invalid",
     "invalid_backoff": "preflight_runtime_config_backoff_invalid",
+    "decision_budget_pair_required": "preflight_decision_budget_pair_required",
+    "decision_budget_requires_deepseek": "preflight_decision_budget_requires_deepseek",
+    "invalid_decision_timeout": "preflight_decision_timeout_invalid",
+    "invalid_table_timeout": "preflight_table_timeout_invalid",
+    "decision_table_margin_insufficient": "preflight_decision_table_margin_insufficient",
 }
 
 
@@ -107,6 +112,14 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     parser.add_argument("--url")
     parser.add_argument("--state-dir")
     parser.add_argument("--timeout-seconds", default=30)
+    parser.add_argument(
+        "--decision-timeout-seconds",
+        help="optional end-to-end DeepSeek decision budget, bounded separately from poll read timeout",
+    )
+    parser.add_argument(
+        "--table-timeout-seconds",
+        help="table turn limit used to validate the decision budget's one-second gap",
+    )
     parser.add_argument("--agent", choices=("rule", "deepseek", "conditional_pressure_pass"), default="rule")
     parser.add_argument("--max-cycles", type=int, default=100)
     parser.add_argument("--max-wall-seconds", type=int, default=600)
@@ -133,10 +146,17 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
                 run_token = validate_run_token(arguments.run_token)
             except RunProvenanceError as exc:
                 raise ValueError("invalid_run_token") from exc
+        if (
+            arguments.decision_timeout_seconds is not None
+            or arguments.table_timeout_seconds is not None
+        ) and arguments.agent != "deepseek":
+            raise RuntimeConfigError("decision_budget_requires_deepseek")
         config = load_runtime_config(
             local_ai_url=arguments.url,
             state_directory=arguments.state_dir,
             timeout_seconds=arguments.timeout_seconds,
+            decision_timeout_seconds=arguments.decision_timeout_seconds,
+            table_timeout_seconds=arguments.table_timeout_seconds,
             environ=environ,
         )
         stage = "state_preflight"

@@ -6,6 +6,8 @@ Set-StrictMode -Version Latest
 
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $expectedWorkspace = 'D:\VsCodeProject\GuanDanManualWorkspace'
+$decisionTimeoutSeconds = if ([string]::IsNullOrWhiteSpace($env:MANUAL_BOTZONE_DECISION_TIMEOUT_SECONDS)) { '119' } else { $env:MANUAL_BOTZONE_DECISION_TIMEOUT_SECONDS }
+$tableTimeoutSeconds = '120'
 $modulePath = Join-Path $PSScriptRoot 'manual_botzone_workspace.psm1'
 $exitCode = 2
 $locationPushed = $false
@@ -35,6 +37,7 @@ try {
   $helpText = $helpOutput -join "`n"
   $requiredOptions = @(
     '--agent', '--state-dir', '--preflight-only', '--timeout-seconds',
+    '--decision-timeout-seconds', '--table-timeout-seconds',
     '--max-cycles', '--max-wall-seconds', '--stop-after-finished',
     '--audit-file', '--history-file', '--decision-trace-file', '--run-token'
   )
@@ -60,7 +63,9 @@ try {
     -WorkspaceRoot $expectedWorkspace `
     -ExpectedRoot $expectedWorkspace `
     -PreflightInvoker $preflightInvoker `
-    -ProcessProvider { Get-CimInstance -ClassName Win32_Process -ErrorAction Stop }
+    -ProcessProvider { Get-CimInstance -ClassName Win32_Process -ErrorAction Stop } `
+    -DecisionTimeoutSeconds $decisionTimeoutSeconds `
+    -TableTimeoutSeconds $tableTimeoutSeconds
 
   Assert-ManualWorkspaceInventory -WorkspaceRoot $expectedWorkspace -ExpectedRoot $expectedWorkspace | Out-Null
   Assert-ManualBotzoneFreshOutputs -WorkspaceRoot $expectedWorkspace
@@ -80,7 +85,8 @@ try {
   Assert-ManualWorkspaceInventory -WorkspaceRoot $expectedWorkspace -ExpectedRoot $expectedWorkspace | Out-Null
 
   $runToken = [guid]::NewGuid().ToString('N').ToLowerInvariant()
-  $connectorArguments = @(Get-ManualBotzoneArguments -WorkspaceRoot $expectedWorkspace -RunToken $runToken)
+  $connectorArguments = @(Get-ManualBotzoneArguments -WorkspaceRoot $expectedWorkspace -RunToken $runToken -DecisionTimeoutSeconds $decisionTimeoutSeconds -TableTimeoutSeconds $tableTimeoutSeconds)
+  Write-Host "个人决策期限=$decisionTimeoutSeconds 秒；牌桌回合期限=$tableTimeoutSeconds 秒（不含额外平台延迟）。"
   Write-Host '零网络配置预检通过。连接器将在前台运行；请等待 Botzone 本地 AI 页面显示“已连接”，再手动建桌并开始。'
   if ($paths.PreviousRunRotated) {
     Write-Host '上次个人证据已移入 Windows 回收站；本次证据将保留在个人 workspace。'

@@ -26,7 +26,7 @@ Botzone 主线使用人工创建的四人无贡桌，并在 connector 中**显�
 
 启动器使用仓库 `.venv`（若存在）或 `python`，先只读核对 CLI 参数，再对个人 workspace 做零网络配置预检，随后以前台方式启动一个显式 `--agent deepseek` connector。预检成功本身不表示已连接；请等 Botzone 本地 AI 页面显示“已连接”，再由你手动创建四人、级牌 `2`、无需进贡的单局并点击开始。启动器不会操作网页。
 
-个人 connector 沿用此前已进入请求流程的直接调用参数：80 个 cycles、1800 秒墙钟上限、请求超时采用 CLI 默认 30 秒、一次完成后停止；只把 state/audit/history/trace/stream 输出改到个人 workspace。Codex 的固定 workspace 与原执行路径不变。connector 退出时窗口会显示固定 exit code/category，双击启动的窗口会等待按键后关闭；非交互自动调用可使用 `.\scripts\run_manual_botzone.cmd --no-pause`。
+个人 connector 沿用此前已进入请求流程的直接调用参数：80 个 cycles、1800 秒墙钟上限、Botzone poll 的单次读取超时仍为 30 秒、一次完成后停止。个人入口默认给每次 DeepSeek 决策 119 秒端到端期限，并以 120 秒作为牌桌回合的本地校验上限；**这不是修改平台计时，也不保证**总能为本地回退、响应 Header 和 ACK 留足时间。Agent 在决策期限前 5 秒停止等待模型并走现有 fallback，stage trace 会立即将固定 `model_complete/timeout` 事件写入个人 `streams/stdout.txt`。该总期限与 `DEEPSEEK_TIMEOUT` 不同：后者控制 DeepSeek SSE 的单次 socket/read 等待，默认仍为 30 秒；分段持续到达的数据可以让单次读取 timeout 多次重置，但整次 deadline 会在模型阶段外层兜住，并隔离不能及时取消的晚到 worker。仅把 state/audit/history/trace/stream 输出改到个人 workspace，Codex 固定 workspace 与原执行路径不变。可用进程环境变量 `MANUAL_BOTZONE_DECISION_TIMEOUT_SECONDS` 调整个人决策预算；零值、非有限值或决策期限与固定 120 秒牌桌校验上限之间不足 1 秒会在预检阶段拒绝。connector 退出时窗口会显示固定 exit code/category，双击启动的窗口会等待按键后关闭；非交互自动调用可使用 `.\scripts\run_manual_botzone.cmd --no-pause`。
 
 `.cmd` 入口以 `-ExecutionPolicy Bypass` 启动一个仅供本次调用的 Windows PowerShell 子进程，并原样返回脚本退出码；不会修改 LocalMachine、CurrentUser 或持久策略。若企业组策略仍禁止该进程运行，应停止并联系管理员，不要尝试全局放宽执行策略。
 

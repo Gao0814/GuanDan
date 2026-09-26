@@ -41,7 +41,106 @@ class BotzoneRuntimeConfigTests(unittest.TestCase):
 
         self.assertEqual(status, 0)
         self.assertEqual(observed.get("timeout_seconds"), 30)
+        self.assertIsNone(observed.get("decision_timeout_seconds"))
+        self.assertIsNone(observed.get("table_timeout_seconds"))
         self.assertEqual(output.getvalue(), "preflight_ready\n")
+
+    def test_opt_in_119_second_decision_budget_is_separate_from_poll_timeout(self) -> None:
+        config = load_runtime_config(
+            local_ai_url="https://synthetic.invalid/poll",
+            state_directory="state",
+            timeout_seconds=30,
+            decision_timeout_seconds="119",
+            table_timeout_seconds="120",
+            environ={},
+        )
+        self.assertEqual(config.timeout_seconds, 30)
+        self.assertEqual(config.decision_timeout_seconds, 119.0)
+        self.assertEqual(config.table_timeout_seconds, 120.0)
+
+    def test_decision_budget_rejects_missing_pair_invalid_values_and_insufficient_margin(self) -> None:
+        common = {"local_ai_url": "https://synthetic.invalid/poll", "state_directory": "state", "environ": {}}
+        with self.assertRaisesRegex(RuntimeConfigError, "decision_budget_pair_required"):
+            load_runtime_config(**common, decision_timeout_seconds="80")
+        for value in (0, -1, True, "NaN", "Infinity", "80x", 5):
+            with self.subTest(value=value), self.assertRaises(RuntimeConfigError):
+                load_runtime_config(
+                    **common,
+                    decision_timeout_seconds=value,
+                    table_timeout_seconds=120,
+                )
+        with self.assertRaisesRegex(RuntimeConfigError, "decision_table_margin_insufficient"):
+            load_runtime_config(
+                **common,
+                decision_timeout_seconds=120,
+                table_timeout_seconds=120,
+            )
+        with self.assertRaisesRegex(RuntimeConfigError, "decision_table_margin_insufficient"):
+            load_runtime_config(
+                **common,
+                decision_timeout_seconds=119.01,
+                table_timeout_seconds=120,
+            )
+        with self.assertRaisesRegex(RuntimeConfigError, "invalid_table_timeout"):
+            load_runtime_config(
+                **common,
+                decision_timeout_seconds=119,
+                table_timeout_seconds="NaN",
+            )
+
+    def test_cli_preflight_validates_budget_before_state_and_agent_preflight(self) -> None:
+        output = StringIO()
+        with (
+            patch("integrations.botzone.__main__.preflight_state_directory") as state_preflight,
+            patch("integrations.botzone.__main__.prepare_agent_factory") as agent_preflight,
+            redirect_stdout(output),
+        ):
+            status = main(
+                [
+                    "--preflight-only", "--agent", "deepseek", "--state-dir", "synthetic-state",
+                    "--decision-timeout-seconds", "119", "--table-timeout-seconds", "120",
+                ],
+                environ={"BOTZONE_LOCAL_AI_URL": "https://synthetic.invalid/poll"},
+            )
+        self.assertEqual(status, 0)
+        self.assertEqual(output.getvalue(), "preflight_ready\n")
+        state_preflight.assert_called_once()
+        agent_preflight.assert_called_once()
+
+        output = StringIO()
+        with redirect_stdout(output):
+            status = main(
+                [
+                    "--preflight-only", "--agent", "deepseek", "--state-dir", "synthetic-state",
+                    "--decision-timeout-seconds", "120", "--table-timeout-seconds", "120",
+                ],
+                environ={"BOTZONE_LOCAL_AI_URL": "https://synthetic.invalid/poll"},
+            )
+        self.assertEqual(status, 2)
+        self.assertEqual(output.getvalue(), "preflight_decision_table_margin_insufficient\n")
+
+    def test_decision_budget_is_deepseek_only_and_does_not_change_rule_default(self) -> None:
+        output = StringIO()
+        state_preflight = patch("integrations.botzone.__main__.preflight_state_directory")
+        with state_preflight as preflight, redirect_stdout(output):
+            status = main(
+                [
+                    "--preflight-only", "--agent", "rule", "--state-dir", "synthetic-state",
+                    "--decision-timeout-seconds", "119", "--table-timeout-seconds", "120",
+                ],
+                environ={"BOTZONE_LOCAL_AI_URL": "https://synthetic.invalid/poll"},
+            )
+        self.assertEqual(status, 2)
+        self.assertEqual(output.getvalue(), "preflight_decision_budget_requires_deepseek\n")
+        preflight.assert_not_called()
+
+        config = load_runtime_config(
+            local_ai_url="https://synthetic.invalid/poll",
+            state_directory="state",
+            environ={},
+        )
+        self.assertIsNone(config.decision_timeout_seconds)
+        self.assertIsNone(config.table_timeout_seconds)
 
     def test_runtime_config_error_has_only_fixed_category(self) -> None:
         self.assertEqual(RuntimeConfigError("invalid_timeout").category, "invalid_timeout")

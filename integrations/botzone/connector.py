@@ -6,6 +6,9 @@ from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
+import time
+
+from decision_deadline import DecisionDeadline
 from typing import Protocol
 
 from .bot_io import BotEnvelopeError, REQUIRED_FIELDS_PROFILES, encode_bot_response, encode_direct_response
@@ -75,6 +78,8 @@ class MockConnector:
         history_recorder: HistoryRecorder | None = None,
         decision_trace_recorder: HistoryRecorder | None = None,
         stage_trace: StageTraceSink | None = None,
+        decision_timeout_seconds: float | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._store = store
         self._transport = transport
@@ -86,6 +91,8 @@ class MockConnector:
         self._history_recorder = history_recorder
         self._decision_trace_recorder = decision_trace_recorder
         self._stage_trace = stage_trace
+        self._decision_timeout_seconds = decision_timeout_seconds
+        self._clock = clock
         self._play_pending: set[str] = set()
         self._play_acknowledged: set[str] = set()
         self._finished_qualified: set[str] = set()
@@ -265,6 +272,13 @@ class MockConnector:
             return 0, diagnostics, details, profiles
         if isinstance(request.stage, PlayRequest):
             self._record_stage("play_request_arrived", "received")
+            decision_deadline = (
+                DecisionDeadline(self._clock() + self._decision_timeout_seconds, clock=self._clock)
+                if self._decision_timeout_seconds is not None
+                else None
+            )
+        else:
+            decision_deadline = None
         try:
             record, call_handler = self._store.prepare(request.match_id, request.request_bytes, request.stage, request.replay)
         except SessionStorageError as exc:
@@ -276,7 +290,13 @@ class MockConnector:
             return int(record.pending_response is not None), diagnostics, details, profiles
         try:
             record = self._store.reserve_handler(record)
-            result = self._handler(self._store.handler_context(record, request.stage))
+            result = self._handler(
+                self._store.handler_context(
+                    record,
+                    request.stage,
+                    decision_deadline=decision_deadline,
+                )
+            )
         except Exception:
             self._store.complete_handler(record, HandlerResult(None))
             diagnostics["handler_failure"] += 1

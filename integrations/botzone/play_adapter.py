@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from agents.base import require_legal_action_id
+from decision_deadline import DecisionDeadline
 from agents.rule_based_ai import FrozenRuleBasedAIAgent, RuleBasedAIAgent
 from engine.actions import Action, ActionType, public_action_id
 from engine.cards import Card, card_to_token, sort_cards
@@ -176,43 +177,36 @@ class NoTributeRuleBasedHandler:
         cache_key = (context.match_key, engine_player)
         agent = self._agents.get(cache_key) if self._cache_agents else None
         adapter_fallback = False
+        deadline_setter: Callable[[DecisionDeadline | None], None] | None = None
         try:
-            if agent is None:
-                agent = self._agent_factory(engine_player)
-                if self._cache_agents:
-                    self._agents[cache_key] = agent
-            selected = agent.select_action(agent_observation, agent_actions)
-        except Exception as exc:
-            if not self._fallback_to_rule:
-                raise AdapterError("agent_failure") from exc
-            self._record_model_outcome(agent)
-            adapter_fallback = True
-            selected_id = _fallback_action_id(
-                engine_player,
-                trace_observation,
-                agent_actions,
-                projection.legal_actions,
-                frozen_static=self._agent_mode == "deepseek",
-            )
-        else:
-            if type(selected) is not int:
+            try:
+                if agent is None:
+                    agent = self._agent_factory(engine_player)
+                    if self._cache_agents:
+                        self._agents[cache_key] = agent
+                if context.decision_deadline is not None:
+                    deadline_client = getattr(agent, "client", getattr(agent, "_client", None))
+                    candidate_setter = getattr(deadline_client, "set_decision_deadline", None)
+                    if callable(candidate_setter):
+                        deadline_setter = candidate_setter
+                        deadline_setter(context.decision_deadline)
+                selected = agent.select_action(agent_observation, agent_actions)
+            except Exception as exc:
                 if not self._fallback_to_rule:
-                    raise AdapterError("invalid_agent_action_id")
+                    raise AdapterError("agent_failure") from exc
                 self._record_model_outcome(agent)
                 adapter_fallback = True
                 selected_id = _fallback_action_id(
                     engine_player,
-                    agent_observation,
+                    trace_observation,
                     agent_actions,
                     projection.legal_actions,
                     frozen_static=self._agent_mode == "deepseek",
                 )
             else:
-                try:
-                    selected_id = require_legal_action_id(selected, [dict(action) for action in projection.legal_actions])
-                except (TypeError, ValueError) as exc:
+                if type(selected) is not int:
                     if not self._fallback_to_rule:
-                        raise AdapterError("invalid_agent_action_id") from exc
+                        raise AdapterError("invalid_agent_action_id")
                     self._record_model_outcome(agent)
                     adapter_fallback = True
                     selected_id = _fallback_action_id(
@@ -222,6 +216,24 @@ class NoTributeRuleBasedHandler:
                         projection.legal_actions,
                         frozen_static=self._agent_mode == "deepseek",
                     )
+                else:
+                    try:
+                        selected_id = require_legal_action_id(selected, [dict(action) for action in projection.legal_actions])
+                    except (TypeError, ValueError) as exc:
+                        if not self._fallback_to_rule:
+                            raise AdapterError("invalid_agent_action_id") from exc
+                        self._record_model_outcome(agent)
+                        adapter_fallback = True
+                        selected_id = _fallback_action_id(
+                            engine_player,
+                            agent_observation,
+                            agent_actions,
+                            projection.legal_actions,
+                            frozen_static=self._agent_mode == "deepseek",
+                        )
+        finally:
+            if deadline_setter is not None:
+                deadline_setter(None)
         action = projection.provenance.get(selected_id)
         if action is None:
             raise AdapterError("missing_provenance")
