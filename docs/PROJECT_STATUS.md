@@ -1,5 +1,13 @@
 # 项目状态看板
 
+## 最新状态：两次 119 秒个人局正常完赛，恢复 M1 算法任务（2026-09-26）
+
+- **Coding 与离线验证。** `9d6288d` 为个人 Botzone DeepSeek 路径加入从 play 请求起算的 119 秒整次期限，模型等待在期限前 5 秒停止，超时后记录 `model_complete/timeout` 并走现有合法 fallback；`DEEPSEEK_TIMEOUT` 仍是独立的单次网络读取超时。规划复核 diff、实际个人启动参数及 19 项定向禁网测试；Coding 报告全量 861 项、两版 PowerShell 各 16 组/80 断言通过。此提交没有证明旧 `platform_error` 根因，也不能保证 119 秒期限触发后平台收到及时 Header/ACK。
+- **两次现场结果。** 所有者亲自完成两次分开的 120 秒桌个人局。规划在无运行中 connector、普通非链接、精确白名单条件下逐文件验哈希归档到 `D:\VsCodeProject\GuanDanManualEvidenceArchive\20260926-172058-119s-first-game` 和 `D:\VsCodeProject\GuanDanManualEvidenceArchive\20260926-181002-119s-second-game`，未改原个人文件，未访问 Codex 固定 workspace。第一局 audit 为 17/17/18 请求/响应/Header 发送、16 条本家合法 ACK 决策、13 次模型 success、3 次 local shortcut、0 fallback、1 次正常终局；一次 poll timeout 后同一 pending Header 重送并随后获 ACK，没有第二份动作。第二局为 31/31/31、30 条决策、20 次模型 success、10 次 local shortcut、0 fallback、1 次正常终局。两局 trace 原始 ID 与 canonical action 逐字段一致，阶段序号/相对时间单调、ACK 数分别 17/31（含 deal）、终局 token 一致；最长模型调用约 66.2/88.4 秒。两局均没有模型 timeout，不能证明超时回退的现场效果。
+- **阶段决定。** 上轮 M0 的禁网期限测试、两次分开正常完局、合法动作和 ACK 守恒门槛已满足；将 M0 记为**试测链路本轮放行**，不记为旧故障根因封板。当前 `docs/NEXT_PROMPT.md` 是 M1 来源化开局、多牌型候选、B/C RAG 和 DeepSeek 模型前比较 Coding 任务，仅禁网/离线；其后 M2 算法效果复审。若再次发生本家倒计时结束未出牌，先保存该局证据并按最后阶段回到 M0。当前范围内剩余风险：旧平台错误根因未定，119 秒与平台 120 秒过近，live 超时/fallback 尚未被实际触发。
+
+以下“中途停牌复发，M0 先做整次决策期限保护”是本次放行前历史快照，以本节及 `docs/PLAN.md` 顶部为准。
+
 ## 最新状态：中途停牌复发，M0 先做整次决策期限保护（2026-09-26）
 
 - **用户现场现象。** 正常完局之后，同类本家倒计时结束前未出牌再次出现；另报告两局刚开局就未出牌。项目所有者现将个人 Botzone 桌延时设为 120 秒并要求 DeepSeek 适配。页面现象不能仅凭 `platform_error` 判为模型超时；另两局开局异常尚未独立复核原始证据。
