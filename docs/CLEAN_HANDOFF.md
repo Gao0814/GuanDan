@@ -1,5 +1,7 @@
 # Clean Project Handoff
 
+2026-09-26 最新规划复审：`f5fb88a` 的低敏阶段观测已接入个人启动器并通过独立禁网/合成验证；它没有修复或定位旧局中途停牌。M0 仍在进行，当前等待项目所有者决定是否允许下一次个人试局轮换 `D:\VsCodeProject\GuanDanManualWorkspace` 的旧证据；规划与 Coding 均不代为启动。所有者新局结束后直接按 `docs/NEXT_PROMPT.md` 做只读证据复审；异常时保留目录并暂停再启动。根因未知的放行条件是两次分开的正常完整试局均有阶段证据和规划复审；随后恢复 `docs/OPENING_ALGORITHM_PROMPT.md` 的 M1 算法实现，再做 M2 效果复审。下段旧“当前 Coding Prompt”是提交前快照。
+
 2026-09-26 规划独立复核后的当前顺序为 **M0 中途停牌可用性 → M1 来源化算法 → M2 效果复审**。旧个人局五次本家合法模型动作已获 ACK，最终 `platform_error`；根因仍未定，不能改写为开局未出牌或模型超时。个人 workspace 六份证据和归属标记的大小/hash 本轮只读复核一致，未轮换。当前 Coding Prompt 是 `docs/NEXT_PROMPT.md`；它在一个问题级工作包内验证/修复确切本地缺陷并补低敏阶段观测，不自行开新局。M0 的放行条件见 `docs/PLAN.md`，一次偶然正常完局或仅声称外部故障不足以放行。M1 完整任务已从 `ec5616b` 保存为 `docs/OPENING_ALGORITHM_PROMPT.md`，M0 放行后直接恢复。以下较早“当前/下一项”文字只保留历史事实，以本段及 `docs/PROJECT_STATUS.md` 顶部为准。
 
 2026-09-26 算法规划历史快照：当时 `docs/NEXT_PROMPT.md` 曾是完整的来源条件化开局与多牌型模型前比较 Coding 任务，现已迁至 `docs/OPENING_ALGORITHM_PROMPT.md` 排队。规划复核的三段各 200 局完整随机起局公式直选为 `7/6/4`、全部单张；默认 Botzone factory 的禁网 Request 已有 B/C 条件化输入和推荐/候选闭环，但 seed `0` 的 80 个最终候选含 46 个三带二变体。这些算法事实保持有效，旧“立即执行”顺序已废止。

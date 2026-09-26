@@ -1,20 +1,22 @@
-# Coding Codex 执行 Prompt：中途停牌问题级工作包（M0）
+# 规划 Codex 执行 Prompt：下一次个人试局后复审中途停牌（M0）
 
-## 目标与已证事实
+## 触发条件与目标
 
-项目主线仍为来源化掼蛋算法优化；当前先处理反复发生的个人试局可用性问题：**起初正常出牌，中途长时间不再出牌，最终 Botzone 显示“未知错误”**。本任务在一个 Coding 工作包内定位本项目可证实的停牌缺陷并修复；若现有证据不足，则使下一次同路径试局能低敏、及时地区分停顿边界。不要把此问题写成连接失败或开局从未出牌，也不要把新增观测本身宣称为故障已修复。M0 放行条件见 `docs/PLAN.md`；放行后执行排队的 `docs/OPENING_ALGORITHM_PROMPT.md`。
+仅在项目所有者**明确允许旧个人证据轮换**、亲自使用现有个人启动器完成一局，并报告新局结束或异常后执行。本 Prompt 不授权 Codex 启动个人脚本、连接 Botzone、建桌、清理或轮换证据。所有者尚未决定时保持 `D:\VsCodeProject\GuanDanManualWorkspace` 原样，等待决定，不拿旧局重复当作新阶段证据。
 
-规划复核当前个人目录的归属标记和六份运行文件：均为普通非链接，大小及 SHA-256 与 `docs/PROJECT_STATUS.md` 原审计一致。v8 audit 为 7 cycles、6/6/6 request/response/Header、0 transport failure/timeout、1 次 qualified finished；5 次 DeepSeek attempt 均 success、0 fallback，5 条 ACK trace 连续、source 均 `model`，每个选中 ID 在当时原始合法动作中唯一；最终结果为 `platform_error`，没有正常胜负。history 已观测 17 步，最后一条为本家第 5 次动作，终局尾部可能未观测。**没有第六次本家决策，也没有逐阶段时间或平台错误细节**；不能从五次成功或 `platform_error` 推出停顿由模型超时、本地提交、其他席位或平台哪一方触发。
+任务是在 M0 同一问题级阶段复审新局是否再次出现“先正常出牌，中途长时间不出牌，最后未知错误”，利用 `f5fb88a` 新增的低敏阶段事件定位本地可观察边界，并决定：继续 M0 的哪项具体修复/诊断，或已满足放行条件。旧局五次 ACK 和 `platform_error` 只证明当时已完成的动作与终局分类，不证明模型超时。模型整次生成无总期限是潜在机制，不是既定根因。
 
-## 执行边界
+## 开始前
 
-先读根和适用范围的 `AGENTS.md`、项目 Skills 清单、`README.md`、`CLAUDE.md`、`docs/PROJECT_STATUS.md` 顶部、`docs/PLAN.md` 当前里程碑、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`，再读相关 connector/DeepSeek 客户端、个人启动器与测试，检查 Git status/diff/HEAD。只改此问题直接涉及的 `integrations/botzone/`、`agents/deepseek_client.py` 或必要 Agent、`scripts/` 与对应 tests。不要改 `engine/` 规则、RAG/开局策略、`.env`、URL/密钥或两个 workspace。只暂存并提交本轮自有改动。
+读取适用 `AGENTS.md`、项目 Skills 清单、`docs/PROJECT_STATUS.md` 顶部、`docs/PLAN.md` M0、`docs/CLEAN_HANDOFF.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`，检查 Git status/diff/HEAD。规划 Codex 只做只读证据复审与必要 docs 更新，不改业务代码或 tests；本任务不访问或清理 `D:\VsCodeProject\BotzoneWorkspace`。个人目录先核对精确根、归属标记、普通非链接属性、白名单、无运行中 connector；不符即停止读取并报告。只读取本次低敏阶段、audit 和必要的 ACK/终局一致性字段，不打印或持久化手牌、动作详情、模型文本、prompt、标识符、凭据、连接 URL、Header、异常正文。若异常，保留整局证据，禁止再次启动个人脚本。
 
-`D:\VsCodeProject\GuanDanManualWorkspace` 本轮仅可只读：先核对精确根、归属标记、普通非链接属性、白名单和登记 hash；不符即停止证据读取并报告，不寻找替代路径。**不得启动会轮换它的个人脚本**，也不运行 connector、建桌、真实 DeepSeek、联网 preflight 或清理；不访问 Codex 固定 workspace。测试用合成配置和禁网 transport，禁止读取或输出凭据、连接 URL、match/run 标识、手牌、动作详情、prompt、模型自由文本、Header 内容和异常正文。若项目所有者提供本局页面错误原文/截图或停顿时长，可作为额外证据审阅；没有也继续本工作包。
+## 复审步骤
 
-## 一次性实现与验证
+1. 记录所有者描述的先出牌、停顿起点/大致时长、页面“未知错误”或正常终局；可接受所有者提供的截图或原文，但不要从 `platform_error` 倒推页面细节。核对本次 evidence 的低敏大小/hash、stage-trace 格式与递增序号、单调相对时间、audit/finished/ACK trace 计数与原始合法 ID/source 守恒。终局 history 只能按其实际完整性标志使用。
+2. 将最后一个已确认本家动作后的事件按时间线排列。`model_enter` 后没有 `model_complete` 只能说明模型调用在最后观测点尚未完成；`response_waiting_ack` 后没有 `poll_returned` 说明下一次 poll 尚未返回；有 `poll_returned` 而没有 `response_acknowledged` 则检查本地确认边界。`poll_exit=idle` 表示一次成功 poll 没有新请求。`response_header_emitted` 只代表本地将 Header 交给 poll，不代表平台 ACK。任何缺失事件都应同时核对进程退出、日志写入上限/失败和终局记录，不能单凭最后一行认定远端根因。
+3. 若再次停牌，列出已证实最后边界与尚待区分的假设；只有出现可复现的本地缺陷或足够确定的协议/时限依据，才在同一 M0 阶段派最小 Coding 修复与回归，不猜测平台时限、不盲改超时/重试/动作。若是正常完局，核对整局阶段证据与 ACK 守恒，记为一次验证，不单凭这一局放行。
+4. 根因未知时，M0 放行至少需要**两次分开的正常完整个人试局**，每次有可用阶段证据且无同类停顿，并由规划复审确认试测链路足以支持算法试测。第一局复审完成后，只有项目所有者再次决定允许轮换其证据，才进行第二局。若后续查明并修复确定本地根因，则按 `docs/PLAN.md` 的修复后正常完局门槛复审。M0 放行后直接执行 `docs/OPENING_ALGORITHM_PROMPT.md` 的 M1 算法任务，之后做 M2 效果复审。
 
-1. 沿当前生产链 `poll → parse → handler/Agent → DeepSeek SSE → response prepared → 下一次 poll 中的 Header ACK → finished` 检查可复现的阻塞、吞错、状态丢失和超时语义。注意代码目前的 `max_wall_seconds` 只在 `cycle()` 之间检查，而 DeepSeek transport 的 `timeout_seconds` 是单次网络读超时，尚无已证实的整次生成期限；这是待验证的潜在长等待机制，**不是本局根因判定**。使用可控时钟、慢/分段 SSE 和禁网 poll/handler 回放覆盖“前五次已 ACK，之后无新本家决策”的边界。只有找到确切本地缺陷时才在同包作最小修复并加回归；不得凭 `platform_error` 猜平台时限、改重试/模型参数、改合法动作或成功模型动作。
-2. 为下一次**所有者个人**试局增加显式 opt-in 的低敏阶段观测，默认关闭，不影响 Codex connector。优先写现有个人 `streams/stdout.txt`，若要新文件必须先满足个人 workspace 白名单与 fresh/no-overwrite 规则；不能把阶段事件写入聚合 audit、ACK trace 或普通非 opt-in 日志。用固定枚举、单局内递增序号和单调相对耗时记录 `poll_enter/poll_exit`、新 play 请求到达、模型进入/完成、响应准备、Header 发出、**成功 poll 后确认 ACK**、finished/退出类别；区分“无下一请求”“模型进行中”“响应待 ACK”和“平台已结束”。记录阶段入口时立即 flush，使中途阻塞或进程退出后仍能看到最后边界；用真实个人启动器的合成子进程/禁网测试证明重定向后可见。字段只允许固定阶段名、序号、低基数 outcome 和有界时长，不能有任一标识符、牌、动作 ID、请求/响应、URL、prompt、reasoning、异常文本。记录失败不得改变动作或 ACK 事务。
-3. 如定位到整次调用可能无限等待且可用代码/协议证据确定安全的取消与 fallback 语义，可在同包实现有配置依据的整次上限，并测正常、慢分段、取消、合法 fallback 与状态守恒；不能凭空设平台截止秒数，不能把单次读 timeout 当整次截止，也不能制造第二个同时轮询的 connector。若无法安全证明，就保留待定，仅用阶段证据定位下次真实停顿，不把该工作包伪称为已修复。
-4. 运行相关 Botzone、DeepSeek 客户端与个人启动器测试、主规则回归、`python -m unittest discover -q`、`git diff --check`。报告：确定事实/根因假设分栏，确切修复或仍待定位的最后阶段，低敏输出例子，默认路径无变化、合法 ID/source/ACK 守恒，命令结果、提交及最终 Git status。**本 Coding 任务不启动下一局**。提交后交规划 Codex 复审；随后由项目所有者决定旧证据何时允许轮换及个人手工试局。一次偶然正常完局或只把错误推给外部，都不自动完成 M0。
+## 输出
+
+在 `docs/PROJECT_STATUS.md` 和 `docs/PLAN.md` 更新已证实事实、未证实假设、M0 判定与下一动作；必要时同步 `docs/CLEAN_HANDOFF.md` 和本 Prompt。只提交本轮自有规划文档并报告 commit、最终 Git status、实际验证命令与当前范围内剩余风险。若缺少新局或所有者尚未允许旧证据轮换，只记录等待状态，不执行任何会覆盖个人目录的操作。
