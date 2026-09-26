@@ -630,7 +630,10 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
             chosen = agent.select_action(observation, legal_actions)
 
         self.assertEqual(chosen, 1)
-        self.assertEqual(events, ["evaluate", "prune", "rag", "client"])
+        # RAG reads the complete canonical action set before the model-input
+        # budget is selected, so active evidence can prioritize paired
+        # relations without changing the underlying legal candidates.
+        self.assertEqual(events, ["evaluate", "rag", "prune", "client"])
 
     def test_invalid_model_action_id_still_falls_back(self) -> None:
         client = CountingClient(action_id=999)

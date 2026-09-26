@@ -63,13 +63,13 @@ class ActionQualityCalibrationTests(unittest.TestCase):
         self.assertEqual(
             tuple((row.phase, row.canonical_candidate_count, row.final_candidate_count) for row in self.report.samples),
             (
-                ("opening", 53, 23),
-                ("opening", 83, 51),
+                ("opening", 53, 24),
+                ("opening", 83, 52),
                 ("midgame", 6, 6),
                 ("midgame", 6, 6),
                 ("endgame", 9, 9),
                 ("near_open_endgame", 8, 4),
-                ("opening", 77, 53),
+                ("opening", 77, 55),
                 ("opening", 74, 49),
                 ("midgame", 25, 13),
                 ("midgame", 11, 11),
@@ -83,6 +83,17 @@ class ActionQualityCalibrationTests(unittest.TestCase):
         self.assertEqual(
             tuple(sample.opening_formula_enabled for sample in self.h3_a9.samples),
             (True, False, True, True, True, True),
+        )
+        self.assertEqual(
+            self.h3_a9.samples[1].to_dict(),
+            {
+                "name": "opening_2",
+                "phase": "opening",
+                "canonical_candidate_count": 74,
+                "final_candidate_count": 49,
+                "opening_formula_enabled": False,
+                "candidate_projection": "frozen_h3_pre_budget_representatives",
+            },
         )
         self.assertEqual(
             self.report.to_dict()["comparison_counts"],

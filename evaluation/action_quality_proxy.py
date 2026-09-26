@@ -9,16 +9,23 @@ continuations and are never passed to the agent or transport.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
 import json
+from unittest.mock import patch
 
 from agents.base import require_legal_action_id
 from agents.deepseek_client import (
     DeepSeekClient,
     DeepSeekTransport,
     PROMPT_MAX_CANDIDATE_ACTIONS,
+)
+from agents.action_structure import (
+    CandidateContrast,
+    representative_candidate_contrasts,
+    summarize_candidate_contrasts,
 )
 from agents.game_phase import ENDGAME_PHASES, MIDGAME, OPENING, classify_game_phase
 from agents.rag_advisor import RAGAdvisor
@@ -41,6 +48,8 @@ from evaluation.strategy_intent_action_quality import (
 MAX_ROLLOUT_STEPS = 5000
 SAMPLE_SEEDS = tuple(range(900, 920))
 SAMPLE_COUNT = 6
+PRODUCTION_CANDIDATE_PROJECTION = "production_relation_budget"
+FROZEN_H3_A9_OPENING_2_PROJECTION = "frozen_h3_pre_budget_representatives"
 
 
 class SampleSetStage(StrEnum):
@@ -114,6 +123,7 @@ class ReplayableQualitySample:
     source_seed: int | None = field(default=None, repr=False, compare=False)
     final_candidate_ids: tuple[int, ...] = field(default=(), repr=False, compare=False)
     opening_formula_enabled: bool = field(default=True, repr=False, compare=False)
+    candidate_projection: str = field(default=PRODUCTION_CANDIDATE_PROJECTION, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -122,6 +132,7 @@ class ReplayableQualitySample:
             "canonical_candidate_count": self.canonical_candidate_count,
             "final_candidate_count": self.final_candidate_count,
             "opening_formula_enabled": self.opening_formula_enabled,
+            "candidate_projection": self.candidate_projection,
         }
 
 
@@ -255,6 +266,47 @@ def _actual_game_matches_public(
         return False
 
 
+def _frozen_h3_a9_opening_2_contrasts(
+    observation: dict[str, object],
+    legal_actions: list[dict[str, object]],
+    opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
+    **_kwargs: object,
+) -> tuple[CandidateContrast, ...] | None:
+    """Rebuild the pre-M1 representative relation view for one frozen row.
+
+    H3-A9 ``opening_2`` is an explicitly counterfactual historical calibration
+    row, not a production request. Keep its 74/49 candidate contract stable
+    while production relation budgeting evolves; all other samples use the
+    current client projection.
+    """
+    if (
+        type(opening_formula_contrasts) is not tuple
+        or any(
+            type(item) is not CandidateContrast
+            or not isinstance(item.kind, str)
+            or type(item.action_ids) is not tuple
+            or len(item.action_ids) != 2
+            or any(type(action_id) is not int for action_id in item.action_ids)
+            for item in opening_formula_contrasts
+        )
+        or summarize_candidate_contrasts(observation, legal_actions) is None
+    ):
+        return None
+    representatives = representative_candidate_contrasts(observation, legal_actions)
+    if representatives is None:
+        return None
+    merged: list[CandidateContrast] = []
+    seen: set[tuple[str, tuple[int, int]]] = set()
+    for item in (*opening_formula_contrasts, *representatives):
+        if type(item) is not CandidateContrast:
+            return None
+        key = (item.kind, item.action_ids)
+        if key not in seen:
+            seen.add(key)
+            merged.append(item)
+    return tuple(merged)
+
+
 def _invoke_model_path(
     game: GuanDanGame,
     observation: dict[str, object],
@@ -265,11 +317,17 @@ def _invoke_model_path(
     transport: DeepSeekTransport | None = None,
     client_settings: DeepSeekClientSettings | None = None,
     opening_formula_enabled: bool = True,
+    candidate_projection: str = PRODUCTION_CANDIDATE_PROJECTION,
 ) -> _ModelSelection:
     if (provider is None) == (transport is None):
         return _ModelSelection(None, None, (), "model_transport_configuration_invalid")
     if client_settings is not None and not isinstance(client_settings, DeepSeekClientSettings):
         return _ModelSelection(None, None, (), "client_settings_invalid")
+    if not isinstance(candidate_projection, str) or candidate_projection not in {
+        PRODUCTION_CANDIDATE_PROJECTION,
+        FROZEN_H3_A9_OPENING_2_PROJECTION,
+    }:
+        return _ModelSelection(None, None, (), "candidate_projection_invalid")
     if not _actual_game_matches_public(game, observation, legal_actions):
         return _ModelSelection(None, None, (), "snapshot_public_mismatch")
     info = observation.get("my_info")
@@ -312,12 +370,22 @@ def _invoke_model_path(
         **client_options,
     )
     try:
-        agent, client, chosen = _run_projection(
-            fixture,
-            advisor,
-            opening_formula_enabled=opening_formula_enabled,
-            client_factory=client_factory,
+        projection_context = (
+            patch.object(
+                DeepSeekClient,
+                "_prompt_candidate_contrasts",
+                staticmethod(_frozen_h3_a9_opening_2_contrasts),
+            )
+            if candidate_projection == FROZEN_H3_A9_OPENING_2_PROJECTION
+            else nullcontext()
         )
+        with projection_context:
+            agent, client, chosen = _run_projection(
+                fixture,
+                advisor,
+                opening_formula_enabled=opening_formula_enabled,
+                client_factory=client_factory,
+            )
     except Exception:
         return _ModelSelection(None, reference_id, (), "model_pipeline_failure")
     injected_transport = transport
@@ -417,6 +485,7 @@ def _make_sample(
     source_seed: int | None,
     advisor: RAGAdvisor,
     opening_formula_enabled: bool = True,
+    candidate_projection: str = PRODUCTION_CANDIDATE_PROJECTION,
 ) -> tuple[ReplayableQualitySample | None, str | None]:
     selection = _invoke_model_path(
         game,
@@ -425,6 +494,7 @@ def _make_sample(
         _first_candidate_provider,
         advisor,
         opening_formula_enabled=opening_formula_enabled,
+        candidate_projection=candidate_projection,
     )
     if selection.failure_code in {"model_path_not_reached", "insufficient_final_candidates"}:
         return None, None
@@ -443,6 +513,7 @@ def _make_sample(
         source_seed=source_seed,
         final_candidate_ids=selection.final_action_ids,
         opening_formula_enabled=opening_formula_enabled,
+        candidate_projection=candidate_projection,
     ), None
 
 
@@ -699,6 +770,7 @@ def evaluate_quality_sample(
         transport=transport,
         client_settings=client_settings,
         opening_formula_enabled=sample.opening_formula_enabled,
+        candidate_projection=sample.candidate_projection,
     )
     reference_visible = reference_id in selection.final_action_ids
     if selection.failure_code is not None or selection.reference_action_id != reference_id:

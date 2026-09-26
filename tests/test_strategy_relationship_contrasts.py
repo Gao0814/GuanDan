@@ -1,6 +1,7 @@
 """Engine-backed regressions for public model-before action contrasts."""
 
 from copy import deepcopy
+from collections import Counter
 from collections.abc import Callable
 import json
 from pathlib import Path
@@ -9,13 +10,20 @@ import unittest
 from unittest.mock import patch
 
 from agents.action_structure import (
+    CANDIDATE_RELATION_KINDS,
     representative_candidate_contrasts,
     select_candidate_structure_representatives,
     summarize_candidate_contrasts,
     summarize_candidate_structures,
 )
 from agents.deepseek_ai import DeepSeekAIAgent
-from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion, PROMPT_MAX_CANDIDATE_ACTIONS
+from agents.deepseek_client import (
+    DeepSeekClient,
+    DeepSeekSuggestion,
+    PROMPT_MAX_CANDIDATE_ACTIONS,
+    _PROMPT_RELATION_SOURCE_IDS,
+    _PROMPT_RELATION_KIND_ORDER,
+)
 from agents.game_phase import classify_game_phase
 from agents.strategy_recommendation import build_strategy_recommendation
 from engine.cards import Card, build_double_deck
@@ -544,8 +552,8 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
             KnowledgeRetriever(KnowledgeBaseLoader(Path("rag")).load_all_documents())
         )
         opening_cases = (
-            ("low_cost_single", 53, 23, 10_000),
-            ("neutral_soft_pair", 83, 51, 16_000),
+            ("low_cost_single", 53, 24, 10_000),
+            ("neutral_soft_pair", 83, 52, 16_000),
         )
         for fixture, expected in zip(build_h3_model_probe_opening_fixtures(), opening_cases):
             name, raw_count, candidate_count, char_budget = expected
@@ -586,6 +594,77 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
         self.assertEqual(len(transport.candidate_ids), PROMPT_MAX_CANDIDATE_ACTIONS)
         self.assertLessEqual(len(transport.prompt), 30_000)
         self.assertNotIn("出后用途=", transport.prompt)
+
+    def test_prompt_relation_budget_is_paired_source_aware_and_bounded(self) -> None:
+        self.assertEqual(set(_PROMPT_RELATION_KIND_ORDER), set(CANDIDATE_RELATION_KINDS))
+        self.assertEqual(set(_PROMPT_RELATION_SOURCE_IDS), set(CANDIDATE_RELATION_KINDS))
+        game = GuanDanGame(seed=0, current_level_rank="2")
+        observation = game.reset()
+        actions = game.legal_actions()
+        advisor = RAGAdvisor(
+            KnowledgeRetriever(KnowledgeBaseLoader(Path("rag")).load_all_documents())
+        )
+        agent, client, transport = _capture_production_request(
+            observation,
+            actions,
+            opening_formula_enabled=False,
+            advisor=advisor,
+        )
+        final_ids = set(transport.candidate_ids)
+        full_contrasts = summarize_candidate_contrasts(observation, actions)
+        self.assertIsNotNone(full_contrasts)
+        assert full_contrasts is not None
+        self.assertEqual(len(full_contrasts), 63)
+        rag_context = client.captured_kwargs.get("rag_context")
+        self.assertIsInstance(rag_context, dict)
+        assert isinstance(rag_context, dict)
+        selected = DeepSeekClient._prompt_candidate_contrasts(
+            observation,
+            actions,
+            strategy_recommendation=agent.last_strategy_recommendation,
+            rag_context=rag_context,
+        )
+        self.assertIsNotNone(selected)
+        assert selected is not None
+        self.assertLessEqual(len(selected), 24)
+        self.assertTrue(all(count <= 2 for count in Counter(item.kind for item in selected).values()))
+        full_pair_set = {frozenset(item.action_ids) for item in full_contrasts}
+        selected_pair_set = {frozenset(item.action_ids) for item in selected}
+        self.assertTrue(selected_pair_set.issubset(full_pair_set))
+        active_source_ids = {
+            str(hit["source_id"])
+            for hit in rag_context.get("experience_hits", [])
+            if isinstance(hit, dict) and isinstance(hit.get("source_id"), str)
+        }
+        self.assertTrue(
+            _PROMPT_RELATION_SOURCE_IDS.get(selected[0].kind, frozenset()) & active_source_ids
+        )
+        self.assertEqual(len(final_ids), len(set(transport.candidate_ids)))
+        self.assertLessEqual(len(final_ids), PROMPT_MAX_CANDIDATE_ACTIONS)
+        self.assertTrue(
+            set(getattr(agent.last_strategy_recommendation, "action_ids", ())).issubset(final_ids)
+        )
+
+        prompt_lines = transport.prompt.splitlines()
+        relation_start = prompt_lines.index("【公开关系对照】") + 1
+        relation_end = next(
+            (index for index in range(relation_start, len(prompt_lines))
+             if prompt_lines[index].startswith("【")),
+            len(prompt_lines),
+        )
+        relation_section = "\n".join(prompt_lines[relation_start:relation_end])
+        displayed_pairs: set[frozenset[int]] = set()
+        for line in relation_section.splitlines():
+            ids = {int(value) for value in re.findall(r"action_id=(\d+)", line)}
+            if ids:
+                self.assertEqual(len(ids), 2)
+                pair = frozenset(ids)
+                self.assertTrue(pair.issubset(final_ids))
+                self.assertIn(pair, full_pair_set)
+                displayed_pairs.add(pair)
+        self.assertTrue(displayed_pairs)
+        self.assertTrue(displayed_pairs.issubset(selected_pair_set))
+        self.assertEqual(agent.last_decision_source, "model")
 
     def test_relationship_detection_is_stable_across_rank_and_public_hand_order(self) -> None:
         for rank in ("5", "9"):

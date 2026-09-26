@@ -126,7 +126,7 @@ class ActionQualityProxyTests(unittest.TestCase):
         self.assertTrue(all(sample.source_seed is not None and 900 <= sample.source_seed <= 919 for sample in self.samples[2:]))
         self.assertEqual(
             tuple((sample.canonical_candidate_count, sample.final_candidate_count) for sample in self.samples),
-            ((53, 23), (83, 51), (6, 6), (6, 6), (9, 9), (8, 4)),
+            ((53, 24), (83, 52), (6, 6), (6, 6), (9, 9), (8, 4)),
         )
         for sample in self.samples:
             observation = sample.game_snapshot.observe()
@@ -375,6 +375,22 @@ class ActionQualityProxyTests(unittest.TestCase):
         self.assertEqual(provider_calls, 1)
         rollout.assert_not_called()
         self.assertEqual(result.failure_code, "final_candidate_set_changed")
+        self.assertEqual(result.comparison, Comparison.UNEVALUABLE)
+
+    def test_unknown_candidate_projection_fails_before_provider_or_rollout(self) -> None:
+        sample = replace(self.samples[0], candidate_projection=[])  # type: ignore[arg-type]
+        provider_calls = 0
+
+        def provider(_request: ProviderInput) -> object:
+            nonlocal provider_calls
+            provider_calls += 1
+            return None
+
+        with patch.object(proxy, "_rollout") as rollout:
+            result = evaluate_quality_sample(sample, provider, advisor=self.advisor)
+        self.assertEqual(provider_calls, 0)
+        rollout.assert_not_called()
+        self.assertEqual(result.failure_code, "candidate_projection_invalid")
         self.assertEqual(result.comparison, Comparison.UNEVALUABLE)
 
     def test_real_rollout_reruns_produce_byte_identical_safe_output(self) -> None:

@@ -789,9 +789,9 @@ class MultiPatternOpeningTests(unittest.TestCase):
             )
         )
         expected = {
-            "low_cost_single": (53, 23, 9882, "exp_soft_single_cost_probe_001"),
-            "neutral_soft_pair": (83, 51, 15233, "exp_soft_pair_probe_001"),
-            "seed29": (80, 50, 15680, "exp_soft_pair_probe_001"),
+            "low_cost_single": (53, 24, 9882, "exp_soft_single_cost_probe_001"),
+            "neutral_soft_pair": (83, 52, 15233, "exp_soft_pair_probe_001"),
+            "seed29": (80, 52, 15680, "exp_soft_pair_probe_001"),
         }
         covered_patterns: set[str] = set()
         for fixture in fixtures:
@@ -877,8 +877,11 @@ class MultiPatternOpeningTests(unittest.TestCase):
                     self.assertIn("可撤回软假设：", prompt)
                 self.assertLessEqual(len(prompt), baseline_chars)
 
-                contrasts = representative_candidate_contrasts(
-                    fixture.observation, fixture.legal_actions,
+                contrasts = DeepSeekClient._prompt_candidate_contrasts(
+                    fixture.observation,
+                    fixture.legal_actions,
+                    strategy_recommendation=recommendation,
+                    rag_context=rag_context,
                 )
                 self.assertIsNotNone(contrasts)
                 assert contrasts is not None
@@ -915,7 +918,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
         observations = []
         selected_patterns = []
         for selection_index in (0, -1):
-            agent, _client, transport, chosen = _run_factory_opening_request(
+            agent, client, transport, chosen = _run_factory_opening_request(
                 fixture,
                 selected_candidate_index=selection_index,
             )
@@ -967,17 +970,25 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 int(value) for value in re.findall(r"action_id=(\d+)", candidate_section)
             }
             self.assertEqual(displayed_ids, final_ids)
-            representative_contrasts = representative_candidate_contrasts(observation, actions) or ()
+            selected_contrasts = DeepSeekClient._prompt_candidate_contrasts(
+                observation,
+                actions,
+                strategy_recommendation=agent.last_strategy_recommendation,
+                rag_context=client.suggestion_kwargs.get("rag_context"),
+            ) or ()
             relation_section = _prompt_section(transport.prompt, "公开关系对照")
-            for contrast in representative_contrasts:
-                if set(contrast.action_ids).issubset(final_ids):
-                    self.assertTrue(
-                        any(
-                            all(f"action_id={action_id}" in line for action_id in contrast.action_ids)
-                            for line in relation_section.splitlines()
-                            if "action_id=" in line
-                        )
-                    )
+            actual_relation_pairs = {
+                frozenset(int(value) for value in re.findall(r"action_id=(\d+)", line))
+                for line in relation_section.splitlines()
+                if "action_id=" in line
+            }
+            expected_relation_pairs = {
+                frozenset(contrast.action_ids)
+                for contrast in selected_contrasts
+                if set(contrast.action_ids).issubset(final_ids)
+            }
+            self.assertEqual(actual_relation_pairs, expected_relation_pairs)
+            self.assertTrue(all(pair.issubset(final_ids) for pair in actual_relation_pairs))
             observations.append((transport.candidate_ids, chosen))
 
         self.assertEqual(observations[0][0], observations[1][0])
@@ -992,9 +1003,9 @@ class MultiPatternOpeningTests(unittest.TestCase):
             ProbeFixture("seed29", observation, game.legal_actions(), game_snapshot=game)
         )
         expected = {
-            "low_cost_single": (53, 23, 8840, 16336, "exp_soft_single_cost_probe_001", 3900, 4550, 680, 1520),
-            "neutral_soft_pair": (83, 51, 14286, 23358, "exp_soft_pair_probe_001", 8450, 9100, 650, 1460),
-            "seed29": (80, 50, 14733, 24723, "exp_soft_pair_probe_001", 8350, 9000, 650, 1460),
+            "low_cost_single": (53, 24, 9340, 16336, "exp_soft_single_cost_probe_001", 4100, 4700, 680, 1520),
+            "neutral_soft_pair": (83, 52, 14500, 23358, "exp_soft_pair_probe_001", 8600, 9200, 650, 1460),
+            "seed29": (80, 52, 15000, 24723, "exp_soft_pair_probe_001", 8550, 9250, 650, 1460),
         }
 
         for fixture in fixtures:

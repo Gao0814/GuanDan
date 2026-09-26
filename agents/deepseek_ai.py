@@ -592,6 +592,44 @@ class DeepSeekAIAgent(BaseAgent):
             except Exception:
                 self.last_strategy_recommendation = None
 
+        # Retrieval uses the complete public action set and recommendation,
+        # so it can precede final candidate budgeting without creating a
+        # dependency on a pruned prompt subset. The resulting active evidence
+        # also helps the candidate limiter choose which complete relations to
+        # spend its bounded pair budget on.
+        rag_context: dict[str, object] | None = None
+        rule_evidence: tuple[RAGEvidence, ...] = ()
+        experience_evidence: tuple[RAGEvidence, ...] = ()
+        if self.rag_advisor is not None:
+            try:
+                get_context = getattr(self.rag_advisor, "get_rag_context", None)
+                if callable(get_context):
+                    rag_context = get_context(
+                        observation=observation,
+                        legal_actions=legal_actions,
+                        hand_eval=hand_evaluation,
+                        top_k=self.rag_top_k,
+                        phase_context=phase_context,
+                        strategy_context=self.last_strategy_intent,
+                        strategy_recommendation=strategy_recommendation,
+                    )
+                else:
+                    query = _rag_query_from_observation(observation)
+                    rule_evidence = self.rag_advisor.retrieve_rule_evidence(query, top_k=self.rag_top_k)
+                    experience_evidence = self.rag_advisor.retrieve_experience_evidence(query, top_k=self.rag_top_k)
+                    rag_context = _build_rag_context(
+                        rule_evidence=rule_evidence,
+                        experience_evidence=experience_evidence,
+                        query=query,
+                    )
+            except Exception:
+                rag_context = {
+                    "scene_tags": {},
+                    "rule_hits": [],
+                    "experience_hits": [],
+                    "query": "",
+                }
+
         current_round = dict(observation.get("current_round", {}))
         display_constraint = str(current_round.get("constraint", "free"))
         step_no = _coerce_int(current_round.get("step_no"), default=0)
@@ -605,6 +643,7 @@ class DeepSeekAIAgent(BaseAgent):
             strategy_recommendation=strategy_recommendation,
             observation=observation,
             opening_formula_contrasts=opening_formula_contrasts,
+            rag_context=rag_context,
         )
 
         history = dict(observation.get("history", {}))
@@ -682,40 +721,6 @@ class DeepSeekAIAgent(BaseAgent):
                 f"（原始 {len(legal_actions)} 个已剪枝）",
                 flush=True,
             )
-
-        # --- RAG context ---
-        rag_context: dict[str, object] | None = None
-        rule_evidence: tuple[RAGEvidence, ...] = ()
-        experience_evidence: tuple[RAGEvidence, ...] = ()
-        if self.rag_advisor is not None:
-            try:
-                get_context = getattr(self.rag_advisor, "get_rag_context", None)
-                if callable(get_context):
-                    rag_context = get_context(
-                        observation=observation,
-                        legal_actions=legal_actions,
-                        hand_eval=hand_evaluation,
-                        top_k=self.rag_top_k,
-                        phase_context=phase_context,
-                        strategy_context=self.last_strategy_intent,
-                        strategy_recommendation=strategy_recommendation,
-                    )
-                else:
-                    query = _rag_query_from_observation(observation)
-                    rule_evidence = self.rag_advisor.retrieve_rule_evidence(query, top_k=self.rag_top_k)
-                    experience_evidence = self.rag_advisor.retrieve_experience_evidence(query, top_k=self.rag_top_k)
-                    rag_context = _build_rag_context(
-                        rule_evidence=rule_evidence,
-                        experience_evidence=experience_evidence,
-                        query=query,
-                    )
-            except Exception:
-                rag_context = {
-                    "scene_tags": {},
-                    "rule_hits": [],
-                    "experience_hits": [],
-                    "query": "",
-                }
 
         if verbose:
             _print_rag_summary(

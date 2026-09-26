@@ -14,6 +14,7 @@ from agents.rag_advisor import RAGAdvisor
 from agents.rule_based_ai import RuleBasedAIAgent
 from engine.game import GuanDanGame
 from evaluation.action_quality_proxy import (
+    FROZEN_H3_A9_OPENING_2_PROJECTION,
     MAX_ROLLOUT_STEPS,
     ReplayableQualitySample,
     SampleSetResult,
@@ -144,6 +145,11 @@ def _first_eligible_states_for_seed(
                 source_seed=seed,
                 advisor=advisor,
                 opening_formula_enabled=opening_formula_enabled,
+                candidate_projection=(
+                    FROZEN_H3_A9_OPENING_2_PROJECTION
+                    if layer == _OPENING_LAYER and seed == 921
+                    else "production_relation_budget"
+                ),
             )
             if failure is not None:
                 return None, "model_path_invalid"

@@ -108,6 +108,9 @@ _RESIDUAL_USE_RELATION_KINDS = frozenset(
 PROMPT_MAX_CANDIDATE_ACTIONS = 80
 MAX_OPENING_PATTERN_REPRESENTATIVES = 20
 MAX_OPENING_ACTIONS_PER_PATTERN_FAMILY = 8
+MAX_PROMPT_RELATION_PAIRS = 24
+MAX_PROMPT_RELATIONS_PER_KIND = 2
+MAX_PROMPT_RELATION_EXTRA_ACTIONS = 36
 _OPENING_PATTERN_ORDER = (
     "single",
     "pair",
@@ -120,6 +123,35 @@ _OPENING_PATTERN_ORDER = (
     "straight_flush",
     "joker_bomb",
 )
+_PROMPT_RELATION_KIND_ORDER = (
+    "danger_block_resource", "danger_block_choice",
+    "teammate_control_resource", "teammate_table_choice",
+    "bomb_residual", "bomb_strength_resource", "straight_flush_bomb_fragment",
+    "wildcard_resource", "triple_split_repartition", "sequence_structure_loss",
+    "triple_pair_kicker_gradient", "natural_pair_single", "natural_group_single",
+    "natural_sequence_single", "straight_strength", "steel_plate_strength",
+    "natural_single_cost", "single_control_resource",
+)
+_PROMPT_RELATION_SOURCE_IDS = {
+    "natural_single_cost": frozenset({"exp_soft_single_cost_probe_001", "exp_lead_opening_strong_001"}),
+    "single_control_resource": frozenset({"exp_lead_opening_strong_001", "exp_midgame_control_001"}),
+    "natural_pair_single": frozenset({"exp_soft_pair_probe_001", "exp_lead_opening_medium_001", "exp_lead_opening_shape_001"}),
+    "natural_group_single": frozenset({"exp_soft_pair_probe_001", "exp_lead_opening_medium_001", "exp_lead_opening_shape_001"}),
+    "natural_sequence_single": frozenset({"exp_lead_opening_shape_001", "exp_lead_opening_weak_001"}),
+    "sequence_structure_loss": frozenset({"exp_lead_opening_shape_001", "exp_lead_opening_weak_001"}),
+    "straight_strength": frozenset({"exp_lead_opening_shape_001", "exp_soft_straight_strength_001"}),
+    "steel_plate_strength": frozenset({"exp_lead_opening_shape_001", "exp_soft_steel_plate_strength_001"}),
+    "triple_split_repartition": frozenset({"exp_soft_triple_repartition_001"}),
+    "triple_pair_kicker_gradient": frozenset({"exp_soft_triple_pair_gradient_001"}),
+    "straight_flush_bomb_fragment": frozenset({"exp_soft_straight_flush_bomb_cost_001", "exp_bomb_wildcard_001"}),
+    "bomb_residual": frozenset({"exp_bomb_wildcard_001"}),
+    "bomb_strength_resource": frozenset({"exp_bomb_wildcard_001", "exp_midgame_control_001"}),
+    "wildcard_resource": frozenset({"exp_bomb_wildcard_001"}),
+    "teammate_control_resource": frozenset({"exp_midgame_teammate_001"}),
+    "teammate_table_choice": frozenset({"exp_midgame_teammate_001"}),
+    "danger_block_resource": frozenset({"exp_midgame_block_001"}),
+    "danger_block_choice": frozenset({"exp_midgame_block_001"}),
+}
 PROMPT_MAX_ACTION_DISPLAY_CHARS = 96
 PROMPT_MAX_ACTION_CARRIER_CHARS = 160
 PROMPT_MAX_WILDCARD_INFO_CHARS = 160
@@ -1200,15 +1232,13 @@ class DeepSeekClient:
         if constraint == "free":
             if protected_opening_action_ids:
                 # Full-deal opening family representation is part of this
-                # branch; immediate finishes remain first, then valid advice,
-                # one route per family, and only then complete relation pairs.
+                # branch. Urgency, valid advice, family coverage and the
+                # ordinary transition pair are reserved before relation pairs.
                 add_category(lambda action: DeepSeekClient._is_finishing_action(action, hand_count))
                 for action in protected_actions:
                     reserve(action)
                 for action in opening_actions:
                     reserve(action)
-                for group in protected_relation_groups:
-                    reserve_relation_group(group)
             natural_singles = sorted(
                 [
                     action
@@ -1232,6 +1262,8 @@ class DeepSeekClient:
             if natural_pairs:
                 reserve(natural_pairs[0])
             if protected_opening_action_ids:
+                for group in protected_relation_groups:
+                    reserve_relation_group(group)
                 # Preserve the established finishing/pressure/wildcard
                 # priority, but share each tier across actual opening pattern
                 # families.  A dense triple-with-pair family can no longer
@@ -1268,8 +1300,22 @@ class DeepSeekClient:
             )
             if passes:
                 reserve(passes[0])
+            add_category(lambda action: DeepSeekClient._is_finishing_action(action, hand_count))
             for action in protected_actions:
                 reserve(action)
+            # Keep one real representative of each pressure family before
+            # relation pairs consume overflow slots. Remaining pressure actions
+            # continue to compete in the regular bounded pressure tier below.
+            for pattern in ("bomb", "straight_flush", "joker_bomb"):
+                representative = next(
+                    (
+                        action for action in sorted(unique_actions, key=DeepSeekClient._prune_sort_key)
+                        if str(action.get("declared_pattern", "")) == pattern
+                    ),
+                    None,
+                )
+                if representative is not None:
+                    reserve(representative)
             for group in protected_relation_groups:
                 reserve_relation_group(group)
 
@@ -1414,18 +1460,19 @@ class DeepSeekClient:
         observation: dict[str, object],
         legal_actions: list[dict[str, object]],
         opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
+        *,
+        strategy_recommendation: "StrategyRecommendation | None" = None,
+        rag_context: dict[str, object] | None = None,
     ) -> tuple[CandidateContrast, ...] | None:
-        """Merge bounded, validated local-formula blockers with display contrasts.
+        """Select useful complete relations without changing formula eligibility.
 
-        The opening formula evaluates the complete relation set, while the
-        ordinary prompt uses a smaller representative subset. If a complete
-        relation was the reason a local action was deferred, carry that exact
-        canonical contrast into candidate protection and the final prompt.
+        Relation detection keeps its complete canonical denominator.  This
+        separate bounded view selects prompt comparisons using active source
+        evidence, public residual differences, recommendation/family overlap,
+        and the incremental candidate cost of each complete pair.
         """
-
         full_contrasts = summarize_candidate_contrasts(observation, legal_actions)
-        representatives = representative_candidate_contrasts(observation, legal_actions)
-        if full_contrasts is None or representatives is None:
+        if full_contrasts is None:
             return None
         if (
             type(opening_formula_contrasts) is not tuple
@@ -1443,15 +1490,248 @@ class DeepSeekClient:
         ):
             opening_formula_contrasts = ()
 
-        merged: list[CandidateContrast] = []
+        by_id = {
+            int(action["action_id"]): action
+            for action in legal_actions
+            if isinstance(action, dict) and type(action.get("action_id")) is int
+        }
+        if len(by_id) != len(legal_actions):
+            return None
+        facts = summarize_candidate_structures(observation, legal_actions)
+        if facts is None:
+            return None
+        facts_by_id = {fact.action_id: fact for fact in facts}
+        if len(facts_by_id) != len(by_id):
+            return None
+
+        validated_recommendation = DeepSeekClient._validated_strategy_recommendation(
+            strategy_recommendation, legal_actions,
+        )
+        recommendation_ids = (
+            validated_recommendation.action_ids
+            if validated_recommendation is not None
+            else ()
+        )
+        try:
+            phase_context = classify_game_phase(observation)
+        except Exception:
+            phase_context = None
+        opening_ids = DeepSeekClient._opening_pattern_representative_ids(
+            observation, legal_actions, phase_context,
+        ) if phase_context is not None else ()
+
+        # Candidate slots needed independently of any relation: urgent
+        # finishes, exact recommendation IDs, opening-family representatives,
+        # the ordinary transition representatives, pass, and one representative
+        # for each available pressure family.
+        baseline_ids: set[int] = set(recommendation_ids) | set(opening_ids)
+        baseline_ids.update(
+            fact.action_id for fact in facts if fact.finishes_hand
+        )
+        current_round = observation.get("current_round")
+        constraint = (
+            str(current_round.get("constraint", ""))
+            if isinstance(current_round, dict)
+            else ""
+        )
+        if constraint == "free":
+            natural_singles = sorted(
+                (
+                    fact for fact in facts
+                    if fact.pattern == "single" and not fact.uses_wildcard
+                ),
+                key=lambda fact: DeepSeekClient._prune_sort_key(by_id[fact.action_id]),
+            )
+            natural_pairs = sorted(
+                (
+                    fact for fact in facts
+                    if fact.pattern == "pair" and not fact.uses_wildcard
+                ),
+                key=lambda fact: DeepSeekClient._prune_sort_key(by_id[fact.action_id]),
+            )
+            baseline_ids.update(fact.action_id for fact in natural_singles[:1])
+            baseline_ids.update(fact.action_id for fact in natural_pairs[:1])
+        else:
+            baseline_ids.update(
+                fact.action_id for fact in facts if fact.pattern == "pass"
+            )
+            for pattern in ("bomb", "straight_flush", "joker_bomb"):
+                pressure_facts = sorted(
+                    (fact for fact in facts if fact.pattern == pattern),
+                    key=lambda fact: DeepSeekClient._prune_sort_key(by_id[fact.action_id]),
+                )
+                baseline_ids.update(fact.action_id for fact in pressure_facts[:1])
+
+        baseline_signatures = {
+            DeepSeekClient._action_signature(by_id[action_id])
+            for action_id in baseline_ids
+            if action_id in by_id
+        }
+        relation_extra_budget = min(
+            MAX_PROMPT_RELATION_EXTRA_ACTIONS,
+            max(0, PROMPT_MAX_CANDIDATE_ACTIONS - len(baseline_signatures)),
+        )
+        if relation_extra_budget == 0:
+            return ()
+
+        source_ids: set[str] = set()
+        if isinstance(rag_context, dict):
+            hits = rag_context.get("experience_hits")
+            if isinstance(hits, list):
+                source_ids = {
+                    str(hit["source_id"])
+                    for hit in hits
+                    if isinstance(hit, dict) and isinstance(hit.get("source_id"), str)
+                }
+
+        formula_keys = {
+            (item.kind, item.action_ids) for item in opening_formula_contrasts
+        }
+        candidates: list[CandidateContrast] = []
         seen: set[tuple[str, tuple[int, int]]] = set()
-        for contrast in (*opening_formula_contrasts, *representatives):
+        for contrast in (*opening_formula_contrasts, *full_contrasts):
             key = (contrast.kind, contrast.action_ids)
             if key in seen:
                 continue
             seen.add(key)
-            merged.append(contrast)
-        return tuple(merged)
+            first, second = contrast.action_ids
+            if first not in by_id or second not in by_id or first == second:
+                continue
+            first_signature = DeepSeekClient._action_signature(by_id[first])
+            second_signature = DeepSeekClient._action_signature(by_id[second])
+            if first_signature == second_signature:
+                continue
+            candidates.append(contrast)
+
+        kind_order = {
+            kind: index for index, kind in enumerate(_PROMPT_RELATION_KIND_ORDER)
+        }
+
+        def endpoint_key(action_id: int) -> tuple[object, ...]:
+            action = by_id[action_id]
+            fact = facts_by_id[action_id]
+            carrier = action.get("carrier_cards")
+            ranks = tuple(sorted(
+                _RANK_ORDER.get(_rank_of(str(card)), 0)
+                for card in carrier
+            )) if isinstance(carrier, list) else ()
+            return (
+                fact.pattern,
+                fact.uses_wildcard,
+                fact.carrier_count,
+                ranks,
+                fact.finishes_hand,
+                fact.residual_singleton_rank_count,
+                fact.estimated_remaining_rank_groups,
+                action_id,
+            )
+
+        def residual_difference(contrast: CandidateContrast) -> int:
+            first = facts_by_id[contrast.action_ids[0]]
+            second = facts_by_id[contrast.action_ids[1]]
+            return (
+                abs(first.residual_singleton_rank_count - second.residual_singleton_rank_count) * 3
+                + abs(first.estimated_remaining_rank_groups - second.estimated_remaining_rank_groups) * 2
+                + abs((first.residual_card_count or 0) - (second.residual_card_count or 0))
+                + 2 * int(first.clears_played_rank_groups != second.clears_played_rank_groups)
+                + 2 * int(first.fragments_played_rank_group != second.fragments_played_rank_group)
+                + 2 * int(first.consumes_control_resource != second.consumes_control_resource)
+                + 2 * int(first.uses_wildcard != second.uses_wildcard)
+                + len(set(first.residual_hand_natural_pattern_kinds or ()) ^ set(second.residual_hand_natural_pattern_kinds or ()))
+            )
+
+        def priority_key(contrast: CandidateContrast) -> tuple[object, ...]:
+            kind = contrast.kind
+            expected_sources = _PROMPT_RELATION_SOURCE_IDS.get(kind, frozenset())
+            source_applicable = bool(expected_sources & source_ids)
+            urgent = kind.startswith(("danger_block", "teammate_"))
+            recommendation_overlap = sum(
+                action_id in recommendation_ids for action_id in contrast.action_ids
+            )
+            opening_overlap = sum(
+                action_id in opening_ids for action_id in contrast.action_ids
+            )
+            endpoint_families = tuple(
+                (
+                    facts_by_id[action_id].pattern,
+                    facts_by_id[action_id].uses_wildcard,
+                )
+                for action_id in contrast.action_ids
+            )
+            cross_family = endpoint_families[0] != endpoint_families[1]
+            return (
+                0 if (kind, contrast.action_ids) in formula_keys else 1,
+                0 if urgent else 1,
+                0 if source_applicable else 1,
+                -recommendation_overlap,
+                -opening_overlap,
+                -int(cross_family),
+                -residual_difference(contrast),
+                kind_order.get(kind, len(kind_order)),
+                endpoint_key(contrast.action_ids[0]),
+                endpoint_key(contrast.action_ids[1]),
+                contrast.action_ids,
+            )
+
+        def missing_signatures(contrast: CandidateContrast, selected: set[tuple[object, ...]]) -> set[tuple[object, ...]]:
+            return {
+                DeepSeekClient._action_signature(by_id[action_id])
+                for action_id in contrast.action_ids
+            } - selected
+
+        selected_contrasts: list[CandidateContrast] = []
+        selected_keys: set[tuple[str, tuple[int, int]]] = set()
+        selected_kind_counts: Counter[str] = Counter()
+        selected_signatures = set(baseline_signatures)
+
+        def try_add(contrast: CandidateContrast) -> bool:
+            key = (contrast.kind, contrast.action_ids)
+            if (
+                key in selected_keys
+                or len(selected_contrasts) >= MAX_PROMPT_RELATION_PAIRS
+                or selected_kind_counts[contrast.kind] >= MAX_PROMPT_RELATIONS_PER_KIND
+            ):
+                return False
+            missing = missing_signatures(contrast, selected_signatures)
+            if len(selected_signatures - baseline_signatures) + len(missing) > relation_extra_budget:
+                return False
+            selected_keys.add(key)
+            selected_contrasts.append(contrast)
+            selected_kind_counts[contrast.kind] += 1
+            selected_signatures.update(missing)
+            return True
+
+        ordered_candidates = sorted(candidates, key=priority_key)
+        # First secure one pair per relation kind, but let the same stable
+        # relevance ordering choose which kinds spend the scarce first-round
+        # slots. In particular, an active source match or public urgency must
+        # outrank a merely earlier enum entry when many kinds compete.
+        for contrast in ordered_candidates:
+            if selected_kind_counts[contrast.kind] == 0:
+                try_add(contrast)
+        # Spend remaining pair/endpoint budget greedily: shared endpoints are
+        # cheaper, while source-applicable and structurally informative pairs
+        # still lead otherwise-equivalent choices.
+        remaining = [
+            item for item in ordered_candidates
+            if (
+                (item.kind, item.action_ids) not in selected_keys
+                and selected_kind_counts[item.kind] < MAX_PROMPT_RELATIONS_PER_KIND
+            )
+        ]
+        while remaining and len(selected_contrasts) < MAX_PROMPT_RELATION_PAIRS:
+            feasible: list[tuple[int, tuple[object, ...], CandidateContrast]] = []
+            for contrast in remaining:
+                cost = len(missing_signatures(contrast, selected_signatures))
+                if len(selected_signatures - baseline_signatures) + cost <= relation_extra_budget:
+                    feasible.append((cost, priority_key(contrast), contrast))
+            if not feasible:
+                break
+            _cost, _priority, chosen = min(feasible, key=lambda item: (item[0], item[1]))
+            try_add(chosen)
+            remaining.remove(chosen)
+
+        return tuple(selected_contrasts)
 
     @staticmethod
     def prepare_prompt_actions(
@@ -1464,6 +1744,7 @@ class DeepSeekClient:
         strategy_recommendation: "StrategyRecommendation | None" = None,
         observation: dict[str, object] | None = None,
         opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
+        rag_context: dict[str, object] | None = None,
     ) -> list[dict[str, object]]:
         """Build the one bounded canonical candidate set used by the model.
 
@@ -1482,6 +1763,8 @@ class DeepSeekClient:
                 observation,
                 legal_actions,
                 opening_formula_contrasts,
+                strategy_recommendation=strategy_recommendation,
+                rag_context=rag_context,
             )
             if observation is not None
             else ()
@@ -1923,6 +2206,8 @@ class DeepSeekClient:
             {"my_info": my_info, "current_round": current_round, "other_players": other_players, "history": history},
             contrast_source_actions,
             opening_formula_contrasts,
+            strategy_recommendation=strategy_recommendation,
+            rag_context=rag_context,
         )
         available_ids = {
             action.get("action_id")
@@ -2449,6 +2734,7 @@ class DeepSeekClient:
                 strategy_recommendation=strategy_recommendation,
                 observation=observation,
                 opening_formula_contrasts=opening_formula_contrasts,
+                rag_context=rag_context,
             )
         else:
             supplied_actions = self._canonical_subset_actions(
@@ -2470,6 +2756,8 @@ class DeepSeekClient:
                 observation,
                 legal_actions,
                 opening_formula_contrasts,
+                strategy_recommendation=strategy_recommendation,
+                rag_context=rag_context,
             )
             relation_groups = (
                 tuple(item.action_ids for item in contrasts)
