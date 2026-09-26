@@ -1,6 +1,10 @@
 # 项目状态看板
 
-## 当前阶段：开局建议已实现，但实际 factory 投影缺口待修（2026-09-25）
+## 当前阶段：开局建议 factory 投影已闭环；时延与知识预算待评估（2026-09-26）
+
+- `1b8d493 fix: preserve opening guidance in factory prompts` 已关闭 `ad7524e` 的两项实际接线缺口。规划 Codex 独立阅读完整生产/测试 diff，复跑相关 96 项、主规则 39 项、全量 835 项均通过；禁网真实 `build_agent_factory("deepseek")` 对同三个完整开局的默认 top‑1 Request 均包含已登记的 B 级 `exp_lead_opening_shape_001` 和跨牌型指引，最终候选 23/51/50，字符数 8840/14286/14733，fake 返回 ID 均来自实际候选且 source=`model`。关闭 recommendation 时新指引仍实际渲染；无适用 RAG 时旧“留牌边际判据”保留，未再静默丢失。top‑3 仍可检索适用 C 级软假设；但默认 top‑1 原先命中的专用 C 条目被 B 级原则替代，这是有界检索预算下的明确取舍，不应声称 B 与 C 同时进入默认请求。开局模型前输入的本轮技术目标可封板；前轮报告的 27.14/66.94/40.12 秒单点真实请求未在本轮重复，字符数微变不证明时延改善，平台响应/策略收益亦未验证。下一项是否优先研究响应时延或调整默认开局 B/C 知识预算，需依据项目所有者取舍；当前无待执行 Coding Prompt，不再把旧 Prompt 重派。
+
+以下保留历史复审记录；其中旧“下一项/待修”只描述当时状态，不覆盖上述结论。
 
 - `ad7524e feat: guide DeepSeek opening tradeoffs` 仅改客户端 prompt 与两份测试，Git 提交后工作树 clean。规划 Codex 独立阅读完整生产/测试 diff，复跑相关 70 项、主规则 39 项、全量 831 项均通过；禁网真实 Request 重现报告的三个 top‑3 状态：最终候选 23/51/50、prompt 9807/15161/15608 字符、合法 ID 与 `model` source 守恒。执行报告的三次真实请求均 `success`、0 重试、客户端耗时 27.14/66.94/40.12 秒；这是执行方低敏报告，规划未重复真实请求，不能据约 70 字的缩短声称时延或策略改善。复审发现两项现有测试未覆盖的输入缺口：Botzone `build_agent_factory("deepseek")` 沿用 Agent 默认 RAG top‑1，禁网重放三个同状态时新指引仅在 `low_cost_single` 出现，`neutral_soft_pair` 与 seed `29` 缺席（测试用 top‑3 时三场均出现）；以及 seed `29` 的 top‑3 路径关闭 recommendation 后，新指引未渲染、旧“留牌边际判据”却被省略。后一缺口在无 RAG 的同状态不出现，证明是新增渲染条件与去重条件脱钩。本提交的主要输入目标尚不能按真实 factory 路径封板；下一项是同一开局引导任务的一次接线与判据守恒纠偏，见 `docs/NEXT_PROMPT.md`。不先新增真实请求或 Botzone 对局。
 
