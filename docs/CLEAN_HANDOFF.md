@@ -1,5 +1,7 @@
 # Clean Project Handoff
 
+2026-09-26 `3a45057` 复审交接：规划独立复跑 48 项相关测试通过；Coding 报告全量 867 项通过，所有外部请求和两个 workspace 访问为零。完整开局公式仍为 `25/800`、对子/三张直选为零；密集 seed 0 的默认 factory 候选从三带二 43 个降到 14 个，多牌型比较空间明显增加，但对子/单张和通配资源完整关系仍常缺双端，不能据此声称模型质量或胜率收益。H3-A9 `opening_2` 固定回 seed 921 step 0、74/49，因该状态生产公式直选顺子，其模型候选请求明确属于关闭公式后的反事实评测。M1 未封板；`docs/NEXT_PROMPT.md` 是同一工作包的关系预算与模型前比较续作，之后进入 M2 同状态效果复审。不触碰 `9/26_v0` 标签/bundle，不派 live、不轮换两个 workspace。旧 `platform_error` 根因未知。
+
 2026-09-26 `75833e4` 复审交接：Git clean，`9/26_v0` 标签与仓库外 bundle 保持原样。规划复跑 50 项相关测试并独立重算四组各 200 个完整起局：当前直选 `8/8/4/5`，对比封板后基线 `7/6/4/5`，仅新增 3 次顺子，0 次对子/三张；800 局中 794 局无唯一原始 ID Pareto 前沿。默认 factory 的模型前家族代表与关系成对保护有局部改善，但尚无实质算法效果证据。H3-A9 `opening_2` 已从 step 0、74/49 变为 step 4、3/3，不可当作同状态前后效果。当前 `docs/NEXT_PROMPT.md` 是**同一 M1** 的生产算法续作及评测可比性纠偏，不派 Botzone/live、不触碰两个 workspace；M2 仍待真正有意义的算法变化后再进入。旧 `platform_error` 根因未定；下文“两次个人局正常完赛”仍是有效现场事实，但不是本轮算法收益证明。
 
 2026-09-26 当前交接：`9d6288d` 的 119 秒 Botzone DeepSeek 整次决策期限已通过禁网实现验证；所有者在 120 秒桌下亲自完成两次分开的正常个人局，规划归档并复核 16/30 条本家 canonical ACK 决策、13/20 次模型 success、0 fallback、正常终局与完整阶段顺序。归档为 `D:\VsCodeProject\GuanDanManualEvidenceArchive\20260926-172058-119s-first-game` 和 `D:\VsCodeProject\GuanDanManualEvidenceArchive\20260926-181002-119s-second-game`，两局 7 份文件均与原件大小/哈希一致；第二局原个人 workspace 未改。M0 的本轮链路放行门槛满足，当前执行 `docs/NEXT_PROMPT.md` 的 M1 来源化开局、多牌型候选、条件化 B/C RAG 与 DeepSeek 模型前比较 Coding 任务，默认禁网/离线，不启动新 Botzone 局、不轮换个人或固定 workspace；之后做 M2 算法效果复审。旧 `platform_error` 根因仍未定，两局均未触发 live timeout/fallback，119 秒贴近 120 秒桌面倒计时。再现停牌时保留新证据并回到同一 M0 问题阶段。下文“当前执行 M0 Coding 任务”是历史快照。
