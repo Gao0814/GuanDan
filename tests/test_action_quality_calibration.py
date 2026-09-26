@@ -95,18 +95,48 @@ class ActionQualityCalibrationTests(unittest.TestCase):
                 "candidate_projection": "frozen_h3_pre_budget_representatives",
             },
         )
+        report_dict = self.report.to_dict()
+        production_rows = tuple(
+            row for row in self.report.samples
+            if row.candidate_projection == "production_relation_budget"
+        )
+        counterfactual_rows = tuple(
+            row for row in self.report.samples
+            if row.candidate_projection == "frozen_h3_pre_budget_representatives"
+        )
+        self.assertEqual(len(production_rows), 11)
+        self.assertEqual(len(counterfactual_rows), 1)
+        self.assertEqual(counterfactual_rows[0].sample_name, "h3_a9:opening_2")
         self.assertEqual(
-            self.report.to_dict()["comparison_counts"],
+            report_dict["comparison_counts"],
             {
-                "better_than_reference": sum(row.better_than_reference for row in self.report.samples),
-                "tie_with_reference": sum(row.tie_with_reference for row in self.report.samples),
-                "worse_than_reference": sum(row.worse_than_reference for row in self.report.samples),
+                "better_than_reference": sum(row.better_than_reference for row in production_rows),
+                "tie_with_reference": sum(row.tie_with_reference for row in production_rows),
+                "worse_than_reference": sum(row.worse_than_reference for row in production_rows),
             },
+        )
+        summaries = report_dict["candidate_projection_summaries"]
+        self.assertEqual(
+            summaries["frozen_h3_pre_budget_representatives"]["sample_count"],  # type: ignore[index]
+            1,
+        )
+        report_opening_2 = next(
+            row for row in report_dict["samples"]  # type: ignore[union-attr]
+            if row["sample_name"] == "h3_a9:opening_2"
+        )
+        self.assertEqual(
+            report_opening_2["candidate_projection"],
+            "frozen_h3_pre_budget_representatives",
         )
         planned_candidates = sum(row.final_candidate_count for row in self.report.samples)
         completed_candidates = sum(row.completed_candidate_count for row in self.report.samples)
         self.assertEqual(self.report.to_dict()["final_candidate_count"], planned_candidates)  # type: ignore[index]
-        self.assertEqual(sum(self.report.to_dict()["comparison_counts"].values()), completed_candidates)  # type: ignore[union-attr]
+        production_completed = sum(row.completed_candidate_count for row in production_rows)
+        self.assertEqual(sum(report_dict["comparison_counts"].values()), production_completed)  # type: ignore[union-attr]
+        self.assertEqual(
+            summaries["frozen_h3_pre_budget_representatives"]["completed_candidate_count"],  # type: ignore[index]
+            counterfactual_rows[0].completed_candidate_count,
+        )
         self.assertEqual(self.report.completed_sample_count, 12)
         self.assertEqual(self.report.completed_candidate_count, completed_candidates)
         self.assertEqual(completed_candidates, planned_candidates)

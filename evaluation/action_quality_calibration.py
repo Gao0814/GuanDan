@@ -17,6 +17,7 @@ import json
 from agents.game_phase import classify_game_phase
 from agents.rag_advisor import RAGAdvisor
 from evaluation.action_quality_proxy import (
+    PRODUCTION_CANDIDATE_PROJECTION,
     MAX_ROLLOUT_STEPS,
     ReplayableQualitySample,
     SampleSetResult,
@@ -108,6 +109,7 @@ class CandidateDistribution:
 
     sample_name: str
     phase: str
+    candidate_projection: str
     canonical_candidate_count: int
     final_candidate_count: int
     completed_candidate_count: int
@@ -125,6 +127,7 @@ class CandidateDistribution:
         return {
             "sample_name": self.sample_name,
             "phase": self.phase,
+            "candidate_projection": self.candidate_projection,
             "canonical_candidate_count": self.canonical_candidate_count,
             "final_candidate_count": self.final_candidate_count,
             "completed_candidate_count": self.completed_candidate_count,
@@ -150,10 +153,37 @@ class CandidateCalibrationReport:
         return sum(sample.completed_candidate_count for sample in self.samples)
 
     def to_dict(self) -> dict[str, object]:
-        totals = Counter({name: 0 for name in _COMPARISON_FIELDS})
+        samples_by_projection: dict[str, list[CandidateDistribution]] = {}
         for sample in self.samples:
-            for name in _COMPARISON_FIELDS:
-                totals[name] += getattr(sample, name)
+            samples_by_projection.setdefault(sample.candidate_projection, []).append(sample)
+
+        def projection_summary(rows: list[CandidateDistribution]) -> dict[str, object]:
+            totals = Counter({name: 0 for name in _COMPARISON_FIELDS})
+            for sample in rows:
+                for name in _COMPARISON_FIELDS:
+                    totals[name] += getattr(sample, name)
+            return {
+                "sample_count": len(rows),
+                "completed_sample_count": sum(
+                    sample.status is CalibrationStatus.READY for sample in rows
+                ),
+                "canonical_candidate_count": sum(
+                    sample.canonical_candidate_count for sample in rows
+                ),
+                "final_candidate_count": sum(
+                    sample.final_candidate_count for sample in rows
+                ),
+                "completed_candidate_count": sum(
+                    sample.completed_candidate_count for sample in rows
+                ),
+                "comparison_counts": {name: totals[name] for name in _COMPARISON_FIELDS},
+            }
+
+        production_rows = samples_by_projection.get(PRODUCTION_CANDIDATE_PROJECTION, [])
+        projection_summaries = {
+            projection: projection_summary(rows)
+            for projection, rows in sorted(samples_by_projection.items())
+        }
         return {
             "proxy_kind": "frozen_rule_based_candidate_distribution_not_win_rate",
             "status": self.status.value,
@@ -162,7 +192,10 @@ class CandidateCalibrationReport:
             "canonical_candidate_count": sum(sample.canonical_candidate_count for sample in self.samples),
             "final_candidate_count": sum(sample.final_candidate_count for sample in self.samples),
             "completed_candidate_count": self.completed_candidate_count,
-            "comparison_counts": {name: totals[name] for name in _COMPARISON_FIELDS},
+            # Keep the default comparison summary production-only. Explicitly
+            # tagged counterfactual projections are reported separately below.
+            "comparison_counts": projection_summary(production_rows)["comparison_counts"],
+            "candidate_projection_summaries": projection_summaries,
             "samples": [sample.to_dict() for sample in self.samples],
         }
 
@@ -189,6 +222,7 @@ def _empty_distribution(
     return CandidateDistribution(
         sample_name=sample.name if sample_name is None else sample_name,
         phase=sample.phase,
+        candidate_projection=sample.candidate_projection,
         canonical_candidate_count=sample.canonical_candidate_count,
         final_candidate_count=sample.final_candidate_count,
         completed_candidate_count=completed_candidate_count,
