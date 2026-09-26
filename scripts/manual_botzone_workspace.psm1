@@ -261,6 +261,7 @@ function Get-ManualBotzoneArguments {
   $arguments.Add('--history-file'); $arguments.Add((Join-Path $root 'history.txt'))
   $arguments.Add('--decision-trace-file'); $arguments.Add((Join-Path $root 'decision-trace.json'))
   $arguments.Add('--run-token'); $arguments.Add($RunToken)
+  $arguments.Add('--stage-trace')
   return $arguments.ToArray()
 }
 

@@ -18,6 +18,7 @@ from .result_observability import (
     ResultObservabilitySnapshot,
 )
 from .session import HandlerContext, HandlerResult, PendingDelivery, SessionRecord, SessionStorageError, SessionStore
+from .stage_trace import StageTraceSink, record_stage
 
 
 class Transport(Protocol):
@@ -73,6 +74,7 @@ class MockConnector:
         result_observability: ResultObservabilityRecorder | None = None,
         history_recorder: HistoryRecorder | None = None,
         decision_trace_recorder: HistoryRecorder | None = None,
+        stage_trace: StageTraceSink | None = None,
     ) -> None:
         self._store = store
         self._transport = transport
@@ -83,6 +85,7 @@ class MockConnector:
         self._result_observability_failed = False
         self._history_recorder = history_recorder
         self._decision_trace_recorder = decision_trace_recorder
+        self._stage_trace = stage_trace
         self._play_pending: set[str] = set()
         self._play_acknowledged: set[str] = set()
         self._finished_qualified: set[str] = set()
@@ -99,15 +102,23 @@ class MockConnector:
         except SessionStorageError:
             return _cycle(False, 0, 0, 0, 0, 0, {"session_error": 1})
 
+        self._record_stage("poll_enter", "started")
+        if deliveries:
+            self._record_stage("response_header_emitted", "pending")
+            self._record_stage("response_waiting_ack", "pending")
+
         try:
             raw_poll = self._transport.poll(headers)
+            self._record_stage("poll_returned", "response_received")
         except TransportError as exc:
             self._store.restore_pending(deliveries)
             if exc.category == "timeout":
+                self._record_stage("poll_exit", "timeout")
                 return _cycle(
                     True, len(headers), 0, 0, 0, 0, {"transport_timeout": 1}, transport_timeouts=1
                 )
             category = exc.category if exc.category in TRANSPORT_FAILURE_CATEGORIES else "unclassified"
+            self._record_stage("poll_exit", "transport_failure")
             return _cycle(
                 True,
                 len(headers),
@@ -120,6 +131,7 @@ class MockConnector:
             )
         except Exception:
             self._store.restore_pending(deliveries)
+            self._record_stage("poll_exit", "transport_failure")
             return _cycle(
                 True,
                 len(headers),
@@ -133,7 +145,18 @@ class MockConnector:
         try:
             acknowledged = self._store.acknowledge(deliveries)
         except SessionStorageError:
+            if deliveries:
+                self._record_stage("response_acknowledged", "failed")
+            self._record_stage("poll_exit", "session_error")
             return _cycle(True, len(headers), 0, 0, 0, 0, {"session_error": 1})
+        if deliveries:
+            if not acknowledged:
+                ack_outcome = "not_confirmed"
+            elif len(acknowledged) == len(deliveries):
+                ack_outcome = "confirmed"
+            else:
+                ack_outcome = "partial"
+            self._record_stage("response_acknowledged", ack_outcome)
         self._play_acknowledged.update(match_id for match_id in acknowledged if match_id in self._play_pending)
         for match_id in acknowledged:
             try:
@@ -152,7 +175,11 @@ class MockConnector:
         try:
             batch = parse_poll(raw_poll)
         except PollFormatError:
+            self._record_stage("poll_exit", "malformed")
             return _cycle(True, len(headers), 0, 0, 0, 0, {"poll_malformed": 1})
+
+        poll_outcome = "finished" if batch.finished else ("payload" if batch.requests else "idle")
+        self._record_stage("poll_exit", poll_outcome)
 
         prepared = 0
         for request in batch.requests:
@@ -185,6 +212,7 @@ class MockConnector:
                     self._result_observability.record_qualified_finished(row.local_player_id, row.scores)
                 except Exception:
                     self._result_observability_failed = True
+            self._record_stage("finished", category)
             finished_categories[category] += 1
             if cleaned:
                 try:
@@ -235,12 +263,16 @@ class MockConnector:
         if not isinstance(request.stage, (DealRequest, PlayRequest)):
             diagnostics["malformed_request"] += 1
             return 0, diagnostics, details, profiles
+        if isinstance(request.stage, PlayRequest):
+            self._record_stage("play_request_arrived", "received")
         try:
             record, call_handler = self._store.prepare(request.match_id, request.request_bytes, request.stage, request.replay)
         except SessionStorageError as exc:
             diagnostics[_normalized_session_error(exc)] += 1
             return 0, diagnostics, details, profiles
         if not call_handler:
+            if record.pending_response is not None:
+                self._record_stage("response_waiting_ack", "pending")
             return int(record.pending_response is not None), diagnostics, details, profiles
         try:
             record = self._store.reserve_handler(record)
@@ -248,6 +280,7 @@ class MockConnector:
         except Exception:
             self._store.complete_handler(record, HandlerResult(None))
             diagnostics["handler_failure"] += 1
+            self._record_stage("response_prepared", "handler_failure")
             return 0, diagnostics, details, profiles
         try:
             if not isinstance(result, HandlerResult):
@@ -266,13 +299,23 @@ class MockConnector:
             completed = self._store.complete_handler(record, result)
         except (BotEnvelopeError, SessionStorageError) as exc:
             diagnostics[_normalized_session_error(exc)] += 1
+            self._record_stage("response_prepared", "rejected")
             return 0, diagnostics, details, profiles
+        self._record_stage(
+            "response_prepared",
+            "prepared" if completed.pending_response is not None else "no_response",
+        )
+        if completed.pending_response is not None:
+            self._record_stage("response_waiting_ack", "pending")
         if isinstance(request.stage, PlayRequest) and completed.pending_response:
             self._play_pending.add(request.match_id)
         if result.decision_trace_failed and self._decision_trace_recorder is not None:
             self._decision_trace_recorder.failed = True
         self._record_history(completed)
         return int(completed.pending_response is not None), diagnostics, details, profiles
+
+    def _record_stage(self, stage: str, outcome: str) -> None:
+        record_stage(self._stage_trace, stage, outcome)
 
     def _record_history(self, record: SessionRecord) -> None:
         """Best-effort diagnostic rendering after normal handler validation."""

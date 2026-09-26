@@ -5,12 +5,14 @@ from __future__ import annotations
 import argparse
 from collections.abc import Mapping
 from pathlib import Path
+import sys
 
 from .agent_runtime import prepare_agent_factory
 from .http_transport import LocalAIHttpTransport
 from .runner import build_foreground_runner, exit_code_for, write_audit
 from .run_provenance import RunProvenanceError, validate_run_token
 from .runtime_config import RuntimeConfigError, load_runtime_config, preflight_state_directory
+from .stage_trace import StageTrace, record_stage
 
 
 _RUNTIME_PREFLIGHT_OUTPUTS = {
@@ -114,7 +116,15 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     parser.add_argument("--decision-trace-file", help="optional acknowledged-local-decision JSON artifact")
     parser.add_argument("--run-token")
     parser.add_argument("--preflight-only", action="store_true", help="validate configuration and storage without polling")
+    parser.add_argument(
+        "--stage-trace",
+        action="store_true",
+        help="emit fixed low-sensitivity connector stages to stdout",
+    )
     arguments = parser.parse_args(argv)
+    stage_trace = StageTrace(sys.stdout) if arguments.stage_trace and not arguments.preflight_only else None
+    if stage_trace is not None:
+        record_stage(stage_trace, "connector_start", "started")
     stage = "runtime_config"
     try:
         run_token = None
@@ -132,7 +142,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
         stage = "state_preflight"
         preflight_state_directory(config)
         stage = "agent_composition"
-        prepared_agent_factory = prepare_agent_factory(arguments.agent)
+        prepared_agent_factory = prepare_agent_factory(arguments.agent, stage_trace=stage_trace)
         if arguments.preflight_only:
             print("preflight_ready")
             return 0
@@ -161,6 +171,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             run_token=run_token,
             history_file=history_file,
             decision_trace_file=decision_trace_file,
+            stage_trace=stage_trace,
         )
         summary = runner.run(
             max_cycles=arguments.max_cycles,
@@ -172,7 +183,9 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             if runner.run_token != run_token:
                 raise ValueError("run_token_mismatch")
             write_audit(arguments.audit_file, summary, exit_code, run_token=run_token)
+        record_stage(stage_trace, "connector_exit", getattr(summary, "stopped", "diagnostic_failure"))
     except (RuntimeConfigError, ValueError) as error:
+        record_stage(stage_trace, "connector_exit", "configuration_error")
         print(_configuration_output(preflight_only=arguments.preflight_only, stage=stage, error=error))
         return 2
     print(

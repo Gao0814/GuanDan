@@ -115,7 +115,8 @@ try {
       '--audit-file', (Join-Path $root 'audit\completion-audit.json'),
       '--history-file', (Join-Path $root 'history.txt'),
       '--decision-trace-file', (Join-Path $root 'decision-trace.json'),
-      '--run-token', ('b' * 32)
+      '--run-token', ('b' * 32),
+      '--stage-trace'
     )
     Assert-ManualTest -Condition (($args -join '|') -ceq ($expectedConnectorArguments -join '|')) -Name 'connector_arguments_match_shared_profile_except_paths'
     Assert-ManualTest -Condition (-not $joined.Contains('--timeout-seconds') -and -not $joined.Contains('--preflight-only')) -Name 'connector_uses_default_timeout_and_not_preflight'
@@ -390,7 +391,11 @@ try {
     $resultPath = Join-Path $compatScripts 'probe-results.jsonl'
     $fakeWorkspace = Join-Path $compatRoot 'fake-workspace'
     $fakeState = Join-Path $fakeWorkspace 'state'
+    $fakeStreams = Join-Path $fakeWorkspace 'streams'
+    $fakeStdout = Join-Path $fakeStreams 'stdout.txt'
+    $fakeStderr = Join-Path $fakeStreams 'stderr.txt'
     Copy-Item -LiteralPath $commandPath -Destination $testCommand
+    [void][System.IO.Directory]::CreateDirectory($fakeStreams)
 
     $projectPython = Join-Path (Split-Path -Parent $PSScriptRoot) '.venv\Scripts\python.exe'
     if (Test-Path -LiteralPath $projectPython -PathType Leaf) {
@@ -432,7 +437,7 @@ if mode == "preflight":
         "agent": args[:2] == ["--agent", "deepseek"],
         "state": value("--state-dir") == state_dir,
         "preflight": args.count("--preflight-only") == 1,
-        "runtime_only_absent": all(option not in args for option in ("--timeout-seconds", "--max-cycles", "--max-wall-seconds", "--audit-file", "--history-file", "--decision-trace-file", "--run-token")),
+        "runtime_only_absent": all(option not in args for option in ("--timeout-seconds", "--max-cycles", "--max-wall-seconds", "--audit-file", "--history-file", "--decision-trace-file", "--run-token", "--stage-trace")),
         "exact": args == ["--agent", "deepseek", "--state-dir", state_dir, "--preflight-only"],
     }
     result = "preflight_ready"
@@ -449,6 +454,7 @@ elif mode == "connector":
         "--history-file", os.path.join(root, "history.txt"),
         "--decision-trace-file", os.path.join(root, "decision-trace.json"),
         "--run-token", run_token,
+        "--stage-trace",
     ]
     checks = {
         "agent": value("--agent") == "deepseek",
@@ -460,6 +466,7 @@ elif mode == "connector":
         "paths": value("--audit-file") == os.path.join(root, "audit", "completion-audit.json") and value("--history-file") == os.path.join(root, "history.txt") and value("--decision-trace-file") == os.path.join(root, "decision-trace.json"),
         "token_shape": run_token is not None and len(run_token) == 32 and all(character in "0123456789abcdef" for character in run_token),
         "preflight_absent": "--preflight-only" not in args,
+        "stage_trace_enabled": args.count("--stage-trace") == 1,
         "exact": args == expected_arguments,
     }
     result = "fake_connector_done"
@@ -481,6 +488,9 @@ record = {
 with open(os.environ["MANUAL_LAUNCHER_PROBE_RESULT"], "a", encoding="utf-8") as handle:
     handle.write(json.dumps(record, sort_keys=True) + "\n")
 print(result)
+if mode == "connector" and "--stage-trace" in args:
+    print('BOTZONE_STAGE {"stage":"model_enter","seq":1,"elapsed_ms":0,"outcome":"started"}')
+    print('BOTZONE_STAGE {"stage":"model_complete","seq":2,"elapsed_ms":1,"outcome":"success"}')
 sys.exit(0 if environment_match and cwd_match and python_match and retry_match and all(checks.values()) else 23)
 '@
     [System.IO.File]::WriteAllText($probePath, $probeText, [System.Text.Encoding]::UTF8)
@@ -495,6 +505,8 @@ Import-Module $modulePathLiteral -Force -ErrorAction Stop
 `$probe = $probePathLiteral
 `$workspace = $workspaceLiteral
 `$stateDirectory = Join-Path `$workspace 'state'
+`$stdoutPath = Join-Path `$workspace 'streams\stdout.txt'
+`$stderrPath = Join-Path `$workspace 'streams\stderr.txt'
 `$preflightArguments = @(Get-ManualBotzoneArguments -WorkspaceRoot `$workspace -PreflightOnly)
 `$connectorArguments = @(Get-ManualBotzoneArguments -WorkspaceRoot `$workspace -RunToken ('a' * 32))
 `$preflightInvoker = {
@@ -505,7 +517,7 @@ Import-Module $modulePathLiteral -Force -ErrorAction Stop
 }.GetNewClosure()
 [void](Invoke-ManualBotzonePreflight -Arguments `$preflightArguments -Invoker `$preflightInvoker)
 `$connectorInvoker = {
-  `$output = @(& `$pythonPath -B `$probe connector @connectorArguments)
+  `$output = @(& `$pythonPath -B `$probe connector @connectorArguments 1> `$stdoutPath 2> `$stderrPath)
   return `$LASTEXITCODE
 }.GetNewClosure()
 `$connectorExit = Invoke-ManualBotzoneConnectorProcess -Invoker `$connectorInvoker
@@ -544,6 +556,7 @@ endlocal & exit /b %_probe_exit%
     if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
       $records = @(Get-Content -LiteralPath $resultPath | ForEach-Object { ConvertFrom-Json -InputObject $_ })
     }
+    $capturedStageOutput = if (Test-Path -LiteralPath $fakeStdout -PathType Leaf) { [System.IO.File]::ReadAllText($fakeStdout) } else { '' }
     $productionLauncherSource = [System.IO.File]::ReadAllText($launcherPath)
     $productionModuleSource = [System.IO.File]::ReadAllText($modulePath)
     $preflightInvokeIndex = $productionLauncherSource.IndexOf('& $pythonPath -B -m integrations.botzone @Arguments 2>$null', [System.StringComparison]::Ordinal)
@@ -566,7 +579,10 @@ endlocal & exit /b %_probe_exit%
     Assert-ManualTest -Condition ($records[1].argument_checks.paths) -Name 'connector_paths_argument_match'
     Assert-ManualTest -Condition ($records[1].argument_checks.token_shape) -Name 'connector_run_token_argument_shape_match'
     Assert-ManualTest -Condition ($records[1].argument_checks.preflight_absent) -Name 'connector_preflight_switch_absent'
+    Assert-ManualTest -Condition ($records[1].argument_checks.stage_trace_enabled -and $records[0].argument_checks.runtime_only_absent) -Name 'stage_trace_is_runtime_opt_in_only'
     Assert-ManualTest -Condition ($records[1].argument_checks.exact) -Name 'connector_arguments_exact_and_ordered'
+    Assert-ManualTest -Condition ($capturedStageOutput.Contains('BOTZONE_STAGE ') -and $capturedStageOutput.Contains('"stage":"model_enter"') -and $capturedStageOutput.Contains('"stage":"model_complete"')) -Name 'redirected_stage_trace_is_visible_in_personal_stdout'
+    Assert-ManualTest -Condition ($capturedStageOutput -notmatch 'synthetic\.botzone|127\.0\.0\.1|18765|18766|socks5|credential|prompt|action_id') -Name 'redirected_stage_trace_contains_no_private_or_decision_fields'
     Assert-ManualTest -Condition ($records[2].argument_checks.empty) -Name 'post_probe_arguments_match'
     Assert-ManualTest -Condition ($records[0].retry_match -and $records[1].retry_match -and $records[2].retry_match) -Name 'retry_override_only_wraps_connector_process'
     Assert-ManualTest -Condition ($safeOutput -notmatch 'synthetic\.botzone|127\.0\.0\.1|18765|18766|socks5') -Name 'synthetic_private_values_not_echoed'

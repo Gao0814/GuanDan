@@ -28,6 +28,7 @@ from .result_observability import ResultObservabilitySnapshot
 from .runtime_config import RuntimeConfig
 from .run_provenance import RunProvenanceError, TOKEN_AUDIT_VERSION, validate_run_token
 from .session import SessionStore
+from .stage_trace import StageTraceSink, record_stage
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +78,7 @@ class ForegroundRunner:
         result_observability_snapshot: Callable[[], ResultObservabilitySnapshot] | None = None,
         agent_mode: str = "rule",
         run_token: str | None = None,
+        stage_trace: StageTraceSink | None = None,
     ) -> None:
         self._connector = connector
         self._max_failures = max_consecutive_failures
@@ -89,6 +91,7 @@ class ForegroundRunner:
             connector_result_snapshot if callable(connector_result_snapshot) else None
         )
         self._agent_mode = agent_mode
+        self._stage_trace = stage_trace
         try:
             self._run_token = None if run_token is None else validate_run_token(run_token)
         except RunProvenanceError as exc:
@@ -211,7 +214,7 @@ class ForegroundRunner:
         except Exception:
             result_observability_valid = False
             result_snapshot = ResultObservabilitySnapshot((), 0, ())
-        return RunnerSummary(
+        summary = RunnerSummary(
             cycles,
             successes,
             failures,
@@ -241,6 +244,8 @@ class ForegroundRunner:
             self._history_status(),
             self._decision_trace_status(),
         )
+        record_stage(self._stage_trace, "runner_exit", summary.stopped)
+        return summary
 
     def _history_status(self) -> str:
         status = getattr(self._connector, "history_status", "disabled")
@@ -271,6 +276,7 @@ def build_foreground_runner(
     run_token: str | None = None,
     history_file: Path | str | None = None,
     decision_trace_file: Path | str | None = None,
+    stage_trace: StageTraceSink | None = None,
 ) -> ForegroundRunner:
     observability = AgentObservabilityRecorder()
     if agent_mode == "rule":
@@ -280,8 +286,14 @@ def build_foreground_runner(
             decision_trace_enabled=decision_trace_file is not None,
         )
     elif agent_mode == "deepseek":
+        if prepared_agent_factory is not None:
+            agent_factory = prepared_agent_factory
+        elif stage_trace is not None and agent_factory_builder is build_agent_factory:
+            agent_factory = agent_factory_builder(agent_mode, stage_trace=stage_trace)
+        else:
+            agent_factory = agent_factory_builder(agent_mode)
         handler = NoTributeRuleBasedHandler(
-            prepared_agent_factory or agent_factory_builder(agent_mode),
+            agent_factory,
             fallback_to_rule=True,
             cache_agents=True,
             agent_mode="deepseek",
@@ -311,6 +323,7 @@ def build_foreground_runner(
         handler,
         history_recorder=recorder,
         decision_trace_recorder=decision_trace_recorder,
+        stage_trace=stage_trace,
     )
     return ForegroundRunner(
         connector,
@@ -322,6 +335,7 @@ def build_foreground_runner(
         result_observability_snapshot=connector.result_observability_snapshot,
         agent_mode=agent_mode,
         run_token=run_token,
+        stage_trace=stage_trace,
     )
 
 

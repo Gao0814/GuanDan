@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from .stage_trace import StageTraceSink, record_stage
+
 
 class AgentRuntimeError(ValueError):
     """The explicitly selected agent mode cannot be composed safely."""
@@ -12,26 +14,31 @@ class AgentRuntimeError(ValueError):
 class _StrictDeepSeekClient:
     """Turn client faults or non-canonical suggestions into the agent fallback path."""
 
-    def __init__(self, delegate: object) -> None:
+    def __init__(self, delegate: object, *, stage_trace: StageTraceSink | None = None) -> None:
         self._delegate = delegate
+        self._stage_trace = stage_trace
         self.last_outcome: str | None = None
 
     def suggest_action_id(self, **kwargs: object) -> object:
         from agents.deepseek_client import DeepSeekSuggestion
 
         self.last_outcome = None
+        record_stage(self._stage_trace, "model_enter", "started")
         try:
             suggestion = self._delegate.suggest_action_id(**kwargs)  # type: ignore[attr-defined]
         except TimeoutError:
             self.last_outcome = "timeout"
+            record_stage(self._stage_trace, "model_complete", "timeout")
             return DeepSeekSuggestion(action_id=None, reasoning=None)
         except Exception:
             self.last_outcome = "exception"
+            record_stage(self._stage_trace, "model_complete", "exception")
             return DeepSeekSuggestion(action_id=None, reasoning=None)
         action_id = getattr(suggestion, "action_id", None)
         legal_actions = kwargs.get("legal_actions")
         if type(action_id) is not int or not isinstance(legal_actions, list):
             self.last_outcome = "invalid_suggestion"
+            record_stage(self._stage_trace, "model_complete", "invalid_suggestion")
             return DeepSeekSuggestion(action_id=None, reasoning=None)
         legal_ids = {
             action.get("action_id")
@@ -40,10 +47,12 @@ class _StrictDeepSeekClient:
         }
         if action_id not in legal_ids:
             self.last_outcome = "invalid_suggestion"
+            record_stage(self._stage_trace, "model_complete", "invalid_suggestion")
             return DeepSeekSuggestion(action_id=None, reasoning=None)
         # The connector only needs the canonical public action ID.  Dropping
         # free-form model text keeps it out of the match-scoped agent cache.
         self.last_outcome = "success"
+        record_stage(self._stage_trace, "model_complete", "success")
         return DeepSeekSuggestion(action_id=action_id, reasoning=None)
 
 
@@ -54,6 +63,7 @@ def build_agent_factory(
     client_factory: Callable[..., object] | None = None,
     deepseek_agent_factory: Callable[..., object] | None = None,
     rag_factory: Callable[[], object | None] | None = None,
+    stage_trace: StageTraceSink | None = None,
 ) -> Callable[[int], object]:
     """Return a factory that creates one agent per handler match/player cache key."""
 
@@ -86,7 +96,7 @@ def build_agent_factory(
         timeout_seconds=getattr(config, "deepseek_timeout"),
         max_retries=getattr(config, "deepseek_max_retries"),
     )
-    strict_client = _StrictDeepSeekClient(client)
+    strict_client = _StrictDeepSeekClient(client, stage_trace=stage_trace)
     if rag_factory is None:
         from pathlib import Path
 
@@ -118,6 +128,7 @@ def prepare_agent_factory(
     mode: str,
     *,
     agent_factory_builder: Callable[[str], Callable[[int], object]] = build_agent_factory,
+    stage_trace: StageTraceSink | None = None,
 ) -> Callable[[int], object] | None:
     """Validate the selected local agent composition before transport exists."""
 
@@ -126,7 +137,10 @@ def prepare_agent_factory(
     if mode not in {"deepseek", "conditional_pressure_pass"}:
         raise AgentRuntimeError("invalid_agent_mode")
     try:
-        factory = agent_factory_builder(mode)
+        if stage_trace is not None and agent_factory_builder is build_agent_factory:
+            factory = agent_factory_builder(mode, stage_trace=stage_trace)
+        else:
+            factory = agent_factory_builder(mode)
         # DeepSeekAIAgent completes its local configuration in __post_init__.
         # A disposable instance proves that path without selecting an action.
         factory(1)
