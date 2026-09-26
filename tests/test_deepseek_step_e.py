@@ -13,6 +13,36 @@ from engine.patterns import PatternType
 from engine.rules import BaseRuleEngine
 
 
+class _FakeSSELineStream:
+    def __init__(self, lines: list[str | bytes]) -> None:
+        self._lines = list(lines)
+        self.index = 0
+        self.closed = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> str | bytes:
+        if self.index >= len(self._lines):
+            raise StopIteration
+        line = self._lines[self.index]
+        self.index += 1
+        return line
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _sse_delta(*, content: str | None = None, reasoning: str | None = None) -> bytes:
+    delta: dict[str, str] = {}
+    if reasoning is not None:
+        delta["reasoning_content"] = reasoning
+    if content is not None:
+        delta["content"] = content
+    data = json.dumps({"choices": [{"delta": delta}]}, separators=(",", ":"))
+    return f"data: {data}\n".encode("utf-8")
+
+
 def _observation() -> dict[str, object]:
     return {
         "my_info": {
@@ -383,6 +413,164 @@ class TestDeepSeekStepE(unittest.TestCase):
         assert isinstance(body, dict)
         self.assertEqual(body.get("model"), "deepseek-chat")
         self.assertEqual(body.get("stream"), True)
+
+    def test_streamed_deltas_wait_for_done_and_ignore_malformed_or_late_events(self) -> None:
+        stream = _FakeSSELineStream(
+            [
+                b"event: message\n",
+                b"data: {not-json}\n",
+                _sse_delta(reasoning="reasoning first"),
+                _sse_delta(content='{"action_id":'),
+                _sse_delta(content="2}"),
+                b"data: [DONE]\n",
+                b'data: {"choices":[{"delta":{"content":"late"}}]}\n',
+                b"data: [DONE]\n",
+            ]
+        )
+        client = DeepSeekClient(
+            "test-key",
+            "https://offline.invalid",
+            "offline-test-model",
+            max_retries=0,
+            transport=lambda _request, _timeout: stream,
+        )
+
+        suggestion = client.suggest_action_id(
+            observation=_observation(),
+            legal_actions=_legal_actions(),
+        )
+
+        self.assertEqual(suggestion.action_id, 2)
+        self.assertEqual(suggestion.reasoning, "reasoning first")
+        self.assertTrue(stream.closed)
+        self.assertEqual(stream.index, 6)
+
+    def test_streamed_client_does_not_accept_json_that_changes_before_done(self) -> None:
+        stream = _FakeSSELineStream(
+            [
+                _sse_delta(content='{"action_id":1}'),
+                _sse_delta(content=" trailing content"),
+                b"data: [DONE]\n",
+            ]
+        )
+        client = DeepSeekClient(
+            "test-key",
+            "https://offline.invalid",
+            "offline-test-model",
+            max_retries=0,
+            transport=lambda _request, _timeout: stream,
+        )
+
+        suggestion = client.suggest_action_id(
+            observation=_observation(),
+            legal_actions=_legal_actions(),
+        )
+
+        self.assertIsNone(suggestion.action_id)
+        self.assertTrue(stream.closed)
+
+    def test_streamed_client_rejects_unshown_id_and_missing_terminal_event(self) -> None:
+        unshown = DeepSeekClient(
+            "test-key",
+            "https://offline.invalid",
+            "offline-test-model",
+            max_retries=0,
+            transport=lambda _request, _timeout: (
+                _sse_delta(content='{"action_id":999}') + b"data: [DONE]\n"
+            ),
+        )
+        suggestion = unshown.suggest_action_id(
+            observation=_observation(),
+            legal_actions=_legal_actions(),
+        )
+        self.assertIsNone(suggestion.action_id)
+
+        incomplete = _FakeSSELineStream([_sse_delta(content='{"action_id":1}')])
+        no_done = DeepSeekClient(
+            "test-key",
+            "https://offline.invalid",
+            "offline-test-model",
+            max_retries=0,
+            transport=lambda _request, _timeout: incomplete,
+        )
+        with self.assertRaisesRegex(RuntimeError, "terminal event"):
+            no_done.suggest_action_id(
+                observation=_observation(),
+                legal_actions=_legal_actions(),
+            )
+        self.assertTrue(incomplete.closed)
+
+    def test_default_stream_transport_closes_response_after_network_interruption(self) -> None:
+        class InterruptedResponse:
+            def __init__(self) -> None:
+                self.read_calls = 0
+                self.closed = False
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                self.closed = True
+
+            def readline(self) -> bytes:
+                self.read_calls += 1
+                if self.read_calls == 1:
+                    return _sse_delta(content='{"action_id":1}')
+                raise OSError("offline interruption")
+
+        response = InterruptedResponse()
+        client = DeepSeekClient(
+            "test-key",
+            "https://offline.invalid",
+            "offline-test-model",
+            max_retries=0,
+        )
+        with patch("agents.deepseek_client.urllib_request.urlopen", return_value=response):
+            with self.assertRaises(OSError):
+                client.suggest_action_id(
+                    observation=_observation(),
+                    legal_actions=_legal_actions(),
+                )
+        self.assertEqual(response.read_calls, 2)
+        self.assertTrue(response.closed)
+
+    def test_default_stream_transport_closes_at_done_without_reading_tail(self) -> None:
+        class FakeResponse:
+            def __init__(self) -> None:
+                self.lines = [
+                    _sse_delta(content='{"action_id":2}'),
+                    b"data: [DONE]\n",
+                    _sse_delta(content='{"action_id":1}'),
+                ]
+                self.read_calls = 0
+                self.closed = False
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                self.closed = True
+
+            def readline(self) -> bytes:
+                self.read_calls += 1
+                return self.lines.pop(0) if self.lines else b""
+
+        response = FakeResponse()
+        client = DeepSeekClient(
+            "test-key",
+            "https://offline.invalid",
+            "offline-test-model",
+            max_retries=0,
+        )
+        with patch("agents.deepseek_client.urllib_request.urlopen", return_value=response):
+            suggestion = client.suggest_action_id(
+                observation=_observation(),
+                legal_actions=_legal_actions(),
+            )
+
+        self.assertEqual(suggestion.action_id, 2)
+        self.assertEqual(response.read_calls, 2)
+        self.assertTrue(response.closed)
 
     def test_agent_falls_back_when_client_raises(self) -> None:
         class RaisingClient:

@@ -8,6 +8,7 @@ Step D boundary:
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 import json
 import time
@@ -174,13 +175,25 @@ class DeepSeekSuggestion:
 class DeepSeekTransport(Protocol):
     """Transport protocol for dependency-injected HTTP calls in tests."""
 
-    def __call__(self, request: urllib_request.Request, timeout: float) -> str:
+    def __call__(
+        self,
+        request: urllib_request.Request,
+        timeout: float,
+    ) -> str | bytes | Iterable[str | bytes]:
         ...
 
 
-def _default_transport(req: urllib_request.Request, timeout: float) -> str:
+def _default_transport(req: urllib_request.Request, timeout: float) -> Iterator[bytes]:
+    """Yield SSE lines and release the response as soon as its terminal event arrives."""
+
     with urllib_request.urlopen(req, timeout=timeout) as response:
-        return response.read().decode("utf-8")
+        while True:
+            line = response.readline()
+            if not line:
+                return
+            yield line
+            if line.strip() == b"data: [DONE]":
+                return
 
 
 class DeepSeekClient:
@@ -2048,35 +2061,52 @@ class DeepSeekClient:
         """
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
-        response_text = self._transport(req, timeout)
-        if isinstance(response_text, bytes):
-            response_text = response_text.decode("utf-8")
+        response_stream = self._transport(req, timeout)
+        if isinstance(response_stream, bytes):
+            lines: Iterable[str | bytes] = response_stream.decode("utf-8").splitlines()
+        elif isinstance(response_stream, str):
+            lines = response_stream.splitlines()
+        else:
+            lines = response_stream
 
-        for raw_line in str(response_text).splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            if not line.startswith("data: "):
-                continue
-            data_str = line[6:]
-            if data_str == "[DONE]":
-                break
-            try:
-                chunk = json.loads(data_str)
-            except json.JSONDecodeError:
-                continue
-            choices = chunk.get("choices", [])
-            if not choices or not isinstance(choices[0], dict):
-                continue
-            delta = choices[0].get("delta")
-            if not isinstance(delta, dict):
-                continue
-            rc = delta.get("reasoning_content")
-            if isinstance(rc, str):
-                reasoning_parts.append(rc)
-            c = delta.get("content")
-            if isinstance(c, str):
-                content_parts.append(c)
+        iterator = iter(lines)
+        terminal_received = False
+        try:
+            for raw_line in iterator:
+                if isinstance(raw_line, bytes):
+                    raw_line = raw_line.decode("utf-8")
+                elif not isinstance(raw_line, str):
+                    raise RuntimeError("deepseek streaming transport returned an invalid line")
+                line = raw_line.strip()
+                if not line or not line.startswith("data: "):
+                    continue
+                data_str = line[6:]
+                if data_str == "[DONE]":
+                    terminal_received = True
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                choices = chunk.get("choices", [])
+                if not choices or not isinstance(choices[0], dict):
+                    continue
+                delta = choices[0].get("delta")
+                if not isinstance(delta, dict):
+                    continue
+                rc = delta.get("reasoning_content")
+                if isinstance(rc, str):
+                    reasoning_parts.append(rc)
+                c = delta.get("content")
+                if isinstance(c, str):
+                    content_parts.append(c)
+        finally:
+            close = getattr(iterator, "close", None)
+            if callable(close):
+                close()
+
+        if not terminal_received:
+            raise RuntimeError("deepseek streaming response ended without its terminal event")
         return ("".join(content_parts), "".join(reasoning_parts))
 
     def suggest_action_id(
