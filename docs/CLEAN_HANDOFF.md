@@ -1,5 +1,7 @@
 # Clean Project Handoff
 
+2026-09-26 最新补充：下文所述 B/C 知识预算与输入压缩任务已由 `3cbf9e3` 完成；默认 Botzone DeepSeek factory 的三个固定开局均同时展示 B 原则与条件化 C 软假设，输入字节下降。规划复审与当前下一步以 `docs/PROJECT_STATUS.md` 顶部、`docs/NEXT_PROMPT.md` 为准：首字节后 SSE 仍可等待数十秒，下一项只做证据驱动的流式诊断与安全优化，不将单次前后耗时差称作因果提速，也不把 seed `47005` 的 `platform_error` 归因于模型时延。下文此前的“下一项”是历史快照。
+
 ## 1. Project Goal
 
 本项目的长期目标是提供一个可验证的单局掼蛋规则引擎、受规则引擎约束的 AI 决策层，以及用于真实 Botzone 无贡测试桌的本地 AI connector。
