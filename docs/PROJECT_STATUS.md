@@ -1,5 +1,14 @@
 # 项目状态看板
 
+## 最新状态：个人正常完局已复审，恢复 M1 离线算法任务（2026-09-26）
+
+- **新局事实。** 项目所有者亲自运行一局并报告完整结束。规划在确认个人目录精确归属、普通非链接、白名单与无运行中 connector 后，只读核对新证据；未启动脚本或访问 Codex 固定 workspace。v8 audit 为 exit 0 / `finished_target`、15 cycles、14/14/14 请求/准备响应/Header、13 次本家决策、7 次模型 success、6 次 `local_shortcut`、0 fallback/传输失败/传输超时、1 次 qualified finish 与正常结果 `local_team_win`。13 条 ACK trace 连续，所选原始 ID 在各自 canonical legal actions 中唯一，selected action 逐字段一致，source 与 audit 守恒。v4 finished tombstone 与 audit run token 相同。146 条低敏阶段事件序号与相对时长单调，含 14 次本地 ACK 确认、`finished/qualified` 和 `connector_exit/finished_target`；本轮 stdout 无末段丢失迹象。
+- **证据登记。** 个人 workspace 本轮六份运行文件保持原样：audit 777 B / SHA-256 `f26dbecffcbd1b48e3aa99278d49022a3d8adda0d932ab219b25cf37880967a3`；ACK trace 162976 B / `9b241b118da34fde33c24f3b2b2ce6d5941f881ad03e67b9f9608882bc910ab7`；history 6783 B / `57f307fb767f3877a3fc05d579684681d83cd769dafed36b9804a36f85ba27f3`；finished state 115 B / `0cc6670f656a9d3a85eb22fea668097683e78b0309fea28192168c4e57a95250`；stdout 27838 B / `52d50018e408a498ca7413c5ca01aa31c89e53bb0b275f24746b5506c866f358`；stderr 0 B / 空文件标准哈希。未打印或保存私密正文。
+- **时延与推断。** 7 次模型调用均成功，耗时约 5.9、10.6、22.6、41.7、43.4、47.4、59.3 秒；整局阶段跨度约 278.4 秒。长思考是本项目可观察的可用性因素，但这局最长调用仍正常完成。它不能证明旧异常局中途停牌由模型生成、平台时限或其他席位导致；旧局根因和具体平台触发原因仍未知，也没有修复。
+- **决定与任务。** 按项目所有者“目前至少没问题，或许可以放一边”的新优先级，M0 故障调查暂缓但不宣称封板；单次正常完局未达到原两局现场可靠性门槛。现在恢复 `docs/NEXT_PROMPT.md` 的 M1 来源化开局、多牌型候选、条件化 B/C RAG 和 DeepSeek 模型前比较 Coding 任务，只做禁网/离线实现与验证，不要求所有者先再运行个人试局。M1 后做 M2 效果复审；若现场中途停牌再现，保留新证据并回到 M0 定位。当前范围内剩余风险为同类故障可能复发、整次模型生成无总期限，不能用一局正常完赛消除。
+
+以下“待所有者决定个人验证局”的安排已被本次人工完局及新优先级取代，保留为历史快照。
+
 ## 最新复审：M0 观测实现已验收，待所有者决定个人验证局（2026-09-26）
 
 - **提交与验证。** `f5fb88a` 只改 Botzone connector/runner/Agent 接线、个人启动器和相应测试；规划独立核对完整生产 diff、固定枚举/flush/默认关闭、实际个人启动器参数及合成重定向测试。定向 Botzone 44 项、PowerShell 7 和 Windows PowerShell 5.1 各 16 组/77 断言、全量 849 项均通过；`git show --check` 通过。未运行实际 connector、Botzone 或真实 DeepSeek。
