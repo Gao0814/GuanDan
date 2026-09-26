@@ -1,5 +1,7 @@
 # Clean Project Handoff
 
+2026-09-26 复发后的交接：当前执行 `docs/NEXT_PROMPT.md` 的 M0 Botzone DeepSeek 整次决策期限 Coding 任务。项目所有者报告本家再次在倒计时结束未出牌，另有两局开局不出牌，并将个人 Botzone 桌延时设为 120 秒。已核验的异常局一局停在 `model_enter`，另一局虽有 10 条本家决策 ACK、8 次模型 success，最终仍 `platform_error`；两者不能合并为“已证实模型超时”。原始个人证据分别逐文件验哈希复制到 `D:\VsCodeProject\GuanDanManualEvidenceArchive\20260926-153323-midgame-stall` 和 `D:\VsCodeProject\GuanDanManualEvidenceArchive\20260926-154450-teammate-lead-platform-error`；不要启动会覆盖现有个人 workspace 的脚本，不要触碰固定 Codex workspace。`DEEPSEEK_TIMEOUT=120` 是单次读取超时，不是整次决策期限。当前先做小于 120 秒桌面倒计时的模型期限、合法回退和禁网验收；随后由所有者自行试局，规划按阶段、响应和 ACK 复审。M0 放行后恢复 `docs/OPENING_ALGORITHM_PROMPT.md` 的 M1 算法实现，再做 M2 效果复审。下文“暂缓 M0、立即 M1”是历史快照。
+
 2026-09-26 最新交接：项目所有者已亲自完成一局个人试测；规划只读复审确认 `local_team_win` 正常完局、13 条合法 ACK 决策与 audit 守恒、7 次模型调用均成功，最长约 59.3 秒。旧异常局中途停牌根因仍未知，不能据此归因模型超时或称故障已修复。按所有者新的优先级，M0 调查暂缓、不再阻挡禁网离线的 M1 算法工作；当前直接执行 `docs/NEXT_PROMPT.md`，无需先让所有者再人工操作。M1 不启动 Botzone、不轮换个人证据，完成后再做 M2 效果复审。若现场同类问题复发，保留当局证据并回到 M0。下文此前“等待个人验证局”的句子是历史快照。
 
 2026-09-26 最新规划复审：`f5fb88a` 的低敏阶段观测已接入个人启动器并通过独立禁网/合成验证；它没有修复或定位旧局中途停牌。M0 仍在进行，当前等待项目所有者决定是否允许下一次个人试局轮换 `D:\VsCodeProject\GuanDanManualWorkspace` 的旧证据；规划与 Coding 均不代为启动。所有者新局结束后直接按 `docs/NEXT_PROMPT.md` 做只读证据复审；异常时保留目录并暂停再启动。根因未知的放行条件是两次分开的正常完整试局均有阶段证据和规划复审；随后恢复 `docs/OPENING_ALGORITHM_PROMPT.md` 的 M1 算法实现，再做 M2 效果复审。下段旧“当前 Coding Prompt”是提交前快照。

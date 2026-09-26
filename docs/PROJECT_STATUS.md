@@ -1,5 +1,13 @@
 # 项目状态看板
 
+## 最新状态：中途停牌复发，M0 先做整次决策期限保护（2026-09-26）
+
+- **用户现场现象。** 正常完局之后，同类本家倒计时结束前未出牌再次出现；另报告两局刚开局就未出牌。项目所有者现将个人 Botzone 桌延时设为 120 秒并要求 DeepSeek 适配。页面现象不能仅凭 `platform_error` 判为模型超时；另两局开局异常尚未独立复核原始证据。
+- **两份已保留的异常证据。** 一局最后阶段停在 `model_enter`，缺本次模型完成、准备响应和 ACK；此前两次模型调用约 17.8/56.5 秒成功。另一局队友首出，audit 为 exit 0 / `finished_target`、11/11/11 请求/准备响应/Header、10 条本家决策、8 次模型 success、2 次 local shortcut、0 fallback/传输错误，最长模型约 70.6 秒，终局却为 `platform_error`；已记录动作经过 ACK，无法从本地证据判定页面最后超时轮的请求边界。规划在普通非链接、allowlist、无运行中 connector 条件下分别只读核验并逐文件哈希复制到 `D:\VsCodeProject\GuanDanManualEvidenceArchive\20260926-153323-midgame-stall` 和 `D:\VsCodeProject\GuanDanManualEvidenceArchive\20260926-154450-teammate-lead-platform-error`；未改原个人 workspace，未访问 Codex 固定 workspace。
+- **实现事实与决定。** 当前 `DEEPSEEK_TIMEOUT` 进入 `urllib.urlopen(..., timeout=...)`，SSE `readline()` 持续至 `[DONE]`，没有整次生成期限；runner 墙钟上限仅在 cycle 间检查。把 `DEEPSEEK_TIMEOUT` 设为 120 只延长单次读取等待，不保证在 120 秒桌面倒计时内出牌，甚至可能推迟现有回退。当前 `docs/NEXT_PROMPT.md` 是 M0 Coding 任务：建立小于 120 秒的 Botzone 决策总期限与 canonical 合法回退，禁网验证分段 SSE、阻塞、迟到响应和 ACK。M1 来源化开局、多牌型候选、B/C RAG 和 DeepSeek 比较在 `docs/OPENING_ALGORITHM_PROMPT.md` 排队；M0 放行后恢复，再做 M2 效果复审。当前范围内剩余风险为模型路径可能长时间不返回，且平台错误仍有未定位边界。
+
+以下“个人正常完局已复审，恢复 M1”是复发前的历史快照，以本节及 `docs/PLAN.md` 顶部为准。
+
 ## 最新状态：个人正常完局已复审，恢复 M1 离线算法任务（2026-09-26）
 
 - **新局事实。** 项目所有者亲自运行一局并报告完整结束。规划在确认个人目录精确归属、普通非链接、白名单与无运行中 connector 后，只读核对新证据；未启动脚本或访问 Codex 固定 workspace。v8 audit 为 exit 0 / `finished_target`、15 cycles、14/14/14 请求/准备响应/Header、13 次本家决策、7 次模型 success、6 次 `local_shortcut`、0 fallback/传输失败/传输超时、1 次 qualified finish 与正常结果 `local_team_win`。13 条 ACK trace 连续，所选原始 ID 在各自 canonical legal actions 中唯一，selected action 逐字段一致，source 与 audit 守恒。v4 finished tombstone 与 audit run token 相同。146 条低敏阶段事件序号与相对时长单调，含 14 次本地 ACK 确认、`finished/qualified` 和 `connector_exit/finished_target`；本轮 stdout 无末段丢失迹象。

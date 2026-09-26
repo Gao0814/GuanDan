@@ -1,29 +1,31 @@
-# Coding Codex 执行 Prompt：完整开局的来源条件化选择与多牌型模型前比较
+# Coding Codex 执行 Prompt：120 秒个人桌的整次 DeepSeek 决策期限
 
-> 状态：M1 当前可执行任务；项目所有者已完成一次正常个人试局，并决定暂缓旧中途停牌调查。M0 根因未定且未宣称修复；本任务只做禁网/离线算法实现。
+> 当前阶段：M0 中途停牌可用性。项目主线仍为掼蛋算法优化；本任务先使现场请求在有限时长内交付合法动作，以便随后算法试测可解释。这是一个包含实现与禁网验收的 Coding 工作包。
 
-## 目标与边界
+## 开始前
 
-在一次 Coding 任务中改善四人、级牌 `2`、无贡、完整 108 张初始牌局的算法生产链：让有 B 级正文支持、公开条件足以排除实质取舍的自然首攻更多走本地快速路径；其余局面让 DeepSeek 在有界真实 canonical 候选中清楚比较单张、对子、三张、顺子、炸弹及各动作出后的剩牌用途。C 级经验继续作为条件化、可撤回的模型前软假设。本任务必须改进算法生产路径与测试，不能只交付资格器、观测报表或特制正例。
+阅读适用的 `AGENTS.md` 与项目 Skills 清单、`README.md`、`CLAUDE.md`、`docs/PROJECT_STATUS.md` 顶部、`docs/PLAN.md` 顶部、`docs/CLEAN_HANDOFF.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`；检查 Git status、diff、HEAD。阅读 Botzone DeepSeek factory、agent fallback、SSE transport、connector 响应/ACK、runner、stage trace、个人启动器及相关测试。Coding 只改任务直接相关的源代码、tests、必要的启动说明，并只提交本轮自有修改；规划文档由规划 Codex 维护。
 
-先读根及适用范围内的 `AGENTS.md`、项目 Skills 清单、`README.md`、`CLAUDE.md`、`docs/PROJECT_STATUS.md` 顶部、`docs/PLAN.md` 当前优先级、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md`、`docs/STRATEGY_SOURCE_AUDIT.md`，并核对 Git status/diff/HEAD。只改任务直接相关的 `agents/`、`rag/`、`tests/`、必要的 `evaluation/` 与实现说明；不改引擎规则真值、Botzone connector、个人启动器、私密配置或两个 workspace。规划文档由规划 Codex 复审后处理。提交只包含本轮自有文件。
+不启动个人脚本、真实 connector、Botzone 对局或真实 DeepSeek 请求；不读取/修改 `.env`，不输出密钥、连接 URL 或模型自由文本；不访问或轮换 `D:\VsCodeProject\GuanDanManualWorkspace` 与 `D:\VsCodeProject\BotzoneWorkspace`。两份异常证据已归档于 `D:\VsCodeProject\GuanDanManualEvidenceArchive\20260926-153323-midgame-stall` 和 `D:\VsCodeProject\GuanDanManualEvidenceArchive\20260926-154450-teammate-lead-platform-error`；本 Prompt 的低敏摘要已足够，无需再读原始牌谱。
 
-## 已复核基线
+## 事实、假设与目标
 
-- `OpeningFormulaStrategy` 当前强牌只在结构安全小单、独立回手，且完整关系只包含 B 级支持的有方向比较时直选；对子/三张要求没有适用安全单张、完整 canonical 集只有一个自然完整清理路线，且该 ID 不参与任一完整关系。门槛安全，但覆盖低。规划独立用引擎完整起局重算 `0..199`、`5000..5199`、`20000..20199`：本地直选为 7、6、4，全部单张；其余 583/600 交模型。相关 60 项测试通过。这些区间只作基线，不作调参专用样本。
-- 禁网实际 `build_agent_factory("deepseek")` 路径在 seed `0..9,29,89` 的模型请求使用默认 `rag_top_k=1`，同时带 B 级 `exp_lead_opening_shape_001` 与适用 C 级对子/单张软假设；推荐 ID 属于最终候选，模型动作原始 ID 与 `model` source 保持。seed `0`：完整动作 224、最终 80、完整关系 63、两端在最终候选的关系 16，最终候选含 46 个三带二变体。seed `29`：80→50，13→8。关系未成对可见并不自动构成 bug，但密集变体会挤占跨牌型比较空间。现有 prompt 已有余组、孤张、控制资源和局部残余用途；应提高它们对实际取舍的覆盖与可读性。
-- 已核对 B 级正文支持主攻/助攻/中性定位、减少总手数和单牌、强牌小单首攻、中性牌对子/三张表达、顺子清理小单、动态调整；**没有证明固定点数顺序或“对子/顺子优先”**。已登记 C 级对子试探、自然单张成本、炸弹/通配、三带二与顺子拆组等只能补可撤回比较。书目目录不能冒充已读战术。
+- `f5fb88a` 只加阶段观测。第一份异常证据最后停在 `model_enter`，没有本次 `model_complete` 或准备响应；前两次模型调用约 17.8/56.5 秒成功。这定位了本地最后可见边界，**不能确定**是服务端思考、持续 SSE、单次阻塞读、进程终止或平台时限所致。
+- 第二份队友首出异常证据中，已观察模型调用全部成功；11/11/11 请求/响应/Header、10 次本家决策并获 ACK，最长模型约 70.6 秒，最终仍 `platform_error`。用户报告页面本家倒计时结束未出牌；本地证据无法证明该超时轮已送达 connector。不要宣称本次期限改动会修复所有 `platform_error`。
+- 所有者又报告两局开局未出牌，现将个人 Botzone 桌延时设为 **120 秒**。当前 `DEEPSEEK_TIMEOUT` 是 `urllib.urlopen(..., timeout=...)` 的网络读取超时；SSE 分段读取可累计超过它，runner 墙钟只在 cycle 间检查。设 `DEEPSEEK_TIMEOUT=120` 不保证 120 秒内出牌。
 
-## 实现
+在 Botzone DeepSeek 路径实现**单调时钟计量的整次决策期限**：从收到 play 请求或进入决策的明确边界计时，为解析、合法回退、准备响应及 ACK 留出余量。对所有者已配置的 120 秒个人桌，个人启动路径给出明确、保守的默认总预算，建议不超过 90 秒；该值可配置、可预检，并与单次读取超时严格区分。期限内 DeepSeek 仍是主要决策者；到期或 transport 卡住时走既有 canonical 合法动作回退，及时准备**唯一**响应。不得借机对成功模型动作作策略改牌，不改引擎规则或协议动作语义。
 
-1. 从完整 canonical 动作和公开 observation 建立稳定的首攻路线比较，覆盖结构安全自然单张、完整清理的自然对子/三张、不拆自然结构的顺子、自然炸弹与通配资源。比较动作后点数组与孤张、当前可识别但可能重叠的剩牌用途、拆组、独立可用的控制/回手资源及公开队友/对手紧急性；未知未来牌权与暗牌保持未知，估计余组不能冒充精确最少出牌手数。
-2. 放宽本地公式中仅因多个自然成组候选或无关展示关系就一概退回的门槛，但每次直选必须同时有 B 级已核对原则和当前公开优势条件。先判断**完整关系**的方向与实际资源/结构损失；仅在优势及反例边界可说明、且没有未解决的跨牌型、通配、炸弹、协同或控制取舍时返回原始合法 ID。可从强牌低成本安全小单、明确结构净收益的完整自然组牌或顺子寻找覆盖。对子/三张表达“中性意图”本身不是必出证明，顺子“解小单”也不是无条件直出证明。物理实现不同但后果不等价时不得按 ID 或花色任意打破平局。展示代表只用于 prompt；有取舍时交 DeepSeek。
-3. 在 80 项上限内按跨牌型路线与完整两侧关系保护代表，避免大量同一牌型变体压满候选。给实际存在的单张、对子、三张、顺子、炸弹及适用的三带二/连对/钢板、通配路线保留**原始候选**；有实质关系时尽可能成对保留，只解释最终 Request 中确实可见的两端。不能合并成可选择的虚构动作；推荐 ID、关系 ID、最终候选闭环。立即出完、紧急阻断、合法 pass 和关键压制动作维持保护。预算冲突用明确稳定的优先级与 fail-closed 降级，并报告无法成对进入的关系。
-4. RAG 先按完整公开候选和场景门槛筛选，再以固定预算选择 B 级原则与各类**确有适用证据**的代表性 C 级软主张；不要凑条目，也不要让遍在的对子假设掩盖顺子/拆组/炸弹取舍。与候选可见性相联的提示须说明各路线出后用途、成本和可推翻条件。作者、URL、来源等级与状态留在治理平面，不进 prompt 或检索评分。成功模型的最终候选原始 ID 原样返回，source 保持 `model`，不新增后置策略覆盖。
+## 实现边界
 
-## 验收
+1. 先确认模型生成、重试、SSE 消费、Agent 选择和 connector pending/ACK 的实际调用边界。总期限须约束连接建立、单个阻塞读、分段 SSE 和重试；预算耗尽不得再重试。不能只在每行读取后检查时间。到期后网络资源或后台工作须有界关闭或隔离，不得让迟到模型 ID 覆盖回退、写出第二份 Header，或随回合积累无界请求。普通 CLI 默认行为和其他桌计时如需保持原样，应将预算限定在明确 opt-in 的 Botzone/个人路径；不要把 120 秒假设硬编码进通用 DeepSeek 客户端默认值。
+2. 期限触发要形成低基数 timeout/fallback 结果；回退 ID 必须来自当前 `legal_actions()` 原始 canonical 集。source、audit、decision trace、阶段事件与既有 ACK 事务守恒。Header 交给 poll 不等于 ACK，pending 动作不得作为已确认决策落盘。页面倒计时结束但本地未收到 play 请求的边界保持未定，不伪造动作。
+3. 个人启动器实际启用并显示本次**决策总预算**及需匹配的 Botzone 120 秒桌设置。预检拒绝零、负值、非数、达到桌面计时或安全余量不足的值。保持普通 CLI stage trace 默认关闭、个人路径显式开启；不改 `.env` 或持久化私密配置。若 `DEEPSEEK_TIMEOUT` 超过总预算，实际等待仍必须由总期限约束，或在启动时 fail closed。保持个人目录回收前的归属、普通非链接、allowlist、无 connector 核验。
 
-- 冻结当前 HEAD 的随机完整起局基线，在未按个例调参的独立区间验证。至少报告 `0..199`、`5000..5199`、`20000..20199` 三组各 200 局和另一组预先固定、未用于实现选择的 200 局；逐组列公式单张/对子/三张/顺子直选、退回模型、直选涉及完整关系冲突、raw/final 候选分布及重要关系成对可见率。特制正例和把旧零命中写为预期均不算覆盖验收。若非单张直选仍只在特制牌局出现或真实起局覆盖没有实质增加，应继续改善本轮算法，不拆成新的资格阶段；任何新增直选须逐类核对 B 来源和反例，不能为频率放松门槛。
-- 至少选强/中/弱、顺子、自然组牌、炸弹/通配、冲突与无适用 C 条目的完整起局，以禁网 fake transport 捕获**默认 Botzone factory 实际 Request**；核验 B/C 适用、牌型及残余用途可见、关系双端、推荐闭环、`<=80`、原始 ID 与 `model` source。让 fake 模型分别返回不同合法候选，验证成功动作不被公式或 selector 后置改写。报告同状态前后 prompt 字符/字节和候选组成；不把长度或单次假模型选择称为策略收益。
-- 新增直选反例覆盖多条不等价自然路线、顺子拆组、单张参与连续结构、组牌损失回手、炸弹/通配竞争、队友或危险对手公开紧急、无独立回手与畸形输入。完整关系遗漏、C 级单独驱动直选和被剪掉的推荐 ID 必须 fail closed。
-- 跑相关 `unittest`、主规则回归及 `python -m unittest discover -q`，记录结果。默认零真实 DeepSeek 请求、零 Botzone/live，不访问或轮换 `D:\VsCodeProject\GuanDanManualWorkspace`；旧异常局五次 ACK 后的 `platform_error` 触发原因未定，随后一局虽正常完局且单次模型调用最长约 59.3 秒，仍不能由此推断旧局模型超时或改参数。若发现可证明会阻断下一轮算法试测的独立缺陷，只报告最小修复建议。报告实现文件、各来源条件、覆盖对照、实际 Request 证据、当前范围剩余风险、提交和最终 Git status。
+## 禁网验收与交付
+
+- 用 fake clock、可控 transport 或必要的短时本地阻塞，验证正常约 70 秒的分段 SSE 在预算内成功并原样选择模型合法 ID；小于 30 秒间隔但累计越过总期限的 SSE；无换行阻塞读；连接建立卡住；重试跨期限；到期后才返回合法模型 ID。每种超时边界都在预算内交付一次 canonical 合法 fallback，且无迟到覆盖、第二动作、无界 worker 或错误 ACK。测试要验证时间边界，而非只断言传了 timeout 参数。
+- 以禁网实际 `build_agent_factory("deepseek")`、个人启动参数和 connector 事务验证：模型成功保留 `model` source，限时回退 source/计数/阶段事件低敏且一致；Header、pending、poll 返回、ACK 与 trace 原始候选守恒；preflight-only 不发阶段事件、不开始模型调用。复跑相关 Botzone/DeepSeek 单测、PowerShell 7 与 Windows PowerShell 5.1 个人启动器测试、主规则回归、`python -m unittest discover -q` 和 `git diff --check`。
+- 报告预算起点、阻塞读取时期限如何生效、资源如何停止或隔离、相对 120 秒桌保留的响应/ACK 余量、个人启动默认参数、测试与局限、提交和最终 Git status。合成测试不能证明所有 `platform_error` 消失。Coding 不启动下一局；规划复审后由所有者亲自试测，异常先保留证据。
+
+M0 放行及恢复 M1/M2 的条件见 `docs/PLAN.md` 顶部；来源化开局、多牌型候选、条件化 B/C RAG 与 DeepSeek 优化 Prompt 保存在 `docs/OPENING_ALGORITHM_PROMPT.md`。
