@@ -1,5 +1,7 @@
 # Clean Project Handoff
 
+2026-09-26 最新状态：`d0cd02b` 已将 DeepSeek Chat Completions SSE 改为逐行读取并以 `[DONE]` 为完成边界，规划独立通过定向 55 项、主规则 39 项、全量 842 项。单点测时显示主要等待在模型产生完整合法 JSON 之前；不宣称改动带来因果加速，也不据此解释 seed `47005` 的平台错误。当前下一步为项目所有者个人单局试测；异常时停止下一次个人启动、保留证据，按 `docs/NEXT_PROMPT.md` 只读复审。以下较早的“下一项”是历史快照，当前状态以 `docs/PROJECT_STATUS.md` 顶部为准。
+
 2026-09-26 最新补充：下文所述 B/C 知识预算与输入压缩任务已由 `3cbf9e3` 完成；默认 Botzone DeepSeek factory 的三个固定开局均同时展示 B 原则与条件化 C 软假设，输入字节下降。规划复审与当前下一步以 `docs/PROJECT_STATUS.md` 顶部、`docs/NEXT_PROMPT.md` 为准：首字节后 SSE 仍可等待数十秒，下一项只做证据驱动的流式诊断与安全优化，不将单次前后耗时差称作因果提速，也不把 seed `47005` 的 `platform_error` 归因于模型时延。下文此前的“下一项”是历史快照。
 
 ## 1. Project Goal
