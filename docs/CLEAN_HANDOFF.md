@@ -1,8 +1,8 @@
 # Clean Project Handoff
 
-2026-09-26 所有者优先级纠偏：项目主线仍是来源化掼蛋算法优化，但反复个人试局中途停牌使新算法现场验收暂不可依赖。当前先执行 `docs/PLAN.md` 的 M0 可用性工作包及 `docs/NEXT_PROMPT.md`，完成证据驱动的本地缺陷修复/低敏阶段定位与一次所有者手工验收；`ec5616b:docs/NEXT_PROMPT.md` 的开局算法实现作为 M1 排队保留，不直接派发。旧个人 workspace 证据不得被新启动轮换。以下“算法规划更新”是上一轮快照，其算法复核事实仍有效，当前顺序以上述 M0→M1 为准。
+2026-09-26 规划独立复核后的当前顺序为 **M0 中途停牌可用性 → M1 来源化算法 → M2 效果复审**。旧个人局五次本家合法模型动作已获 ACK，最终 `platform_error`；根因仍未定，不能改写为开局未出牌或模型超时。个人 workspace 六份证据和归属标记的大小/hash 本轮只读复核一致，未轮换。当前 Coding Prompt 是 `docs/NEXT_PROMPT.md`；它在一个问题级工作包内验证/修复确切本地缺陷并补低敏阶段观测，不自行开新局。M0 的放行条件见 `docs/PLAN.md`，一次偶然正常完局或仅声称外部故障不足以放行。M1 完整任务已从 `ec5616b` 保存为 `docs/OPENING_ALGORITHM_PROMPT.md`，M0 放行后直接恢复。以下较早“当前/下一项”文字只保留历史事实，以本段及 `docs/PROJECT_STATUS.md` 顶部为准。
 
-2026-09-26 算法规划更新：当前 `docs/NEXT_PROMPT.md` 已改为一次完整的来源条件化开局与多牌型模型前比较 Coding 任务。规划复核的三段各 200 局完整随机起局公式直选为 `7/6/4`、全部单张；默认 Botzone factory 的禁网 Request 已有 B/C 条件化输入和推荐/候选闭环，但 seed `0` 的 80 个最终候选含 46 个三带二变体。下一任务在保留完整关系安全门槛与 DeepSeek 原始合法动作自主权的前提下改进算法，使用独立完整发牌分布和禁网实际 Request 验收。个人 workspace 的五次 ACK 后 `platform_error` 根因未定，证据不得轮换。以下交接正文含旧下一步快照，以 `docs/PROJECT_STATUS.md` 顶部及现行 `docs/NEXT_PROMPT.md` 为准。
+2026-09-26 算法规划历史快照：当时 `docs/NEXT_PROMPT.md` 曾是完整的来源条件化开局与多牌型模型前比较 Coding 任务，现已迁至 `docs/OPENING_ALGORITHM_PROMPT.md` 排队。规划复核的三段各 200 局完整随机起局公式直选为 `7/6/4`、全部单张；默认 Botzone factory 的禁网 Request 已有 B/C 条件化输入和推荐/候选闭环，但 seed `0` 的 80 个最终候选含 46 个三带二变体。这些算法事实保持有效，旧“立即执行”顺序已废止。
 
 2026-09-26 最新状态：`d0cd02b` 已将 DeepSeek Chat Completions SSE 改为逐行读取并以 `[DONE]` 为完成边界，规划独立通过定向 55 项、主规则 39 项、全量 842 项。单点测时显示主要等待在模型产生完整合法 JSON 之前；不宣称改动带来因果加速，也不据此解释 seed `47005` 的平台错误。当前下一步为项目所有者个人单局试测；异常时停止下一次个人启动、保留证据，按 `docs/NEXT_PROMPT.md` 只读复审。以下较早的“下一项”是历史快照，当前状态以 `docs/PROJECT_STATUS.md` 顶部为准。
 
