@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 import json
 from pathlib import Path
 import re
@@ -522,7 +523,9 @@ class MultiPatternOpeningTests(unittest.TestCase):
                     str(observation["current_round"]["current_level_rank"]),
                 )
                 winner = self.strategy._unique_residual_frontier(
-                    singles + (group_routes or ()) + straights
+                    singles + (group_routes or ()) + straights,
+                    actions_by_id=actions_by_id,
+                    hand_counts=Counter(observation["my_info"]["hand_cards"]),
                 )
                 self.assertIsNotNone(winner)
                 assert winner is not None
@@ -547,6 +550,38 @@ class MultiPatternOpeningTests(unittest.TestCase):
                         item for item in actions if item["action_id"] == analysis.action_id
                     )
                     self.assertEqual(chosen["declared_pattern"], "single")
+
+    def test_route_equivalence_requires_the_exact_public_residual_card_multiset(self) -> None:
+        game = GuanDanGame(seed=0, current_level_rank="2")
+        observation = game.reset()
+        actions = game.legal_actions()
+        facts = summarize_candidate_structures(observation, actions)
+        self.assertIsNotNone(facts)
+        assert facts is not None
+        actions_by_id = {int(action["action_id"]): action for action in actions}
+        hand_counts = Counter(observation["my_info"]["hand_cards"])
+        by_compact_summary: dict[object, list[object]] = {}
+        for fact in facts:
+            by_compact_summary.setdefault(replace(fact, action_id=0), []).append(fact)
+
+        distinct_residual_pair_found = False
+        for same_summary in by_compact_summary.values():
+            for index, left in enumerate(same_summary):
+                for right in same_summary[index + 1:]:
+                    if self.strategy._same_public_route_effect(
+                        left,
+                        right,
+                        actions_by_id=actions_by_id,
+                        hand_counts=hand_counts,
+                    ):
+                        continue
+                    distinct_residual_pair_found = True
+                    break
+                if distinct_residual_pair_found:
+                    break
+            if distinct_residual_pair_found:
+                break
+        self.assertTrue(distinct_residual_pair_found)
 
     def test_preregistered_holdout_interval_keeps_formula_fail_closed(self) -> None:
         counts: Counter[str] = Counter()
@@ -878,6 +913,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
         self.assertGreater(len(actions), 80)
 
         observations = []
+        selected_patterns = []
         for selection_index in (0, -1):
             agent, _client, transport, chosen = _run_factory_opening_request(
                 fixture,
@@ -889,6 +925,10 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 (str(action["declared_pattern"]), int(action["wildcard_count"]) > 0)
                 for action in final_actions
             }
+            final_family_counts = Counter(
+                (str(action["declared_pattern"]), int(action["wildcard_count"]) > 0)
+                for action in final_actions
+            )
             self.assertEqual(transport.calls, 1)
             self.assertLessEqual(len(final_ids), 80)
             self.assertEqual(len(final_ids), len(transport.candidate_ids))
@@ -896,6 +936,12 @@ class MultiPatternOpeningTests(unittest.TestCase):
             self.assertEqual(chosen, transport.action_id)
             self.assertIn(chosen, final_ids)
             self.assertEqual(agent.last_decision_source, "model")
+            chosen_pattern = next(
+                str(action["declared_pattern"])
+                for action in actions
+                if action["action_id"] == chosen
+            )
+            selected_patterns.append(chosen_pattern)
             recommendation_ids = set(
                 getattr(agent.last_strategy_recommendation, "action_ids", ())
             )
@@ -904,6 +950,13 @@ class MultiPatternOpeningTests(unittest.TestCase):
             # canonical representative in the final prompt, even under the
             # 80-item overflow budget.
             self.assertTrue(raw_families.issubset(final_families))
+            # Full-deal overflow is shared across pattern/resource families;
+            # dense wildcard triple-with-pair variants cannot occupy dozens
+            # of the 80 slots. Atomic relation protection may add endpoints
+            # before this allocation, but this fixture's unprotected family
+            # budget remains bounded and repeatable.
+            self.assertLessEqual(max(final_family_counts.values()), 8)
+            self.assertLessEqual(final_family_counts[("triple_with_pair", True)], 8)
             expected_representatives = DeepSeekClient._opening_pattern_representative_ids(
                 observation, actions, classify_game_phase(observation),
             )
@@ -929,6 +982,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
 
         self.assertEqual(observations[0][0], observations[1][0])
         self.assertNotEqual(observations[0][1], observations[1][1])
+        self.assertNotEqual(selected_patterns[0], selected_patterns[1])
 
     def test_botzone_factory_top_one_retrieval_keeps_opening_guidance_in_actual_request(self) -> None:
         fixtures = list(build_h3_model_probe_opening_fixtures())
@@ -1434,7 +1488,11 @@ class MultiPatternOpeningTests(unittest.TestCase):
                     rank_counts, str(current_round["current_level_rank"]),
                 ) + (group_routes or ()) + straight_routes
                 self.assertEqual(
-                    self.strategy._unique_residual_frontier(source_routes).action_id,
+                    self.strategy._unique_residual_frontier(
+                        source_routes,
+                        actions_by_id=actions_by_id,
+                        hand_counts=Counter(observation["my_info"]["hand_cards"]),
+                    ).action_id,
                     chosen,
                 )
                 if pattern == "straight":
@@ -1499,7 +1557,11 @@ class MultiPatternOpeningTests(unittest.TestCase):
                     observation, actions, facts, facts_by_id, actions_by_id,
                     rank_counts, str(current_round["current_level_rank"]),
                 ) + (group_routes or ()) + straight_routes
-                winner = self.strategy._unique_residual_frontier(source_routes)
+                winner = self.strategy._unique_residual_frontier(
+                    source_routes,
+                    actions_by_id=actions_by_id,
+                    hand_counts=Counter(observation["my_info"]["hand_cards"]),
+                )
                 self.assertIsNotNone(winner)
                 self.assertEqual(winner.action_id, chosen)
                 if pattern == "straight":

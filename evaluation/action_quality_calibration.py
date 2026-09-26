@@ -79,10 +79,12 @@ _H3_A8_CONTRACT = (
 )
 _H3_A9_CONTRACT = (
     ("opening_1", "opening", 77, 53),
-    # The opening route-family reserve changes visibility on the initial
-    # state; the queue therefore retains the earliest same-seed state where
-    # the frozen reference is actually shown to the model.
-    ("opening_2", "opening", 3, 3),
+    # Preserve seed 921's original step-zero state.  If the local opening
+    # formula resolves it, the queue marks and disables that shortcut only
+    # for counterfactual model-candidate calibration; it never substitutes a
+    # later same-seed snapshot. Reference visibility is reported from the
+    # resulting actual request candidate set, not assumed here.
+    ("opening_2", "opening", 74, 49),
     ("midgame_1", "midgame", 25, 13),
     ("midgame_2", "midgame", 11, 11),
     ("endgame_1", "critical_endgame", 8, 8),

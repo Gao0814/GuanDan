@@ -8,6 +8,8 @@ import json
 
 from agents.base import require_legal_action_id
 from agents.game_phase import ENDGAME_PHASES, MIDGAME, OPENING, classify_game_phase
+from agents.hand_evaluator import evaluate_hand
+from agents.opening_strategy import OpeningFormulaStrategy
 from agents.rag_advisor import RAGAdvisor
 from agents.rule_based_ai import RuleBasedAIAgent
 from engine.game import GuanDanGame
@@ -113,6 +115,26 @@ def _first_eligible_states_for_seed(
             and player_id == 1
             and sum(action.get("declared_pattern") != "pass" for action in legal_actions) >= 2
         ):
+            opening_formula_enabled = True
+            if layer == _OPENING_LAYER:
+                try:
+                    # Keep the earliest state fixed even if the current local
+                    # formula now resolves it.  For candidate-coverage analysis
+                    # only, build the same production model request with that
+                    # shortcut disabled and record the mode on the sample.
+                    # This is explicitly counterfactual; it is not a claim that
+                    # Botzone would send a request for a locally resolved lead.
+                    opening_formula_enabled = (
+                        OpeningFormulaStrategy().select_action(
+                            observation,
+                            legal_actions,
+                            evaluate_hand(observation, legal_actions),
+                            classify_game_phase(observation),
+                        )
+                        is None
+                    )
+                except Exception:
+                    return None, "opening_formula_qualification_invalid"
             sample, failure = _make_sample(
                 name=layer,
                 phase=phase,
@@ -121,6 +143,7 @@ def _first_eligible_states_for_seed(
                 legal_actions=legal_actions,
                 source_seed=seed,
                 advisor=advisor,
+                opening_formula_enabled=opening_formula_enabled,
             )
             if failure is not None:
                 return None, "model_path_invalid"
@@ -129,7 +152,12 @@ def _first_eligible_states_for_seed(
                 signature = _public_signature(observation, legal_actions)
                 if reference_id is None:
                     return None, "reference_action_invalid"
-                if reference_id in sample.final_candidate_ids and signature not in forbidden_signatures:
+                # Freeze the earliest eligible state for reproducible
+                # same-state comparisons, even when bounded model candidates
+                # omit the RuleBased reference.  Downstream quality tools
+                # expose that coverage loss explicitly; the queue must not
+                # silently advance to a later step to make the reference fit.
+                if signature not in forbidden_signatures:
                     found[layer] = sample
 
         if len(found) == len(_LAYER_ORDER):

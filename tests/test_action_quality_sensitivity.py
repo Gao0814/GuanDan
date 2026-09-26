@@ -36,7 +36,7 @@ class ActionQualitySensitivityTests(unittest.TestCase):
         cls.baseline = calibrate_h3_a10_sample_sets(cls.h3_a8, cls.h3_a9)
         cls.report = sensitivity.evaluate_h3_a11_sample_sets(cls.h3_a8, cls.h3_a9)
 
-    def test_all_twelve_real_states_reuse_h3_a10_baselines_and_conserve_current_cells(self) -> None:
+    def test_frozen_step_zero_state_and_candidate_coverage_are_reported_without_substitution(self) -> None:
         self.assertEqual(self.baseline.status, CalibrationStatus.READY)
         self.assertEqual(self.report.status, sensitivity.SensitivityStatus.READY)
         self.assertEqual(
@@ -50,18 +50,24 @@ class ActionQualitySensitivityTests(unittest.TestCase):
         self.assertEqual(tuple(row.status for row in self.report.samples), (sensitivity.SensitivityStatus.READY,) * 12)
         self.assertEqual(tuple(row.reference_action_visible for row in self.report.samples), (True,) * 12)
         self.assertEqual(tuple(row.reference_tied_in_both_count for row in self.report.samples), (1,) * 12)
-        self.assertEqual(tuple(row.baseline_completed_candidate_count for row in self.report.samples), tuple(row.final_candidate_count for row in self.report.samples))
-        self.assertEqual(tuple(row.frozen_completed_candidate_count for row in self.report.samples), tuple(row.final_candidate_count for row in self.report.samples))
-        self.assertEqual(tuple(row.paired_completed_candidate_count for row in self.report.samples), tuple(row.final_candidate_count for row in self.report.samples))
+        self.assertEqual(
+            tuple(sample.opening_formula_enabled for sample in self.h3_a9.samples),
+            (True, False, True, True, True, True),
+        )
+        expected_completed = tuple(row.final_candidate_count for row in self.report.samples)
+        self.assertEqual(tuple(row.baseline_completed_candidate_count for row in self.report.samples), expected_completed)
+        self.assertEqual(tuple(row.frozen_completed_candidate_count for row in self.report.samples), expected_completed)
+        self.assertEqual(tuple(row.paired_completed_candidate_count for row in self.report.samples), expected_completed)
 
-        for baseline_row, sensitivity_row in zip(self.baseline.samples, self.report.samples):
+        for index, (baseline_row, sensitivity_row) in enumerate(zip(self.baseline.samples, self.report.samples)):
             transition_rows = sensitivity_row.transition_counts
             self.assertEqual(sum(transition_rows[0]), baseline_row.better_than_reference)
             self.assertEqual(sum(transition_rows[1]), baseline_row.tie_with_reference)
             self.assertEqual(sum(transition_rows[2]), baseline_row.worse_than_reference)
             self.assertEqual(sum(sum(row) for row in transition_rows), sensitivity_row.final_candidate_count)
             diagonal = sum(transition_rows[index][index] for index in range(3))
-            self.assertEqual(sensitivity_row.label_changed_count, sensitivity_row.final_candidate_count - diagonal)
+            expected_changed = sensitivity_row.final_candidate_count - diagonal
+            self.assertEqual(sensitivity_row.label_changed_count, expected_changed)
             self.assertEqual(
                 sensitivity_row.strict_preference_reversal_count,
                 transition_rows[0][2] + transition_rows[2][0],
@@ -71,13 +77,14 @@ class ActionQualitySensitivityTests(unittest.TestCase):
         report = self.report.to_dict()
         expected_candidates = sum(row.final_candidate_count for row in self.baseline.samples)
         self.assertEqual(report["planned_candidate_count"], expected_candidates)
-        self.assertEqual(report["paired_completed_candidate_count"], expected_candidates)
-        self.assertEqual(sum(sum(row.values()) for row in report["transition_counts"].values()), expected_candidates)  # type: ignore[union-attr]
+        expected_completed_candidates = expected_candidates
+        self.assertEqual(report["paired_completed_candidate_count"], expected_completed_candidates)
+        self.assertEqual(sum(sum(row.values()) for row in report["transition_counts"].values()), expected_completed_candidates)  # type: ignore[union-attr]
         self.assertEqual(report["reference_tied_in_both_count"], 12)
         total_rows = report["transition_counts"]
         self.assertEqual(
             sum(sum(total_rows[label].values()) for label in ("better", "tie", "worse")),  # type: ignore[index,union-attr]
-            expected_candidates,
+            expected_completed_candidates,
         )
 
     def test_frozen_continuation_has_measured_decision_differences(self) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from agents.action_structure import (
     CandidateContrast,
@@ -269,18 +269,20 @@ class OpeningFormulaStrategy:
                 return self._analysis_for_related_actions(
                     (int(target_id),), contrasts, representatives,
                 )
+            # A strong-hand B-tier probe is still a single route.  If its
+            # lowest clean representatives are not one publicly equivalent
+            # route, keep the choice with the model rather than letting a
+            # different pattern silently displace the small-single principle.
+            return OpeningFormulaAnalysis()
 
         # Compare all source-backed, natural singleton/group/straight routes
         # on the same public residual facts. The two dimensions are kept
         # separate: fewer estimated rank groups and fewer residual singletons
         # must jointly dominate; there is no invented scalar weighting.
-        if applicable_singles:
-            # No group action is being proposed by the local formula here:
-            # either the hand role does not authorize a small-single choice,
-            # or multiple singleton routes already leave the decision open.
-            # Ordinary display representatives remain responsible for those
-            # model choices; only a specific rejected local target adds its
-            # complete blocking relationships below/above.
+        if strength == "strong" and applicable_singles:
+            # A strong hand with a genuine low-cost probe is governed by the
+            # preceding B-tier single rule.  Medium/weak hands may continue to
+            # a strict, complete-relationship group comparison below.
             return OpeningFormulaAnalysis()
         group_routes = self._eligible_natural_group_routes(
             observation,
@@ -312,7 +314,11 @@ class OpeningFormulaStrategy:
             rank_counts,
             level_rank,
         ) + group_routes + straight_routes
-        unique_frontier = self._unique_residual_frontier(source_routes)
+        unique_frontier = self._unique_residual_frontier(
+            source_routes,
+            actions_by_id=actions_by_id,
+            hand_counts=hand,
+        )
         if unique_frontier is None:
             # Keep a bounded, complete blocker available to the model when a
             # natural group route looked unique only after display pruning.
@@ -335,15 +341,29 @@ class OpeningFormulaStrategy:
             return OpeningFormulaAnalysis()
 
         selected_fact = unique_frontier
+        selected_effect_routes = tuple(
+            route for route in source_routes
+            if self._same_public_route_effect(
+                route,
+                selected_fact,
+                actions_by_id=actions_by_id,
+                hand_counts=hand,
+            )
+        )
+        if not selected_effect_routes:
+            return OpeningFormulaAnalysis()
         if selected_fact.pattern == "straight":
-            if not self._straight_relations_are_source_supported(
-                selected_fact.action_id,
-                contrasts,
-                actions_by_id,
+            if not all(
+                self._straight_relations_are_source_supported(
+                    route.action_id, contrasts, actions_by_id,
+                )
+                for route in selected_effect_routes
             ):
                 representatives = representative_candidate_contrasts(observation, legal_actions)
                 return self._analysis_for_related_actions(
-                    (selected_fact.action_id,), contrasts, representatives,
+                    tuple(route.action_id for route in selected_effect_routes),
+                    contrasts,
+                    representatives,
                 )
             return OpeningFormulaAnalysis(action_id=selected_fact.action_id)
 
@@ -357,15 +377,17 @@ class OpeningFormulaStrategy:
         # relation may be resolved locally; every other full relation returns
         # to the model.
         selected_group_id = selected_fact.action_id
-        if not self._group_relations_are_source_supported(
-            selected_group_id,
-            contrasts,
-            facts_by_id,
-            actions_by_id,
+        if not all(
+            self._group_relations_are_source_supported(
+                route.action_id, contrasts, facts_by_id, actions_by_id,
+            )
+            for route in selected_effect_routes
         ):
             representatives = representative_candidate_contrasts(observation, legal_actions)
             return self._analysis_for_related_actions(
-                (selected_group_id,), contrasts, representatives,
+                tuple(route.action_id for route in selected_effect_routes),
+                contrasts,
+                representatives,
             )
         return OpeningFormulaAnalysis(action_id=selected_group_id)
 
@@ -419,15 +441,39 @@ class OpeningFormulaStrategy:
     @staticmethod
     def _unique_residual_frontier(
         routes: tuple[CandidateStructure, ...],
+        *,
+        actions_by_id: Mapping[int, Mapping[str, object]],
+        hand_counts: Mapping[str, int],
     ) -> CandidateStructure | None:
-        """Return a unique Pareto-minimal natural route, without scalar weights."""
+        """Return one unique residual-effect class on the Pareto frontier.
+
+        A route is equivalent only when both its validated public structure
+        facts and exact post-action physical-card multiset match.  IDs only
+        stabilize selection inside that exact class; different remaining
+        cards stay separate even if the compact rank/group summaries happen
+        to agree.
+        """
         if not routes:
             return None
+        classes: dict[tuple[CandidateStructure, tuple[tuple[str, int], ...]], list[CandidateStructure]] = {}
+        for route in routes:
+            effect_key = OpeningFormulaStrategy._public_route_effect_key(
+                route,
+                actions_by_id=actions_by_id,
+                hand_counts=hand_counts,
+            )
+            if effect_key is None:
+                return None
+            classes.setdefault(effect_key, []).append(route)
+        representatives = tuple(
+            min(effect_routes, key=lambda route: route.action_id)
+            for effect_routes in classes.values()
+        )
         frontier = tuple(
             route
-            for route in routes
+            for route in representatives
             if not any(
-                other.action_id != route.action_id
+                other is not route
                 and other.estimated_remaining_rank_groups
                 <= route.estimated_remaining_rank_groups
                 and other.residual_singleton_rank_count
@@ -438,10 +484,53 @@ class OpeningFormulaStrategy:
                     or other.residual_singleton_rank_count
                     < route.residual_singleton_rank_count
                 )
-                for other in routes
+                for other in representatives
             )
         )
         return frontier[0] if len(frontier) == 1 else None
+
+    @staticmethod
+    def _public_route_effect_key(
+        route: CandidateStructure,
+        *,
+        actions_by_id: Mapping[int, Mapping[str, object]],
+        hand_counts: Mapping[str, int],
+    ) -> tuple[CandidateStructure, tuple[tuple[str, int], ...]] | None:
+        action = actions_by_id.get(route.action_id)
+        carriers = action.get("carrier_cards") if isinstance(action, Mapping) else None
+        if (
+            not isinstance(action, Mapping)
+            or not isinstance(carriers, list)
+            or not carriers
+            or any(not isinstance(card, str) for card in carriers)
+        ):
+            return None
+        remaining = Counter(hand_counts)
+        remaining.subtract(carriers)
+        if any(count < 0 for count in remaining.values()):
+            return None
+        residual_cards = tuple(sorted(
+            (card, count) for card, count in remaining.items() if count > 0
+        ))
+        return replace(route, action_id=0), residual_cards
+
+    @staticmethod
+    def _same_public_route_effect(
+        left: CandidateStructure,
+        right: CandidateStructure,
+        *,
+        actions_by_id: Mapping[int, Mapping[str, object]],
+        hand_counts: Mapping[str, int],
+    ) -> bool:
+        """Compare validated public facts and exact remaining card multisets."""
+
+        left_key = OpeningFormulaStrategy._public_route_effect_key(
+            left, actions_by_id=actions_by_id, hand_counts=hand_counts,
+        )
+        right_key = OpeningFormulaStrategy._public_route_effect_key(
+            right, actions_by_id=actions_by_id, hand_counts=hand_counts,
+        )
+        return left_key is not None and left_key == right_key
 
     @staticmethod
     def _eligible_natural_straight_routes(

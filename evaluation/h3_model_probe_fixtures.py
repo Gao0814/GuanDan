@@ -489,6 +489,7 @@ def _run_projection(
     fixture: ProbeFixture,
     advisor: RAGAdvisor,
     *,
+    opening_formula_enabled: bool = True,
     client_factory: Callable[[], _RecordingDeepSeekClient] = _RecordingDeepSeekClient,
 ) -> tuple[DeepSeekAIAgent, _RecordingDeepSeekClient, int | None]:
     client = client_factory()
@@ -501,7 +502,8 @@ def _run_projection(
     with patch("agents.deepseek_ai.AppConfig.from_env", return_value=_SAFE_CONFIG):
         agent = DeepSeekAIAgent(
             player_id, client, rag_advisor=advisor, rag_top_k=3,
-            hand_evaluation_enabled=True, opening_formula_enabled=True,
+            hand_evaluation_enabled=True,
+            opening_formula_enabled=opening_formula_enabled,
             strategy_router_shadow_enabled=True, strategy_intent_prompt_enabled=True,
             strategy_recommendation_enabled=True,
         )

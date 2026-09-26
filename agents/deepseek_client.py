@@ -107,6 +107,19 @@ _RESIDUAL_USE_RELATION_KINDS = frozenset(
 # Prompt limits are deliberately centralized so context growth stays auditable.
 PROMPT_MAX_CANDIDATE_ACTIONS = 80
 MAX_OPENING_PATTERN_REPRESENTATIVES = 20
+MAX_OPENING_ACTIONS_PER_PATTERN_FAMILY = 8
+_OPENING_PATTERN_ORDER = (
+    "single",
+    "pair",
+    "triple",
+    "straight",
+    "triple_with_pair",
+    "pair_straight",
+    "steel_plate",
+    "bomb",
+    "straight_flush",
+    "joker_bomb",
+)
 PROMPT_MAX_ACTION_DISPLAY_CHARS = 96
 PROMPT_MAX_ACTION_CARRIER_CHARS = 160
 PROMPT_MAX_WILDCARD_INFO_CHARS = 160
@@ -860,13 +873,9 @@ class DeepSeekClient:
         if any(fact.action_id not in actions_by_id for fact in facts):
             return ()
 
-        pattern_order = (
-            "single", "pair", "triple", "straight", "triple_with_pair",
-            "pair_straight", "steel_plate", "bomb", "straight_flush", "joker_bomb",
-        )
         by_family: dict[tuple[str, bool], list[CandidateStructure]] = {}
         for fact in facts:
-            if fact.pattern not in pattern_order:
+            if fact.pattern not in _OPENING_PATTERN_ORDER:
                 continue
             by_family.setdefault((fact.pattern, fact.uses_wildcard), []).append(fact)
 
@@ -895,7 +904,7 @@ class DeepSeekClient:
             )
 
         selected: list[int] = []
-        for pattern in pattern_order:
+        for pattern in _OPENING_PATTERN_ORDER:
             for uses_wildcard in (False, True):
                 family = by_family.get((pattern, uses_wildcard), ())
                 if family:
@@ -1064,11 +1073,10 @@ class DeepSeekClient:
         it never exceeds the prompt budget.  Free leads reserve the smallest
         natural single and pair before allocating the remaining budget.  This
         prevents a large run, pressure, or wildcard group from hiding the
-        transition choices that the model needs to compare.  The remaining
-        slots are allocated deterministically by category: finishing actions,
-        pressure actions, wildcard actions, then ordinary actions.  A category
-        may therefore be represented rather than copied in full during an
-        overflow; source order is retained in the returned view.
+        transition choices that the model needs to compare.  Full-deal opening
+        overflow is allocated in stable rounds across pattern/resource
+        families, after finishes, advice, family representatives, and complete
+        relation pairs.  This bounds dense families without changing legality.
         """
 
         protected_actions = DeepSeekClient._protected_actions_by_id(
@@ -1096,10 +1104,18 @@ class DeepSeekClient:
             return unique_actions
 
         selected: set[tuple[object, ...]] = set()
+        selected_family_counts: Counter[tuple[str, bool]] = Counter()
 
         def reserve(action: dict[str, object]) -> None:
-            if len(selected) < PROMPT_MAX_CANDIDATE_ACTIONS:
-                selected.add(DeepSeekClient._action_signature(action))
+            signature = DeepSeekClient._action_signature(action)
+            if signature in selected or len(selected) >= PROMPT_MAX_CANDIDATE_ACTIONS:
+                return
+            selected.add(signature)
+            family = (
+                str(action.get("declared_pattern", "")),
+                DeepSeekClient._has_wildcard(action),
+            )
+            selected_family_counts[family] += 1
 
         def add_category(predicate: Callable[[dict[str, object]], bool]) -> None:
             for action in sorted(unique_actions, key=DeepSeekClient._prune_sort_key):
@@ -1117,7 +1133,67 @@ class DeepSeekClient:
                 return
             missing = {signature for signature in signatures if signature not in selected}
             if len(selected) + len(missing) <= PROMPT_MAX_CANDIDATE_ACTIONS:
-                selected.update(signatures)
+                for action in group_actions:
+                    reserve(action)
+
+        protected_relation_endpoint_ids = {
+            int(action["action_id"])
+            for group in protected_relation_groups
+            for action in DeepSeekClient._relation_actions_by_groups(
+                unique_actions, (group,),
+            )
+            if type(action.get("action_id")) is int
+        }
+
+        def add_opening_family_rounds(predicate: Callable[[dict[str, object]], bool]) -> None:
+            family_order = tuple(
+                (pattern, uses_wildcard)
+                for pattern in _OPENING_PATTERN_ORDER
+                for uses_wildcard in (False, True)
+            )
+            family_actions: dict[tuple[str, bool], list[dict[str, object]]] = {}
+            # Relation endpoints are admitted by the earlier atomic-pair
+            # reservation only.  If that pair did not fit, a later family
+            # round must not accidentally restore just one side.
+            for action in unique_actions:
+                action_id = action.get("action_id")
+                family = (
+                    str(action.get("declared_pattern", "")),
+                    DeepSeekClient._has_wildcard(action),
+                )
+                if (
+                    family[0] not in _OPENING_PATTERN_ORDER
+                    or not predicate(action)
+                    or (
+                        type(action_id) is int
+                        and action_id in protected_relation_endpoint_ids
+                    )
+                ):
+                    continue
+                family_actions.setdefault(family, []).append(action)
+            for actions_in_family in family_actions.values():
+                actions_in_family.sort(key=DeepSeekClient._prune_sort_key)
+
+            while len(selected) < PROMPT_MAX_CANDIDATE_ACTIONS:
+                progressed = False
+                for family in family_order:
+                    if selected_family_counts[family] >= MAX_OPENING_ACTIONS_PER_PATTERN_FAMILY:
+                        continue
+                    next_action = next(
+                        (
+                            action for action in family_actions.get(family, ())
+                            if DeepSeekClient._action_signature(action) not in selected
+                        ),
+                        None,
+                    )
+                    if next_action is None:
+                        continue
+                    reserve(next_action)
+                    progressed = True
+                    if len(selected) >= PROMPT_MAX_CANDIDATE_ACTIONS:
+                        break
+                if not progressed:
+                    break
 
         # Keep the first-pass transition recall meaningful in the final prompt.
         # These are representatives, not a new legality or strategy selector.
@@ -1155,6 +1231,29 @@ class DeepSeekClient:
                 reserve(natural_singles[0])
             if natural_pairs:
                 reserve(natural_pairs[0])
+            if protected_opening_action_ids:
+                # Preserve the established finishing/pressure/wildcard
+                # priority, but share each tier across actual opening pattern
+                # families.  A dense triple-with-pair family can no longer
+                # consume every unreserved ordinary slot by canonical order.
+                add_opening_family_rounds(
+                    lambda action: not DeepSeekClient._is_finishing_action(action, hand_count)
+                    and DeepSeekClient._is_pressure_action(action)
+                )
+                add_opening_family_rounds(
+                    lambda action: not DeepSeekClient._is_finishing_action(action, hand_count)
+                    and not DeepSeekClient._is_pressure_action(action)
+                    and DeepSeekClient._has_wildcard(action)
+                )
+                add_opening_family_rounds(
+                    lambda action: not DeepSeekClient._is_finishing_action(action, hand_count)
+                    and not DeepSeekClient._is_pressure_action(action)
+                    and not DeepSeekClient._has_wildcard(action)
+                )
+                return [
+                    action for action in unique_actions
+                    if DeepSeekClient._action_signature(action) in selected
+                ]
             if not protected_opening_action_ids:
                 # Outside full-deal openings, preserve the established order:
                 # minimum natural lead representatives precede advice/relations.

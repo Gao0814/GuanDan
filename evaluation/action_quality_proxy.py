@@ -113,6 +113,7 @@ class ReplayableQualitySample:
     game_snapshot: GuanDanGame = field(repr=False, compare=False)
     source_seed: int | None = field(default=None, repr=False, compare=False)
     final_candidate_ids: tuple[int, ...] = field(default=(), repr=False, compare=False)
+    opening_formula_enabled: bool = field(default=True, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -120,6 +121,7 @@ class ReplayableQualitySample:
             "phase": self.phase,
             "canonical_candidate_count": self.canonical_candidate_count,
             "final_candidate_count": self.final_candidate_count,
+            "opening_formula_enabled": self.opening_formula_enabled,
         }
 
 
@@ -168,6 +170,7 @@ class ActionQualityResult:
     comparison: Comparison
     failure_code: str | None
     same_action_reused: bool
+    opening_formula_enabled: bool
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -181,6 +184,7 @@ class ActionQualityResult:
             "comparison": self.comparison.value,
             "failure_code": self.failure_code,
             "same_action_reused": self.same_action_reused,
+            "opening_formula_enabled": self.opening_formula_enabled,
         }
 
 
@@ -260,6 +264,7 @@ def _invoke_model_path(
     *,
     transport: DeepSeekTransport | None = None,
     client_settings: DeepSeekClientSettings | None = None,
+    opening_formula_enabled: bool = True,
 ) -> _ModelSelection:
     if (provider is None) == (transport is None):
         return _ModelSelection(None, None, (), "model_transport_configuration_invalid")
@@ -307,7 +312,12 @@ def _invoke_model_path(
         **client_options,
     )
     try:
-        agent, client, chosen = _run_projection(fixture, advisor, client_factory=client_factory)
+        agent, client, chosen = _run_projection(
+            fixture,
+            advisor,
+            opening_formula_enabled=opening_formula_enabled,
+            client_factory=client_factory,
+        )
     except Exception:
         return _ModelSelection(None, reference_id, (), "model_pipeline_failure")
     injected_transport = transport
@@ -406,8 +416,16 @@ def _make_sample(
     legal_actions: list[dict[str, object]],
     source_seed: int | None,
     advisor: RAGAdvisor,
+    opening_formula_enabled: bool = True,
 ) -> tuple[ReplayableQualitySample | None, str | None]:
-    selection = _invoke_model_path(game, observation, legal_actions, _first_candidate_provider, advisor)
+    selection = _invoke_model_path(
+        game,
+        observation,
+        legal_actions,
+        _first_candidate_provider,
+        advisor,
+        opening_formula_enabled=opening_formula_enabled,
+    )
     if selection.failure_code in {"model_path_not_reached", "insufficient_final_candidates"}:
         return None, None
     if selection.failure_code is not None:
@@ -424,6 +442,7 @@ def _make_sample(
         game_snapshot=deepcopy(game),
         source_seed=source_seed,
         final_candidate_ids=selection.final_action_ids,
+        opening_formula_enabled=opening_formula_enabled,
     ), None
 
 
@@ -633,6 +652,7 @@ def _unevaluable_result(
         Comparison.UNEVALUABLE,
         failure_code,
         False,
+        sample.opening_formula_enabled,
     )
 
 
@@ -678,6 +698,7 @@ def evaluate_quality_sample(
         advisor or _h3_advisor(),
         transport=transport,
         client_settings=client_settings,
+        opening_formula_enabled=sample.opening_formula_enabled,
     )
     reference_visible = reference_id in selection.final_action_ids
     if selection.failure_code is not None or selection.reference_action_id != reference_id:
@@ -775,6 +796,7 @@ def evaluate_quality_sample(
         comparison,
         failure_code,
         same_action_reused,
+        sample.opening_formula_enabled,
     )
 
 

@@ -41,7 +41,7 @@ class ActionQualityCalibrationTests(unittest.TestCase):
         cls.samples = (*cls.h3_a8.samples, *cls.h3_a9.samples)
         cls.report = calibrate_h3_a10_sample_sets(cls.h3_a8, cls.h3_a9)
 
-    def test_all_twelve_frozen_engine_states_have_the_expected_contract(self) -> None:
+    def test_all_twelve_frozen_engine_states_keep_step_zero_and_report_reference_coverage(self) -> None:
         self.assertEqual(self.report.status, CalibrationStatus.READY)
         self.assertEqual(
             tuple(row.sample_name for row in self.report.samples),
@@ -70,7 +70,7 @@ class ActionQualityCalibrationTests(unittest.TestCase):
                 ("endgame", 9, 9),
                 ("near_open_endgame", 8, 4),
                 ("opening", 77, 53),
-                ("opening", 3, 3),
+                ("opening", 74, 49),
                 ("midgame", 25, 13),
                 ("midgame", 11, 11),
                 ("critical_endgame", 8, 8),
@@ -81,6 +81,10 @@ class ActionQualityCalibrationTests(unittest.TestCase):
         self.assertEqual(tuple(row.reference_action_visible for row in self.report.samples), (True,) * 12)
         self.assertEqual(tuple(row.completed_candidate_count for row in self.report.samples), tuple(row.final_candidate_count for row in self.report.samples))
         self.assertEqual(
+            tuple(sample.opening_formula_enabled for sample in self.h3_a9.samples),
+            (True, False, True, True, True, True),
+        )
+        self.assertEqual(
             self.report.to_dict()["comparison_counts"],
             {
                 "better_than_reference": sum(row.better_than_reference for row in self.report.samples),
@@ -88,10 +92,13 @@ class ActionQualityCalibrationTests(unittest.TestCase):
                 "worse_than_reference": sum(row.worse_than_reference for row in self.report.samples),
             },
         )
-        expected_candidates = sum(row.final_candidate_count for row in self.report.samples)
-        self.assertEqual(sum(self.report.to_dict()["comparison_counts"].values()), expected_candidates)  # type: ignore[union-attr]
+        planned_candidates = sum(row.final_candidate_count for row in self.report.samples)
+        completed_candidates = sum(row.completed_candidate_count for row in self.report.samples)
+        self.assertEqual(self.report.to_dict()["final_candidate_count"], planned_candidates)  # type: ignore[index]
+        self.assertEqual(sum(self.report.to_dict()["comparison_counts"].values()), completed_candidates)  # type: ignore[union-attr]
         self.assertEqual(self.report.completed_sample_count, 12)
-        self.assertEqual(self.report.completed_candidate_count, expected_candidates)
+        self.assertEqual(self.report.completed_candidate_count, completed_candidates)
+        self.assertEqual(completed_candidates, planned_candidates)
         self.assertGreaterEqual(sum(row.tie_with_reference for row in self.report.samples), 12)
 
     def test_public_entrypoint_uses_the_two_frozen_queues(self) -> None:

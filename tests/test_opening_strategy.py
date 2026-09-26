@@ -440,11 +440,32 @@ class TestOpeningFormulaStrategy(unittest.TestCase):
             self.strategy.select_action(observation, actions, {"label": "strong", "control_score": 24})
         )
 
-    def test_medium_weak_or_missing_return_resource_is_not_formulaized(self) -> None:
+    def test_medium_and_weak_clear_group_route_requires_independent_return(self) -> None:
         observation, actions = _strong_fixture()
-        self.assertIsNone(self.strategy.select_action(observation, actions, {"label": "medium", "control_score": 10}))
-        self.assertIsNone(self.strategy.select_action(observation, actions, {"label": "medium", "control_score": 30}))
-        self.assertIsNone(self.strategy.select_action(observation, actions, {"label": "weak", "control_score": 2}))
+        facts = summarize_candidate_structures(observation, actions)
+        contrasts = summarize_candidate_contrasts(observation, actions)
+        self.assertIsNotNone(facts)
+        self.assertIsNotNone(contrasts)
+        assert facts is not None and contrasts is not None
+        facts_by_id = {fact.action_id: fact for fact in facts}
+        actions_by_id = {int(action["action_id"]): action for action in actions}
+        for strength in ("medium", "weak"):
+            with self.subTest(strength=strength):
+                selected = self.strategy.select_action(
+                    observation, actions, {"label": strength, "control_score": 10},
+                )
+                selected_action = next(action for action in actions if action["action_id"] == selected)
+                self.assertEqual(selected_action["declared_pattern"], "triple")
+                self.assertTrue(
+                    self.strategy._group_relations_are_source_supported(
+                        int(selected), contrasts, facts_by_id, actions_by_id,
+                    )
+                )
+                self.assertTrue(
+                    self.strategy._has_return_resource_after(
+                        observation, selected_action, actions, facts_by_id,
+                    )
+                )
 
         no_return = _observation(["4S", "QS", "7S", "7H"])
         no_return_actions = [

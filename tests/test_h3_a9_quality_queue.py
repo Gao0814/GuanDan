@@ -92,15 +92,22 @@ class H3A9QualityQueueTests(unittest.TestCase):
             ("opening_1", "opening_2", "midgame_1", "midgame_2", "endgame_1", "endgame_2"),
         )
         self.assertEqual(tuple(sample.source_seed for sample in self.samples), (920, 921, 922, 923, 924, 925))
+        self.assertEqual(
+            tuple(sample.opening_formula_enabled for sample in self.samples),
+            (True, False, True, True, True, True),
+        )
         self.assertTrue(all(sample.source_seed in H3_A9_SEEDS for sample in self.samples))
         self.assertEqual(len({sample.source_seed for sample in self.samples}), 6)
-        self.assertEqual(tuple(sample.observation["current_round"]["step_no"] for sample in self.samples), (0, 4, 8, 8, 64, 64))  # type: ignore[index]
+        # opening_2 is frozen at the original seed's earliest eligible step,
+        # even though its RuleBased reference is not shown by the bounded
+        # model candidate set. Do not advance to step 4 to hide that loss.
+        self.assertEqual(tuple(sample.observation["current_round"]["step_no"] for sample in self.samples), (0, 0, 8, 8, 64, 64))  # type: ignore[index]
         self.assertEqual(tuple(sample.phase for sample in self.samples[:2]), ("opening", "opening"))
         self.assertEqual(tuple(sample.phase for sample in self.samples[2:4]), ("midgame", "midgame"))
         self.assertEqual(tuple(sample.phase for sample in self.samples[4:]), ("critical_endgame", "near_open_endgame"))
         self.assertEqual(
             tuple((sample.canonical_candidate_count, sample.final_candidate_count) for sample in self.samples),
-            ((77, 53), (3, 3), (25, 13), (11, 11), (8, 8), (9, 9)),
+            ((77, 53), (74, 49), (25, 13), (11, 11), (8, 8), (9, 9)),
         )
 
     def test_every_sample_replays_from_a_complete_seeded_opening(self) -> None:
@@ -176,8 +183,12 @@ class H3A9QualityQueueTests(unittest.TestCase):
 
     def test_six_real_client_fake_transport_calls_bind_candidates_and_complete_rollouts(self) -> None:
         references = tuple(_reference_id(sample) for sample in self.samples)
-        for sample, reference_id in zip(self.samples, references):
-            self.assertIn(reference_id, sample.final_candidate_ids)
+        reference_visible = tuple(
+            reference_id in sample.final_candidate_ids
+            for sample, reference_id in zip(self.samples, references)
+        )
+        self.assertEqual(reference_visible, (True,) * 6)
+        for sample in self.samples:
             self.assertLessEqual(sample.final_candidate_count, 80)
             self.assertEqual(sample.final_candidate_count, len(set(sample.final_candidate_ids)))
             canonical_ids = {action["action_id"] for action in sample.legal_actions}
@@ -206,7 +217,14 @@ class H3A9QualityQueueTests(unittest.TestCase):
         self.assertTrue(all(action_id in ids for action_id, ids in zip(transport.returned_ids, transport.candidate_ids)))
         self.assertEqual(report.completed_sample_count, 6)
         self.assertTrue(all(result.failure_code is None for result in report.results))
-        self.assertTrue(all(result.reference_action_in_model_candidates for result in report.results))
+        self.assertEqual(
+            tuple(result.reference_action_in_model_candidates for result in report.results),
+            reference_visible,
+        )
+        self.assertEqual(
+            tuple(result.opening_formula_enabled for result in report.results),
+            tuple(sample.opening_formula_enabled for sample in self.samples),
+        )
         self.assertTrue(all(result.selected.completed and result.reference.completed for result in report.results))
         self.assertTrue(all(not result.same_action_reused for result in report.results))
         self.assertNotIn(Comparison.UNEVALUABLE, {result.comparison for result in report.results})
