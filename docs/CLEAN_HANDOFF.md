@@ -1,5 +1,9 @@
 # Clean Project Handoff
 
+2026-09-27 `99d31b0` 停止后交接：Coding 报告冻结 8 状态、16 条禁网资格仍 ready；本轮获批 32 槽仅第 1 槽 `opening_dense_1 / baseline / repeat 1` 发出 1 次真实请求、success、0 重试，ID `40` 在展示候选内且 source=`model`，随后 `attempt_offline_binding_mismatch_stopped`，其余 31 槽未执行、无续局比较。规划检查提交仅含评测器/测试、Git clean，独立复跑新增模块 16 项；发现 `request_utf8_bytes` 仍在离线占位模型名与真实配置模型名之间严格比较，禁网合成差异可复现同一停止分类。但原始停止结果未给出字段，不能声称已确认唯一原因。M2 继续 `inconclusive`，M1 生产版保留。当前 `docs/NEXT_PROMPT.md` 仅安排禁网绑定修复和低敏分类，真实请求 `0`；旧授权已随停止结束，后续完整 32 槽须重新规划、明确授权。两个 workspace、`.env`、封板不动。
+
+以下 `2fafc82` 离线复审交接为上一阶段快照，以本段为准。
+
 2026-09-27 `2fafc82` 离线复审交接：Coding 已提交 M2 扩大评估器与测试，报告 8 个冻结生产状态、双版本 16 条禁网 Request 资格全部通过，真实 DeepSeek 请求 `0`、重试 `0`，全量 895 项通过。规划核对提交仅含评测与测试、Git clean、授权/停止路径，独立复跑新增模块 15 项通过；规划未复算全部跨版本资格。两个密集开局的参考动作可见性和关系双端召回改善是输入证据，模型效果仍 `inconclusive`，M1 生产版暂保留。**32 次真实请求专项授权尚未给出**；下一份可执行说明见 `docs/NEXT_PROMPT.md`，只有获明确授权才运行真实阶段，不拆小任务、不增重试。旧 `platform_error` 根因、119 秒现场期限余量未定；两个 workspace、`.env`、封板标签/bundle 保持原样。
 
 以下 `8910669` 交接是上一阶段快照，以本段为准。
