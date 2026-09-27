@@ -1,5 +1,9 @@
 # Clean Project Handoff
 
+2026-09-27 最新交接：所有者实际双击 `run_manual_botzone_batch.cmd` 后窗口闪退，Botzone 未显示“已连接”。规划只读确认新 `.cmd` 不像旧单局 `.cmd` 那样退出后等待；`--help` 能返回，当前进程探测与固定 workspace 根属性检查通过，固定 workspace 当前无新 `manual-batch-*` 子目录。具体早退边界未证实，不能归为模型超时或中途停牌。当前 `docs/NEXT_PROMPT.md` 是一个禁网 Coding 修复任务：让错误/退出类别可见，定位并修正早退，验证单 connector 跨 idle 与局间持续运行，保留固定 workspace 新子目录和旧证据；之后所有者亲自启动并确认页面“已连接”。规划不改业务代码，也未运行真实 connector/DeepSeek/Botzone。旧 M2 效果仍 `inconclusive`。
+
+以下“脚本已交付、暂无 Coding Prompt”为问题报告前的交接快照，以本段为准。
+
 2026-09-27 最新交接：`4afa7fc` 已提交所有者自启连续 Botzone 批次脚本、ACK 后逐局低敏结果与禁网测试；规划复核提交仅含 8 个 Botzone/脚本/tests 文件，`git show --check`、新增 14 项和主规则 39 项均通过，Coding 报告全量 917 项通过。默认最多 10 局、可调，一次前台 connector 连续运行、固定 `D:\VsCodeProject\BotzoneWorkspace` 新子目录留证、子进程 `deepseek-flash`、零网络预检与 stage trace；history/decision trace 关闭。真实 Botzone/DeepSeek 均未由本轮运行，两个 workspace 旧证据未由规划访问或改动。当前无新的 Coding 任务，旧 `docs/NEXT_PROMPT.md` 撤下；所有者可自行决定何时启动并逐局操作，Codex局后只读审计。M2 旧 32 槽仍 `inconclusive`、旧授权不可续跑，旧 `platform_error` 根因未知。下一轮算法任务由具体试局反例或新能力目标确定。
 
 以下“十局脚本待交付”为上一阶段交接快照，以本段为准。

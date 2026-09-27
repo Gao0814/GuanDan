@@ -1,5 +1,13 @@
 # 项目状态看板
 
+## 最新问题：连续批次启动器闪退，现场连接尚未验收（2026-09-27）
+
+- 所有者报告双击 `scripts/run_manual_botzone_batch.cmd` 后窗口一闪而逝，Botzone 页面未显示“已连接”。**未证明真实 connector 曾启动或连接**，也不是“开局后中途停牌”的同一现象。规划只读核查：新 `.cmd` 在 Python 返回后直接 `exit /b`，没有旧单局 `.cmd` 的退出后等待；`cmd /c ... --help` 能正常返回，当前进程占用探测与固定 workspace 根目录属性检查通过，固定 workspace 当前清单中没有新 `manual-batch-*` 子目录。具体那次早退类别仍未知，不能凭当前检查反推启动时状态。
+- 本问题影响下一次人工试测，当前先完成一个**有结束条件的启动可用性修复**，见 `docs/NEXT_PROMPT.md`。Coding 仅做禁网诊断和修复：让双击失败原因留在可见窗口；确定早退发生在哪个准备边界；验证 connector 在 idle poll 与局间持续运行，达到可配目标局数、明确手动中止或真实失败才退出。固定 `D:\VsCodeProject\BotzoneWorkspace` 新子目录规则、已有结果/ACK 逻辑和旧证据均不改写。完成后由所有者亲自再启动并确认页面“已连接”，Codex 不代为开局或运行 connector。
+- 在所有者确认实际连接前，不把 `4afa7fc` 判为现场可用。旧 `platform_error` 根因、M2 总体效果仍未知；本次闪退不能归因于模型超时。
+
+以下“脚本已交付，当前无 Coding Prompt”为这次闪退报告前的阶段快照，以本节为准。
+
 ## 最新复审：所有者自启十局脚本已交付，当前无 Coding Prompt（2026-09-27）
 
 - `4afa7fce7e0aa5813b1d2ef5b217c0e5926a47a8` 已提交连续批次启动器、逐局低敏结果及测试，未改算法或 ACK 状态机。规划核对提交范围与 `git show --check`，独立复跑新增测试 14 项、主规则 39 项通过；Coding 报告全量 917 项通过。脚本使用一次前台 connector、`deepseek-flash`、零网络预检、固定 workspace 全新子目录和 stage trace；逐局结果只在四人且本家动作 ACK 确认后的完局记录，history/decision trace 关闭。没有真实 Botzone 或 DeepSeek 运行验证。
