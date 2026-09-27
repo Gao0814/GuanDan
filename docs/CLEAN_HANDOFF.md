@@ -1,5 +1,7 @@
 # Clean Project Handoff
 
+2026-09-27 规划纠正：所有者要求以排除法推进，不先执着查清两次现场报错的唯一根因。已证实 `manual_batch.py` 的 `-m integrations.botzone\b` 模块前缀同时匹配启动器 `-m integrations.botzone.manual_batch`。当前 `docs/NEXT_PROMPT.md` 已改为最小 Coding 修复：收紧匹配、保留真实 connector 并发保护、少量禁网测试，随后由所有者亲自启动验证；若仍失败再补低敏进程诊断。历史报错瞬间命中的进程仍未知，不能提前宣称修复已解决现场连接。
+
 2026-09-27 最新交接：所有者再次运行 `run_manual_botzone_batch.cmd`，仍报与前次相同的 `connector_already_running`，刷新 Botzone 无“已连接”。规划立即按源码匹配规则只读扫描，当前 `matching_count=0`；同一 `.venv` Python 调用探测函数返回 `connector_absent`。均为失败后的状态，不能断言错误发生时无竞争进程。源码的 `-m integrations.botzone` 前缀匹配可覆盖 `-m integrations.botzone.manual_batch`，存在启动器被归为 connector 的风险，是否导致本次失败待证。恢复 `docs/NEXT_PROMPT.md` 单个 Coding 修复任务：低敏记录 guard 命中的 PID/类型、禁网复现并修正确认误判，真实并发 connector 仍要拒绝，所有者随后亲自做页面连接验收。规划没有运行/停止真实 connector、Botzone 或 DeepSeek，也没有碰两个 workspace 旧证据。
 
 以下“首次可见进程占用类别”是复发前的交接快照，以本段为准。
