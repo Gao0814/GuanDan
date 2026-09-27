@@ -1095,6 +1095,9 @@ def _sent_result_stage(row: object, send_status: str) -> str | None:
 
 def _attempt_binding_stage(spec: ExpandedM2StateSpec, offline: object, actual: object) -> str | None:
     """Bind a sent result to that version's own offline request qualification."""
+    # The offline transport deliberately uses a placeholder model identifier.
+    # Bind the real model control fingerprint to the configured runtime below,
+    # rather than comparing it to that placeholder fingerprint.
     exact_fields = (
         "state_digest",
         "state_phase",
@@ -1113,7 +1116,6 @@ def _attempt_binding_stage(spec: ExpandedM2StateSpec, offline: object, actual: o
         "prompt_chars",
         "prompt_utf8_bytes",
         "request_utf8_bytes",
-        "request_controls_fingerprint",
         "configured_timeout_seconds",
         "decision_budget_seconds",
     )
@@ -1139,6 +1141,7 @@ def run_authorized_expanded_requests(
     request_once: Callable[[str, ExpandedM2StateSpec, int], Mapping[str, object]],
     *,
     owner_authorization_confirmed: bool = False,
+    expected_request_controls_fingerprint: str | None = None,
 ) -> ExpandedRequestRun:
     """Run the single 32-slot schedule only after explicit task authorization.
 
@@ -1151,6 +1154,13 @@ def run_authorized_expanded_requests(
     gate = validate_expanded_offline_qualifications(specs, qualifications)
     if gate != "ready":
         return ExpandedRequestRun(f"offline_gate_{gate}")
+    if not isinstance(expected_request_controls_fingerprint, str) or not expected_request_controls_fingerprint:
+        return ExpandedRequestRun("runtime_controls_fingerprint_required")
+    if (
+        len(expected_request_controls_fingerprint) != 64
+        or any(character not in "0123456789abcdef" for character in expected_request_controls_fingerprint)
+    ):
+        return ExpandedRequestRun("runtime_controls_fingerprint_invalid")
     m2 = _m2_module()
     schedule = build_expanded_request_schedule(specs)
     spec_index = {item.name: item for item in specs}
@@ -1183,6 +1193,8 @@ def run_authorized_expanded_requests(
         binding_error = _attempt_binding_stage(spec, offline_row, row)
         if binding_error is not None:
             return ExpandedRequestRun(f"{binding_error}_stopped", tuple(attempts))
+        if row.request_controls_fingerprint != expected_request_controls_fingerprint:
+            return ExpandedRequestRun("runtime_controls_fingerprint_mismatch_stopped", tuple(attempts))
         provider_failure = row.provider_outcome in {"timeout", "exception", "invalid_suggestion"}
         if row.stage in m2._INTEGRITY_FAILURE_STAGES and not provider_failure:
             return ExpandedRequestRun("integrity_failure_stopped", tuple(attempts))

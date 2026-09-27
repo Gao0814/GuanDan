@@ -17,6 +17,9 @@ PROFILE = {
     "card_tracking_enabled": True,
     "deepseek_timeout": 60.0,
 }
+RUNTIME_CONTROL_FINGERPRINT = m2._request_controls_fingerprint(
+    {"model": "synthetic-config-model", "temperature": 0, "stream": True}
+)
 
 
 def _specs() -> tuple[expanded.ExpandedM2StateSpec, ...]:
@@ -92,7 +95,7 @@ def _qualification_rows(specs: tuple[expanded.ExpandedM2StateSpec, ...]) -> tupl
                     max_retries=0,
                     decision_budget_seconds=119.0,
                     configured_timeout_seconds=60.0,
-                    request_controls_fingerprint="same-runtime-controls",
+                    request_controls_fingerprint=RUNTIME_CONTROL_FINGERPRINT,
                 )
             )
     return tuple(rows)
@@ -139,7 +142,7 @@ def _qualification_payload(
         "max_retries": 0,
         "decision_budget_seconds": 119.0,
         "configured_timeout_seconds": 60.0,
-        "request_controls_fingerprint": "same-runtime-controls",
+        "request_controls_fingerprint": RUNTIME_CONTROL_FINGERPRINT,
     }
     return payload
 
@@ -352,6 +355,7 @@ class M2ExpandedSameStateTests(unittest.TestCase):
         bad_gate = expanded.run_authorized_expanded_requests(
             _specs(), _qualification_rows(_specs())[:-1], lambda *_args: calls.append(1),
             owner_authorization_confirmed=True,
+            expected_request_controls_fingerprint=RUNTIME_CONTROL_FINGERPRINT,
         )
         self.assertTrue(bad_gate.stage.startswith("offline_gate_"))
         self.assertEqual(calls, [])
@@ -385,7 +389,9 @@ class M2ExpandedSameStateTests(unittest.TestCase):
 
         with patch.object(m2, "compare_with_frozen_rule_rollout", side_effect=fake_rollout):
             run = expanded.run_authorized_expanded_requests(
-                specs, _qualification_rows(specs), fake_once, owner_authorization_confirmed=True,
+                specs, _qualification_rows(specs), fake_once,
+                owner_authorization_confirmed=True,
+                expected_request_controls_fingerprint=RUNTIME_CONTROL_FINGERPRINT,
             )
         self.assertEqual(run.stage, "complete")
         self.assertEqual(run.client_invocation_count, 32)
@@ -411,7 +417,9 @@ class M2ExpandedSameStateTests(unittest.TestCase):
             return _qualification_payload(outcome="exception", stage="client_settings_invalid", sent=0)
 
         pre_send_run = expanded.run_authorized_expanded_requests(
-            specs, quals, pre_send, owner_authorization_confirmed=True,
+            specs, quals, pre_send,
+            owner_authorization_confirmed=True,
+            expected_request_controls_fingerprint=RUNTIME_CONTROL_FINGERPRINT,
         )
         self.assertEqual(pre_send_run.stage, "pre_send_failure_stopped")
         self.assertEqual(pre_send_run.client_invocation_count, 1)
@@ -424,7 +432,9 @@ class M2ExpandedSameStateTests(unittest.TestCase):
             return {"stage": "worker_failure"}
 
         unknown_run = expanded.run_authorized_expanded_requests(
-            specs, quals, unknown, owner_authorization_confirmed=True,
+            specs, quals, unknown,
+            owner_authorization_confirmed=True,
+            expected_request_controls_fingerprint=RUNTIME_CONTROL_FINGERPRINT,
         )
         self.assertEqual(unknown_run.stage, "send_status_unknown_stopped")
         self.assertEqual(unknown_run.client_invocation_count, 1)
@@ -439,7 +449,9 @@ class M2ExpandedSameStateTests(unittest.TestCase):
             return _qualification_payload(outcome="timeout", stage="model_provider_timeout", sent=1, spec=spec, version=version)
 
         run = expanded.run_authorized_expanded_requests(
-            _specs(), _qualification_rows(_specs()), timeout, owner_authorization_confirmed=True,
+            _specs(), _qualification_rows(_specs()), timeout,
+            owner_authorization_confirmed=True,
+            expected_request_controls_fingerprint=RUNTIME_CONTROL_FINGERPRINT,
         )
         self.assertEqual(run.stage, "complete")
         self.assertEqual(run.client_invocation_count, 32)
@@ -456,7 +468,9 @@ class M2ExpandedSameStateTests(unittest.TestCase):
             return _qualification_payload(outcome="invalid_suggestion", stage="model_suggestion_invalid", sent=1, spec=spec, version=version)
 
         run = expanded.run_authorized_expanded_requests(
-            _specs(), _qualification_rows(_specs()), invalid, owner_authorization_confirmed=True,
+            _specs(), _qualification_rows(_specs()), invalid,
+            owner_authorization_confirmed=True,
+            expected_request_controls_fingerprint=RUNTIME_CONTROL_FINGERPRINT,
         )
         self.assertEqual(run.stage, "complete")
         self.assertEqual(run.client_invocation_count, 32)
@@ -477,11 +491,50 @@ class M2ExpandedSameStateTests(unittest.TestCase):
             return payload
 
         run = expanded.run_authorized_expanded_requests(
-            specs, rows, drift, owner_authorization_confirmed=True,
+            specs, rows, drift,
+            owner_authorization_confirmed=True,
+            expected_request_controls_fingerprint=RUNTIME_CONTROL_FINGERPRINT,
         )
         self.assertEqual(run.stage, "attempt_offline_binding_mismatch_stopped")
         self.assertEqual(run.client_invocation_count, 1)
         self.assertEqual(run.external_request_count, 1)
+        self.assertEqual(calls, [1])
+
+    def test_real_runtime_controls_are_bound_without_equating_offline_placeholder_model(self) -> None:
+        specs = _specs()
+        rows = _qualification_rows(specs)
+        calls: list[int] = []
+
+        def one_request(*_args: object):
+            calls.append(1)
+            return _qualification_payload(spec=_args[1], version=str(_args[0]))
+
+        missing = expanded.run_authorized_expanded_requests(
+            specs, rows, one_request, owner_authorization_confirmed=True,
+        )
+        self.assertEqual(missing.stage, "runtime_controls_fingerprint_required")
+        self.assertEqual(calls, [])
+
+        invalid = expanded.run_authorized_expanded_requests(
+            specs,
+            rows,
+            one_request,
+            owner_authorization_confirmed=True,
+            expected_request_controls_fingerprint="not-a-sha256",
+        )
+        self.assertEqual(invalid.stage, "runtime_controls_fingerprint_invalid")
+        self.assertEqual(calls, [])
+
+        mismatch = expanded.run_authorized_expanded_requests(
+            specs,
+            rows,
+            one_request,
+            owner_authorization_confirmed=True,
+            expected_request_controls_fingerprint="0" * 64,
+        )
+        self.assertEqual(mismatch.stage, "runtime_controls_fingerprint_mismatch_stopped")
+        self.assertEqual(mismatch.client_invocation_count, 1)
+        self.assertEqual(mismatch.external_request_count, 1)
         self.assertEqual(calls, [1])
 
     def test_low_sensitivity_state_and_attempt_summaries_exclude_cards_prompts_and_credentials(self) -> None:
