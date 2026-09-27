@@ -33,6 +33,10 @@ from agents.action_structure import (
 )
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
 from agents.opening_strategy import MAX_OPENING_FORMULA_CONTRASTS
+from agents.short_endgame_planner import (
+    analyze_free_lead_grouping,
+    free_lead_grouping_comparison_pairs,
+)
 
 if TYPE_CHECKING:
     from agents.card_confidence_prompt import CardConfidencePromptPayload
@@ -54,6 +58,7 @@ _STRATEGY_INTENT_REASON_TEXTS = {
         "本次可直接出完",
         "手牌偏弱，优先减少手数",
         "本家仅1–4张且当前自由出牌，完整canonical动作证明不同首手会导致不同的最少剩余分组数；优先选择使全部手牌所需分组数最少的首手，避免无谓拆散已有组合",
+        "本家仅5–8张且当前自由出牌，完整canonical动作证明不同首手的余手存在不同最少后续分组数；仅描述假设以后重新取得自由领牌时的手牌结构，不保证取得牌权或必然走完",
     ),
     "block_opponent": (
         "紧急对手当前控桌",
@@ -1774,6 +1779,17 @@ class DeepSeekClient:
             if contrasts is not None
             else ()
         )
+        if observation is not None:
+            route_my_info = observation.get("my_info")
+            grouping_pairs = free_lead_grouping_comparison_pairs(
+                observation,
+                legal_actions,
+                DeepSeekClient._coerce_int(
+                    route_my_info.get("player_id") if isinstance(route_my_info, dict) else None,
+                    default=0,
+                ),
+            )
+            protected_relation_groups = tuple(dict.fromkeys(protected_relation_groups + grouping_pairs))
         protected_opening_action_ids = DeepSeekClient._opening_pattern_representative_ids(
             observation,
             legal_actions,
@@ -2209,6 +2225,17 @@ class DeepSeekClient:
             strategy_recommendation=strategy_recommendation,
             rag_context=rag_context,
         )
+        route_my_player_id = my_info.get("player_id")
+        grouping_analysis = analyze_free_lead_grouping(
+            {"my_info": my_info, "current_round": current_round},
+            contrast_source_actions,
+            route_my_player_id if type(route_my_player_id) is int else 0,
+        )
+        grouping_pairs = free_lead_grouping_comparison_pairs(
+            {"my_info": my_info, "current_round": current_round},
+            contrast_source_actions,
+            route_my_player_id if type(route_my_player_id) is int else 0,
+        )
         available_ids = {
             action.get("action_id")
             for action in legal_actions
@@ -2218,7 +2245,7 @@ class DeepSeekClient:
             item.action_ids
             for item in (representative_contrasts or ())
             if set(item.action_ids).issubset(available_ids)
-        )
+        ) + tuple(group for group in grouping_pairs if set(group).issubset(available_ids))
         prompt_actions = DeepSeekClient._limit_prompt_actions(
             legal_actions,
             constraint=constraint,
@@ -2583,6 +2610,75 @@ class DeepSeekClient:
                 compact_facts.append("；".join(parts))
             if compact_facts:
                 lines.append("候选公开结构：" + " | ".join(compact_facts))
+
+        visible_grouping_pairs = tuple(
+            pair for pair in grouping_pairs
+            if set(pair).issubset(prompt_action_ids)
+        )
+        visible_grouping_ids = tuple(dict.fromkeys(
+            action_id for pair in visible_grouping_pairs for action_id in pair
+        ))
+        grouping_counts = grouping_analysis.counts_by_action_id() if grouping_analysis is not None else {}
+        visible_group_counts = {
+            action_id: grouping_counts[action_id]
+            for action_id in visible_grouping_ids
+            if action_id in grouping_counts
+        }
+        if (
+            5 <= hand_count <= 8
+            and constraint == "free"
+            and table_action is None
+            and grouping_analysis is not None
+            and grouping_analysis.has_route_difference
+            and visible_grouping_pairs
+            and len(visible_group_counts) >= 2
+        ):
+            action_by_id = {
+                action.get("action_id"): action
+                for action in prompt_actions
+                if type(action.get("action_id")) is int
+            }
+            pattern_labels = {
+                "single": "单张", "pair": "对子", "triple": "三张",
+                "triple_with_pair": "三带二", "straight": "顺子",
+                "pair_straight": "连对", "steel_plate": "钢板", "bomb": "炸弹",
+                "straight_flush": "同花顺", "joker_bomb": "天王炸",
+            }
+            lines.append("【残局出后分组路线】")
+            lines.append(
+                "假设此后重新取得自由领牌，按当前完整canonical动作可组成的本家余手路线，"
+                "列出少量真实展示首手的后续最少动作组数；这只描述手牌可分组性，不保证取得牌权或必然走完。"
+            )
+            for action_id in visible_grouping_ids:
+                action = action_by_id.get(action_id)
+                fact = candidate_facts_by_id.get(action_id)
+                if not isinstance(action, dict):
+                    continue
+                pattern = str(action.get("declared_pattern", ""))
+                carrier = action.get("carrier_cards")
+                carrier_count = len(carrier) if isinstance(carrier, list) else 0
+                parts = [
+                    f"action_id={action_id}",
+                    f"首手={pattern_labels.get(pattern, pattern)}({carrier_count}张)",
+                    f"出后剩余手牌最少后续组数={visible_group_counts[action_id]}",
+                ]
+                if fact is not None:
+                    parts.append(f"残余孤张点数={fact.residual_singleton_rank_count}")
+                    if fact.residual_hand_natural_pattern_kinds:
+                        kinds = "/".join(fact.residual_hand_natural_pattern_kinds[:4])
+                        parts.append(f"可识别自然结构线索={kinds}(可能重叠)")
+                    if fact.consumes_control_resource:
+                        parts.append("消耗控制资源")
+                    if fact.uses_wildcard:
+                        parts.append("消耗逢人配")
+                    if fact.bomb_length is not None:
+                        parts.append(f"消耗{fact.bomb_length}张炸弹")
+                lines.append("；".join(parts))
+            lines.append(
+                "分组少不自动优先：一次出完、队友或危险对手公开紧急、可说明的控制/回手资源与结构代价均可推翻；"
+                "自然组合线索可重叠，未知未来牌权保持未知。"
+            )
+
         lines.append("")
 
         rule_hits = DeepSeekClient._rag_items(rag_context, "rule_hits")
@@ -2764,6 +2860,14 @@ class DeepSeekClient:
                 if contrasts is not None
                 else ()
             )
+            relation_groups = tuple(dict.fromkeys(
+                relation_groups
+                + free_lead_grouping_comparison_pairs(
+                    observation,
+                    legal_actions,
+                    self._coerce_int(my_info.get("player_id"), default=0),
+                )
+            ))
             opening_route_ids = self._opening_pattern_representative_ids(
                 observation,
                 legal_actions,

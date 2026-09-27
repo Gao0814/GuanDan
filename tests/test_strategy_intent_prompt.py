@@ -433,7 +433,7 @@ class TestStrategyIntentPrompt(unittest.TestCase):
             (replace(_context("stable_control"), hand_total_score=30), "invalid_context_fields"),
             (replace(_context("short_endgame_minimum_groups"), short_endgame_minimum_groups=False), "invalid_intent_reason"),
             (replace(_context("short_endgame_minimum_groups"), is_free_lead=False), "invalid_context_fields"),
-            (replace(_context("short_endgame_minimum_groups"), my_hand_count=5), "invalid_context_fields"),
+            (replace(_context("short_endgame_minimum_groups"), my_hand_count=9), "invalid_context_fields"),
             (replace(_context("short_endgame_minimum_groups"), reason_codes=("stable_control",)), "invalid_intent_reason"),
             (replace(_context(), hand_control_score=51), "invalid_context_fields"),
             (replace(_context("teammate_more_urgent"), is_free_lead=False, table_leader_player_id=3, table_leader_relation="teammate", table_leader_is_urgent=True), "invalid_intent_reason"),
@@ -444,6 +444,26 @@ class TestStrategyIntentPrompt(unittest.TestCase):
                 self.assertEqual(payload.status, "omitted")
                 self.assertIn(diagnostic, payload.diagnostics)
                 self.assertEqual((payload.text, payload.char_count, payload.router_source, payload.phase, payload.intent), ("", 0, None, None, None))
+
+    def test_five_to_eight_card_grouping_is_conditional_and_urgency_can_overrule(self) -> None:
+        for count in (5, 6, 7, 8):
+            context = replace(
+                _context("short_endgame_minimum_groups"),
+                my_hand_count=count,
+            )
+            payload = build_strategy_intent_prompt_payload(context)
+            self.assertEqual((payload.status, payload.diagnostics), ("ready", ()))
+            self.assertIn("重新取得自由领牌", payload.text)
+            self.assertIn("不保证取得牌权", payload.text)
+
+        teammate_urgent = replace(
+            _context("teammate_urgent"),
+            my_hand_count=6,
+            short_endgame_minimum_groups=True,
+        )
+        payload = build_strategy_intent_prompt_payload(teammate_urgent)
+        self.assertEqual((payload.status, payload.intent, payload.diagnostics), ("ready", "support_teammate", ()))
+        self.assertIn("队友接近出完", payload.text)
 
     def test_expected_reason_priority_masks_lower_conditions(self) -> None:
         high_priority_cases = (

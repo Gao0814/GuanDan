@@ -251,7 +251,7 @@ def _expected_reason(context: StrategyIntentContext) -> str:
         and context.table_leader_is_urgent
     ):
         return "urgent_opponent_controls_table"
-    if context.short_endgame_minimum_groups:
+    if context.short_endgame_minimum_groups and context.my_hand_count is not None and context.my_hand_count <= 4:
         return "short_endgame_minimum_groups"
     teammate_is_urgent = 0 < context.teammate_hand_count <= 2
     has_urgent_opponent = bool(context.urgent_opponent_ids)
@@ -265,6 +265,8 @@ def _expected_reason(context: StrategyIntentContext) -> str:
         return "opponent_urgent"
     if teammate_is_urgent:
         return "teammate_urgent"
+    if context.short_endgame_minimum_groups:
+        return "short_endgame_minimum_groups"
     if context.hand_strength == "weak":
         return "weak_hand"
     return "stable_control"
@@ -324,13 +326,12 @@ def build_strategy_intent_prompt_payload(
     ):
         diagnostics.add("invalid_context_fields")
     if context.short_endgame_minimum_groups and not (
-        context.intent == "run_out"
-        and context.is_free_lead is True
+        context.is_free_lead is True
         and context.table_leader_player_id is None
         and context.table_leader_relation is None
         and context.table_leader_is_urgent is False
         and context.my_hand_count is not None
-        and 1 <= context.my_hand_count <= 4
+        and 1 <= context.my_hand_count <= 8
     ):
         diagnostics.add("invalid_context_fields")
     if not diagnostics and type(reason) is str:
@@ -342,6 +343,11 @@ def build_strategy_intent_prompt_payload(
 
     assert reason is not None
     _, reason_text = _REASON_DETAILS[reason]
+    if reason == "short_endgame_minimum_groups" and context.my_hand_count is not None and context.my_hand_count > 4:
+        reason_text = (
+            "本家仅5–8张且当前自由出牌，完整canonical动作证明不同首手的余手存在不同最少后续分组数；"
+            "仅描述假设以后重新取得自由领牌时的手牌结构，不保证取得牌权或必然走完"
+        )
     relation_line = ""
     if context.candidate_relation_kinds:
         relation_line = "\n公开候选关系：" + "；".join(

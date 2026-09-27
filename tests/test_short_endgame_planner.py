@@ -3,7 +3,14 @@ from __future__ import annotations
 from copy import deepcopy
 import unittest
 
-from agents.short_endgame_planner import minimum_group_free_lead_action_ids
+from agents.short_endgame_planner import (
+    analyze_free_lead_grouping,
+    free_lead_grouping_comparison_pairs,
+    minimum_group_free_lead_action_ids,
+)
+from engine.cards import Card
+from engine.game import GuanDanGame
+from evaluation.short_endgame_scenarios import build_short_endgame_scenarios
 
 
 def _action(action_id: int, pattern: str, declared: list[str], carriers: list[str]) -> dict[str, object]:
@@ -56,6 +63,78 @@ class ShortEndgamePlannerTests(unittest.TestCase):
             _action(2, "single", ["7"], ["7S"]),
         ]
         self.assertIsNone(minimum_group_free_lead_action_ids(_observation(["6S", "7S"]), tied_actions, 1))
+
+    def test_after_first_action_counts_only_the_remaining_groups(self) -> None:
+        observation = _observation(["6S"])
+        actions = [_action(1, "single", ["6"], ["6S"])]
+        analysis = analyze_free_lead_grouping(observation, actions, 1)
+        self.assertIsNotNone(analysis)
+        self.assertEqual(analysis.counts_by_action_id(), {1: 0})  # type: ignore[union-attr]
+
+    def test_engine_backed_five_to_eight_card_scenarios_have_bounded_differences(self) -> None:
+        scenarios = build_short_endgame_scenarios()
+        self.assertEqual(
+            tuple(item.name for item in scenarios),
+            (
+                "group_cleanup",
+                "straight_vs_singles",
+                "natural_bomb_residual",
+                "wildcard_and_natural_groups",
+                "urgent_teammate",
+                "urgent_opponent",
+            ),
+        )
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario.name):
+                my_info = scenario.observation["my_info"]
+                assert isinstance(my_info, dict)
+                hand_count = my_info["hand_count"]
+                self.assertIn(hand_count, range(5, 9))
+                self.assertEqual(len(scenario.legal_actions), len({action["action_id"] for action in scenario.legal_actions}))
+                analysis = analyze_free_lead_grouping(scenario.observation, scenario.legal_actions, 1)
+                self.assertIsNotNone(analysis)
+                assert analysis is not None
+                self.assertGreater(analysis.maximum_group_count, analysis.minimum_group_count)
+                self.assertEqual(set(analysis.counts_by_action_id()), {action["action_id"] for action in scenario.legal_actions})
+                pairs = free_lead_grouping_comparison_pairs(scenario.observation, scenario.legal_actions, 1)
+                self.assertGreaterEqual(len(pairs), 1)
+                self.assertLessEqual(len(pairs), 2)
+                legal_ids = {action["action_id"] for action in scenario.legal_actions}
+                self.assertTrue(all(left in legal_ids and right in legal_ids and left != right for left, right in pairs))
+
+    def test_five_to_eight_grouping_remains_fail_closed_outside_free_lead_or_with_bad_actions(self) -> None:
+        scenario = next(item for item in build_short_endgame_scenarios() if item.name == "group_cleanup")
+        following = deepcopy(scenario.observation)
+        current_round = following["current_round"]
+        assert isinstance(current_round, dict)
+        current_round.update(constraint="single:5", table_action=_action(99, "single", ["5"], ["5S"]))
+        self.assertIsNone(analyze_free_lead_grouping(following, scenario.legal_actions, 1))
+        malformed = deepcopy(scenario.legal_actions)
+        malformed[0]["wildcard_count"] = True
+        self.assertIsNone(analyze_free_lead_grouping(scenario.observation, malformed, 1))
+
+    def test_equal_route_hand_does_not_create_a_prompt_comparison(self) -> None:
+        def cards(tokens: tuple[str, ...]) -> tuple[Card, ...]:
+            return tuple(Card(rank=token[:-1], suit=token[-1]) for token in tokens)
+
+        game = GuanDanGame(
+            current_level_rank="2",
+            preset_hands={
+                1: cards(("3S", "5H", "7C", "9D", "JC")),
+                2: cards(("4S", "6H", "8C", "10D")),
+                3: cards(("QS", "KH", "AC", "2S")),
+                4: cards(("3H", "5C", "7D", "9H")),
+            },
+            starting_player_id=1,
+        )
+        observation = game.reset()
+        actions = game.legal_actions()
+        analysis = analyze_free_lead_grouping(observation, actions, 1)
+        self.assertIsNotNone(analysis)
+        assert analysis is not None
+        self.assertFalse(analysis.has_route_difference)
+        self.assertEqual(len(set(analysis.counts_by_action_id().values())), 1)
+        self.assertEqual(free_lead_grouping_comparison_pairs(observation, actions, 1), ())
 
     def test_multiple_best_actions_are_reported_in_original_canonical_order(self) -> None:
         actions = [

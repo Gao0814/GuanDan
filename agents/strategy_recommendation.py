@@ -92,7 +92,10 @@ def build_strategy_recommendation(
     if any(fact.uses_wildcard or fact.bomb_length is not None for fact in facts):
         domains.add("bomb_wildcard_management"); objectives.add("manage_bomb_wildcard")
     hand_count = observation.get("my_info", {}).get("hand_count") if isinstance(observation.get("my_info"), Mapping) else None
-    if any(fact.finishes_hand for fact in facts) or (type(hand_count) is int and 0 < hand_count <= 4):
+    if any(fact.finishes_hand for fact in facts) or (
+        type(hand_count) is int
+        and 0 < hand_count <= 4
+    ) or getattr(strategy_context, "short_endgame_minimum_groups", False) is True:
         domains.add("endgame_planning"); objectives.add("plan_endgame")
     intent = getattr(strategy_context, "intent", None)
     if intent == "support_teammate" or any(fact.teammate_active and fact.teammate_hand_count is not None and fact.teammate_hand_count <= 2 for fact in facts):
@@ -131,8 +134,12 @@ def build_strategy_recommendation(
             selected.append(fact.action_id)
         if len(selected) == 3:
             break
-    higher_public_priority = bool(finishers) or bool(
-        {"block_opponent", "plan_endgame"} & objectives
+    # A 5–8 card grouping signal describes a conditional hand partition; it
+    # is not itself public urgency and must not crowd a separate, concrete
+    # candidate relationship out of the three-ID recommendation budget.
+    grouping_context = getattr(strategy_context, "short_endgame_minimum_groups", False) is True
+    higher_public_priority = bool(finishers) or "block_opponent" in objectives or (
+        "plan_endgame" in objectives and not grouping_context
     )
     teammate_cleanup_priority = any(
         contrast.kind == "natural_pair_single"

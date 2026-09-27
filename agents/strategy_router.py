@@ -485,7 +485,10 @@ def route_strategy_intent(
         intent, reason_codes = SUPPORT_TEAMMATE, ("teammate_controls_table",)
     elif table_leader_relation == "opponent" and table_leader_is_urgent:
         intent, reason_codes = BLOCK_OPPONENT, ("urgent_opponent_controls_table",)
-    elif short_endgame_minimum_groups_available:
+    # Preserve the established 1–4 card priority.  For the new 5–8 card
+    # comparison, public teammate/opponent urgency below must be able to
+    # overrule a static partition-count signal.
+    elif short_endgame_minimum_groups_available and my_hand_count <= 4:
         intent, reason_codes = RUN_OUT, ("short_endgame_minimum_groups",)
     elif teammate_is_urgent and urgent_opponent_ids:
         if teammate_hand_count < minimum_opponent_hand_count:
@@ -498,6 +501,8 @@ def route_strategy_intent(
         intent, reason_codes = BLOCK_OPPONENT, ("opponent_urgent",)
     elif teammate_is_urgent:
         intent, reason_codes = SUPPORT_TEAMMATE, ("teammate_urgent",)
+    elif short_endgame_minimum_groups_available:
+        intent, reason_codes = RUN_OUT, ("short_endgame_minimum_groups",)
     elif hand_strength == "weak":
         intent, reason_codes = RUN_OUT, ("weak_hand",)
     else:

@@ -14,6 +14,8 @@ from agents.strategy_router import (
     StrategyIntentContext,
     route_strategy_intent,
 )
+from agents.short_endgame_planner import analyze_free_lead_grouping
+from evaluation.short_endgame_scenarios import build_short_endgame_scenarios
 from tests.test_deepseek_step_e import (
     _short_endgame_legal_actions,
     _short_endgame_observation,
@@ -297,6 +299,29 @@ class TestStrategyRouter(unittest.TestCase):
         )
         self.assertTrue(context.short_endgame_minimum_groups)
         self.assertEqual((context.intent, context.reason_codes), (RUN_OUT, ("can_finish_now",)))
+
+    def test_five_to_eight_card_public_grouping_does_not_override_urgency(self) -> None:
+        scenarios = {item.name: item for item in build_short_endgame_scenarios()}
+        for name, expected_intent, expected_reason in (
+            ("urgent_teammate", SUPPORT_TEAMMATE, "teammate_urgent"),
+            ("urgent_opponent", BLOCK_OPPONENT, "opponent_urgent"),
+        ):
+            scenario = scenarios[name]
+            context = route_strategy_intent(
+                scenario.observation,
+                scenario.legal_actions,
+                phase_context=classify_game_phase(scenario.observation),
+                hand_evaluation=evaluate_hand(scenario.observation, scenario.legal_actions),
+            )
+            grouping = analyze_free_lead_grouping(
+                scenario.observation,
+                scenario.legal_actions,
+                1,
+            )
+            self.assertIsNotNone(grouping)
+            self.assertTrue(grouping.has_route_difference)  # type: ignore[union-attr]
+            self.assertTrue(context.short_endgame_minimum_groups)
+            self.assertEqual((context.intent, context.reason_codes), (expected_intent, (expected_reason,)))
 
     def test_big_joker_teammate_control_is_a_specific_public_reason(self) -> None:
         observation = _teammate_joker_observation()
