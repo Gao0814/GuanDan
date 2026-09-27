@@ -258,11 +258,28 @@ def _cli_argv(
 
 
 def _connector_probe_argv(launcher_pid: int) -> list[str]:
+    launcher_parent_pid = os.getppid()
+    venv_launcher_path = ""
+    if os.name == "nt" and sys.prefix != sys.base_prefix:
+        venv_launcher_path = str(Path(sys.prefix) / "Scripts" / "python.exe")
+    quoted_venv_launcher_path = "'" + venv_launcher_path.replace("'", "''") + "'"
     command = (
         "$ErrorActionPreference = 'Stop'; "
         f"$launcherPid = {launcher_pid}; "
-        "$candidateProcesses = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop | "
-        "Where-Object { $_.ProcessId -ne $launcherPid -and "
+        f"$launcherParentPid = {launcher_parent_pid}; "
+        f"$venvLauncherPath = {quoted_venv_launcher_path}; "
+        "$processes = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop); "
+        "$launcherProcess = $processes | Where-Object { $_.ProcessId -eq $launcherPid } | Select-Object -First 1; "
+        "$launcherParent = $processes | Where-Object { $_.ProcessId -eq $launcherParentPid } | Select-Object -First 1; "
+        "$ownedProcessIds = @($launcherPid); "
+        "if ($venvLauncherPath -ne '' -and $null -ne $launcherProcess -and $null -ne $launcherParent -and "
+        "$launcherProcess.ParentProcessId -eq $launcherParentPid -and "
+        "[System.String]::Equals($launcherParent.ExecutablePath, $venvLauncherPath, "
+        "[System.StringComparison]::OrdinalIgnoreCase) -and "
+        f"$launcherProcess.CommandLine -match '{_BATCH_LAUNCHER_COMMAND_LINE_PATTERN}' -and "
+        f"$launcherParent.CommandLine -match '{_BATCH_LAUNCHER_COMMAND_LINE_PATTERN}') "
+        "{ $ownedProcessIds += $launcherParentPid }; "
+        "$candidateProcesses = @($processes | Where-Object { $ownedProcessIds -notcontains $_.ProcessId -and "
         "$_.Name -match '(?i)^(python(?:\\d+(?:\\.\\d+)?)?w?|py)(?:\\.exe)?$' }); "
         "$connectorProcesses = @($candidateProcesses | Where-Object { "
         f"$_.CommandLine -match '{_CONNECTOR_COMMAND_LINE_PATTERN}' }}); "

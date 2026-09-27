@@ -4,6 +4,7 @@ from collections import Counter
 from contextlib import redirect_stderr
 from io import StringIO
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -20,6 +21,17 @@ from integrations.botzone.manual_batch import (
     _connector_probe_argv,
     _read_jsonl_results,
     run_batch,
+)
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+VENV_PYTHON = REPOSITORY_ROOT / ".venv" / "Scripts" / "python.exe"
+SAFE_PROCESS_PROBE_CODE = (
+    "import os, subprocess; "
+    "from integrations.botzone.manual_batch import _connector_probe_argv; "
+    "result = subprocess.run(_connector_probe_argv(os.getpid()), capture_output=True, "
+    "text=True, encoding='utf-8', check=False); "
+    "print(result.stdout.strip() if result.returncode == 0 else 'probe_failed')"
 )
 
 
@@ -69,7 +81,9 @@ class BotzoneManualBatchTests(unittest.TestCase):
     def test_process_probe_distinguishes_connector_and_batch_launcher_modules(self) -> None:
         probe = _connector_probe_argv(4321)[-1]
         self.assertIn("$launcherPid = 4321", probe)
-        self.assertIn("$_.ProcessId -ne $launcherPid", probe)
+        self.assertIn("$ownedProcessIds = @($launcherPid)", probe)
+        self.assertIn("$launcherProcess.ParentProcessId -eq $launcherParentPid", probe)
+        self.assertIn("$launcherParent.ExecutablePath, $venvLauncherPath", probe)
         self.assertIn(f"-match '{_CONNECTOR_COMMAND_LINE_PATTERN}'", probe)
         self.assertIn(f"-match '{_BATCH_LAUNCHER_COMMAND_LINE_PATTERN}'", probe)
 
@@ -554,6 +568,63 @@ class BotzoneManualBatchTests(unittest.TestCase):
         self.assertEqual(outcome.recorded_games, 1)
         self.assertEqual(outcome.result_counts, (("local_team_win", 1),))
         self.assertEqual(outcome.exit_code, 7)
+
+
+@unittest.skipUnless(os.name == "nt", "the process probe uses Windows CIM")
+class BotzoneManualBatchProcessProbeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        if not VENV_PYTHON.is_file():
+            self.skipTest("repository venv Python is not available")
+
+    def _probe_current_process(self) -> str:
+        result = subprocess.run(
+            _connector_probe_argv(os.getpid()),
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=20,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip()
+
+    def _start_fake_module_process(self, module_name: str) -> subprocess.Popen[bytes]:
+        return subprocess.Popen(
+            [str(VENV_PYTHON), "-c", "import time; time.sleep(3)", "-m", module_name],
+            cwd=REPOSITORY_ROOT,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def test_venv_launcher_parent_for_current_batch_is_not_a_competing_launcher(self) -> None:
+        result = subprocess.run(
+            [str(VENV_PYTHON), "-c", SAFE_PROCESS_PROBE_CODE, "-m", "integrations.botzone.manual_batch"],
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=20,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "connector_absent")
+
+    def test_independent_batch_launcher_process_remains_blocked(self) -> None:
+        process = self._start_fake_module_process("integrations.botzone.manual_batch")
+        try:
+            self.assertEqual(self._probe_current_process(), "batch_launcher_running")
+        finally:
+            process.wait(timeout=10)
+
+    def test_connector_process_remains_blocked(self) -> None:
+        process = self._start_fake_module_process("integrations.botzone")
+        try:
+            self.assertEqual(self._probe_current_process(), "connector_running")
+        finally:
+            process.wait(timeout=10)
 
 
 if __name__ == "__main__":
