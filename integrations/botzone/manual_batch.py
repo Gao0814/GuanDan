@@ -44,6 +44,11 @@ _RUNNER_STOP_REASONS = frozenset(
         "wall_limit_unfinished",
     }
 )
+_CONNECTOR_COMMAND_LINE_PATTERN = (
+    r'(?i)(?:\s-m\s+"?integrations\.botzone"?(?:\s|$)|'
+    r'integrations[\\/]botzone[\\/]__main__\.py\b)'
+)
+_BATCH_LAUNCHER_COMMAND_LINE_PATTERN = r'(?i)\s-m\s+"?integrations\.botzone\.manual_batch"?(?:\s|$)'
 _CONNECTOR_SUMMARY = re.compile(
     r"^connector_finished cycles=([0-9]+) finished=([0-9]+) "
     r"history=disabled decision_trace=disabled game_results=(ok|failed) "
@@ -256,11 +261,16 @@ def _connector_probe_argv(launcher_pid: int) -> list[str]:
     command = (
         "$ErrorActionPreference = 'Stop'; "
         f"$launcherPid = {launcher_pid}; "
-        "$connectorProcesses = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop | "
+        "$candidateProcesses = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop | "
         "Where-Object { $_.ProcessId -ne $launcherPid -and "
-        "$_.Name -match '(?i)^(python(?:\\d+(?:\\.\\d+)?)?w?|py)(?:\\.exe)?$' -and "
-        "$_.CommandLine -match '(?i)(?:\\s-m\\s+integrations\\.botzone\\b|integrations[\\\\/]botzone[\\\\/]__main__\\.py\\b)' }); "
-        "if ($connectorProcesses.Count -gt 0) { 'connector_running' } else { 'connector_absent' }"
+        "$_.Name -match '(?i)^(python(?:\\d+(?:\\.\\d+)?)?w?|py)(?:\\.exe)?$' }); "
+        "$connectorProcesses = @($candidateProcesses | Where-Object { "
+        f"$_.CommandLine -match '{_CONNECTOR_COMMAND_LINE_PATTERN}' }}); "
+        "$batchLauncherProcesses = @($candidateProcesses | Where-Object { "
+        f"$_.CommandLine -match '{_BATCH_LAUNCHER_COMMAND_LINE_PATTERN}' }}); "
+        "if ($connectorProcesses.Count -gt 0) { 'connector_running' } "
+        "elseif ($batchLauncherProcesses.Count -gt 0) { 'batch_launcher_running' } "
+        "else { 'connector_absent' }"
     )
     return ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command]
 
@@ -424,10 +434,17 @@ def run_batch(
         raise BatchLaunchError("user_interrupted", exit_code=130) from None
     except Exception:
         raise BatchLaunchError("connector_status_unavailable") from None
-    if process_probe.returncode != 0 or process_probe.stdout.splitlines() not in (["connector_absent"], ["connector_running"]):
+    probe_status = process_probe.stdout.splitlines()
+    if process_probe.returncode != 0 or probe_status not in (
+        ["connector_absent"],
+        ["connector_running"],
+        ["batch_launcher_running"],
+    ):
         raise BatchLaunchError("connector_status_unavailable")
-    if process_probe.stdout.splitlines() == ["connector_running"]:
+    if probe_status == ["connector_running"]:
         raise BatchLaunchError("connector_already_running")
+    if probe_status == ["batch_launcher_running"]:
+        raise BatchLaunchError("batch_launcher_already_running")
 
     paths = create_batch_workspace(workspace_root)
     announce(f"批次目录：{paths.root}")

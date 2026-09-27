@@ -5,6 +5,7 @@ from contextlib import redirect_stderr
 from io import StringIO
 import json
 from pathlib import Path
+import re
 import subprocess
 from tempfile import TemporaryDirectory
 import unittest
@@ -14,6 +15,9 @@ from integrations.botzone.manual_batch import (
     BatchLaunchError,
     build_argument_parser,
     main,
+    _BATCH_LAUNCHER_COMMAND_LINE_PATTERN,
+    _CONNECTOR_COMMAND_LINE_PATTERN,
+    _connector_probe_argv,
     _read_jsonl_results,
     run_batch,
 )
@@ -62,6 +66,33 @@ def _write_fake_evidence(
 
 
 class BotzoneManualBatchTests(unittest.TestCase):
+    def test_process_probe_distinguishes_connector_and_batch_launcher_modules(self) -> None:
+        probe = _connector_probe_argv(4321)[-1]
+        self.assertIn("$launcherPid = 4321", probe)
+        self.assertIn("$_.ProcessId -ne $launcherPid", probe)
+        self.assertIn(f"-match '{_CONNECTOR_COMMAND_LINE_PATTERN}'", probe)
+        self.assertIn(f"-match '{_BATCH_LAUNCHER_COMMAND_LINE_PATTERN}'", probe)
+
+        cases = (
+            (
+                "python.exe -m integrations.botzone.manual_batch --games 10",
+                False,
+                True,
+            ),
+            ('python.exe -m "integrations.botzone.manual_batch" --games 10', False, True),
+            ("python.exe -m integrations.botzone --agent deepseek", True, False),
+            ('python.exe -m "integrations.botzone" --agent deepseek', True, False),
+            ("python.exe -m integrations.botzone_extra --agent deepseek", False, False),
+            (r"python.exe integrations\botzone\__main__.py --agent deepseek", True, False),
+        )
+        for command_line, connector_expected, launcher_expected in cases:
+            with self.subTest(command_line=command_line):
+                self.assertEqual(re.search(_CONNECTOR_COMMAND_LINE_PATTERN, command_line) is not None, connector_expected)
+                self.assertEqual(
+                    re.search(_BATCH_LAUNCHER_COMMAND_LINE_PATTERN, command_line) is not None,
+                    launcher_expected,
+                )
+
     def test_defaults_and_custom_positive_game_count(self) -> None:
         parser = build_argument_parser()
         defaults = parser.parse_args([])
@@ -316,6 +347,32 @@ class BotzoneManualBatchTests(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         self.assertIn("batch_error category=connector_already_running exit=2", stderr.getvalue())
         self.assertEqual(calls, 1)
+        self.assertEqual(entries, [sentinel])
+
+    def test_other_batch_launcher_stops_before_creating_another_batch_directory(self) -> None:
+        with TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            workspace = base / "workspace"
+            workspace.mkdir()
+            sentinel = workspace / "old.json"
+            sentinel.write_text("old", encoding="utf-8")
+
+            def fake_process(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                return subprocess.CompletedProcess(argv, 0, "batch_launcher_running\n", "")
+
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                exit_code = main(
+                    [],
+                    process_runner=fake_process,
+                    announce=lambda _message: None,
+                    workspace_root=workspace,
+                    repository_root=base,
+                )
+            entries = list(workspace.iterdir())
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("batch_error category=batch_launcher_already_running exit=2", stderr.getvalue())
         self.assertEqual(entries, [sentinel])
 
     def test_process_probe_failure_is_classified_without_leaking_output_or_creating_a_batch(self) -> None:
