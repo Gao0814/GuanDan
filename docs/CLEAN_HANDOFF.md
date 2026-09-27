@@ -1,5 +1,9 @@
 # Clean Project Handoff
 
+2026-09-27 最新交接：`4afa7fc` 已提交所有者自启连续 Botzone 批次脚本、ACK 后逐局低敏结果与禁网测试；规划复核提交仅含 8 个 Botzone/脚本/tests 文件，`git show --check`、新增 14 项和主规则 39 项均通过，Coding 报告全量 917 项通过。默认最多 10 局、可调，一次前台 connector 连续运行、固定 `D:\VsCodeProject\BotzoneWorkspace` 新子目录留证、子进程 `deepseek-flash`、零网络预检与 stage trace；history/decision trace 关闭。真实 Botzone/DeepSeek 均未由本轮运行，两个 workspace 旧证据未由规划访问或改动。当前无新的 Coding 任务，旧 `docs/NEXT_PROMPT.md` 撤下；所有者可自行决定何时启动并逐局操作，Codex局后只读审计。M2 旧 32 槽仍 `inconclusive`、旧授权不可续跑，旧 `platform_error` 根因未知。下一轮算法任务由具体试局反例或新能力目标确定。
+
+以下“十局脚本待交付”为上一阶段交接快照，以本段为准。
+
 2026-09-27 最新交接：`15041efb` 已交付 5–8 张残局条件性路线输入。规划确认提交范围、`git show --check`，独立复跑 32 项残局/路由及 39 项主规则均通过；Coding 报告 903 项全量通过、四状态双版本 8/8 真实请求成功且零重试，四对动作相同。输入能力已实现，动作质量/胜率收益未证实。当前 `docs/NEXT_PROMPT.md` 已切为所有者自启十局 Botzone 脚本的禁网 Coding 任务：固定 `D:\VsCodeProject\BotzoneWorkspace` 新子目录留证，一次启动持续运行，默认最多 10 局可改，所有页面和 connector 操作由所有者完成，Codex 只在事后审计。现有单局 history/decision trace 不得跨局共用一个文件；本任务至少保证逐局低敏结果、聚合审计及阶段事件，不把完整逐局牌谱扩建设成门槛。两个 workspace 的旧证据未访问或改动。旧 M2 32 槽授权不能续用，效果仍 `inconclusive`；旧 `platform_error` 根因未知。
 
 以下“十局脚本暂缓”是上一阶段交接快照；当前已进入脚本交付任务，以本段为准。
