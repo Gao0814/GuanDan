@@ -1,5 +1,9 @@
 # Clean Project Handoff
 
+2026-09-27 最新交接：`905b246` 已让批次 `.cmd` 在退出时显示固定类别并等待。所有者重试截图给出 `batch_error category=connector_already_running exit=2`，Botzone 未显示“已连接”；当次在创建批次目录和预检之前被进程占用保护挡住。规划按代码的匹配规则事后只读检查，当前没有匹配的 Botzone Python/py 进程；无法反推出截图时进程身份，不能判断是真冲突还是误判。未停止或启动 connector，未碰旧 evidence。下一步所有者重启现有脚本并在页面核对连接；若同类错误重现，先保存报错时进程证据再决定 Coding 修复。当前无新 Coding Prompt，已执行的 `docs/NEXT_PROMPT.md` 撤下。算法主线待试测链路可用后继续，旧中途停牌根因仍未定。
+
+以下“窗口闪退”是本次可见错误类别出现前的交接快照，以本段为准。
+
 2026-09-27 最新交接：所有者实际双击 `run_manual_botzone_batch.cmd` 后窗口闪退，Botzone 未显示“已连接”。规划只读确认新 `.cmd` 不像旧单局 `.cmd` 那样退出后等待；`--help` 能返回，当前进程探测与固定 workspace 根属性检查通过，固定 workspace 当前无新 `manual-batch-*` 子目录。具体早退边界未证实，不能归为模型超时或中途停牌。当前 `docs/NEXT_PROMPT.md` 是一个禁网 Coding 修复任务：让错误/退出类别可见，定位并修正早退，验证单 connector 跨 idle 与局间持续运行，保留固定 workspace 新子目录和旧证据；之后所有者亲自启动并确认页面“已连接”。规划不改业务代码，也未运行真实 connector/DeepSeek/Botzone。旧 M2 效果仍 `inconclusive`。
 
 以下“脚本已交付、暂无 Coding Prompt”为问题报告前的交接快照，以本段为准。
