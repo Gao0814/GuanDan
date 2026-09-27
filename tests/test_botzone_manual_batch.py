@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from integrations.botzone.game_results import GAME_RESULT_SCHEMA
+from integrations.botzone.rolling_results import RollingGameResultRecorder, read_recent_results
 from integrations.botzone.manual_batch import (
     BatchLaunchError,
     build_argument_parser,
@@ -48,6 +49,11 @@ def _write_fake_evidence(
     exit_code: int,
 ) -> None:
     result_path = Path(_option(argv, "--game-results-file"))
+    recent_path = Path(_option(argv, "--recent-results-file"))
+    recent = RollingGameResultRecorder(recent_path, int(_option(argv, "--recent-results-capacity")))
+    for result in results:
+        recent.record_finished(result)
+    recent.close()
     audit_path = Path(_option(argv, "--audit-file"))
     result_path.write_text(
         "".join(
@@ -111,8 +117,10 @@ class BotzoneManualBatchTests(unittest.TestCase):
         parser = build_argument_parser()
         defaults = parser.parse_args([])
         custom = parser.parse_args(["--games", "3", "--max-cycles", "1234", "--max-wall-seconds", "5678"])
+        import_source = parser.parse_args(["--import-from", "manual-batch-legacy-source"])
         self.assertEqual((defaults.games, defaults.max_cycles, defaults.max_wall_seconds), (10, None, None))
         self.assertEqual((custom.games, custom.max_cycles, custom.max_wall_seconds), (3, 1234, 5678))
+        self.assertEqual(import_source.import_from, "manual-batch-legacy-source")
         for value in ("0", "-1", "ten", "1.5"):
             with self.subTest(value=value), self.assertRaises(SystemExit), redirect_stderr(StringIO()):
                 parser.parse_args(["--games", value])
@@ -155,10 +163,10 @@ class BotzoneManualBatchTests(unittest.TestCase):
                     argv,
                     kwargs["stdout"],
                     results=("local_team_win", "local_team_loss", "platform_error"),
-                    stop_reason="cycle_limit_unfinished",
-                    exit_code=6,
+                    stop_reason="interrupted",
+                    exit_code=130,
                 )
-                return subprocess.CompletedProcess(argv, 6, "", "")
+                return subprocess.CompletedProcess(argv, 130, "", "")
 
             messages: list[str] = []
             outcome = run_batch(
@@ -168,7 +176,11 @@ class BotzoneManualBatchTests(unittest.TestCase):
                 announce=messages.append,
             )
 
-            batch_directories = [path for path in workspace.iterdir() if path.is_dir() and path != old_batch]
+            batch_directories = [
+                path
+                for path in workspace.iterdir()
+                if path.is_dir() and path not in {old_batch, workspace / "manual-batch-records"}
+            ]
             batch = batch_directories[0]
             old_after = old_evidence.read_bytes()
             batch_files_exist = all(
@@ -185,16 +197,18 @@ class BotzoneManualBatchTests(unittest.TestCase):
         self.assertEqual(runtime_count, 1)
         self.assertEqual(len(calls), 3)  # process guard, zero-network preflight, one connector
         self.assertEqual(old_after, old_bytes)
-        self.assertEqual(outcome.requested_games, 10)
-        self.assertEqual(outcome.connector_exit_code, 6)
+        self.assertEqual(outcome.retained_capacity, 10)
+        self.assertEqual(outcome.connector_exit_code, 130)
         self.assertEqual(outcome.game_results_status, "complete")
         self.assertEqual(outcome.confirmed_finished, 3)
         self.assertEqual(outcome.recorded_games, 3)
         self.assertEqual(outcome.result_counts, (("local_team_loss", 1), ("local_team_win", 1), ("platform_error", 1)))
-        self.assertTrue(any(message.startswith("batch_result category=configured_limit_reached exit=6") for message in messages))
-        self.assertEqual(_option(calls[2][0], "--stop-after-finished"), "10")
-        self.assertEqual(_option(calls[2][0], "--max-cycles"), "10000")
-        self.assertEqual(_option(calls[2][0], "--max-wall-seconds"), "36000")
+        self.assertTrue(any(message.startswith("batch_result category=user_interrupted exit=130") for message in messages))
+        self.assertIn("--continuous", calls[2][0])
+        self.assertNotIn("--stop-after-finished", calls[2][0])
+        self.assertNotIn("--max-cycles", calls[2][0])
+        self.assertNotIn("--max-wall-seconds", calls[2][0])
+        self.assertEqual(_option(calls[2][0], "--recent-results-capacity"), "10")
         self.assertIn("--stage-trace", calls[2][0])
         self.assertEqual(_option(calls[2][0], "--agent"), "deepseek")
         self.assertEqual(_option(calls[2][0], "--timeout-seconds"), "30")
@@ -227,10 +241,10 @@ class BotzoneManualBatchTests(unittest.TestCase):
                     argv,
                     kwargs["stdout"],
                     results=("local_team_win", "local_team_loss", "invalid_score_shape"),
-                    stop_reason="finished_target",
-                    exit_code=0,
+                    stop_reason="cycle_limit_unfinished",
+                    exit_code=6,
                 )
-                return subprocess.CompletedProcess(argv, 0, "", "")
+                return subprocess.CompletedProcess(argv, 6, "", "")
 
             outcome = run_batch(
                 games=3,
@@ -243,14 +257,15 @@ class BotzoneManualBatchTests(unittest.TestCase):
             )
 
         self.assertEqual(len(runtime), 1)
-        self.assertEqual(_option(runtime[0], "--stop-after-finished"), "3")
+        self.assertNotIn("--stop-after-finished", runtime[0])
+        self.assertEqual(_option(runtime[0], "--recent-results-capacity"), "3")
         self.assertEqual(_option(runtime[0], "--max-cycles"), "1234")
         self.assertEqual(_option(runtime[0], "--max-wall-seconds"), "5678")
         self.assertEqual(_option(runtime[0], "--decision-timeout-seconds"), "119")
         self.assertEqual(_option(runtime[0], "--table-timeout-seconds"), "120")
         self.assertEqual(outcome.game_results_status, "complete")
-        self.assertEqual(outcome.category, "target_reached")
-        self.assertTrue(any(message.startswith("batch_result category=target_reached exit=0") for message in messages))
+        self.assertEqual(outcome.category, "configured_limit_reached")
+        self.assertTrue(any(message.startswith("batch_result category=configured_limit_reached exit=6") for message in messages))
 
     def test_manual_stop_preserves_already_recorded_result(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -514,7 +529,7 @@ class BotzoneManualBatchTests(unittest.TestCase):
         self.assertEqual(outcome.recorded_games, 1)
         self.assertIsNone(outcome.confirmed_finished)
         self.assertTrue(batch_retained)
-        self.assertTrue(any("confirmed_finished=unknown/2" in message for message in messages))
+        self.assertTrue(any("confirmed_finished=unknown" in message for message in messages))
 
     def test_incomplete_result_recording_reports_the_partial_count(self) -> None:
         with TemporaryDirectory() as temporary:

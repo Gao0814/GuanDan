@@ -9,10 +9,18 @@ import unittest
 from unittest.mock import patch
 
 from integrations.botzone.connector import MockConnector
+from integrations.botzone.http_transport import TransportError
 from integrations.botzone.__main__ import _game_results_path
 from integrations.botzone.game_results import (
     GAME_RESULT_SCHEMA,
     GameResultRecorder,
+)
+from integrations.botzone.rolling_results import (
+    CompositeGameResultRecorder,
+    RollingGameResultRecorder,
+    prepare_recent_results,
+    read_recent_results,
+    recent_results_paths,
 )
 from integrations.botzone.models import DealRequest, PlayRequest
 from integrations.botzone.manual_batch import run_batch
@@ -65,13 +73,16 @@ def _poll(
 
 
 class _Transport:
-    def __init__(self, polls: list[bytes]) -> None:
+    def __init__(self, polls: list[bytes | BaseException]) -> None:
         self.polls = list(polls)
         self.headers: list[dict[str, bytes]] = []
 
     def poll(self, headers: object) -> bytes:
         self.headers.append(dict(headers))  # type: ignore[arg-type]
-        return self.polls.pop(0)
+        result = self.polls.pop(0)
+        if isinstance(result, BaseException):
+            raise result
+        return result
 
 
 def _handler(context: HandlerContext) -> HandlerResult:
@@ -90,6 +101,128 @@ def _rows(path: Path) -> list[dict[str, object]]:
 
 
 class BotzoneGameResultTests(unittest.TestCase):
+    def test_continuous_connector_records_after_idle_and_reconnects_between_games(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result_path = root / "game-results.jsonl"
+            _, recent_path, _ = recent_results_paths(root)
+            prepare_recent_results(root, 10)
+            recorder = CompositeGameResultRecorder(
+                GameResultRecorder(result_path),
+                RollingGameResultRecorder(recent_path, 10),
+            )
+            transport = _Transport(
+                [
+                    _poll(),
+                    _poll((("first-match", _deal(0)),)),
+                    _poll((("first-match", _play()),)),
+                    _poll(finished=(("first-match", 0, 4, (2, 0, 2, 0)),)),
+                    _poll(),
+                    TransportError("network_error"),
+                    _poll((("second-match", _deal(1)),)),
+                    _poll((("second-match", _play()),)),
+                    _poll(finished=(("second-match", 1, 4, (1, 0, 1, 0)),)),
+                    _poll(),
+                    KeyboardInterrupt(),
+                ]
+            )
+            connector = MockConnector(
+                SessionStore(root / "state"),
+                transport,
+                _handler,
+                game_result_recorder=recorder,  # type: ignore[arg-type]
+            )
+            summary = ForegroundRunner(
+                connector,
+                max_consecutive_failures=1,
+                backoff_seconds=2,
+                sleep=lambda delay: self.assertEqual(delay, 2),
+            ).run(
+                max_cycles=None,
+                max_wall_seconds=None,
+                stop_after_finished=None,
+                retry_network_failures=True,
+            )
+            window, records = read_recent_results(recent_path)
+            audit_path = root / "audit.json"
+            write_audit(audit_path, summary, exit_code_for(summary), run_token=_TOKEN)
+            audit = json.loads(audit_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(summary.stopped, "interrupted")
+        self.assertEqual(summary.finished_qualified, 2)
+        self.assertEqual(window.total_games, 2)
+        self.assertEqual([record["game_no"] for record in records], [1, 2])
+        self.assertEqual([record["result"] for record in records], ["local_team_win", "local_team_loss"])
+        self.assertEqual(summary.recent_results_status, "ok")
+        self.assertEqual(audit["result_category_scope"], "current_run_cumulative")
+        self.assertEqual(audit["recent_results_window"]["scope"], "retained_window")
+        self.assertEqual(audit["recent_results_window"]["total_games"], 2)
+        self.assertEqual(audit["recent_results_window"]["retained_count"], 2)
+
+    def test_observed_deal_without_confirmed_finish_is_unconfirmed(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, recent_path, _ = recent_results_paths(root)
+            prepare_recent_results(root, 10)
+            recorder = CompositeGameResultRecorder(
+                GameResultRecorder(root / "game-results.jsonl"),
+                RollingGameResultRecorder(recent_path, 10),
+            )
+            connector = MockConnector(
+                SessionStore(root / "state"),
+                _Transport([_poll((("secret-match-id", _deal(0)),)), KeyboardInterrupt()]),
+                _handler,
+                game_result_recorder=recorder,  # type: ignore[arg-type]
+            )
+            summary = ForegroundRunner(
+                connector,
+                max_consecutive_failures=1,
+                backoff_seconds=1,
+                sleep=lambda _: None,
+            ).run(max_cycles=None, max_wall_seconds=None, stop_after_finished=None, retry_network_failures=True)
+            _, records = read_recent_results(recent_path)
+            serialized = recent_path.read_text(encoding="utf-8")
+
+        self.assertEqual(summary.finished_qualified, 0)
+        self.assertEqual([record["result"] for record in records], ["result_unconfirmed"])
+        self.assertNotIn("secret-match-id", serialized)
+
+    def test_finish_and_next_deal_in_same_poll_keep_the_confirmed_result(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, recent_path, _ = recent_results_paths(root)
+            prepare_recent_results(root, 10)
+            recorder = CompositeGameResultRecorder(
+                GameResultRecorder(root / "game-results.jsonl"),
+                RollingGameResultRecorder(recent_path, 10),
+            )
+            connector = MockConnector(
+                SessionStore(root / "state"),
+                _Transport(
+                    [
+                        _poll((("first-match", _deal(0)),)),
+                        _poll((("first-match", _play()),)),
+                        _poll(
+                            (("second-match", _deal(1)),),
+                            (("first-match", 0, 4, (2, 0, 2, 0)),),
+                        ),
+                        KeyboardInterrupt(),
+                    ]
+                ),
+                _handler,
+                game_result_recorder=recorder,  # type: ignore[arg-type]
+            )
+            summary = ForegroundRunner(
+                connector,
+                max_consecutive_failures=1,
+                backoff_seconds=1,
+                sleep=lambda _: None,
+            ).run(max_cycles=None, max_wall_seconds=None, stop_after_finished=None, retry_network_failures=True)
+            _, records = read_recent_results(recent_path)
+
+        self.assertEqual(summary.finished_qualified, 1)
+        self.assertEqual([record["result"] for record in records], ["local_team_win", "result_unconfirmed"])
+
     def test_three_confirmed_results_auto_stop_after_target_and_idle_poll_is_not_a_game(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -250,10 +383,20 @@ class BotzoneGameResultTests(unittest.TestCase):
                             _poll((("second-match", _deal(1)),)),
                             _poll((("second-match", _play()),)),
                             _poll(finished=(("second-match", 1, 4, (2, 0, 2, 0)),)),
+                            _poll(),
+                            _poll(),
+                            _poll(),
+                            _poll(),
                         ]
                     ),
                     _handler,
-                    game_result_recorder=GameResultRecorder(Path(option("--game-results-file"))),
+                    game_result_recorder=CompositeGameResultRecorder(
+                        GameResultRecorder(Path(option("--game-results-file"))),
+                        RollingGameResultRecorder(
+                            Path(option("--recent-results-file")),
+                            int(option("--recent-results-capacity")),
+                        ),
+                    ),
                     stage_trace=trace,
                 )
                 summary = ForegroundRunner(
@@ -267,7 +410,8 @@ class BotzoneGameResultTests(unittest.TestCase):
                 ).run(
                     max_cycles=int(option("--max-cycles")),
                     max_wall_seconds=int(option("--max-wall-seconds")),
-                    stop_after_finished=int(option("--stop-after-finished")),
+                    stop_after_finished=None,
+                    retry_network_failures=True,
                 )
                 runtime_summaries.append(summary)
                 connector_exit = exit_code_for(summary)
@@ -296,13 +440,13 @@ class BotzoneGameResultTests(unittest.TestCase):
         self.assertEqual(len(calls), 3)
         self.assertEqual(sum("--preflight-only" not in argv and argv[0] != "powershell.exe" for argv in calls), 1)
         self.assertEqual(len(runtime_summaries), 1)
-        self.assertEqual(runtime_summaries[0].cycles, 8)
-        self.assertEqual(runtime_summaries[0].stopped, "finished_target")
-        self.assertEqual(outcome.category, "target_reached")
+        self.assertEqual(runtime_summaries[0].cycles, 12)
+        self.assertEqual(runtime_summaries[0].stopped, "cycle_limit_unfinished")
+        self.assertEqual(outcome.category, "configured_limit_reached")
         self.assertEqual(outcome.confirmed_finished, 2)
         self.assertEqual([row["game_no"] for row in results], [1, 2])
         self.assertIn("response_acknowledged", trace_text)
-        self.assertTrue(any(message.startswith("batch_result category=target_reached exit=0") for message in messages))
+        self.assertTrue(any(message.startswith("batch_result category=configured_limit_reached exit=6") for message in messages))
         self.assertEqual(old_content, "keep")
 
     def test_result_write_failure_is_reported_without_changing_acknowledgement(self) -> None:
@@ -333,6 +477,85 @@ class BotzoneGameResultTests(unittest.TestCase):
         self.assertEqual(len(transport.headers[2]), 1)
         self.assertIsNone(record)
 
+    def test_rolling_write_failure_is_reported_without_changing_acknowledgement(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, recent_path, _ = recent_results_paths(root)
+            prepare_recent_results(root, 10)
+            recorder = CompositeGameResultRecorder(
+                GameResultRecorder(root / "game-results.jsonl"),
+                RollingGameResultRecorder(recent_path, 10),
+            )
+            transport = _Transport(
+                [
+                    _poll((("match", _deal(0)),)),
+                    _poll((("match", _play()),)),
+                    _poll(finished=(("match", 0, 4, (2, 0, 2, 0)),)),
+                ]
+            )
+            connector = MockConnector(
+                SessionStore(root / "state"),
+                transport,
+                _handler,
+                game_result_recorder=recorder,  # type: ignore[arg-type]
+            )
+            with patch.object(RollingGameResultRecorder, "_record", side_effect=OSError("private error")):
+                summary = ForegroundRunner(
+                    connector,
+                    max_consecutive_failures=2,
+                    backoff_seconds=0,
+                    sleep=lambda _: None,
+                ).run(max_cycles=3, stop_after_finished=1)
+            session = SessionStore(root / "state").load("match")
+            recent_snapshot, records = read_recent_results(recent_path)
+
+        self.assertEqual(summary.finished_qualified, 1)
+        self.assertEqual(summary.stopped, "finished_target")
+        self.assertEqual(summary.game_results_status, "ok")
+        self.assertEqual(summary.recent_results_status, "failed")
+        self.assertEqual(summary.game_results_recorded, 1)
+        self.assertEqual(len(transport.headers[2]), 1)
+        self.assertIsNone(session)
+        self.assertEqual(recent_snapshot.total_games, 0)
+        self.assertEqual(records, ())
+
+    def test_per_run_write_failure_does_not_mark_recent_window_failed(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, recent_path, _ = recent_results_paths(root)
+            prepare_recent_results(root, 10)
+            recorder = CompositeGameResultRecorder(
+                GameResultRecorder(root / "game-results.jsonl"),
+                RollingGameResultRecorder(recent_path, 10),
+            )
+            connector = MockConnector(
+                SessionStore(root / "state"),
+                _Transport(
+                    [
+                        _poll((("match", _deal(0)),)),
+                        _poll((("match", _play()),)),
+                        _poll(finished=(("match", 0, 4, (2, 0, 2, 0)),)),
+                    ]
+                ),
+                _handler,
+                game_result_recorder=recorder,  # type: ignore[arg-type]
+            )
+            with patch.object(GameResultRecorder, "record", side_effect=OSError("private error")):
+                summary = ForegroundRunner(
+                    connector,
+                    max_consecutive_failures=2,
+                    backoff_seconds=0,
+                    sleep=lambda _: None,
+                ).run(max_cycles=3, stop_after_finished=1)
+            recent_snapshot, records = read_recent_results(recent_path)
+
+        self.assertEqual(summary.finished_qualified, 1)
+        self.assertEqual(summary.game_results_status, "failed")
+        self.assertEqual(summary.recent_results_status, "ok")
+        self.assertEqual(summary.game_results_recorded, 0)
+        self.assertEqual(recent_snapshot.total_games, 1)
+        self.assertEqual([record["result"] for record in records], ["local_team_win"])
+
     def test_existing_result_path_is_never_overwritten(self) -> None:
         with TemporaryDirectory() as temporary:
             target = Path(temporary) / "games.jsonl"
@@ -344,7 +567,7 @@ class BotzoneGameResultTests(unittest.TestCase):
     def test_result_categories_are_low_cardinality(self) -> None:
         self.assertEqual(
             RESULT_CATEGORIES,
-            frozenset({"local_team_win", "local_team_loss", "platform_error", "invalid_score_shape"}),
+            frozenset({"local_team_win", "local_team_loss", "draw", "platform_error", "invalid_score_shape"}),
         )
 
     def test_cli_result_path_requires_fresh_absolute_external_output(self) -> None:

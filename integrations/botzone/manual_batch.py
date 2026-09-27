@@ -21,6 +21,15 @@ import sys
 from typing import Callable, Sequence
 
 from .result_observability import RESULT_CATEGORIES
+from .rolling_results import (
+    RecentResultsError,
+    RecentResultsLock,
+    ensure_recent_results_directory,
+    prepare_recent_results,
+    read_recent_results,
+    recent_results_paths,
+    write_new_batch_marker,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -29,8 +38,6 @@ DEEPSEEK_MODEL = "deepseek-flash"
 DECISION_TIMEOUT_SECONDS = 119
 TABLE_TIMEOUT_SECONDS = 120
 POLL_TIMEOUT_SECONDS = 30
-CYCLES_PER_GAME = 1_000
-WALL_SECONDS_PER_GAME = 3_600
 RECORDING_INCOMPLETE_EXIT = 7
 
 _RUNNER_STOP_REASONS = frozenset(
@@ -38,6 +45,7 @@ _RUNNER_STOP_REASONS = frozenset(
         "finished_target",
         "interrupted",
         "failure_limit",
+        "transport_failure",
         "unsupported_stage",
         "diagnostic_failure",
         "cycle_limit_unfinished",
@@ -83,18 +91,24 @@ class BatchPaths:
     results: Path
     stdout: Path
     stderr: Path
+    recent_results: Path
+    recent_lock: Path
 
 
 @dataclass(frozen=True, slots=True)
 class BatchOutcome:
     batch_directory: Path
-    requested_games: int
+    retained_capacity: int
     connector_exit_code: int
     stop_reason: str
     confirmed_finished: int | None
     recorded_games: int
     result_counts: tuple[tuple[str, int], ...]
     game_results_status: str
+    recent_results_status: str = "ok"
+    recent_results_total_games: int = 0
+    recent_results_retained_count: int = 0
+    recent_results_capacity: int = 0
 
     @property
     def category(self) -> str:
@@ -108,7 +122,9 @@ class BatchOutcome:
 
     @property
     def exit_code(self) -> int:
-        if self.connector_exit_code == 0 and self.game_results_status != "complete":
+        if self.connector_exit_code == 0 and (
+            self.game_results_status != "complete" or self.recent_results_status != "ok"
+        ):
             return RECORDING_INCOMPLETE_EXIT
         return self.connector_exit_code
 
@@ -131,9 +147,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
             "Wait for the page to show connected, then create and start each table manually."
         ),
     )
-    parser.add_argument("--games", type=_positive_int, default=10, help="stop after this many ACK-confirmed four-player finishes (default: 10)")
-    parser.add_argument("--max-cycles", type=_positive_int, help="poll-cycle cap (default: 1000 per requested game)")
-    parser.add_argument("--max-wall-seconds", type=_positive_int, help="wall-clock cap (default: 3600 seconds per requested game)")
+    parser.add_argument("--games", type=_positive_int, default=10, help="retain the most recent N result records (default: 10)")
+    parser.add_argument("--max-cycles", type=_positive_int, help="explicit poll-cycle stop limit")
+    parser.add_argument("--max-wall-seconds", type=_positive_int, help="explicit wall-clock stop limit")
+    parser.add_argument("--import-from", help="exact legacy manual-batch directory to import on first migration")
     return parser
 
 
@@ -176,6 +193,7 @@ def create_batch_workspace(workspace_root: Path = DEFAULT_WORKSPACE_ROOT) -> Bat
     _assert_ordinary_directory(root, category="workspace_unavailable")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     batch_root = root / f"manual-batch-{stamp}-{secrets.token_hex(8)}"
+    _, recent_results, recent_lock = recent_results_paths(root)
     try:
         batch_root.mkdir()
     except FileExistsError:
@@ -192,12 +210,17 @@ def create_batch_workspace(workspace_root: Path = DEFAULT_WORKSPACE_ROOT) -> Bat
             results=batch_root / "game-results.jsonl",
             stdout=batch_root / "streams" / "stdout.txt",
             stderr=batch_root / "streams" / "stderr.txt",
+            recent_results=recent_results,
+            recent_lock=recent_lock,
         )
+        write_new_batch_marker(batch_root)
         for directory in (paths.state, paths.audit, paths.stdout.parent):
             directory.mkdir()
             _assert_ordinary_directory(directory, category="workspace_prepare_failed")
             _assert_inside(batch_root, directory)
     except BatchLaunchError as exc:
+        raise BatchLaunchError(exc.category, batch_root) from None
+    except RecentResultsError as exc:
         raise BatchLaunchError(exc.category, batch_root) from None
     except KeyboardInterrupt:
         raise BatchLaunchError("user_interrupted", batch_root, exit_code=130) from None
@@ -210,11 +233,11 @@ def _cli_argv(
     state_directory: Path,
     *,
     preflight: bool,
-    games: int = 10,
-    max_cycles: int = 0,
-    max_wall_seconds: int = 0,
     paths: BatchPaths | None = None,
     run_token: str | None = None,
+    max_cycles: int | None = None,
+    max_wall_seconds: int | None = None,
+    recent_results_capacity: int = 10,
 ) -> list[str]:
     argv = [
         sys.executable,
@@ -237,18 +260,21 @@ def _cli_argv(
         return argv
     if paths is None or run_token is None:
         raise BatchLaunchError("launcher_configuration_error")
+    argv.extend(("--continuous",))
+    if max_cycles is not None:
+        argv.extend(("--max-cycles", str(max_cycles)))
+    if max_wall_seconds is not None:
+        argv.extend(("--max-wall-seconds", str(max_wall_seconds)))
     argv.extend(
         (
-            "--max-cycles",
-            str(max_cycles),
-            "--max-wall-seconds",
-            str(max_wall_seconds),
-            "--stop-after-finished",
-            str(games),
             "--audit-file",
             str(paths.audit / "completion-audit.json"),
             "--game-results-file",
             str(paths.results),
+            "--recent-results-file",
+            str(paths.recent_results),
+            "--recent-results-capacity",
+            str(recent_results_capacity),
             "--run-token",
             run_token,
             "--stage-trace",
@@ -324,7 +350,6 @@ def _read_jsonl_results(path: Path) -> tuple[tuple[int, str], ...] | None:
 
 def _inspect_batch(
     paths: BatchPaths,
-    requested_games: int,
     process_exit: int,
     *,
     interrupted: bool = False,
@@ -402,7 +427,6 @@ def _inspect_batch(
         and audit_exit == process_exit
         and len(rows) == finished
         and row_counts == counts
-        and (process_exit != 0 or (stop_reason == "finished_target" and finished == requested_games))
     )
     return (
         stop_reason,
@@ -422,6 +446,7 @@ def run_batch(
     repository_root: Path = REPOSITORY_ROOT,
     python_executable: str | None = None,
     process_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    import_from: Path | str | None = None,
     announce: Callable[[str], None] = print,
 ) -> BatchOutcome:
     if type(games) is not int or games <= 0:
@@ -430,8 +455,6 @@ def run_batch(
         raise BatchLaunchError("invalid_cycle_limit")
     if max_wall_seconds is not None and (type(max_wall_seconds) is not int or max_wall_seconds <= 0):
         raise BatchLaunchError("invalid_wall_limit")
-    cycle_limit = max_cycles if max_cycles is not None else games * CYCLES_PER_GAME
-    wall_limit = max_wall_seconds if max_wall_seconds is not None else games * WALL_SECONDS_PER_GAME
     runner = process_runner or subprocess.run
     executable = python_executable or sys.executable
     environment = os.environ.copy()
@@ -486,48 +509,59 @@ def run_batch(
         raise BatchLaunchError("preflight_failed", paths.root)
 
     run_token = secrets.token_hex(16)
-    runtime_argv = _cli_argv(
-        paths.state,
-        preflight=False,
-        games=games,
-        max_cycles=cycle_limit,
-        max_wall_seconds=wall_limit,
-        paths=paths,
-        run_token=run_token,
-    )
-    runtime_argv[0] = executable
-    announce("零网络配置预检通过。连接器将在前台连续运行；请等页面显示“已连接”后手动逐局建桌并开始。")
-    announce("达到局数上限后自动退出；需要提前停止时按 Ctrl+C，已产生的证据会保留。")
     interrupted = False
     try:
-        audit_target = paths.audit / "completion-audit.json"
-        expected_outputs = (audit_target, paths.results, paths.stdout, paths.stderr)
-        if any(os.path.lexists(path) for path in expected_outputs):
-            raise BatchLaunchError("workspace_outputs_occupied", paths.root)
-        with audit_target.open("x", encoding="utf-8", newline="\n"):
-            pass
-        with paths.stdout.open("x", encoding="utf-8", newline="\n") as stdout, paths.stderr.open(
-            "x", encoding="utf-8", newline="\n"
-        ) as stderr:
+        ensure_recent_results_directory(workspace_root)
+        with RecentResultsLock(paths.recent_lock):
             try:
-                process = runner(
-                    runtime_argv,
-                    cwd=repository_root,
-                    env=environment,
-                    stdout=stdout,
-                    stderr=stderr,
-                    check=False,
-                )
-            except KeyboardInterrupt:
-                interrupted = True
-                process_code = 130
-            except Exception:
-                raise BatchLaunchError("connector_launch_failed", paths.root) from None
+                recent_snapshot = prepare_recent_results(workspace_root, games, import_from=import_from)
+            except RecentResultsError as exc:
+                raise BatchLaunchError(exc.category, paths.root) from None
+            runtime_argv = _cli_argv(
+                paths.state,
+                preflight=False,
+                max_cycles=max_cycles,
+                max_wall_seconds=max_wall_seconds,
+                paths=paths,
+                run_token=run_token,
+                recent_results_capacity=games,
+            )
+            runtime_argv[0] = executable
+            announce("零网络配置预检通过。连接器将在前台持续轮询；请等页面显示“已连接”后手动逐局建桌并开始。")
+            announce(
+                f"--games {games} 表示滚动记录容量；不会因达到容量停机。按 Ctrl+C 停止，"
+                "仅显式运行上限或固定类别故障会提前结束。"
+            )
+            audit_target = paths.audit / "completion-audit.json"
+            expected_outputs = (audit_target, paths.results, paths.stdout, paths.stderr)
+            if any(os.path.lexists(path) for path in expected_outputs):
+                raise BatchLaunchError("workspace_outputs_occupied", paths.root)
+            with audit_target.open("x", encoding="utf-8", newline="\n"):
+                pass
+            with paths.stdout.open("x", encoding="utf-8", newline="\n") as stdout, paths.stderr.open(
+                "x", encoding="utf-8", newline="\n"
+            ) as stderr:
+                try:
+                    process = runner(
+                        runtime_argv,
+                        cwd=repository_root,
+                        env=environment,
+                        stdout=stdout,
+                        stderr=stderr,
+                        check=False,
+                    )
+                except KeyboardInterrupt:
+                    interrupted = True
+                    process_code = 130
+                except Exception:
+                    raise BatchLaunchError("connector_launch_failed", paths.root) from None
     except KeyboardInterrupt:
         interrupted = True
         process_code = 130
     except BatchLaunchError:
         raise
+    except RecentResultsError as exc:
+        raise BatchLaunchError(exc.category, paths.root) from None
     except FileExistsError:
         raise BatchLaunchError("workspace_outputs_occupied", paths.root) from None
     except OSError:
@@ -540,17 +574,37 @@ def run_batch(
 
     stop_reason, records_status, finished, result_count, result_counts = _inspect_batch(
         paths,
-        games,
         process_code,
         interrupted=interrupted,
     )
-    outcome = BatchOutcome(paths.root, games, process_code, stop_reason, finished, result_count, result_counts, records_status)
+    recent_status = "ok"
+    try:
+        recent_snapshot, _ = read_recent_results(paths.recent_results)
+    except RecentResultsError:
+        recent_status = "failed"
+        recent_snapshot = None
+    outcome = BatchOutcome(
+        paths.root,
+        games,
+        process_code,
+        stop_reason,
+        finished,
+        result_count,
+        result_counts,
+        records_status,
+        recent_status,
+        0 if recent_snapshot is None else recent_snapshot.total_games,
+        0 if recent_snapshot is None else recent_snapshot.retained_count,
+        games if recent_snapshot is None else recent_snapshot.capacity,
+    )
     confirmed = "unknown" if outcome.confirmed_finished is None else str(outcome.confirmed_finished)
     announce(
         f"batch_result category={outcome.category} exit={outcome.exit_code} "
         f"connector_exit={outcome.connector_exit_code} stop={outcome.stop_reason} "
-        f"confirmed_finished={confirmed}/{outcome.requested_games} "
+        f"confirmed_finished={confirmed} "
         f"game_results={outcome.game_results_status} recorded={outcome.recorded_games} "
+        f"recent_results={outcome.recent_results_status} retained={outcome.recent_results_retained_count}/"
+        f"{outcome.recent_results_capacity} total={outcome.recent_results_total_games} "
         f"batch_directory={outcome.batch_directory}"
     )
     announce("history.txt 与 decision-trace.json 未启用；保留逐局低敏结果、聚合 audit 和阶段 trace。")
@@ -575,6 +629,7 @@ def main(
             games=arguments.games,
             max_cycles=arguments.max_cycles,
             max_wall_seconds=arguments.max_wall_seconds,
+            import_from=arguments.import_from,
             workspace_root=workspace_root,
             repository_root=repository_root,
             process_runner=process_runner,

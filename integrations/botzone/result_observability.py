@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 
 RESULT_CATEGORIES = frozenset(
-    {"local_team_win", "local_team_loss", "platform_error", "invalid_score_shape"}
+    {"local_team_win", "local_team_loss", "draw", "platform_error", "invalid_score_shape"}
 )
 LOCAL_TEAM_SCORE_BUCKETS = frozenset({"score_0", "score_1", "score_2", "score_3"})
 
@@ -48,7 +48,7 @@ def _validated_pairs(values: object, allowed: frozenset[str]) -> tuple[tuple[str
 
 @dataclass(frozen=True, slots=True)
 class ResultObservabilitySnapshot:
-    """Immutable aggregate only; it retains no row, player, or score tuple."""
+    """Aggregate counts; the normal count covers decisive non-draw outcomes."""
 
     result_category_counts: tuple[tuple[str, int], ...]
     normal_result_count: int
@@ -66,9 +66,11 @@ class ResultObservabilitySnapshot:
             raise ResultObservabilityError("score_bucket_conservation_failed")
 
     def to_json(self) -> dict[str, object]:
+        category_map = dict(self.result_category_counts)
         return {
             "result_category_counts": [[name, count] for name, count in self.result_category_counts],
             "normal_result_count": self.normal_result_count,
+            "draw_result_count": category_map.get("draw", 0),
             "local_team_score_counts": [[name, count] for name, count in self.local_team_score_counts],
         }
 
@@ -88,6 +90,9 @@ def classify_finished_score(local_player_id: object, scores: object) -> tuple[st
         opponents = tuple(seat for seat in range(4) if seat not in {offender, teammate})
         if scores[teammate] == 0 and all(scores[seat] == 1 for seat in opponents):
             return "platform_error", None
+
+    if scores[0] == scores[1] == scores[2] == scores[3] and scores[0] in {1, 2, 3}:
+        return "draw", None
 
     local_team = (local_player_id, (local_player_id + 2) % 4)
     other_team = tuple(seat for seat in range(4) if seat not in local_team)

@@ -21,6 +21,8 @@ from .connector import (
 from .history import ConnectorObservedHistory
 from .decision_trace import ConnectorDecisionTrace
 from .game_results import GameResultRecorder
+from .rolling_results import CompositeGameResultRecorder, RollingGameResultRecorder
+from .rolling_results import RECENT_RESULT_CATEGORIES
 from .agent_observability import AgentObservabilityRecorder, AgentObservabilitySnapshot
 from .agent_runtime import build_agent_factory
 from .play_adapter import NoTributeRuleBasedHandler
@@ -64,6 +66,12 @@ class RunnerSummary:
     decision_trace_status: str = "disabled"
     game_results_status: str = "disabled"
     game_results_recorded: int = 0
+    recent_results_status: str = "disabled"
+    recent_results_capacity: int = 0
+    recent_results_total_games: int = 0
+    recent_results_retained_count: int = 0
+    recent_results_category_counts: tuple[tuple[str, int], ...] = ()
+    recent_results_snapshot_valid: bool = True
 
 
 class ForegroundRunner:
@@ -107,11 +115,15 @@ class ForegroundRunner:
     def run(
         self,
         *,
-        max_cycles: int = 100,
-        max_wall_seconds: int = 600,
-        stop_after_finished: int = 1,
+        max_cycles: int | None = 100,
+        max_wall_seconds: int | None = 600,
+        stop_after_finished: int | None = 1,
+        retry_network_failures: bool = False,
     ) -> RunnerSummary:
-        if any(type(value) is not int or value <= 0 for value in (max_cycles, max_wall_seconds, stop_after_finished)):
+        if any(
+            value is not None and (type(value) is not int or value <= 0)
+            for value in (max_cycles, max_wall_seconds, stop_after_finished)
+        ) or type(retry_network_failures) is not bool:
             raise ValueError("invalid_runner_limit")
         cycles = successes = failures = headers = requests = responses = finished = qualified = timeouts = 0
         consecutive_failures = 0
@@ -120,11 +132,11 @@ class ForegroundRunner:
         diagnostic_profiles: Counter[str] = Counter()
         transport_failure_categories: Counter[str] = Counter()
         finished_categories: Counter[str] = Counter()
-        stopped = "cycle_limit_unfinished"
+        stopped = "cycle_limit_unfinished" if max_cycles is not None else "interrupted"
         started = self._clock()
         try:
-            while cycles < max_cycles:
-                if self._clock() - started >= max_wall_seconds:
+            while max_cycles is None or cycles < max_cycles:
+                if max_wall_seconds is not None and self._clock() - started >= max_wall_seconds:
                     stopped = "wall_limit_unfinished"
                     break
                 cycle = self._connector.cycle()
@@ -171,12 +183,27 @@ class ForegroundRunner:
                 if diagnostic_names - {"transport_failure", "transport_timeout"}:
                     stopped = "diagnostic_failure"
                     break
-                if qualified >= stop_after_finished:
+                if stop_after_finished is not None and qualified >= stop_after_finished:
                     stopped = "finished_target"
                     break
                 if _has_transport_failure(cycle):
                     failures += 1
                     consecutive_failures += 1
+                    if retry_network_failures:
+                        transport_categories = {name for name, count in cycle.transport_failure_categories if count}
+                        if not transport_categories or transport_categories - {"network_error"}:
+                            stopped = "transport_failure"
+                            break
+                        if max_cycles is not None and cycles >= max_cycles:
+                            stopped = "cycle_limit_unfinished"
+                            break
+                        if max_wall_seconds is not None and self._clock() - started >= max_wall_seconds:
+                            stopped = "wall_limit_unfinished"
+                            break
+                        requested_delay = min(self._backoff_seconds * (2 ** min(consecutive_failures - 1, 6)), 60)
+                        deadline = self._clock() + requested_delay
+                        self._sleep(max(0.0, deadline - self._clock()))
+                        continue
                     if consecutive_failures >= self._max_failures:
                         stopped = "failure_limit"
                         break
@@ -190,7 +217,7 @@ class ForegroundRunner:
                 else:
                     successes += 1
                     consecutive_failures = 0
-                if self._clock() - started >= max_wall_seconds:
+                if max_wall_seconds is not None and self._clock() - started >= max_wall_seconds:
                     stopped = "wall_limit_unfinished"
                     break
         except KeyboardInterrupt:
@@ -218,6 +245,33 @@ class ForegroundRunner:
         except Exception:
             result_observability_valid = False
             result_snapshot = ResultObservabilitySnapshot((), 0, ())
+        recent_status = self._recent_results_status()
+        recent_snapshot_valid = True
+        try:
+            recent_snapshot = self._recent_results_snapshot()
+            recent_capacity = getattr(recent_snapshot, "capacity", 0) if recent_snapshot is not None else 0
+            recent_total = getattr(recent_snapshot, "total_games", 0) if recent_snapshot is not None else 0
+            recent_retained = getattr(recent_snapshot, "retained_count", 0) if recent_snapshot is not None else 0
+            recent_counts = getattr(recent_snapshot, "result_category_counts", ()) if recent_snapshot is not None else ()
+            if recent_snapshot is None and recent_status != "disabled":
+                raise ValueError("recent_results_unavailable")
+            if recent_snapshot is not None and (
+                type(recent_capacity) is not int
+                or recent_capacity <= 0
+                or type(recent_total) is not int
+                or recent_total < 0
+                or type(recent_retained) is not int
+                or recent_retained < 0
+                or recent_retained > recent_capacity
+                or recent_total < recent_retained
+                or not isinstance(recent_counts, tuple)
+                or sum(count for _, count in recent_counts) != recent_retained
+            ):
+                raise ValueError("recent_results_invalid")
+        except Exception:
+            recent_snapshot_valid = False
+            recent_capacity = recent_total = recent_retained = 0
+            recent_counts = ()
         summary = RunnerSummary(
             cycles,
             successes,
@@ -249,6 +303,12 @@ class ForegroundRunner:
             self._decision_trace_status(),
             self._game_results_status(qualified),
             self._game_results_recorded(),
+            recent_status,
+            recent_capacity,
+            recent_total,
+            recent_retained,
+            recent_counts,
+            recent_snapshot_valid,
         )
         record_stage(self._stage_trace, "runner_exit", summary.stopped)
         return summary
@@ -272,6 +332,14 @@ class ForegroundRunner:
     def _game_results_recorded(self) -> int:
         value = getattr(self._connector, "game_results_recorded", 0)
         return value if type(value) is int and value >= 0 else 0
+
+    def _recent_results_status(self) -> str:
+        status = getattr(self._connector, "recent_results_status", "disabled")
+        return status if status in {"disabled", "ok", "failed"} else "failed"
+
+    def _recent_results_snapshot(self) -> object | None:
+        snapshot = getattr(self._connector, "recent_results_snapshot", None)
+        return snapshot() if callable(snapshot) else None
 
     def _game_results_status(self, qualified: int) -> str:
         status = getattr(self._connector, "game_results_status", "disabled")
@@ -303,6 +371,8 @@ def build_foreground_runner(
     history_file: Path | str | None = None,
     decision_trace_file: Path | str | None = None,
     game_results_file: Path | str | None = None,
+    recent_results_file: Path | str | None = None,
+    recent_results_capacity: int | None = None,
     stage_trace: StageTraceSink | None = None,
 ) -> ForegroundRunner:
     observability = AgentObservabilityRecorder()
@@ -340,7 +410,15 @@ def build_foreground_runner(
         raise ValueError("invalid_agent_mode")
     recorder = ConnectorObservedHistory(history_file) if history_file is not None else None
     decision_trace_recorder = ConnectorDecisionTrace(decision_trace_file) if decision_trace_file is not None else None
+    if (recent_results_file is None) != (recent_results_capacity is None):
+        raise ValueError("invalid_recent_results_configuration")
     game_result_recorder = GameResultRecorder(game_results_file) if game_results_file is not None else None
+    if recent_results_file is not None and recent_results_capacity is not None:
+        recent_recorder = RollingGameResultRecorder(recent_results_file, recent_results_capacity)
+        if game_result_recorder is not None:
+            game_result_recorder = CompositeGameResultRecorder(game_result_recorder, recent_recorder)
+        else:
+            game_result_recorder = recent_recorder
     connector = MockConnector(
         SessionStore(
             config.state_directory,
@@ -377,7 +455,7 @@ def exit_code_for(summary: RunnerSummary) -> int:
         return 0
     if summary.stopped == "interrupted":
         return 130
-    if summary.stopped == "failure_limit":
+    if summary.stopped in {"failure_limit", "transport_failure"}:
         return 4
     if summary.stopped in {"unsupported_stage", "diagnostic_failure"}:
         return 5
@@ -415,6 +493,7 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int, *, run
     )
     if sum(count for _, count in result_snapshot.result_category_counts) != summary.finished_qualified:
         raise ValueError("invalid_audit_summary")
+    _validate_recent_results(summary)
     try:
         validated_token = None if run_token is None else validate_run_token(run_token)
     except RunProvenanceError as exc:
@@ -435,12 +514,31 @@ def write_audit(path: Path | str, summary: RunnerSummary, exit_code: int, *, run
         "finished_seen": summary.finished_seen,
         "finished_qualified": summary.finished_qualified,
         "finished_categories": [[name, count] for name, count in summary.finished_categories],
+        "result_category_scope": "current_run_cumulative",
         "diagnostics": [[name, count] for name, count in summary.diagnostics],
         "diagnostic_details": [[name, count] for name, count in summary.diagnostic_details],
         "diagnostic_profiles": [[name, count] for name, count in summary.diagnostic_profiles],
         **snapshot.to_json(),
         **result_snapshot.to_json(),
     }
+    if summary.recent_results_status != "disabled":
+        recent_window: dict[str, object] = {
+            "scope": "retained_window",
+            "status": summary.recent_results_status,
+            "valid": summary.recent_results_snapshot_valid,
+        }
+        if summary.recent_results_snapshot_valid:
+            recent_window.update(
+                {
+                    "capacity": summary.recent_results_capacity,
+                    "total_games": summary.recent_results_total_games,
+                    "retained_count": summary.recent_results_retained_count,
+                    "result_category_counts": [
+                        [name, count] for name, count in summary.recent_results_category_counts
+                    ],
+                }
+            )
+        payload["recent_results_window"] = recent_window
     if validated_token is not None:
         payload["run_token"] = validated_token
     try:
@@ -487,6 +585,41 @@ def _validate_v5_aggregates(summary: RunnerSummary) -> None:
     _validate_pairs(summary.diagnostics, _AUDIT_DIAGNOSTICS)
     if sum(count for _, count in summary.finished_categories) != summary.finished_seen:
         raise ValueError("invalid_audit_summary")
+
+
+def _validate_recent_results(summary: RunnerSummary) -> None:
+    if summary.recent_results_status not in {"disabled", "ok", "failed"}:
+        raise ValueError("invalid_audit_summary")
+    if type(summary.recent_results_snapshot_valid) is not bool:
+        raise ValueError("invalid_audit_summary")
+    if summary.recent_results_status == "disabled":
+        if (
+            summary.recent_results_capacity != 0
+            or summary.recent_results_total_games != 0
+            or summary.recent_results_retained_count != 0
+            or summary.recent_results_category_counts
+            or not summary.recent_results_snapshot_valid
+        ):
+            raise ValueError("invalid_audit_summary")
+        return
+    if not summary.recent_results_snapshot_valid:
+        if summary.recent_results_category_counts:
+            raise ValueError("invalid_audit_summary")
+        return
+    if (
+        type(summary.recent_results_capacity) is not int
+        or summary.recent_results_capacity <= 0
+        or type(summary.recent_results_total_games) is not int
+        or summary.recent_results_total_games < 0
+        or type(summary.recent_results_retained_count) is not int
+        or not 0 <= summary.recent_results_retained_count <= summary.recent_results_capacity
+        or summary.recent_results_total_games < summary.recent_results_retained_count
+    ):
+        raise ValueError("invalid_audit_summary")
+    _validate_pairs(summary.recent_results_category_counts, RECENT_RESULT_CATEGORIES)
+    if sum(count for _, count in summary.recent_results_category_counts) != summary.recent_results_retained_count:
+        if summary.recent_results_retained_count != 0 or summary.recent_results_category_counts:
+            raise ValueError("invalid_audit_summary")
 
 
 _AUDIT_DIAGNOSTICS = frozenset(

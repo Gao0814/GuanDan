@@ -5,9 +5,11 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from integrations.botzone.connector import MockConnector
+from integrations.botzone.connector import ConnectorCycle
 from integrations.botzone.http_transport import TransportError
 from integrations.botzone.models import DealRequest
 from integrations.botzone.runner import ForegroundRunner, build_foreground_runner
+from integrations.botzone.result_observability import ResultObservabilitySnapshot
 from integrations.botzone.runtime_config import RuntimeConfig, load_runtime_config
 from integrations.botzone.session import HandlerResult, SessionStore
 
@@ -43,6 +45,83 @@ class _Transport:
 
 
 class BotzoneRunnerTests(unittest.TestCase):
+    def test_continuous_mode_retries_network_failure_survives_idle_and_does_not_stop_at_ten(self) -> None:
+        class _ContinuousConnector:
+            def __init__(self) -> None:
+                self.remaining = [
+                    ConnectorCycle(True, 0, 0, 0, 0, 0, (("transport_timeout", 1),), transport_timeouts=1),
+                    ConnectorCycle(
+                        True,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        (("transport_failure", 1),),
+                        transport_failure_categories=(("network_error", 1),),
+                    ),
+                ]
+                self.remaining.extend(
+                    ConnectorCycle(True, 0, 0, 0, 1, 1, (), finished_categories=(("qualified", 1),))
+                    for _ in range(10)
+                )
+                self.remaining.extend(
+                    (
+                        ConnectorCycle(True, 0, 0, 0, 0, 0, (("transport_timeout", 1),), transport_timeouts=1),
+                        KeyboardInterrupt(),
+                    )
+                )
+                self.finished = 0
+
+            def cycle(self) -> ConnectorCycle:
+                outcome = self.remaining.pop(0)
+                if isinstance(outcome, BaseException):
+                    raise outcome
+                self.finished += outcome.finished_qualified
+                return outcome
+
+            def result_observability_snapshot(self) -> ResultObservabilitySnapshot:
+                count = self.finished
+                categories = (("local_team_win", count),) if count else ()
+                buckets = (("score_1", count),) if count else ()
+                return ResultObservabilitySnapshot(categories, count, buckets)
+
+        connector = _ContinuousConnector()
+        sleeps: list[float] = []
+        summary = ForegroundRunner(
+            connector,  # type: ignore[arg-type]
+            max_consecutive_failures=1,
+            backoff_seconds=2,
+            sleep=sleeps.append,
+        ).run(
+            max_cycles=None,
+            max_wall_seconds=None,
+            stop_after_finished=None,
+            retry_network_failures=True,
+        )
+
+        self.assertEqual(summary.stopped, "interrupted")
+        self.assertEqual(summary.finished_qualified, 10)
+        self.assertEqual(summary.transport_timeouts, 2)
+        self.assertEqual(summary.transport_failures, 1)
+        self.assertEqual(sleeps, [2])
+
+    def test_continuous_mode_stops_on_nonretryable_transport_category(self) -> None:
+        with TemporaryDirectory() as root:
+            transport = _Transport([TransportError("http_error")])
+            summary = ForegroundRunner(
+                MockConnector(SessionStore(root), transport, lambda _: HandlerResult(b"[]")),
+                max_consecutive_failures=1,
+                backoff_seconds=1,
+                sleep=lambda _: self.fail("nonretryable transport failures must not retry"),
+            ).run(
+                max_cycles=None,
+                max_wall_seconds=None,
+                stop_after_finished=None,
+                retry_network_failures=True,
+            )
+        self.assertEqual(summary.stopped, "transport_failure")
+
     def test_failure_backoff_resets_after_success_and_stops_at_cycle_limit(self) -> None:
         with TemporaryDirectory() as root:
             transport = _Transport([RuntimeError("offline"), b"0 0\n", RuntimeError("offline"), b"0 0\n"])

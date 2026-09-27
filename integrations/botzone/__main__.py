@@ -6,6 +6,7 @@ import argparse
 from collections.abc import Mapping
 import os
 from pathlib import Path
+import stat
 import sys
 
 from .agent_runtime import prepare_agent_factory
@@ -121,6 +122,46 @@ def _game_results_path(
     return target
 
 
+def _recent_results_path(
+    value: str | None,
+    *,
+    recent_results_capacity: int | None,
+    state_directory: Path,
+    audit_file: str | None,
+    history_file: Path | None,
+    decision_trace_file: Path | None,
+    game_results_file: Path | None,
+) -> Path | None:
+    if value is None:
+        if recent_results_capacity is not None:
+            raise ValueError("invalid_recent_results_path")
+        return None
+    if type(recent_results_capacity) is not int or recent_results_capacity <= 0:
+        raise ValueError("invalid_recent_results_capacity")
+    candidate = Path(value)
+    if not candidate.is_absolute() or not os.path.lexists(candidate):
+        raise ValueError("invalid_recent_results_path")
+    try:
+        info = candidate.lstat()
+        target = candidate.resolve(strict=True)
+    except OSError:
+        raise ValueError("invalid_recent_results_path") from None
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & reparse_flag):
+        raise ValueError("invalid_recent_results_path")
+    project_root = Path(__file__).resolve().parents[2]
+    audit_target = Path(audit_file).resolve() if audit_file is not None else None
+    others = (audit_target, history_file, decision_trace_file, game_results_file)
+    if (
+        os.path.normcase(os.path.abspath(candidate)) != os.path.normcase(str(target))
+        or target.is_relative_to(project_root)
+        or target.is_relative_to(state_directory.resolve())
+        or any(_paths_overlap(target, other) for other in others)
+    ):
+        raise ValueError("invalid_recent_results_path")
+    return target
+
+
 def _configuration_output(*, preflight_only: bool, stage: str, error: BaseException) -> str:
     """Return a fixed public category without exposing exception text."""
 
@@ -155,13 +196,16 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
         help="table turn limit used to validate the decision budget's one-second gap",
     )
     parser.add_argument("--agent", choices=("rule", "deepseek", "conditional_pressure_pass"), default="rule")
-    parser.add_argument("--max-cycles", type=int, default=100)
-    parser.add_argument("--max-wall-seconds", type=int, default=600)
-    parser.add_argument("--stop-after-finished", type=int, default=1)
+    parser.add_argument("--max-cycles", type=int)
+    parser.add_argument("--max-wall-seconds", type=int)
+    parser.add_argument("--stop-after-finished", type=int)
+    parser.add_argument("--continuous", action="store_true", help="poll until interruption, explicit limit, or fixed-category failure")
     parser.add_argument("--audit-file")
     parser.add_argument("--history-file", help="optional UTF-8 connector-observed history artifact")
     parser.add_argument("--decision-trace-file", help="optional acknowledged-local-decision JSON artifact")
     parser.add_argument("--game-results-file", help="optional low-sensitivity per-finished-game JSONL artifact")
+    parser.add_argument("--recent-results-file", help="managed rolling results state file")
+    parser.add_argument("--recent-results-capacity", type=int, help="number of newest result records to retain")
     parser.add_argument("--run-token")
     parser.add_argument("--preflight-only", action="store_true", help="validate configuration and storage without polling")
     parser.add_argument(
@@ -219,6 +263,15 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             history_file=history_file,
             decision_trace_file=decision_trace_file,
         )
+        recent_results_file = _recent_results_path(
+            arguments.recent_results_file,
+            recent_results_capacity=arguments.recent_results_capacity,
+            state_directory=config.state_directory,
+            audit_file=arguments.audit_file,
+            history_file=history_file,
+            decision_trace_file=decision_trace_file,
+            game_results_file=game_results_file,
+        )
         if decision_trace_file is not None and decision_trace_file.exists():
             raise ValueError("decision_trace_output_exists")
         runner = build_foreground_runner(
@@ -234,12 +287,22 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             history_file=history_file,
             decision_trace_file=decision_trace_file,
             game_results_file=game_results_file,
+            recent_results_file=recent_results_file,
+            recent_results_capacity=arguments.recent_results_capacity if recent_results_file is not None else None,
             stage_trace=stage_trace,
         )
+        max_cycles = arguments.max_cycles if arguments.continuous or arguments.max_cycles is not None else 100
+        max_wall_seconds = arguments.max_wall_seconds if arguments.continuous or arguments.max_wall_seconds is not None else 600
+        stop_after_finished = (
+            arguments.stop_after_finished
+            if arguments.continuous or arguments.stop_after_finished is not None
+            else 1
+        )
         summary = runner.run(
-            max_cycles=arguments.max_cycles,
-            max_wall_seconds=arguments.max_wall_seconds,
-            stop_after_finished=arguments.stop_after_finished,
+            max_cycles=max_cycles,
+            max_wall_seconds=max_wall_seconds,
+            stop_after_finished=stop_after_finished,
+            retry_network_failures=arguments.continuous,
         )
         exit_code = exit_code_for(summary)
         if arguments.audit_file is not None:

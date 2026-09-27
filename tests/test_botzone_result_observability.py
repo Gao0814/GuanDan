@@ -83,12 +83,17 @@ class BotzoneResultObservabilityTests(unittest.TestCase):
             with self.subTest(offender=offender):
                 self.assertEqual(classify_finished_score(0, tuple(scores)), ("platform_error", None))
 
+    def test_symmetric_positive_team_scores_are_draws(self) -> None:
+        for local_seat in range(4):
+            for score in (1, 2, 3):
+                with self.subTest(local_seat=local_seat, score=score):
+                    self.assertEqual(classify_finished_score(local_seat, (score,) * 4), ("draw", None))
+
     def test_malformed_scores_and_non_strict_values_fail_closed(self) -> None:
         malformed = (
             (True, (0, 1, 0, 1)),
             (0, (0, 1, 0)),
             (0, (0, 1, 0, True)),
-            (0, (1, 1, 1, 1)),
             (0, (0, 0, 0, 0)),
             (0, (1, 1, 2, 2)),
             (0, (-2, 0, 0, 1)),
@@ -104,17 +109,20 @@ class BotzoneResultObservabilityTests(unittest.TestCase):
         recorder.record_qualified_finished(1, _normal_scores(1, False, 2))
         recorder.record_qualified_finished(2, (-2, 1, 0, 1))
         recorder.record_qualified_finished(0, (0, 0, 0, 0))
+        recorder.record_qualified_finished(0, (1, 1, 1, 1))
         snapshot = recorder.snapshot()
         self.assertEqual(
             snapshot.to_json(),
             {
                 "result_category_counts": [
+                    ["draw", 1],
                     ["invalid_score_shape", 1],
                     ["local_team_loss", 1],
                     ["local_team_win", 1],
                     ["platform_error", 1],
                 ],
                 "normal_result_count": 2,
+                "draw_result_count": 1,
                 "local_team_score_counts": [["score_0", 1], ["score_3", 1]],
             },
         )

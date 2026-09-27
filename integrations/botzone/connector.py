@@ -192,8 +192,23 @@ class MockConnector:
         poll_outcome = "finished" if batch.finished else ("payload" if batch.requests else "idle")
         self._record_stage("poll_exit", poll_outcome)
 
+        if self._game_result_recorder is not None:
+            prepare_poll = getattr(self._game_result_recorder, "prepare_poll", None)
+            if callable(prepare_poll):
+                try:
+                    prepare_poll({row.match_id for row in batch.finished})
+                except Exception:
+                    self._game_result_recorder.failed = True
+
         prepared = 0
         for request in batch.requests:
+            if isinstance(request.stage, DealRequest) and self._game_result_recorder is not None:
+                begin_game = getattr(self._game_result_recorder, "begin_game", None)
+                if callable(begin_game):
+                    try:
+                        begin_game(request.match_id)
+                    except Exception:
+                        self._game_result_recorder.failed = True
             outcome = self._process_request(request)
             diagnostics.update(outcome[1])
             diagnostic_details.update(outcome[2])
@@ -203,6 +218,7 @@ class MockConnector:
         finished_categories: Counter[str] = Counter()
         for row in batch.finished:
             category = _finished_category(row.player_count)
+            qualified_result: str | None = None
             self._record_finished_history(row)
             self._record_finished_decision_trace(row)
             try:
@@ -226,7 +242,19 @@ class MockConnector:
                 if self._game_result_recorder is not None:
                     try:
                         result_category, _ = classify_finished_score(row.local_player_id, row.scores)
-                        self._game_result_recorder.record(result_category)
+                        record_finished = getattr(self._game_result_recorder, "record_finished", None)
+                        if callable(record_finished):
+                            record_finished(result_category, row.match_id)
+                        else:
+                            self._game_result_recorder.record(result_category)
+                        qualified_result = result_category
+                    except Exception:
+                        self._game_result_recorder.failed = True
+            if self._game_result_recorder is not None and qualified_result is None:
+                finish_unconfirmed = getattr(self._game_result_recorder, "finish_unconfirmed", None)
+                if callable(finish_unconfirmed):
+                    try:
+                        finish_unconfirmed(row.match_id)
                     except Exception:
                         self._game_result_recorder.failed = True
             self._record_stage("finished", category)
@@ -238,6 +266,13 @@ class MockConnector:
                         release_match(row.match_id)
                 except Exception:
                     diagnostics["handler_lifecycle_failure"] += 1
+        if self._game_result_recorder is not None:
+            finish_poll = getattr(self._game_result_recorder, "finish_poll", None)
+            if callable(finish_poll):
+                try:
+                    finish_poll()
+                except Exception:
+                    self._game_result_recorder.failed = True
         return _cycle(
             True,
             len(headers),
@@ -263,6 +298,19 @@ class MockConnector:
     @property
     def game_results_recorded(self) -> int:
         return 0 if self._game_result_recorder is None else self._game_result_recorder.recorded_count
+
+    @property
+    def recent_results_status(self) -> str:
+        if self._game_result_recorder is None:
+            return "disabled"
+        status = getattr(self._game_result_recorder, "recent_status", "disabled")
+        return status if status in {"ok", "failed"} else "failed"
+
+    def recent_results_snapshot(self) -> object | None:
+        if self._game_result_recorder is None:
+            return None
+        snapshot = getattr(self._game_result_recorder, "snapshot", None)
+        return snapshot() if callable(snapshot) else None
 
     def close_game_results(self) -> None:
         if self._game_result_recorder is None:
