@@ -13,6 +13,7 @@ from integrations.botzone.game_results import GAME_RESULT_SCHEMA
 from integrations.botzone.manual_batch import (
     BatchLaunchError,
     build_argument_parser,
+    main,
     _read_jsonl_results,
     run_batch,
 )
@@ -145,6 +146,7 @@ class BotzoneManualBatchTests(unittest.TestCase):
         self.assertEqual(outcome.confirmed_finished, 3)
         self.assertEqual(outcome.recorded_games, 3)
         self.assertEqual(outcome.result_counts, (("local_team_loss", 1), ("local_team_win", 1), ("platform_error", 1)))
+        self.assertTrue(any(message.startswith("batch_result category=configured_limit_reached exit=6") for message in messages))
         self.assertEqual(_option(calls[2][0], "--stop-after-finished"), "10")
         self.assertEqual(_option(calls[2][0], "--max-cycles"), "10000")
         self.assertEqual(_option(calls[2][0], "--max-wall-seconds"), "36000")
@@ -168,6 +170,7 @@ class BotzoneManualBatchTests(unittest.TestCase):
             workspace = base / "workspace"
             workspace.mkdir()
             runtime: list[list[str]] = []
+            messages: list[str] = []
 
             def fake_process(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
                 if argv[0] == "powershell.exe":
@@ -191,7 +194,7 @@ class BotzoneManualBatchTests(unittest.TestCase):
                 workspace_root=workspace,
                 repository_root=base,
                 process_runner=fake_process,
-                announce=lambda _message: None,
+                announce=messages.append,
             )
 
         self.assertEqual(len(runtime), 1)
@@ -201,6 +204,8 @@ class BotzoneManualBatchTests(unittest.TestCase):
         self.assertEqual(_option(runtime[0], "--decision-timeout-seconds"), "119")
         self.assertEqual(_option(runtime[0], "--table-timeout-seconds"), "120")
         self.assertEqual(outcome.game_results_status, "complete")
+        self.assertEqual(outcome.category, "target_reached")
+        self.assertTrue(any(message.startswith("batch_result category=target_reached exit=0") for message in messages))
 
     def test_manual_stop_preserves_already_recorded_result(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -241,6 +246,7 @@ class BotzoneManualBatchTests(unittest.TestCase):
         self.assertEqual(outcome.confirmed_finished, 1)
         self.assertIn('"result":"platform_error"', recorded)
         self.assertTrue(batch_retained)
+        self.assertEqual(outcome.category, "user_interrupted")
 
     def test_preflight_failure_uses_fixed_category_and_does_not_touch_old_files(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -258,20 +264,25 @@ class BotzoneManualBatchTests(unittest.TestCase):
                     return subprocess.CompletedProcess(argv, 0, "connector_absent\n", "")
                 return subprocess.CompletedProcess(argv, 2, "private output", "private error")
 
-            with self.assertRaises(BatchLaunchError) as raised:
-                run_batch(
+            messages: list[str] = []
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                exit_code = main(
+                    [],
+                    process_runner=fake_process,
+                    announce=messages.append,
                     workspace_root=workspace,
                     repository_root=base,
-                    process_runner=fake_process,
-                    announce=lambda _message: None,
                 )
 
             batch_dirs = [path for path in workspace.iterdir() if path.is_dir()]
             sentinel_after = sentinel.read_text(encoding="utf-8")
             streams_created = (batch_dirs[0] / "streams" / "stdout.txt").exists()
 
-        self.assertEqual(raised.exception.category, "preflight_failed")
-        self.assertNotIn("private", str(raised.exception))
+        self.assertEqual(exit_code, 2)
+        self.assertIn("batch_error category=preflight_failed exit=2", stderr.getvalue())
+        self.assertIn(str(batch_dirs[0]), stderr.getvalue())
+        self.assertNotIn("private", stderr.getvalue())
         self.assertEqual(calls, 2)
         self.assertEqual(sentinel_after, "keep")
         self.assertEqual(len(batch_dirs), 1)
@@ -291,18 +302,148 @@ class BotzoneManualBatchTests(unittest.TestCase):
                 calls += 1
                 return subprocess.CompletedProcess(argv, 0, "connector_running\n", "")
 
-            with self.assertRaises(BatchLaunchError) as raised:
-                run_batch(
-                    workspace_root=workspace,
-                    repository_root=base,
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                exit_code = main(
+                    [],
                     process_runner=fake_process,
                     announce=lambda _message: None,
+                    workspace_root=workspace,
+                    repository_root=base,
                 )
             entries = list(workspace.iterdir())
 
-        self.assertEqual(raised.exception.category, "connector_already_running")
+        self.assertEqual(exit_code, 2)
+        self.assertIn("batch_error category=connector_already_running exit=2", stderr.getvalue())
         self.assertEqual(calls, 1)
         self.assertEqual(entries, [sentinel])
+
+    def test_process_probe_failure_is_classified_without_leaking_output_or_creating_a_batch(self) -> None:
+        with TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            workspace = base / "workspace"
+            workspace.mkdir()
+            old_evidence = workspace / "old.json"
+            old_evidence.write_text("keep", encoding="utf-8")
+
+            def failed_probe(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                return subprocess.CompletedProcess(argv, 5, "private url", "private error")
+
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                exit_code = main(
+                    [],
+                    process_runner=failed_probe,
+                    announce=lambda _message: None,
+                    workspace_root=workspace,
+                    repository_root=base,
+                )
+            entries = list(workspace.iterdir())
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("batch_error category=connector_status_unavailable exit=2", stderr.getvalue())
+        self.assertNotIn("private", stderr.getvalue())
+        self.assertEqual(entries, [old_evidence])
+
+    def test_workspace_prepare_failure_has_a_fixed_category(self) -> None:
+        with TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            workspace = base / "missing-parent" / "workspace"
+            calls = 0
+
+            def fake_process(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                nonlocal calls
+                calls += 1
+                return subprocess.CompletedProcess(argv, 0, "connector_absent\n", "")
+
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                exit_code = main(
+                    [],
+                    process_runner=fake_process,
+                    announce=lambda _message: None,
+                    workspace_root=workspace,
+                    repository_root=base,
+                )
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("batch_error category=workspace_unavailable exit=2", stderr.getvalue())
+        self.assertEqual(calls, 1)
+        self.assertFalse(workspace.parent.exists())
+
+    def test_runtime_early_exit_reports_fixed_category_and_preserves_process_exit(self) -> None:
+        for output, return_code, category in (
+            ("configuration_error\n", 2, "connector_configuration_error"),
+            ("", 9, "connector_early_exit"),
+        ):
+            with self.subTest(category=category), TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                workspace = base / "workspace"
+                workspace.mkdir()
+
+                def fake_process(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                    if argv[0] == "powershell.exe":
+                        return subprocess.CompletedProcess(argv, 0, "connector_absent\n", "")
+                    if "--preflight-only" in argv:
+                        return subprocess.CompletedProcess(argv, 0, "preflight_ready\n", "")
+                    kwargs["stdout"].write(output)  # type: ignore[attr-defined]
+                    kwargs["stderr"].write("private runtime detail")  # type: ignore[attr-defined]
+                    return subprocess.CompletedProcess(argv, return_code, "", "")
+
+                messages: list[str] = []
+                outcome = run_batch(
+                    workspace_root=workspace,
+                    repository_root=base,
+                    process_runner=fake_process,
+                    announce=messages.append,
+                )
+
+            self.assertEqual(outcome.category, category)
+            self.assertEqual(outcome.exit_code, return_code)
+            self.assertIsNone(outcome.confirmed_finished)
+            self.assertEqual(outcome.game_results_status, "incomplete")
+            self.assertTrue(any(message.startswith(f"batch_result category={category} exit={return_code}") for message in messages))
+            self.assertNotIn("private runtime detail", "\n".join(messages))
+
+    def test_keyboard_interrupt_during_foreground_runtime_is_visible_and_returns_130(self) -> None:
+        with TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            workspace = base / "workspace"
+            workspace.mkdir()
+
+            def fake_process(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                if argv[0] == "powershell.exe":
+                    return subprocess.CompletedProcess(argv, 0, "connector_absent\n", "")
+                if "--preflight-only" in argv:
+                    return subprocess.CompletedProcess(argv, 0, "preflight_ready\n", "")
+                result_path = Path(_option(argv, "--game-results-file"))
+                result_path.write_text(
+                    json.dumps(
+                        {"game_no": 1, "result": "local_team_win", "schema": GAME_RESULT_SCHEMA, "version": 1},
+                        separators=(",", ":"),
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                raise KeyboardInterrupt
+
+            messages: list[str] = []
+            batch_retained = False
+            outcome = run_batch(
+                games=2,
+                workspace_root=workspace,
+                repository_root=base,
+                process_runner=fake_process,
+                announce=messages.append,
+            )
+            batch_retained = outcome.batch_directory.exists()
+
+        self.assertEqual(outcome.category, "user_interrupted")
+        self.assertEqual(outcome.exit_code, 130)
+        self.assertEqual(outcome.recorded_games, 1)
+        self.assertIsNone(outcome.confirmed_finished)
+        self.assertTrue(batch_retained)
+        self.assertTrue(any("confirmed_finished=unknown/2" in message for message in messages))
 
     def test_incomplete_result_recording_reports_the_partial_count(self) -> None:
         with TemporaryDirectory() as temporary:

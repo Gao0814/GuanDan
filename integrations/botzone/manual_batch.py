@@ -55,11 +55,18 @@ _CONNECTOR_SUMMARY = re.compile(
 class BatchLaunchError(ValueError):
     """A fixed, low-sensitivity launcher failure with an optional batch path."""
 
-    __slots__ = ("category", "batch_directory")
+    __slots__ = ("category", "batch_directory", "exit_code")
 
-    def __init__(self, category: str, batch_directory: Path | None = None) -> None:
+    def __init__(
+        self,
+        category: str,
+        batch_directory: Path | None = None,
+        *,
+        exit_code: int = 2,
+    ) -> None:
         self.category = category if re.fullmatch(r"[a-z_]+", category) else "launcher_failed"
         self.batch_directory = batch_directory
+        self.exit_code = exit_code if type(exit_code) is int else 2
         super().__init__(self.category)
 
 
@@ -79,10 +86,20 @@ class BatchOutcome:
     requested_games: int
     connector_exit_code: int
     stop_reason: str
-    confirmed_finished: int
+    confirmed_finished: int | None
     recorded_games: int
     result_counts: tuple[tuple[str, int], ...]
     game_results_status: str
+
+    @property
+    def category(self) -> str:
+        if self.stop_reason == "finished_target":
+            return "target_reached" if self.game_results_status == "complete" else "target_evidence_incomplete"
+        if self.stop_reason == "interrupted":
+            return "user_interrupted"
+        if self.stop_reason in {"cycle_limit_unfinished", "wall_limit_unfinished"}:
+            return "configured_limit_reached"
+        return self.stop_reason
 
     @property
     def exit_code(self) -> int:
@@ -177,6 +194,8 @@ def create_batch_workspace(workspace_root: Path = DEFAULT_WORKSPACE_ROOT) -> Bat
             _assert_inside(batch_root, directory)
     except BatchLaunchError as exc:
         raise BatchLaunchError(exc.category, batch_root) from None
+    except KeyboardInterrupt:
+        raise BatchLaunchError("user_interrupted", batch_root, exit_code=130) from None
     except OSError:
         raise BatchLaunchError("workspace_prepare_failed", batch_root) from None
     return paths
@@ -252,7 +271,7 @@ def _read_jsonl_results(path: Path) -> tuple[tuple[int, str], ...] | None:
         if _is_reparse_point(info) or not stat.S_ISREG(info.st_mode):
             return None
         lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
+    except (OSError, UnicodeError):
         return None
     rows: list[tuple[int, str]] = []
     for expected_no, line in enumerate(lines, start=1):
@@ -280,8 +299,23 @@ def _inspect_batch(
     paths: BatchPaths,
     requested_games: int,
     process_exit: int,
-) -> tuple[str, str, int, int, tuple[tuple[str, int], ...]]:
+    *,
+    interrupted: bool = False,
+) -> tuple[str, str, int | None, int, tuple[tuple[str, int], ...]]:
     """Compare this batch's result lines, aggregate audit, and fixed CLI footer."""
+
+    rows = _read_jsonl_results(paths.results)
+    recorded = 0 if rows is None else len(rows)
+    row_counts = Counter(result for _, result in rows) if rows is not None else Counter()
+    try:
+        stream_info = paths.stdout.lstat()
+        if _is_reparse_point(stream_info) or not stat.S_ISREG(stream_info.st_mode):
+            raise OSError
+        output = paths.stdout.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        output = ""
+    output_lines = set(output.splitlines())
+    summaries = list(_CONNECTOR_SUMMARY.finditer(output))
 
     try:
         audit_path = paths.audit / "completion-audit.json"
@@ -318,20 +352,17 @@ def _inspect_batch(
         if sum(counts.values()) != finished:
             raise ValueError
     except (OSError, ValueError, TypeError):
-        return "evidence_unavailable", "incomplete", 0, 0, ()
+        if interrupted:
+            stop_reason = "interrupted"
+        elif "configuration_error" in output_lines:
+            stop_reason = "connector_configuration_error"
+        elif not summaries:
+            stop_reason = "connector_early_exit"
+        else:
+            stop_reason = "runtime_evidence_unavailable"
+        return stop_reason, "incomplete", None, recorded, tuple(sorted(row_counts.items()))
 
-    rows = _read_jsonl_results(paths.results)
-    try:
-        stream_info = paths.stdout.lstat()
-        if _is_reparse_point(stream_info) or not stat.S_ISREG(stream_info.st_mode):
-            raise OSError
-        output = paths.stdout.read_text(encoding="utf-8")
-    except OSError:
-        output = ""
-    summaries = list(_CONNECTOR_SUMMARY.finditer(output))
     if rows is None or len(summaries) != 1:
-        recorded = 0 if rows is None else len(rows)
-        row_counts = Counter(result for _, result in rows) if rows is not None else counts
         return stop_reason, "incomplete", finished, recorded, tuple(sorted(row_counts.items()))
     summary = summaries[0]
     summary_status = summary.group(3)
@@ -389,6 +420,8 @@ def run_batch(
             encoding="utf-8",
             check=False,
         )
+    except KeyboardInterrupt:
+        raise BatchLaunchError("user_interrupted", exit_code=130) from None
     except Exception:
         raise BatchLaunchError("connector_status_unavailable") from None
     if process_probe.returncode != 0 or process_probe.stdout.splitlines() not in (["connector_absent"], ["connector_running"]):
@@ -411,6 +444,8 @@ def run_batch(
             encoding="utf-8",
             check=False,
         )
+    except KeyboardInterrupt:
+        raise BatchLaunchError("user_interrupted", paths.root, exit_code=130) from None
     except Exception:
         raise BatchLaunchError("preflight_failed", paths.root) from None
     if preflight.returncode != 0 or preflight.stdout.splitlines() != ["preflight_ready"]:
@@ -429,6 +464,7 @@ def run_batch(
     runtime_argv[0] = executable
     announce("零网络配置预检通过。连接器将在前台连续运行；请等页面显示“已连接”后手动逐局建桌并开始。")
     announce("达到局数上限后自动退出；需要提前停止时按 Ctrl+C，已产生的证据会保留。")
+    interrupted = False
     try:
         audit_target = paths.audit / "completion-audit.json"
         expected_outputs = (audit_target, paths.results, paths.stdout, paths.stderr)
@@ -439,15 +475,22 @@ def run_batch(
         with paths.stdout.open("x", encoding="utf-8", newline="\n") as stdout, paths.stderr.open(
             "x", encoding="utf-8", newline="\n"
         ) as stderr:
-            process = runner(
-                runtime_argv,
-                cwd=repository_root,
-                env=environment,
-                stdout=stdout,
-                stderr=stderr,
-                check=False,
-            )
+            try:
+                process = runner(
+                    runtime_argv,
+                    cwd=repository_root,
+                    env=environment,
+                    stdout=stdout,
+                    stderr=stderr,
+                    check=False,
+                )
+            except KeyboardInterrupt:
+                interrupted = True
+                process_code = 130
+            except Exception:
+                raise BatchLaunchError("connector_launch_failed", paths.root) from None
     except KeyboardInterrupt:
+        interrupted = True
         process_code = 130
     except BatchLaunchError:
         raise
@@ -458,19 +501,36 @@ def run_batch(
     except Exception:
         raise BatchLaunchError("connector_launch_failed", paths.root) from None
     else:
-        process_code = process.returncode if type(process.returncode) is int else 2
+        if not interrupted:
+            process_code = process.returncode if type(process.returncode) is int else 2
 
-    stop_reason, records_status, finished, result_count, result_counts = _inspect_batch(paths, games, process_code)
-    announce(
-        f"批次结束：connector_exit={process_code} stop={stop_reason} "
-        f"confirmed_finished={finished}/{games} game_results={records_status} "
-        f"recorded={result_count}。"
+    stop_reason, records_status, finished, result_count, result_counts = _inspect_batch(
+        paths,
+        games,
+        process_code,
+        interrupted=interrupted,
     )
-    announce("history.txt 与 decision-trace.json 已关闭；本批次保留逐局低敏结果、聚合 audit 和阶段 trace。")
-    return BatchOutcome(paths.root, games, process_code, stop_reason, finished, result_count, result_counts, records_status)
+    outcome = BatchOutcome(paths.root, games, process_code, stop_reason, finished, result_count, result_counts, records_status)
+    confirmed = "unknown" if outcome.confirmed_finished is None else str(outcome.confirmed_finished)
+    announce(
+        f"batch_result category={outcome.category} exit={outcome.exit_code} "
+        f"connector_exit={outcome.connector_exit_code} stop={outcome.stop_reason} "
+        f"confirmed_finished={confirmed}/{outcome.requested_games} "
+        f"game_results={outcome.game_results_status} recorded={outcome.recorded_games} "
+        f"batch_directory={outcome.batch_directory}"
+    )
+    announce("history.txt 与 decision-trace.json 未启用；保留逐局低敏结果、聚合 audit 和阶段 trace。")
+    return outcome
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    process_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    announce: Callable[[str], None] = print,
+    workspace_root: Path = DEFAULT_WORKSPACE_ROOT,
+    repository_root: Path = REPOSITORY_ROOT,
+) -> int:
     parser = build_argument_parser()
     try:
         arguments = parser.parse_args(argv)
@@ -481,14 +541,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             games=arguments.games,
             max_cycles=arguments.max_cycles,
             max_wall_seconds=arguments.max_wall_seconds,
+            workspace_root=workspace_root,
+            repository_root=repository_root,
+            process_runner=process_runner,
+            announce=announce,
         )
         return outcome.exit_code
     except BatchLaunchError as exc:
         batch_path = f" batch_directory={exc.batch_directory}" if exc.batch_directory is not None else ""
-        print(f"batch_error category={exc.category}{batch_path}", file=sys.stderr)
-        return 2
+        print(f"batch_error category={exc.category} exit={exc.exit_code}{batch_path}", file=sys.stderr)
+        return exc.exit_code
+    except KeyboardInterrupt:
+        print("batch_error category=user_interrupted exit=130", file=sys.stderr)
+        return 130
     except Exception:
-        print("batch_error category=launcher_failed", file=sys.stderr)
+        print("batch_error category=launcher_failed exit=2", file=sys.stderr)
         return 2
 
 

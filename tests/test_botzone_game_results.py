@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from integrations.botzone.game_results import (
     GameResultRecorder,
 )
 from integrations.botzone.models import DealRequest, PlayRequest
+from integrations.botzone.manual_batch import run_batch
 from integrations.botzone.result_observability import RESULT_CATEGORIES
 from integrations.botzone.runner import ForegroundRunner, exit_code_for, write_audit
 from integrations.botzone.session import HandlerContext, HandlerResult, PlayEffect, SessionStore
@@ -182,6 +184,126 @@ class BotzoneGameResultTests(unittest.TestCase):
         self.assertEqual([row["game_no"] for row in rows], [1, 2])
         self.assertEqual([row["result"] for row in rows], ["local_team_win", "platform_error"])
         self.assertEqual(sum(dict(summary.result_category_counts).values()), 2)
+
+    def test_single_runner_continues_through_idle_polls_between_two_finished_games(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result_path = root / "game-results.jsonl"
+            recorder = GameResultRecorder(result_path)
+            transport = _Transport(
+                [
+                    _poll(),
+                    _poll((("first-match", _deal(0)),)),
+                    _poll((("first-match", _play()),)),
+                    _poll(finished=(("first-match", 0, 4, (2, 0, 2, 0)),)),
+                    _poll(),
+                    _poll((("second-match", _deal(1)),)),
+                    _poll((("second-match", _play()),)),
+                    _poll(finished=(("second-match", 1, 4, (2, 0, 2, 0)),)),
+                ]
+            )
+            summary = ForegroundRunner(
+                MockConnector(SessionStore(root / "state"), transport, _handler, game_result_recorder=recorder),
+                max_consecutive_failures=1,
+                backoff_seconds=0,
+                sleep=lambda _seconds: self.fail("idle polls must keep the same runner active without backoff"),
+            ).run(max_cycles=10, stop_after_finished=2)
+            results = _rows(result_path)
+
+        self.assertEqual(summary.stopped, "finished_target")
+        self.assertEqual(summary.cycles, 8)
+        self.assertEqual(summary.finished_qualified, 2)
+        self.assertEqual(summary.game_results_recorded, 2)
+        self.assertEqual([row["game_no"] for row in results], [1, 2])
+        self.assertEqual([row["result"] for row in results], ["local_team_win", "local_team_loss"])
+
+    def test_one_batch_process_runs_the_same_connector_through_idle_and_two_games(self) -> None:
+        with TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            workspace = base / "BotzoneWorkspace"
+            workspace.mkdir()
+            old_evidence = workspace / "old-evidence.json"
+            old_evidence.write_text("keep", encoding="utf-8")
+            calls: list[list[str]] = []
+            runtime_summaries = []
+
+            def fake_process(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                calls.append(argv)
+                if argv[0] == "powershell.exe":
+                    return subprocess.CompletedProcess(argv, 0, "connector_absent\n", "")
+                if "--preflight-only" in argv:
+                    return subprocess.CompletedProcess(argv, 0, "preflight_ready\n", "")
+
+                def option(name: str) -> str:
+                    return argv[argv.index(name) + 1]
+
+                trace = StageTrace(kwargs["stdout"])  # type: ignore[arg-type]
+                connector = MockConnector(
+                    SessionStore(Path(option("--state-dir"))),
+                    _Transport(
+                        [
+                            _poll(),
+                            _poll((("first-match", _deal(0)),)),
+                            _poll((("first-match", _play()),)),
+                            _poll(finished=(("first-match", 0, 4, (2, 0, 2, 0)),)),
+                            _poll(),
+                            _poll((("second-match", _deal(1)),)),
+                            _poll((("second-match", _play()),)),
+                            _poll(finished=(("second-match", 1, 4, (2, 0, 2, 0)),)),
+                        ]
+                    ),
+                    _handler,
+                    game_result_recorder=GameResultRecorder(Path(option("--game-results-file"))),
+                    stage_trace=trace,
+                )
+                summary = ForegroundRunner(
+                    connector,
+                    max_consecutive_failures=1,
+                    backoff_seconds=0,
+                    sleep=lambda _seconds: self.fail("the idle interval must keep polling without a restart"),
+                    agent_mode="deepseek",
+                    run_token=option("--run-token"),
+                    stage_trace=trace,
+                ).run(
+                    max_cycles=int(option("--max-cycles")),
+                    max_wall_seconds=int(option("--max-wall-seconds")),
+                    stop_after_finished=int(option("--stop-after-finished")),
+                )
+                runtime_summaries.append(summary)
+                connector_exit = exit_code_for(summary)
+                write_audit(Path(option("--audit-file")), summary, connector_exit, run_token=option("--run-token"))
+                kwargs["stdout"].write(  # type: ignore[attr-defined]
+                    f"connector_finished cycles={summary.cycles} finished={summary.finished_seen} "
+                    f"history=disabled decision_trace=disabled game_results={summary.game_results_status} "
+                    f"game_results_recorded={summary.game_results_recorded} exit={connector_exit}\n"
+                )
+                return subprocess.CompletedProcess(argv, connector_exit, "", "")
+
+            messages: list[str] = []
+            outcome = run_batch(
+                games=2,
+                max_cycles=12,
+                max_wall_seconds=60,
+                workspace_root=workspace,
+                repository_root=base,
+                process_runner=fake_process,
+                announce=messages.append,
+            )
+            old_content = old_evidence.read_text(encoding="utf-8")
+            results = _rows(outcome.batch_directory / "game-results.jsonl")
+            trace_text = (outcome.batch_directory / "streams" / "stdout.txt").read_text(encoding="utf-8")
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sum("--preflight-only" not in argv and argv[0] != "powershell.exe" for argv in calls), 1)
+        self.assertEqual(len(runtime_summaries), 1)
+        self.assertEqual(runtime_summaries[0].cycles, 8)
+        self.assertEqual(runtime_summaries[0].stopped, "finished_target")
+        self.assertEqual(outcome.category, "target_reached")
+        self.assertEqual(outcome.confirmed_finished, 2)
+        self.assertEqual([row["game_no"] for row in results], [1, 2])
+        self.assertIn("response_acknowledged", trace_text)
+        self.assertTrue(any(message.startswith("batch_result category=target_reached exit=0") for message in messages))
+        self.assertEqual(old_content, "keep")
 
     def test_result_write_failure_is_reported_without_changing_acknowledgement(self) -> None:
         with TemporaryDirectory() as temporary:
