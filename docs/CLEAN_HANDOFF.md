@@ -1,5 +1,9 @@
 # Clean Project Handoff
 
+2026-09-27 最新交接：Coding 提交 `29b8027` 排除本机同次 venv Python 父进程，所有者确认 Botzone 已连接。人工一局中途终止，页面“等待重连”后恢复“已连接”，尚无阶段证据复审，不归因 120 秒倒计时、DeepSeek 或 connector。规划只读源码确认当前默认 `--games 10` 会在 10 个符合条件的完局后自动停机，`game-results.jsonl` 只追加，不会第 11 局覆盖第 1 局；无确认完局事件的异常局可能不进入逐局结果。所有者要持续运行、可调容量、仅保留最近 10 条逐局结果，已写成新的 `docs/NEXT_PROMPT.md` Coding 任务。当前批次仍在运行，规划未访问或改变其证据；新代码只在所有者下次启动后生效。
+
+以下“venv 自拦截修复”是本次连接确认前的交接快照，以本段为准。
+
 2026-09-27 最新交接：Coding 提交 `fe507d5` 将 connector 与启动器模块名分开，所有者新截图却显示 `batch_launcher_already_running exit=2`，Botzone 未连接。规划独立检查提交范围与 `git show --check`，复跑 `tests.test_botzone_manual_batch` 14 项通过。只读进程检查发现本机 `.venv` Python 有父、子两个 `python.exe`；安全 `-c` 模拟批次命令行并调用生产探测函数，复现 `batch_launcher_running`。当前 guard 只排除子 PID，故本次启动链自拦截是有证据的修复目标。`docs/NEXT_PROMPT.md` 已收窄为排除本次 venv 包装进程，同时继续阻止独立第二批次和真实 connector；Coding 禁网修后由所有者亲自验收页面连接。旧报错根因仍不反推，两个 workspace 旧证据未碰。
 
 以下“模块前缀误匹配”是本次新截图前的交接快照，以本段为准。

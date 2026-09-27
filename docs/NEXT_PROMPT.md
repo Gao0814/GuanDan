@@ -1,13 +1,19 @@
-# Coding Codex 执行 Prompt：修复 Windows venv 启动链自拦截
+# Coding Codex 执行 Prompt：连续连接并滚动保留最近 10 局结果
 
-## 已证实事实
+## 目标与当前行为
 
-`fe507d5` 已将真正 connector 与批次启动器的模块名分开；所有者重试仍未连接，截图现在显示 `batch_error category=batch_launcher_already_running exit=2`。规划只读核查发现，本机 `.venv\Scripts\python.exe` 启动时会出现父、子两个 `python.exe` 进程。`manual_batch.py` 的探测只排除 `os.getpid()`；在不运行 Botzone 的安全复现中，用同一 `.venv` Python 进程和形如 `-m integrations.botzone.manual_batch` 的命令行参数调用 `_connector_probe_argv(os.getpid())`，得到 `batch_launcher_running`。因此**当前启动链会误报另一个批次启动器**，与截图类别吻合。历史两次旧类别的确切进程身份仍未知，不需要先解决。
+所有者已亲自运行 `29b8027` 后的批次入口，Botzone 页面正常显示“已连接”。一局中途终止，页面曾从“等待重连”恢复为“已连接”；原因尚未核对，不能断言是页面 120 秒配置、DeepSeek 超时或 connector 断开。**不要访问或修改所有者当前仍在运行的批次证据**；本轮只做禁网代码与测试。当前已运行的进程不会自动加载新代码。
 
-## 本轮修复
+所有者明确要求：脚本启动一次后可连续打超过 10 局，默认只在逐局结果中保留**最近 10 局**；第 11 条确认结果写入后，最早的第 1 条退出窗口，窗口按时间保持第 2–11 条。`--games N` 改为可调整的保留容量，而不是第 N 局自动停止。只有所有者 Ctrl+C、真实故障或其显式设置的运行上限才结束 connector。当前代码相反：`--games 10` 传给 `--stop-after-finished`，runner 达到 10 个符合条件的完局就退出；`game-results.jsonl` 仅追加，无滚动覆盖。
 
-先读 `AGENTS.md`、相关代码/测试、`docs/PROJECT_STATUS.md` 顶部并查 Git status/diff/HEAD。仅在 `integrations/botzone/manual_batch.py` 的进程占用检查及直接相关测试中修复：识别并排除属于**本次启动**的 Windows venv Python 父子包装进程；独立的另一个批次启动器继续返回 `batch_launcher_already_running`，真正的 `-m integrations.botzone` connector 继续返回 `connector_already_running`。不要删除整项占用检查、自动杀进程、改变 Botzone 连接配置或扩建日志。保留 `.cmd` 窗口行为、默认 10 局、旧证据隔离和现有动作/ACK 逻辑。
+## 实现边界
 
-用禁网进程级测试复现修前 `batch_launcher_running`、修后 `connector_absent`，并验证独立启动器与真正 connector 仍被拦截；可复用上述安全 `-c` 加额外命令行参数方式，**不得调用真实 `manual_batch` 主入口**。补跑相关单元测试和适用主规则回归，执行 `git diff --check`。测试不要启动真实 connector、Botzone、联网 preflight、浏览器或 DeepSeek 请求。
+先读 `AGENTS.md`、相关代码/tests、`docs/PROJECT_STATUS.md` 顶部，查 Git status/diff/HEAD。用最小必要修改调整 `manual_batch.py`、runner/逐局结果记录器及直接相关测试：
 
-只提交本轮自己的业务代码/tests，不改规划 docs、`.env`、两个 workspace 旧证据或封板。报告复现及修后结果、测试、commit 和最终 Git status。完成后由所有者亲自启动现有脚本并确认页面“已连接”；Coding 不代为执行现场。
+1. 单个前台 connector 在第 10 个符合条件的完局后继续 idle poll 和接收下一桌。默认不因按局数推导的 cycle/wall 上限自动退出；如保留显式 `--max-cycles`、`--max-wall-seconds`，只在所有者明确传入时生效，并报告上限退出。Ctrl+C 能结束并保留证据。不要改变模型、动作选择、ACK 或连接协议。
+2. `game-results.jsonl` 只保存最近 N 个**已确认、符合原记录条件的完局结果**，按实际局序排列，保留递增的真实 `game_no`，不把滚动后的窗口重编号为 1–N。第 11 局替换窗口中的第 1 局，不碰旧批次目录或当前正在运行的文件。保持低敏固定类别；写入失败仍不影响出牌/ACK，并如实报告记录不完整。
+3. 聚合 audit 可继续反映本批次累计完局数；批次结束校验要理解“累计数 > 最近 N 条”是正常滚动，不误报证据缺失。结果摘要明确区分累计完局数、当前保留条数和容量。现有 run-wide stage trace/stdout 保持可审计，**本任务的滚动范围是逐局结果文件**，不把旧 trace 当作单局牌谱。没有收到可确认完局事件的中途异常不能伪造为一条结果；其阶段记录仍保留供局后审计。
+
+禁网测试覆盖：连续 12 个确认完局时 connector 不因第 10 局退出、结果文件为第 3–12 局；自定义容量、少于容量、Ctrl+C、显式上限、写入失败和批次校验；旧批次证据不改。运行相关测试与适用主回归、`git diff --check`。不要启动真实 connector、Botzone、联网预检、浏览器或 DeepSeek。
+
+只提交本轮自有业务代码/tests，不改规划 docs、`.env`、封板或任何当前/旧 workspace 证据。报告新旧行为、测试、未解决的本次中途终止原因、commit 与最终 Git status。现场验证仍由所有者亲自启动下一批次完成。
