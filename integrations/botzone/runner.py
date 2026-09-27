@@ -20,6 +20,7 @@ from .connector import (
 )
 from .history import ConnectorObservedHistory
 from .decision_trace import ConnectorDecisionTrace
+from .game_results import GameResultRecorder
 from .agent_observability import AgentObservabilityRecorder, AgentObservabilitySnapshot
 from .agent_runtime import build_agent_factory
 from .play_adapter import NoTributeRuleBasedHandler
@@ -61,6 +62,8 @@ class RunnerSummary:
     result_observability_valid: bool = True
     history_status: str = "disabled"
     decision_trace_status: str = "disabled"
+    game_results_status: str = "disabled"
+    game_results_recorded: int = 0
 
 
 class ForegroundRunner:
@@ -192,6 +195,7 @@ class ForegroundRunner:
                     break
         except KeyboardInterrupt:
             stopped = "interrupted"
+        self._close_game_results()
         observability_valid = True
         try:
             snapshot = (
@@ -243,6 +247,8 @@ class ForegroundRunner:
             result_observability_valid,
             self._history_status(),
             self._decision_trace_status(),
+            self._game_results_status(qualified),
+            self._game_results_recorded(),
         )
         record_stage(self._stage_trace, "runner_exit", summary.stopped)
         return summary
@@ -254,6 +260,26 @@ class ForegroundRunner:
     def _decision_trace_status(self) -> str:
         status = getattr(self._connector, "decision_trace_status", "disabled")
         return status if status in {"disabled", "ok", "failed"} else "failed"
+
+    def _close_game_results(self) -> None:
+        close = getattr(self._connector, "close_game_results", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+    def _game_results_recorded(self) -> int:
+        value = getattr(self._connector, "game_results_recorded", 0)
+        return value if type(value) is int and value >= 0 else 0
+
+    def _game_results_status(self, qualified: int) -> str:
+        status = getattr(self._connector, "game_results_status", "disabled")
+        if status not in {"disabled", "ok", "failed"}:
+            return "failed"
+        if status == "ok" and self._game_results_recorded() != qualified:
+            return "failed"
+        return status
 
 
 def _has_transport_failure(cycle: ConnectorCycle) -> bool:
@@ -276,6 +302,7 @@ def build_foreground_runner(
     run_token: str | None = None,
     history_file: Path | str | None = None,
     decision_trace_file: Path | str | None = None,
+    game_results_file: Path | str | None = None,
     stage_trace: StageTraceSink | None = None,
 ) -> ForegroundRunner:
     observability = AgentObservabilityRecorder()
@@ -313,6 +340,7 @@ def build_foreground_runner(
         raise ValueError("invalid_agent_mode")
     recorder = ConnectorObservedHistory(history_file) if history_file is not None else None
     decision_trace_recorder = ConnectorDecisionTrace(decision_trace_file) if decision_trace_file is not None else None
+    game_result_recorder = GameResultRecorder(game_results_file) if game_results_file is not None else None
     connector = MockConnector(
         SessionStore(
             config.state_directory,
@@ -323,6 +351,7 @@ def build_foreground_runner(
         handler,
         history_recorder=recorder,
         decision_trace_recorder=decision_trace_recorder,
+        game_result_recorder=game_result_recorder,
         stage_trace=stage_trace,
         decision_timeout_seconds=getattr(config, "decision_timeout_seconds", None),
         clock=clock,

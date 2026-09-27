@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping
+import os
 from pathlib import Path
 import sys
 
@@ -87,6 +88,39 @@ def _decision_trace_path(
     return target
 
 
+def _game_results_path(
+    value: str | None,
+    *,
+    state_directory: Path,
+    audit_file: str | None,
+    history_file: Path | None,
+    decision_trace_file: Path | None,
+) -> Path | None:
+    """Validate the optional append-only batch result path."""
+
+    if value is None:
+        return None
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        raise ValueError("invalid_game_results_path")
+    if os.path.lexists(candidate):
+        raise ValueError("invalid_game_results_path")
+    target = candidate.resolve()
+    project_root = Path(__file__).resolve().parents[2]
+    audit_target = Path(audit_file).resolve() if audit_file is not None else None
+    if (
+        os.path.normcase(os.path.abspath(candidate)) != os.path.normcase(str(target))
+        or target.is_relative_to(project_root)
+        or target.is_relative_to(state_directory.resolve())
+        or _paths_overlap(target, audit_target)
+        or _paths_overlap(target, history_file)
+        or _paths_overlap(target, decision_trace_file)
+        or target.exists()
+    ):
+        raise ValueError("invalid_game_results_path")
+    return target
+
+
 def _configuration_output(*, preflight_only: bool, stage: str, error: BaseException) -> str:
     """Return a fixed public category without exposing exception text."""
 
@@ -127,6 +161,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     parser.add_argument("--audit-file")
     parser.add_argument("--history-file", help="optional UTF-8 connector-observed history artifact")
     parser.add_argument("--decision-trace-file", help="optional acknowledged-local-decision JSON artifact")
+    parser.add_argument("--game-results-file", help="optional low-sensitivity per-finished-game JSONL artifact")
     parser.add_argument("--run-token")
     parser.add_argument("--preflight-only", action="store_true", help="validate configuration and storage without polling")
     parser.add_argument(
@@ -177,6 +212,13 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             audit_file=arguments.audit_file,
             history_file=history_file,
         )
+        game_results_file = _game_results_path(
+            arguments.game_results_file,
+            state_directory=config.state_directory,
+            audit_file=arguments.audit_file,
+            history_file=history_file,
+            decision_trace_file=decision_trace_file,
+        )
         if decision_trace_file is not None and decision_trace_file.exists():
             raise ValueError("decision_trace_output_exists")
         runner = build_foreground_runner(
@@ -191,6 +233,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             run_token=run_token,
             history_file=history_file,
             decision_trace_file=decision_trace_file,
+            game_results_file=game_results_file,
             stage_trace=stage_trace,
         )
         summary = runner.run(
@@ -211,9 +254,20 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     print(
         f"connector_finished cycles={summary.cycles} finished={summary.finished_seen} "
         f"history={getattr(summary, 'history_status', 'disabled')} "
-        f"decision_trace={getattr(summary, 'decision_trace_status', 'disabled')} exit={exit_code}"
+        f"decision_trace={getattr(summary, 'decision_trace_status', 'disabled')}"
+        f"{_game_results_summary(summary)} exit={exit_code}"
     )
     return exit_code
+
+
+def _game_results_summary(summary: object) -> str:
+    status = getattr(summary, "game_results_status", "disabled")
+    if status not in {"ok", "failed"}:
+        return ""
+    count = getattr(summary, "game_results_recorded", 0)
+    if type(count) is not int or count < 0:
+        count = 0
+    return f" game_results={status} game_results_recorded={count}"
 
 
 if __name__ == "__main__":

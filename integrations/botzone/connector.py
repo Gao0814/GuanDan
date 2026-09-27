@@ -19,7 +19,9 @@ from .result_observability import (
     ResultObservabilityError,
     ResultObservabilityRecorder,
     ResultObservabilitySnapshot,
+    classify_finished_score,
 )
+from .game_results import GameResultRecorder
 from .session import HandlerContext, HandlerResult, PendingDelivery, SessionRecord, SessionStorageError, SessionStore
 from .stage_trace import StageTraceSink, record_stage
 
@@ -80,6 +82,7 @@ class MockConnector:
         stage_trace: StageTraceSink | None = None,
         decision_timeout_seconds: float | None = None,
         clock: Callable[[], float] = time.monotonic,
+        game_result_recorder: GameResultRecorder | None = None,
     ) -> None:
         self._store = store
         self._transport = transport
@@ -90,6 +93,7 @@ class MockConnector:
         self._result_observability_failed = False
         self._history_recorder = history_recorder
         self._decision_trace_recorder = decision_trace_recorder
+        self._game_result_recorder = game_result_recorder
         self._stage_trace = stage_trace
         self._decision_timeout_seconds = decision_timeout_seconds
         self._clock = clock
@@ -219,6 +223,12 @@ class MockConnector:
                     self._result_observability.record_qualified_finished(row.local_player_id, row.scores)
                 except Exception:
                     self._result_observability_failed = True
+                if self._game_result_recorder is not None:
+                    try:
+                        result_category, _ = classify_finished_score(row.local_player_id, row.scores)
+                        self._game_result_recorder.record(result_category)
+                    except Exception:
+                        self._game_result_recorder.failed = True
             self._record_stage("finished", category)
             finished_categories[category] += 1
             if cleaned:
@@ -245,6 +255,22 @@ class MockConnector:
         if self._result_observability_failed:
             raise ResultObservabilityError("observability_unavailable")
         return self._result_observability.snapshot()
+
+    @property
+    def game_results_status(self) -> str:
+        return "disabled" if self._game_result_recorder is None else self._game_result_recorder.status
+
+    @property
+    def game_results_recorded(self) -> int:
+        return 0 if self._game_result_recorder is None else self._game_result_recorder.recorded_count
+
+    def close_game_results(self) -> None:
+        if self._game_result_recorder is None:
+            return
+        try:
+            self._game_result_recorder.close()
+        except Exception:
+            self._game_result_recorder.failed = True
 
     def _process_request(self, request: PollRequest) -> tuple[int, Counter[str], Counter[str], Counter[str]]:
         diagnostics: Counter[str] = Counter()
