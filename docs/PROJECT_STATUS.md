@@ -1,5 +1,13 @@
 # 项目状态看板
 
+## 最新现场结果：venv 启动链自拦截可离线复现（2026-09-27）
+
+- `fe507d5` 提交了完整模块名匹配，所有者再次启动仍未连接；新截图类别为 `batch_launcher_already_running`、退出码 2，区别于旧 `connector_already_running`。批次仍在创建 workspace 和预检前退出。
+- 规划只读观察到 `.venv\Scripts\python.exe` 在本机形成父、子两个 `python.exe`。当前 guard 只排除子进程 `os.getpid()`；用 `.venv` Python 的安全 `-c` 命令附带批次模块形状的参数调用同一探测函数，稳定得到 `batch_launcher_running`，未执行真实批次入口、connector、网络或 Botzone。这证明本次启动链可能被当成另一批次，与现场类别一致；旧两次报错瞬间的进程身份仍不能反推。
+- 现在直接修复这个已复现的启动链缺陷，见 `docs/NEXT_PROMPT.md`。独立的第二个批次及真正 connector 仍须被拦；修后由所有者亲自确认页面“已连接”。规划未触碰两个 workspace 旧证据。
+
+以下“模块前缀匹配复发”是本次新类别出现前的阶段快照，以本节为准。
+
 ## 最新复发：批次入口再次报告进程占用，仍未连接（2026-09-27）
 
 - 所有者按现有脚本再次启动，仍遇到相同的 `connector_already_running`，Botzone 刷新后也未显示“已连接”。这已不是仅一次瞬态报错；启动器在进程保护处退出，未到连接阶段。规划立即按代码的匹配规则只读扫描，仍为 `matching_count=0`；另用 `.venv` Python 调用同一探测函数得到 `connector_absent`。这些扫描发生在失败后，不能证明失败瞬间没有进程，也无法给出当时命中的 PID。
