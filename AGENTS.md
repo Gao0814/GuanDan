@@ -138,7 +138,8 @@ python -m unittest tests.test_cli_debug_output -q
 - 在任何外部建桌提交或 live 对局开始前，shell、参数、路径、preflight、日志配置和其他准备阶段错误都属于可原地修正的编排问题；不得把这类零外部副作用的小错误升级为不可恢复的实验失败。正式实验若需要更早的不可重试边界，必须在专门 Prompt 中显式预注册。
 - 普通人工 Botzone 单局执行必须读取并遵守项目 Skill `.agents/skills/botzone-manual-live/SKILL.md`。网页建桌、配置和开始默认由项目所有者手工完成；除非当前任务明确授权，否则 Codex 只做 best-effort 只读监督，不点击、输入或提交。
 - 人工 live 的硬顺序是：workspace/preflight 就绪 → 唯一 connector 持续运行 → 页面确认“已连接” → 才提示 seed 和建桌配置 → 核对后开始并持续监测。页面不可读时接受项目所有者明确确认；页面明确显示配置不匹配时必须等待修正。seed 从执行 Codex 首次向项目所有者发送含该 seed 的建桌配置时起视为已使用。
-- Codex 执行的 Botzone 运行产生的 state、audit、manifest、progress 和其他 evidence 统一放在仓库外固定根目录 `D:\VsCodeProject\BotzoneWorkspace`。项目所有者亲自进行的轻量试局是唯一例外：它使用独立的 `D:\VsCodeProject\GuanDanManualWorkspace`，不得写入或覆盖 Codex workspace；个人目录不进入正式评测或 Codex 自动清理清单。
+- Codex 执行的 Botzone 运行产生的 state、audit、manifest、progress 和其他 evidence 统一放在仓库外固定根目录 `D:\VsCodeProject\BotzoneWorkspace`。项目所有者亲自进行的轻量试局默认使用独立的 `D:\VsCodeProject\GuanDanManualWorkspace`，不得写入或覆盖 Codex workspace；个人目录不进入正式评测或 Codex 自动清理清单。
+- 项目所有者另行明确指定的**自操作多局批次**可使用固定 `D:\VsCodeProject\BotzoneWorkspace`，但只能在该根下创建全新的批次子目录，不得复用、覆盖或自动回收根目录已有证据；每局必须有可区分、不可覆盖的审计文件。此类批次由所有者启动脚本并在网页手工操作，Codex 事后只读审计；它不是 `botzone-manual-live` Skill 所定义的 Codex 托管单局，也不继承正式预注册实验门槛。批次脚本不得同时启动第二个项目 connector，异常时保留原目录。此例外不改变个人轻量试局仍使用 `GuanDanManualWorkspace` 的默认规则。
 - `D:\VsCodeProject` 下不得再创建其他以 `Botzone` 开头的顶层运行目录；不得按 seed、pilot、pair 或 capacity 新建顶层目录。上述个人目录虽不以 `Botzone` 开头，也只能用于项目所有者的个人试局，不得借其绕过 Codex live 的固定 workspace 和审计边界。
 - 个人试局可在下一次启动时覆盖自己目录中的上一轮证据，但启动器必须先确认精确目录归属、普通非链接属性、内容白名单及无运行中的项目 connector；仅处理该个人目录，优先采用回收站等可恢复方式，不得通配清理 Codex workspace。若所有者发现问题并要求 Codex 复查，暂停下一次个人试局，保留该局目录供 Codex 只读检查；复查前不得自动覆盖。无问题时无需逐局提交报告。个人试局的 prompt、模型自由文本、凭据和连接 URL 仍不得持久化或共享。
 - 独立目录只隔离文件，不隔离 Botzone 本地 AI 连接：同一连接地址下个人与 Codex connector 不得同时轮询；若需要并行，必须由项目所有者明确提供互不相同的连接端点，并另行规划。个人启动器默认不得启动第二个项目 connector。

@@ -1,5 +1,14 @@
 # 项目状态看板
 
+## 最新转向：所有者自操作的固定 workspace 十局试测（2026-09-27）
+
+- **模型名澄清。** M2 禁网资格使用评测器写死的占位名 `offline-m2`，真实发送使用 `config.py` 的 `DEEPSEEK_MODEL`；之前的“不同模型名”指这两个路径，并无证据表明 baseline/current 两个真实请求使用不同模型。仓库当前 `config.py` 缺省为 `deepseek-chat`，`.env.example` 写旧别名 `deepseek-v4-flash`；真实私有配置未读。所有者要求今后实际测试统一 `deepseek-flash`，下一项脚本须在自身子进程中明确选用并预检该模型，不修改真实 `.env`。这不能反向修复 M2 的占位/真实请求绑定，M2 扩大评估仍按第 1 槽停止，效果 `inconclusive`。
+- **新优先级。** 所有者不再继续等待当前 32 槽离线评测链，而要像以往一样自己启动一个脚本，在 Botzone 页面连续手工建桌和开始；connector 不逐局等待按键，默认最多完成 10 局、可配置。Codex 事后审计。下一份 `docs/NEXT_PROMPT.md` 是完整的 Coding 任务：在固定 `D:\VsCodeProject\BotzoneWorkspace` 下新建不覆盖旧证据的批次子目录，单 connector 连续轮询、每局独立留证及自动退出。当前没有写成或运行十局脚本，也没有开始新局。
+- **现场约束。** 固定 workspace 只读清单显示旧 `audit/`、`state/`、`streams/`、`history.txt`、`decision-trace.json` 及 connection probe 仍在；规划未清理或改写。现有 `--stop-after-finished` 支持计数 10，但 history 与 decision trace 各限绑定一个 match，直接复制个人单局启动器会覆盖/冲突，必须由 Coding 增加批次留证能力。十局自操作样本可检查可用性、终局分类和逐决策异常；没有封板版同状态对照，不能称 M1 胜率或因果收益证明。
+- **阶段。** M0 现场链路已有本轮放行证据、旧 `platform_error` 根因仍未知；M1 当前生产版本保留，本地公式广泛直选目标未达；M2 扩大成对模型评估因绑定误判停在第 1 槽。先交付并禁网验收自操作十局脚本，由所有者试测、Codex 审计；若要重启 M2 成对真实评估，先修复绑定并另行取得完整请求预算授权。当前范围内风险为批次脚本尚未实现、M2 效果未定和旧现场故障可能复现。
+
+以下“M2 扩大真实评估第 1 槽后停止”为前一阶段快照，以本节为准。
+
 ## 最新复审：M2 扩大真实评估第 1 槽后停止（2026-09-27）
 
 - **执行事实。** Coding 提交 `99d31b0` 仅修改扩大评测器及其测试；Git 工作树 clean。Coding 报告原 8 个 seed/step/状态摘要和 canonical 动作数未变、16 条双版本禁网资格 ready。获批的本轮 32 槽计划仅实际发送第 1 槽 `opening_dense_1 / baseline / repeat 1`：1 次成功、0 重试，模型返回的原始 ID `40` 属于展示候选且 source=`model`；随后评测器以 `attempt_offline_binding_mismatch_stopped` 停止，余下 31 槽均未执行。没有成对选择或续局代理结果，本轮效果仍为 `inconclusive`。规划没有重放真实请求或读取密钥、`.env`、两个 Botzone workspace；Coding 报告全量 896 项通过，规划独立复跑新增模块 16 项通过。

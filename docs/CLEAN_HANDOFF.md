@@ -1,5 +1,9 @@
 # Clean Project Handoff
 
+2026-09-27 所有者最新方向：评测器离线 `offline-m2` 与真实配置模型名不同，不等于两次真实版本用了不同模型；实际配置未读。下一项改为 Coding 实现固定 `D:\VsCodeProject\BotzoneWorkspace` 下的**所有者自操作十局批次脚本**：所有者启动一次后在 Botzone 页面逐局手工操作，connector 连续运行、不逐局暂停，默认最多完成 10 局且可改，测试模型在脚本子进程统一为 `deepseek-flash`。旧固定 workspace 证据原样保留，新批次只写全新子目录，每局独立 history/ACK trace/低敏审计；现有单局 recorder 不可直接共享一个文件。Coding 只做禁网实现和测试，真实试局由所有者启动，结束后 Codex 只读审计。M2 32 槽在第 1 槽后已停、效果 `inconclusive`、旧授权不可续用；未来重启需先修复绑定并另定预算。`docs/NEXT_PROMPT.md` 为当前执行任务。
+
+以下 `99d31b0` 交接是前一阶段快照，以本段为准。
+
 2026-09-27 `99d31b0` 停止后交接：Coding 报告冻结 8 状态、16 条禁网资格仍 ready；本轮获批 32 槽仅第 1 槽 `opening_dense_1 / baseline / repeat 1` 发出 1 次真实请求、success、0 重试，ID `40` 在展示候选内且 source=`model`，随后 `attempt_offline_binding_mismatch_stopped`，其余 31 槽未执行、无续局比较。规划检查提交仅含评测器/测试、Git clean，独立复跑新增模块 16 项；发现 `request_utf8_bytes` 仍在离线占位模型名与真实配置模型名之间严格比较，禁网合成差异可复现同一停止分类。但原始停止结果未给出字段，不能声称已确认唯一原因。M2 继续 `inconclusive`，M1 生产版保留。当前 `docs/NEXT_PROMPT.md` 仅安排禁网绑定修复和低敏分类，真实请求 `0`；旧授权已随停止结束，后续完整 32 槽须重新规划、明确授权。两个 workspace、`.env`、封板不动。
 
 以下 `2fafc82` 离线复审交接为上一阶段快照，以本段为准。
