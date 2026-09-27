@@ -139,7 +139,7 @@ python -m unittest tests.test_cli_debug_output -q
 - 普通人工 Botzone 单局执行必须读取并遵守项目 Skill `.agents/skills/botzone-manual-live/SKILL.md`。网页建桌、配置和开始默认由项目所有者手工完成；除非当前任务明确授权，否则 Codex 只做 best-effort 只读监督，不点击、输入或提交。
 - 人工 live 的硬顺序是：workspace/preflight 就绪 → 唯一 connector 持续运行 → 页面确认“已连接” → 才提示 seed 和建桌配置 → 核对后开始并持续监测。页面不可读时接受项目所有者明确确认；页面明确显示配置不匹配时必须等待修正。seed 从执行 Codex 首次向项目所有者发送含该 seed 的建桌配置时起视为已使用。
 - Codex 执行的 Botzone 运行产生的 state、audit、manifest、progress 和其他 evidence 统一放在仓库外固定根目录 `D:\VsCodeProject\BotzoneWorkspace`。项目所有者亲自进行的轻量试局默认使用独立的 `D:\VsCodeProject\GuanDanManualWorkspace`，不得写入或覆盖 Codex workspace；个人目录不进入正式评测或 Codex 自动清理清单。
-- 项目所有者另行明确指定的**自操作多局批次**可使用固定 `D:\VsCodeProject\BotzoneWorkspace`，但只能在该根下创建全新的批次子目录，不得复用、覆盖或自动回收根目录已有证据；每局必须有可区分、不可覆盖的审计文件。此类批次由所有者启动脚本并在网页手工操作，Codex 事后只读审计；它不是 `botzone-manual-live` Skill 所定义的 Codex 托管单局，也不继承正式预注册实验门槛。批次脚本不得同时启动第二个项目 connector，异常时保留原目录。此例外不改变个人轻量试局仍使用 `GuanDanManualWorkspace` 的默认规则。
+- 当前项目所有者自行完成所有真实 Botzone 页面和 connector 启停操作；Codex 仅在所有者交付结果或保留的 evidence 后做只读审计，不再为这条人工试测流程编写或运行新的 connector 启动代码。上文 Codex 托管 live 的顺序和项目 Skill 不强加给所有者的自操作试局。所有者若明确选用固定 `D:\VsCodeProject\BotzoneWorkspace` 留证，应将新证据与旧文件隔离并保留原件，Codex 不替其轮换或清理。个人轻量试局仍默认使用 `GuanDanManualWorkspace`。人工 10 局的胜负比例可作方向性观察，须列明有效局数、对手/条件差异和异常局；有前后两组时直接比较胜局/有效完局，不设正式实验门槛，也不把小样本比例写成已证明的算法增益。
 - `D:\VsCodeProject` 下不得再创建其他以 `Botzone` 开头的顶层运行目录；不得按 seed、pilot、pair 或 capacity 新建顶层目录。上述个人目录虽不以 `Botzone` 开头，也只能用于项目所有者的个人试局，不得借其绕过 Codex live 的固定 workspace 和审计边界。
 - 个人试局可在下一次启动时覆盖自己目录中的上一轮证据，但启动器必须先确认精确目录归属、普通非链接属性、内容白名单及无运行中的项目 connector；仅处理该个人目录，优先采用回收站等可恢复方式，不得通配清理 Codex workspace。若所有者发现问题并要求 Codex 复查，暂停下一次个人试局，保留该局目录供 Codex 只读检查；复查前不得自动覆盖。无问题时无需逐局提交报告。个人试局的 prompt、模型自由文本、凭据和连接 URL 仍不得持久化或共享。
 - 独立目录只隔离文件，不隔离 Botzone 本地 AI 连接：同一连接地址下个人与 Codex connector 不得同时轮询；若需要并行，必须由项目所有者明确提供互不相同的连接端点，并另行规划。个人启动器默认不得启动第二个项目 connector。
@@ -164,4 +164,5 @@ python -m unittest tests.test_cli_debug_output -q
 - 不确定时列出假设和需要确认的问题，不要编造不存在的命令、配置或行为。
 - 对 AI 决策改动，不要把规则合法性判断移入 AI 层。
 - DeepSeek 是其合法动作空间内的主要策略决策者。策略质量问题应优先从公开信息投影、prompt、RAG、策略意图和可重复模型评测定位；不得仅因模型选择与 RuleBased 偏好不同，就把 RuleBased 选择新增为成功模型动作的强制后置覆盖。确定性后置覆盖只用于合法性/协议安全，或项目所有者已经明确批准且有独立证据的关键策略不变量。
+- 普通算法迭代应针对声称改善的能力构造可复现的合法牌局（可自行构造，或核对公开经典残局来源）并比较模型前后选择；只设置会改变结论的必要检查，不沿用正式实验的逐字节请求、manifest 或整批作废门槛。所有者自行进行的约十局 Botzone 测试可报告胜局/有效完局和异常作为方向性观察；小样本不能单独证明因果胜率增益，也不妨碍继续处理具体可复现的算法问题。
 - 对规则引擎改动，要保持 `observe()`、`legal_actions()`、`step(action_id)` 的公开契约稳定。
