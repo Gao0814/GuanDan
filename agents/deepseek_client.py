@@ -11,6 +11,7 @@ from collections import Counter
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 import json
+import re
 import time
 from typing import TYPE_CHECKING, Callable, Protocol
 from urllib import request as urllib_request
@@ -163,7 +164,7 @@ PROMPT_MAX_WILDCARD_INFO_CHARS = 160
 PROMPT_MAX_RAG_HITS_PER_LAYER = 3
 PROMPT_MAX_RAG_TITLE_CHARS = 60
 PROMPT_MAX_RAG_BODY_CHARS = 180
-PROMPT_MAX_CARD_TRACKING_CHARS = 600
+PROMPT_MAX_CARD_TRACKING_CHARS = 1_400
 
 _SCENE_TAG_ORDER = (
     "scene",
@@ -2031,9 +2032,22 @@ class DeepSeekClient:
         return lines or ["（无）"]
 
     @staticmethod
-    def _format_card_tracking_summary(card_tracking_summary: str | None) -> list[str]:
+    def _format_card_tracking_summary(
+        card_tracking_summary: str | None,
+        *,
+        candidate_action_ids: set[int] | None = None,
+    ) -> list[str]:
         if not card_tracking_summary:
             return ["（无）"]
+        if candidate_action_ids is not None:
+            filtered_lines = []
+            for line in card_tracking_summary.splitlines():
+                if line.startswith("M3候选对照") or line.startswith("M3唯一归属核验"):
+                    referenced = [int(value) for value in re.findall(r"action_id=(\d+)", line)]
+                    if not referenced or not all(value in candidate_action_ids for value in referenced):
+                        continue
+                filtered_lines.append(line)
+            card_tracking_summary = "\n".join(filtered_lines)
         lines = [
             line.strip()
             for line in card_tracking_summary.splitlines()
@@ -2241,20 +2255,37 @@ class DeepSeekClient:
             for action in legal_actions
             if type(action.get("action_id")) is int
         }
+        card_tracking_action_ids: set[int] = set()
+        card_tracking_relation_groups: list[tuple[int, int]] = []
+        if card_tracking_summary:
+            for line in card_tracking_summary.splitlines():
+                if not (line.startswith("M3候选对照") or line.startswith("M3唯一归属核验")):
+                    continue
+                referenced = [int(value) for value in re.findall(r"action_id=(\d+)", line)]
+                if referenced and set(referenced).issubset(available_ids):
+                    card_tracking_action_ids.update(referenced)
+                    if line.startswith("M3候选对照") and len(referenced) == 2:
+                        card_tracking_relation_groups.append((referenced[0], referenced[1]))
         prompt_relation_groups = tuple(
+            card_tracking_relation_groups
+        ) + tuple(
             item.action_ids
             for item in (representative_contrasts or ())
             if set(item.action_ids).issubset(available_ids)
         ) + tuple(group for group in grouping_pairs if set(group).issubset(available_ids))
+        recommendation_action_ids = (
+            raw_validated_recommendation.action_ids
+            if raw_validated_recommendation is not None
+            else ()
+        )
+        protected_prompt_action_ids = tuple(dict.fromkeys(
+            (*recommendation_action_ids, *sorted(card_tracking_action_ids))
+        ))
         prompt_actions = DeepSeekClient._limit_prompt_actions(
             legal_actions,
             constraint=constraint,
             hand_count=hand_count,
-            protected_action_ids=(
-                raw_validated_recommendation.action_ids
-                if raw_validated_recommendation is not None
-                else ()
-            ),
+            protected_action_ids=protected_prompt_action_ids,
             protected_relation_groups=prompt_relation_groups,
         )
         residual_facts = summarize_free_lead_residual_structures(
@@ -2356,7 +2387,16 @@ class DeepSeekClient:
         lines.append("")
 
         lines.append("【记牌信息】")
-        lines.extend(DeepSeekClient._format_card_tracking_summary(card_tracking_summary))
+        lines.extend(
+            DeepSeekClient._format_card_tracking_summary(
+                card_tracking_summary,
+                candidate_action_ids={
+                    int(action["action_id"])
+                    for action in prompt_actions
+                    if type(action.get("action_id")) is int
+                },
+            )
+        )
         lines.append("")
 
         validated_confidence = DeepSeekClient._validated_card_confidence_prompt(card_confidence_prompt)

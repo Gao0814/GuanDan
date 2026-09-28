@@ -656,7 +656,12 @@ class DeepSeekAIAgent(BaseAgent):
 
             my_hand_cards = [str(x) for x in my_info.get("hand_cards", [])]
             history_actions_list = list(history.get("actions", []))
-            self.card_tracker.update(history_actions_list, my_hand_cards)
+            self.card_tracker.update(
+                history_actions_list,
+                my_hand_cards,
+                observation=observation,
+                legal_actions=pruned,
+            )
             card_tracking_summary = self.card_tracker.get_summary(my_hand_cards)
 
         other_players = list(observation.get("other_players", []))

@@ -268,6 +268,41 @@ class BaseRuleEngine:
     def detect_pattern(self, cards: tuple[Card, ...]) -> Pattern:
         return detect_pattern(cards)
 
+    def public_beating_pattern_types(
+        self,
+        hand_cards: tuple[Card, ...],
+        leading_action: Action,
+        current_level_rank: str,
+    ) -> tuple[str, ...]:
+        """Summarize which pattern families in an explicit hand can beat a play.
+
+        This read-only query exposes no generated action, action ID, or state. It
+        is intended for consumers that have a uniquely confirmed public hand.
+        All pattern generation and comparison still use the engine's rule truth.
+        """
+        _validate_current_level_rank(current_level_rank)
+        if leading_action.action_type != ActionType.PLAY:
+            return ()
+
+        player_id = leading_action.player_id
+        candidates: list[Action] = []
+        candidates.extend(self._generate_single_actions(player_id, hand_cards, current_level_rank))
+        candidates.extend(self._generate_group_actions(player_id, hand_cards, current_level_rank))
+        candidates.extend(self._generate_triple_with_pair_actions(player_id, hand_cards, current_level_rank))
+        candidates.extend(self._generate_straight_actions(player_id, hand_cards, current_level_rank))
+        candidates.extend(self._generate_pair_straight_actions(player_id, hand_cards, current_level_rank))
+        candidates.extend(self._generate_steel_plate_actions(player_id, hand_cards, current_level_rank))
+        candidates.extend(self._generate_straight_flush_actions(player_id, hand_cards, current_level_rank))
+
+        beating = {
+            action.declared_pattern.value
+            for action in candidates
+            if action.declared_pattern is not None
+            and _carrier_is_payable(action, hand_cards)
+            and self.can_beat(action, leading_action, current_level_rank)
+        }
+        return tuple(pattern for pattern in _PATTERN_SORT_ORDER if pattern in beating)
+
     def can_beat(self, candidate: Action, leading_action: Action, current_level_rank: str) -> bool:
         _validate_current_level_rank(current_level_rank)
         if candidate.action_type != ActionType.PLAY or leading_action.action_type != ActionType.PLAY:

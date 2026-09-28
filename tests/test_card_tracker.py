@@ -1,92 +1,316 @@
+from __future__ import annotations
+
+import random
+import re
 import unittest
-from agents.card_tracker import CardTracker
+
+from agents.card_tracker import CardTracker, build_card_tracking_summary
+from engine.cards import Card, build_double_deck
+from engine.game import GuanDanGame
+
+
+def _card(token: str) -> Card:
+    if token in {"SJ", "BJ"}:
+        return Card(token)
+    return Card(token[:-1], token[-1])
+
+
+def _game_with_pair_straight() -> GuanDanGame:
+    deck = build_double_deck()
+    target = [_card(token) for token in ("4S", "4H", "5S", "5H", "6S", "6H", "3S", "SJ")]
+    for card in target:
+        deck.remove(card)
+    filler = []
+    for card in tuple(deck):
+        if card.rank in {"8", "10", "Q", "A", "2"} and not (card.rank == "2" and card.suit == "H"):
+            filler.append(card)
+            deck.remove(card)
+            if len(filler) == 19:
+                break
+    own = target + filler
+    remaining = deck
+    hands = {
+        1: tuple(own),
+        2: tuple(remaining[:27]),
+        3: tuple(remaining[27:54]),
+        4: tuple(remaining[54:81]),
+    }
+    return GuanDanGame(preset_hands=hands, current_level_rank="2", starting_player_id=1)
+
+
+def _action(actions: list[dict[str, object]], predicate):
+    return next(action for action in actions if predicate(action))
+
+
+def _greedy_state(stop_finish_count: int) -> tuple[dict[str, object], list[dict[str, object]]]:
+    game = GuanDanGame(seed=0, current_level_rank="2")
+    game.reset()
+    for _ in range(300):
+        observation = game.observe()
+        actions = game.legal_actions()
+        finished = observation["history"]["finish_order"]
+        if len(finished) == stop_finish_count:
+            hand_count = observation["my_info"]["hand_count"]
+            playable = [
+                action for action in actions
+                if action["declared_pattern"] != "pass"
+                and len(action["carrier_cards"]) < hand_count
+            ]
+            if playable:
+                return observation, actions
+            passes = [action for action in actions if action["declared_pattern"] == "pass"]
+            if passes:
+                game.step(passes[0]["action_id"])
+                continue
+            break
+
+        hand_count = observation["my_info"]["hand_count"]
+        playable = [action for action in actions if action["declared_pattern"] != "pass"]
+        if playable:
+            selected = max(
+                playable,
+                key=lambda action: (
+                    len(action["carrier_cards"]),
+                    action["declared_pattern"] in {"bomb", "straight_flush", "joker_bomb"},
+                    -action["action_id"],
+                ),
+            )
+        else:
+            selected = _action(actions, lambda action: action["declared_pattern"] == "pass")
+        game.step(selected["action_id"])
+    raise AssertionError("fixed legal rollout did not reach the requested finish count")
+
+
+def _urgent_multiplayer_pair_straight_state() -> tuple[dict[str, object], list[dict[str, object]]]:
+    deck = build_double_deck()
+    target = [_card(token) for token in ("4S", "4H", "5S", "5H", "6S", "6H", "3S", "SJ")]
+    for card in target:
+        deck.remove(card)
+    random.Random(16).shuffle(deck)
+    own = target + deck[: 27 - len(target)]
+    remaining = deck[27 - len(target) :]
+    game = GuanDanGame(
+        preset_hands={
+            1: tuple(own), 2: tuple(remaining[:27]),
+            3: tuple(remaining[27:54]), 4: tuple(remaining[54:81]),
+        },
+        current_level_rank="2",
+        starting_player_id=1,
+    )
+    game.reset()
+    protected = {"4S", "4H", "5S", "5H", "6S", "6H"}
+    for _ in range(180):
+        observation = game.observe()
+        actions = game.legal_actions()
+        if not actions:
+            break
+        player_id = observation["my_info"]["player_id"]
+        table_action = observation["current_round"]["table_action"]
+        active_other_counts = [
+            player["hand_count"] for player in observation["other_players"]
+            if not player["finished"]
+        ]
+        patterns = {action["declared_pattern"] for action in actions}
+        if (
+            player_id == 1 and table_action is None
+            and len(observation["history"]["finish_order"]) <= 1
+            and min(active_other_counts, default=99) <= 1
+            and {"pair_straight", "single"}.issubset(patterns)
+        ):
+            return observation, actions
+
+        if player_id == 1 and table_action is not None:
+            selected = next((action for action in actions if action["declared_pattern"] == "pass"), None)
+            if selected is None:
+                selected = max(actions, key=lambda action: len(action["carrier_cards"]))
+        elif player_id == 1:
+            choices = [
+                action for action in actions
+                if action["declared_pattern"] != "pass"
+                and not (set(action["carrier_cards"]) & protected)
+            ]
+            selected = max(choices or actions, key=lambda action: (len(action["carrier_cards"]), -action["action_id"]))
+        else:
+            choices = [action for action in actions if action["declared_pattern"] != "pass"]
+            selected = max(choices, key=lambda action: (len(action["carrier_cards"]), -action["action_id"])) if choices else next(
+                action for action in actions if action["declared_pattern"] == "pass"
+            )
+        game.step(selected["action_id"])
+    raise AssertionError("fixed legal rollout did not reach the urgent multiplayer comparison")
+
 
 class TestCardTracker(unittest.TestCase):
-    def test_tracker_initialization(self):
+    def test_exact_public_pool_compares_only_displayed_candidates_and_corrects_bomb_scope(self) -> None:
+        game = _game_with_pair_straight()
+        observation = game.reset()
+        legal_actions = game.legal_actions()
         tracker = CardTracker("2")
-        self.assertEqual(tracker.current_level_rank, "2")
-        self.assertEqual(tracker.tracking_mode, "top4")
-        self.assertEqual(tracker.focus_set, {"BJ", "SJ", "A", "2"})
-    
-    def test_tracker_counts_and_replenishes(self):
-        tracker = CardTracker("10")
-        self.assertEqual(tracker.focus_set, {"BJ", "SJ", "A", "10"})
-        # 10 is the level rank, so focus_set initially has 4.
-        
-        my_hand = ["2H", "3D", "BJ"]
-        history = [
-            {
-                "declared_pattern": "single",
-                "declared_cards": ["10H"]
-            },
-            {
-                "declared_pattern": "pair",
-                "declared_cards": ["AS", "AH"]
-            }
-        ]
-        
-        tracker.update(history, my_hand)
-        summary = tracker.get_summary(my_hand)
-        
-        self.assertEqual(tracker.seen_count["10"], 1)
-        self.assertEqual(tracker.seen_count["A"], 2)
-        self.assertIn("BJ:1", summary)
-        self.assertIn("SJ:2", summary)
-        self.assertIn("10:7", summary)
-        self.assertIn("A:6", summary)
+        tracker.update(
+            list(observation["history"]["actions"]),
+            list(observation["my_info"]["hand_cards"]),
+            observation=observation,
+            legal_actions=legal_actions,
+        )
+        summary = tracker.get_summary(list(observation["my_info"]["hand_cards"]))
 
-    def test_tracker_prefers_carrier_cards_for_wildcard_history(self):
+        self.assertIn("证据级=E1精确牌池/多人未分配", summary)
+        self.assertIn("已出0、本家持有27、外部未见81", summary)
+        self.assertIn("对手余54张可能持有", summary)
+        self.assertIn("队友余27张可能持有", summary)
+        self.assertIn("可能持牌人=玩家2(对手,余27张)", summary)
+        self.assertIn("玩家3(队友,余27张)", summary)
+        self.assertIn("当前无公开1–2张对手", summary)
+        self.assertIn("自然连对出后仍保留高点候选且余组更轻", summary)
+        self.assertIn("小单保组路线仍须比较", summary)
+        self.assertNotIn("已确认持有人", summary)
+        self.assertIn("同花顺是独立炸弹类别", summary)
+        self.assertNotIn("当前最大牌", summary)
+        self.assertNotIn("不存在其他炸弹", summary)
+        self.assertNotIn("概率", summary)
+        self.assertLessEqual(len(summary), 1_350)
+
+        ids = {action["action_id"] for action in legal_actions}
+        comparisons = [line for line in summary.splitlines() if line.startswith("M3候选对照")]
+        self.assertTrue(any("pair_straight" in line and "single" in line for line in comparisons))
+        self.assertLessEqual(len(comparisons), 2)
+        pair_line = next(line for line in comparisons if "pair_straight" in line)
+        self.assertIn("出后资源=余21张/同点结构(孤张2/对子0/三张1/四张以上4)", pair_line)
+        self.assertIn("另一候选出后=余26张/同点结构(孤张1/对子3/三张1/四张以上4)", pair_line)
+        for line in comparisons:
+            self.assertTrue(all(int(value) in ids for value in re.findall(r"action_id=(\d+)", line)))
+            self.assertIn("同点结构", line)
+            self.assertIn("保留高点候选", line)
+            if "single" in line:
+                self.assertIn("较高点数候选=", line)
+            if "pair_straight" in line:
+                self.assertIn("不把牌数优势当作固定指令", line)
+            else:
+                self.assertIn("不固定偏向任一路线", line)
+
+    def test_midgame_public_play_and_capacity_change_control_comparison(self) -> None:
+        game = _game_with_pair_straight()
+        observation = game.reset()
+        actions = game.legal_actions()
+        lead = _action(
+            actions,
+            lambda item: item["declared_pattern"] == "single" and item["carrier_cards"] == ["3S"],
+        )
+        game.step(lead["action_id"])
+
+        actions = game.legal_actions()
+        response = min(
+            (
+                item for item in actions
+                if item["declared_pattern"] == "single"
+                and item["declared_cards"][0] != "3"
+            ),
+            key=lambda item: item["action_id"],
+        )
+        game.step(response["action_id"])
+        for _ in (3, 4):
+            actions = game.legal_actions()
+            game.step(_action(actions, lambda item: item["declared_pattern"] == "pass")["action_id"])
+
+        # The original leader declines the response; the other player then
+        # receives a free lead while the high card is now public history.
+        actions = game.legal_actions()
+        game.step(_action(actions, lambda item: item["declared_pattern"] == "pass")["action_id"])
+
+        observation = game.observe()
+        actions = game.legal_actions()
+        self.assertEqual(observation["my_info"]["player_id"], 2)
+        self.assertIsNone(observation["current_round"]["table_action"])
+        summary = build_card_tracking_summary(observation, actions)
+
+        self.assertIn("证据级=E1精确牌池/多人未分配", summary)
+        self.assertIn("外部未见80", summary)
+        self.assertIn("外部仍见更高单张牌池=", summary)
+        self.assertIn("归属未知", summary)
+        self.assertIn("队友余27张可能持有", summary)
+        self.assertNotIn("已确认持有人", summary)
+        self.assertIn("M3候选对照", summary)
+
+    def test_missing_carrier_and_capacity_mismatch_fail_closed(self) -> None:
+        game = _game_with_pair_straight()
+        observation = game.reset()
+        actions = game.legal_actions()
+
+        missing_carrier = dict(observation)
+        missing_carrier["history"] = {
+            "actions": [{"player_id": 2, "declared_pattern": "single", "declared_cards": ["A"]}],
+            "finish_order": [],
+        }
+        summary = build_card_tracking_summary(missing_carrier, actions)
+        self.assertIn("证据级=E0", summary)
+        self.assertNotIn("M3候选对照", summary)
+        self.assertNotIn("高于", summary)
+
+        unknown_pattern = dict(observation)
+        unknown_pattern["history"] = {
+            "actions": [{"player_id": 2, "declared_pattern": "unknown", "carrier_cards": []}],
+            "finish_order": [],
+        }
+        summary = build_card_tracking_summary(unknown_pattern, actions)
+        self.assertIn("证据级=E0", summary)
+
+        capacity_mismatch = dict(observation)
+        capacity_mismatch["other_players"] = [dict(player) for player in observation["other_players"]]
+        capacity_mismatch["other_players"][0]["hand_count"] = 26
+        summary = build_card_tracking_summary(capacity_mismatch, actions)
+        self.assertIn("证据级=E0", summary)
+        self.assertNotIn("唯一归属", summary)
+
+    def test_unique_external_hand_uses_engine_query_for_immediate_takeover(self) -> None:
+        observation, legal_actions = _greedy_state(2)
+        summary = build_card_tracking_summary(observation, legal_actions)
+
+        self.assertIn("证据级=E2唯一归属", summary)
+        self.assertIn("已确认持有人=对手玩家", summary)
+        self.assertIn("M3唯一归属核验 action_id=", summary)
+        self.assertIn("可立即压过牌型=", summary)
+        self.assertIn("已知高点资源", summary)
+        self.assertIn("不推出胜负或后续牌权", summary)
+        ids = {action["action_id"] for action in legal_actions}
+        line = next(line for line in summary.splitlines() if line.startswith("M3唯一归属核验"))
+        self.assertTrue(all(int(value) in ids for value in re.findall(r"action_id=(\d+)", line)))
+
+    def test_multiplayer_endgame_keeps_owner_unknown(self) -> None:
+        observation, legal_actions = _greedy_state(1)
+        summary = build_card_tracking_summary(observation, legal_actions)
+
+        self.assertIn("证据级=E1精确牌池/多人未分配", summary)
+        self.assertIn("归属未确认", summary)
+        self.assertNotIn("已确认持有人", summary)
+        self.assertNotIn("唯一归属核验", summary)
+        self.assertNotIn("必胜", summary)
+
+    def test_urgent_opponent_comparison_surfaces_high_single_alongside_pair_straight(self) -> None:
+        observation, legal_actions = _urgent_multiplayer_pair_straight_state()
+        summary = build_card_tracking_summary(observation, legal_actions)
+
+        self.assertIn("证据级=E1精确牌池/多人未分配", summary)
+        self.assertIn("对手余3张可能持有", summary)
+        self.assertIn("公开紧迫对手最少余=1张", summary)
+        self.assertIn("M3候选对照", summary)
+        self.assertIn("当前有公开紧迫对手", summary)
+        self.assertIn("实际高单候选的即时拦截价值", summary)
+        self.assertRegex(summary, r"pair_straight 4 4 5 5 6 6")
+        self.assertRegex(summary, r"vs action_id=\d+\(single BJ\)")
+        self.assertTrue(
+            any(
+                "pair_straight" in line and "single BJ" in line
+                for line in summary.splitlines()
+                if line.startswith("M3候选对照")
+            )
+        )
+
+    def test_legacy_tracker_without_complete_observation_does_not_claim_card_facts(self) -> None:
         tracker = CardTracker("2")
-        history = [
-            {
-                "declared_pattern": "straight",
-                "declared_cards": ["7", "8", "9", "10", "J"],
-                "carrier_cards": ["7S", "8S", "9S", "10S", "2H"],
-                "wildcard_count": 1,
-                "wildcard_info": [{"carrier_card": "2H", "declared_as": "J"}],
-            }
-        ]
+        tracker.update([{"declared_pattern": "single", "declared_cards": ["BJ"]}], ["3S"])
+        summary = tracker.get_summary(["3S"])
+        self.assertIn("证据级=E0", summary)
+        self.assertNotIn("BJ×", summary)
 
-        tracker.update(history, [])
-
-        self.assertEqual(tracker.seen_count["2"], 1)
-        self.assertEqual(tracker.seen_count["7"], 1)
-        self.assertEqual(tracker.seen_count["8"], 1)
-        self.assertEqual(tracker.seen_count["9"], 1)
-        self.assertEqual(tracker.seen_count["10"], 1)
-        self.assertEqual(tracker.seen_count.get("J", 0), 0)
-        self.assertEqual(tracker.total_out, 5)
-
-    def test_tracker_falls_back_to_declared_cards_for_legacy_history(self):
-        tracker = CardTracker("2")
-        history = [
-            {
-                "declared_pattern": "pair",
-                "declared_cards": ["AS", "AH"],
-            }
-        ]
-
-        tracker.update(history, [])
-
-        self.assertEqual(tracker.seen_count["A"], 2)
-        self.assertEqual(tracker.total_out, 2)
-
-    def test_tracker_mode_switch(self):
-        tracker = CardTracker("5")
-        
-        # force total_left <= 20
-        # total_left = 108 - total_out - len(my_hand)
-        # we will set 88 cards out, so 108 - 88 - 0 = 20
-        history_actions = []
-        for _ in range(22):
-            history_actions.append({
-                "declared_pattern": "bomb",
-                "declared_cards": ["2S", "2H", "2C", "2D"] 
-            })
-            
-        tracker.update(history_actions, [])
-        self.assertEqual(tracker.tracking_mode, "full")
-        self.assertIn("Full", tracker.get_summary([]))
 
 if __name__ == "__main__":
     unittest.main()
