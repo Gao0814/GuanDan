@@ -50,21 +50,6 @@ def _rank_strength(rank: str, level: str) -> int:
     return NORMAL_RANKS.index(rank) + 3
 
 
-def _count_text(cards: tuple[str, ...] | list[str]) -> str:
-    counts = Counter(_physical_rank(card) for card in cards)
-    return ",".join(
-        f"{rank}×{counts[rank]}" for rank in _RANKS if counts.get(rank, 0)
-    ) or "无"
-
-
-def _count_groups(cards: Counter[str]) -> str:
-    groups = Counter(cards.values())
-    return (
-        f"孤张{groups.get(1, 0)}/对子{groups.get(2, 0)}/"
-        f"三张{groups.get(3, 0)}/四张以上{sum(n for size, n in groups.items() if size >= 4)}"
-    )
-
-
 def _valid_play_card_count(pattern: str, card_count: int) -> bool:
     if pattern == "single":
         return card_count == 1
@@ -315,52 +300,12 @@ def _choose_action(
     return actions[0]
 
 
-def _residual_summary(action: dict[str, object], hand_counts: Counter[str], level: str) -> str:
-    residual_tokens = hand_counts.copy()
-    residual_tokens.subtract(Counter(action["carrier_cards"]))
-    if any(count < 0 for count in residual_tokens.values()):
-        return "余手校验失败"
-    residual = Counter()
-    for token, count in residual_tokens.items():
-        rank = _physical_rank(token)
-        if rank is not None and count > 0:
-            residual[rank] += count
-    controls = residual
-    control_text = ",".join(
-        f"{rank}×{controls[rank]}" for rank in dict.fromkeys((*_CONTROL_RANKS, level))
-        if controls.get(rank, 0)
-    ) or "无"
-    return f"余{sum(residual.values())}张/同点结构({_count_groups(residual)})/保留高点候选({control_text})"
-
-
 def _candidate_display(action: dict[str, object]) -> str:
     pattern = str(action["declared_pattern"])
     cards = [str(card) for card in action["declared_cards"]]
     if pattern not in {"straight_flush"}:
         cards = [str(_physical_rank(card) or card) for card in cards]
     return f"{pattern} {' '.join(cards[:8])}"
-
-
-def _external_control_note(state: _ValidatedPublicState, action: dict[str, object]) -> str:
-    pattern = str(action["declared_pattern"])
-    unseen = state.belief.unseen_cards_by_rank
-    declared = [_physical_rank(token) or str(token) for token in action["declared_cards"]]
-    if pattern == "single" and declared:
-        rank = declared[0]
-        higher_ranks = [
-            other for other in _RANKS
-            if unseen.get(other, 0)
-            and _rank_strength(other, state.level) > _rank_strength(rank, state.level)
-        ]
-        count = sum(unseen[other] for other in higher_ranks)
-        higher_ranks.sort(key=lambda other: _rank_strength(other, state.level), reverse=True)
-        rank_text = "/".join(
-            f"{other}×{unseen[other]}" for other in higher_ranks[:5]
-        ) or "无"
-        relation_note = "已知持牌人" if _exact_single_owner(state) is not None else "归属未知"
-        return f"外部仍见更高单张牌池={count}张(较高点数候选={rank_text}；{relation_note})"
-    possible_bombs = [rank for rank in _RANKS if rank not in JOKER_RANKS and unseen.get(rank, 0) >= 4]
-    return "外部四张同点池=" + ("/".join(possible_bombs[:4]) if possible_bombs else "无") + "(不能确认集中于一人)"
 
 
 def _has_urgent_opponent(state: _ValidatedPublicState) -> bool:
@@ -373,48 +318,173 @@ def _has_urgent_opponent(state: _ValidatedPublicState) -> bool:
     )
 
 
+_SHORT_PATTERN = {
+    "single": "单", "pair": "对", "triple": "三", "triple_with_pair": "三带二",
+    "straight": "顺", "pair_straight": "连对", "steel_plate": "钢板",
+    "bomb": "同点炸", "straight_flush": "同花顺", "joker_bomb": "天王",
+}
+_BOMB_PATTERNS = ("bomb", "straight_flush", "joker_bomb")
+
+
+def _control_cost(action: dict[str, object], level: str) -> int:
+    return sum(
+        1 for token in action["carrier_cards"]
+        if _physical_rank(token) in {*_CONTROL_RANKS, level}
+    )
+
+
+def _residual_facts(
+    action: dict[str, object], hand_counts: Counter[str], level: str,
+) -> tuple[int, tuple[int, int, int, int], str]:
+    residual_tokens = hand_counts.copy()
+    residual_tokens.subtract(Counter(action["carrier_cards"]))
+    if any(count < 0 for count in residual_tokens.values()):
+        return 0, (0, 0, 0, 0), "校验失败"
+    ranks = Counter()
+    for token, count in residual_tokens.items():
+        rank = _physical_rank(token)
+        if rank is not None and count > 0:
+            ranks[rank] += count
+    groups = Counter(ranks.values())
+    group_counts = (
+        groups.get(1, 0), groups.get(2, 0), groups.get(3, 0),
+        sum(count for size, count in groups.items() if size >= 4),
+    )
+    controls = ",".join(
+        f"{rank}×{ranks[rank]}" for rank in dict.fromkeys((*_CONTROL_RANKS, level))
+        if ranks.get(rank, 0)
+    ) or "无"
+    total = sum(ranks.values())
+    return total, group_counts, (
+        f"余{total}/组{group_counts[0]},{group_counts[1]},{group_counts[2]},"
+        f"{group_counts[3]}/留{controls}"
+    )
+
+
+def _declared_strength(action: dict[str, object], level: str) -> tuple[int, ...]:
+    ranks = [_physical_rank(card) or str(card) for card in action["declared_cards"]]
+    strengths = [_rank_strength(rank, level) for rank in ranks if rank in _RANKS]
+    return tuple(sorted(strengths))
+
+
+def _candidate_difference(
+    first: dict[str, object],
+    second: dict[str, object],
+    hand_counts: Counter[str],
+    level: str,
+) -> int:
+    if int(first["action_id"]) == int(second["action_id"]):
+        return 0
+    difference = (
+        abs(len(first["carrier_cards"]) - len(second["carrier_cards"])) * 2
+        + abs(_control_cost(first, level) - _control_cost(second, level)) * 4
+        + abs(int(first.get("wildcard_count", 0)) - int(second.get("wildcard_count", 0))) * 3
+        + sum(abs(a - b) for a, b in zip(
+            _residual_facts(first, hand_counts, level)[1],
+            _residual_facts(second, hand_counts, level)[1],
+        ))
+        + abs(sum(_declared_strength(first, level)) - sum(_declared_strength(second, level)))
+    )
+    if first["declared_pattern"] != second["declared_pattern"]:
+        difference += 2
+    return difference
+
+
 def _candidate_pairs(
     raws: list[object],
     hand_counts: Counter[str],
     *,
     prefer_high_single: bool = False,
+    preferred_action_ids: tuple[int, ...] = (),
     level: str = "2",
 ) -> tuple[tuple[dict[str, object], dict[str, object]], ...]:
-    by_pattern = {
-        pattern: _choose_action(
-            raws,
-            pattern,
-            hand_counts,
-            low_single=(pattern == "single" and not prefer_high_single),
-            high_single=(pattern == "single" and prefer_high_single),
-            high_pattern=(pattern == "pair_straight"),
+    valid_by_id: dict[int, dict[str, object]] = {}
+    by_pattern: dict[str, list[dict[str, object]]] = {pattern: [] for pattern in _PATTERN_ORDER}
+    for raw in raws:
+        action = _action_record(raw, hand_counts)
+        if action is None:
+            continue
+        action_id = int(action["action_id"])
+        if action_id in valid_by_id:
+            continue
+        valid_by_id[action_id] = action
+        by_pattern[str(action["declared_pattern"])].append(action)
+
+    selected: list[tuple[dict[str, object], dict[str, object]]] = []
+    seen: set[frozenset[int]] = set()
+
+    def add_pair(first: dict[str, object] | None, second: dict[str, object] | None) -> None:
+        if first is None or second is None or _candidate_difference(first, second, hand_counts, level) <= 0:
+            return
+        key = frozenset((int(first["action_id"]), int(second["action_id"])))
+        if key in seen or len(selected) >= 2:
+            return
+        seen.add(key)
+        selected.append((first, second))
+
+    preferred = [valid_by_id[action_id] for action_id in preferred_action_ids if action_id in valid_by_id]
+    preferred_pairs: list[tuple[int, dict[str, object], dict[str, object]]] = []
+    if len(preferred) >= 2:
+        for index, first in enumerate(preferred):
+            for second in preferred[index + 1:]:
+                preferred_pairs.append((_candidate_difference(first, second, hand_counts, level), first, second))
+    elif len(preferred) == 1:
+        first = preferred[0]
+        preferred_pairs.extend(
+            (_candidate_difference(first, second, hand_counts, level), first, second)
+            for second in valid_by_id.values()
+            if int(second["action_id"]) != int(first["action_id"])
+        )
+    if preferred_pairs:
+        _, first, second = max(
+            preferred_pairs,
+            key=lambda item: (item[0], -int(item[1]["action_id"]), -int(item[2]["action_id"])),
+        )
+        add_pair(first, second)
+
+    route_pairs: list[tuple[int, dict[str, object], dict[str, object]]] = []
+    for priority, (first_pattern, second_pattern) in enumerate((
+        ("pair_straight", "single"), ("straight", "single"),
+        ("triple", "single"), ("pair", "single"),
+        ("bomb", "pair_straight"), ("bomb", "single"),
+    )):
+        first = _choose_action(
+            raws, first_pattern, hand_counts,
+            high_pattern=(first_pattern == "pair_straight"), level=level,
+        )
+        second = _choose_action(
+            raws, second_pattern, hand_counts,
+            low_single=(second_pattern == "single" and not prefer_high_single),
+            high_single=(second_pattern == "single" and prefer_high_single),
             level=level,
         )
-        for pattern in _PATTERN_ORDER
-    }
-    wanted = (
-        ("pair_straight", "single"),
-        ("straight", "single"),
-        ("triple", "single"),
-        ("pair", "single"),
-        ("bomb", "pair_straight"),
-        ("bomb", "single"),
-    )
-    result: list[tuple[dict[str, object], dict[str, object]]] = []
-    seen: set[tuple[int, int]] = set()
-    for first_pattern, second_pattern in wanted:
-        first = by_pattern.get(first_pattern)
-        second = by_pattern.get(second_pattern)
-        if first is None or second is None:
-            continue
-        pair = (int(first["action_id"]), int(second["action_id"]))
-        if pair in seen:
-            continue
-        seen.add(pair)
-        result.append((first, second))
-        if len(result) == 2:
+        if first is not None and second is not None:
+            route_pairs.append((priority, first, second))
+    route_pairs.sort(key=lambda item: (item[0], -_candidate_difference(item[1], item[2], hand_counts, level)))
+    for _, first, second in route_pairs:
+        add_pair(first, second)
+        if selected:
+            # Reserve the other slot for a same-pattern control-resource
+            # contrast when one exists, instead of spending both on cross routes.
             break
-    return tuple(result)
+
+    same_pattern_pairs: list[tuple[int, int, dict[str, object], dict[str, object]]] = []
+    for pattern, actions in by_pattern.items():
+        if len(actions) < 2:
+            continue
+        ordered = sorted(actions, key=lambda item: (
+            _control_cost(item, level), int(item.get("wildcard_count", 0)),
+            _declared_strength(item, level), int(item["action_id"]),
+        ))
+        first, second = ordered[0], ordered[-1]
+        score = _candidate_difference(first, second, hand_counts, level)
+        if score > 0:
+            pattern_priority = 0 if pattern in {"single", "pair"} else 1
+            same_pattern_pairs.append((pattern_priority, score, first, second))
+    same_pattern_pairs.sort(key=lambda item: (item[0], -item[1]))
+    for _, _, first, second in same_pattern_pairs:
+        add_pair(first, second)
+    return tuple(selected)
 
 
 def _exact_single_owner(state: _ValidatedPublicState):
@@ -445,75 +515,191 @@ def _next_active_player(state: _ValidatedPublicState) -> int | None:
     return None
 
 
+def _cards_from_tokens(tokens: tuple[str, ...] | list[str]) -> tuple[Card, ...] | None:
+    cards: list[Card] = []
+    for token in tokens:
+        rank = _physical_rank(token)
+        if rank is None:
+            return None
+        cards.append(Card(rank=rank, suit=None if token in JOKER_RANKS else token[-1]))
+    return tuple(cards)
+
+
+def _active_external_order(state: _ValidatedPublicState):
+    active = [
+        player for player in state.constraints.players
+        if player.relation != "self" and player.remaining_capacity > 0
+        and not bool(state.player_rows[int(player.player_id)].get("finished"))
+    ]
+    clockwise = {
+        ((state.my_player_id + offset - 1) % 4) + 1: offset
+        for offset in range(1, 5)
+    }
+    return tuple(sorted(active, key=lambda player: clockwise[int(player.player_id)]))
+
+
+def _possible_cards_for_player(
+    state: _ValidatedPublicState,
+    possible_tokens: tuple[str, ...],
+) -> tuple[Card, ...] | None:
+    token_set = set(possible_tokens)
+    cards: list[Card] = []
+    for token, count in state.belief.unseen_cards_by_token.items():
+        if token not in token_set:
+            continue
+        rank = _physical_rank(token)
+        if rank is None:
+            return None
+        cards.extend(
+            Card(rank=rank, suit=None if token in JOKER_RANKS else token[-1])
+            for _ in range(count)
+        )
+    return tuple(cards)
+
+
+def _response_requirements(
+    engine: BaseRuleEngine,
+    action: dict[str, object],
+    cards: tuple[Card, ...],
+    state: _ValidatedPublicState,
+    cache: dict[tuple[tuple[tuple[str, str | None], ...], int], tuple[object, ...] | None],
+) -> tuple[object, ...] | None:
+    leading = _pattern_action(action, state.my_player_id)
+    if leading is None:
+        return None
+    hand_key = tuple(sorted((card.rank, card.suit) for card in cards))
+    cache_key = (hand_key, int(action["action_id"]))
+    if cache_key not in cache:
+        try:
+            cache[cache_key] = engine.public_beating_response_requirements(cards, leading, state.level)
+        except (TypeError, ValueError):
+            cache[cache_key] = None
+    return cache[cache_key]
+
+
+def _response_pattern_text(requirements: tuple[object, ...], leading_pattern: str) -> str:
+    patterns = {str(getattr(requirement, "pattern_type", "")) for requirement in requirements}
+    ordered = [pattern for pattern in _PATTERN_ORDER if pattern in patterns]
+    chosen = list(dict.fromkeys((
+        *([leading_pattern] if leading_pattern in patterns else []),
+        *[pattern for pattern in ordered if pattern in _BOMB_PATTERNS],
+        *[pattern for pattern in ordered if pattern not in _BOMB_PATTERNS][:3],
+    )))
+    return "/".join(_SHORT_PATTERN[pattern] for pattern in chosen if pattern in _SHORT_PATTERN) or "应手"
+
+
+def _player_response_text(
+    state: _ValidatedPublicState,
+    player: object,
+    action: dict[str, object],
+    engine: BaseRuleEngine,
+    cache: dict[tuple[tuple[tuple[str, str | None], ...], int], tuple[object, ...] | None],
+    owner: object | None,
+) -> str:
+    player_id = int(getattr(player, "player_id"))
+    capacity = int(getattr(player, "remaining_capacity"))
+    row = state.player_rows[player_id]
+    relation = "友" if row.get("team") == state.my_team else "敌"
+    is_next = _next_active_player(state) == player_id
+    label = f"{('*' if is_next else '')}P{player_id}{relation}余{capacity}"
+
+    if owner is not None and int(getattr(owner, "player_id")) == player_id:
+        cards = _cards_from_tokens(tuple(getattr(owner, "confirmed_cards")))
+        confirmed = True
+    else:
+        constraint = next(item for item in state.constraints.players if int(item.player_id) == player_id)
+        cards = _possible_cards_for_player(state, constraint.possible_tokens)
+        confirmed = False
+    if cards is None:
+        return f"{label}未知"
+    requirements = _response_requirements(engine, action, cards, state, cache)
+    if requirements is None:
+        return f"{label}未知(规则核验)"
+    if confirmed:
+        if requirements:
+            return f"{label}确认能接[{_response_pattern_text(requirements, str(action['declared_pattern']))}]"
+        return f"{label}已知不能接"
+
+    viable = tuple(
+        requirement for requirement in requirements
+        if int(getattr(requirement, "card_count", 0)) <= capacity
+    )
+    if viable:
+        wildcard = "+配" if any(int(getattr(item, "wildcard_count", 0)) for item in viable) else ""
+        return f"{label}可能[{_response_pattern_text(viable, str(action['declared_pattern']))}{wildcard}]"
+    if requirements:
+        minimum = min(int(getattr(item, "card_count", 0)) for item in requirements)
+        return f"{label}不能接(容量<{minimum})"
+    return f"{label}不能接(未见池无应手)"
+
+
+def _candidate_comparison_line(
+    state: _ValidatedPublicState,
+    first: dict[str, object],
+    second: dict[str, object],
+    hand_counts: Counter[str],
+    engine: BaseRuleEngine,
+    response_cache: dict[tuple[tuple[tuple[str, str | None], ...], int], tuple[object, ...] | None],
+    owner: object | None,
+    *,
+    recommendation_anchored: bool,
+) -> str:
+    players = _active_external_order(state)
+    first_residual = _residual_facts(first, hand_counts, state.level)[2]
+    second_residual = _residual_facts(second, hand_counts, state.level)[2]
+    first_responses = ";".join(
+        _player_response_text(state, player, first, engine, response_cache, owner)
+        for player in players
+    ) or "无活动外部玩家"
+    second_responses = ";".join(
+        _player_response_text(state, player, second, engine, response_cache, owner)
+        for player in players
+    ) or "无活动外部玩家"
+    recommendation_note = "含公开推荐候选；" if recommendation_anchored else ""
+    return (
+        f"M3候选对照 action_id={first['action_id']}({_candidate_display(first)}) vs "
+        f"action_id={second['action_id']}({_candidate_display(second)})："
+        f"出后余手A={first_residual}/B={second_residual}；"
+        f"逐家即时应手A[{first_responses}] B[{second_responses}]；"
+        f"{recommendation_note}E1未分配仅报可能/容量排除，E2只认守恒唯一手牌；"
+        "不能立即接不等于之后安全或必胜。"
+    )
+
+
 def _known_hand_response_line(
     state: _ValidatedPublicState,
     candidates: list[object],
     hand_counts: Counter[str],
+    owner: object,
+    engine: BaseRuleEngine,
+    response_cache: dict[tuple[tuple[tuple[str, str | None], ...], int], tuple[object, ...] | None],
+    preferred_action_ids: tuple[int, ...],
 ) -> str | None:
-    owner = _exact_single_owner(state)
-    if owner is None or _next_active_player(state) != owner.player_id:
-        return None
     candidate = None
-    urgent = _has_urgent_opponent(state)
-    for pattern in ("pair_straight", "straight", "single", "pair", "triple", "bomb", "straight_flush"):
-        candidate = _choose_action(
-            candidates,
-            pattern,
-            hand_counts,
-            low_single=(pattern == "single" and not urgent),
-            high_single=(pattern == "single" and urgent),
-            high_pattern=(pattern == "pair_straight"),
-            level=state.level,
+    for action_id in preferred_action_ids:
+        candidate = next(
+            (item for item in candidates if isinstance(item, dict) and item.get("action_id") == action_id),
+            None,
         )
         if candidate is not None:
             break
     if candidate is None:
+        for pattern in ("single", "pair", "pair_straight", "straight", "triple", "bomb", "straight_flush"):
+            candidate = _choose_action(candidates, pattern, hand_counts, level=state.level)
+            if candidate is not None:
+                break
+    if candidate is None:
         return None
-    known_hand = tuple(
-        Card(rank=_physical_rank(token) or "", suit=None if token in JOKER_RANKS else token[-1])
-        for token in owner.confirmed_cards
+    player = next(
+        item for item in state.constraints.players
+        if int(item.player_id) == int(getattr(owner, "player_id"))
     )
-    compared = [candidate]
-    for pair in _candidate_pairs(
-        candidates,
-        hand_counts,
-        prefer_high_single=urgent,
-        level=state.level,
-    ):
-        if int(candidate["action_id"]) in {int(pair[0]["action_id"]), int(pair[1]["action_id"])}:
-            alternative = pair[1] if int(pair[0]["action_id"]) == int(candidate["action_id"]) else pair[0]
-            if int(alternative["action_id"]) != int(candidate["action_id"]):
-                compared.append(alternative)
-            break
-
-    engine = BaseRuleEngine()
-    response_notes = []
-    for action in compared:
-        leading = _pattern_action(action, state.my_player_id)
-        if leading is None:
-            continue
-        try:
-            response_types = engine.public_beating_pattern_types(known_hand, leading, state.level)
-        except (TypeError, ValueError):
-            continue
-        response_text = ",".join(response_types) if response_types else "无"
-        response_notes.append(
-            f"action_id={action['action_id']}({_candidate_display(action)})可立即压过牌型={response_text}"
-        )
-    if not response_notes:
-        return None
-    row = state.player_rows[int(owner.player_id)]
-    relation = "队友" if row.get("team") == state.my_team else "对手"
-    known_high = Counter(_physical_rank(token) for token in owner.confirmed_cards)
-    high_text = ",".join(
-        f"{rank}×{known_high[rank]}" for rank in dict.fromkeys((*_CONTROL_RANKS, state.level))
-        if known_high.get(rank, 0)
-    ) or "无"
+    response = _player_response_text(state, player, candidate, engine, response_cache, owner)
+    residual = _residual_facts(candidate, hand_counts, state.level)[2]
     return (
-        f"M3唯一归属核验 {'；'.join(response_notes)}：下一位{relation}的公开守恒手牌"
-        f"余{owner.remaining_capacity}张；已知高点资源({high_text})。"
-        f"本家候选后余牌分别为{'；'.join(_residual_summary(action, hand_counts, state.level) for action in compared)}；"
-        "此项仅说明立即接管牌型可行性，不推出胜负或后续牌权。"
+        f"M3唯一归属核验 action_id={candidate['action_id']}({_candidate_display(candidate)})；"
+        f"逐家即时应手={response}；出后{residual}；"
+        "只判断已确认手牌能否立即接，不推出后续牌权或胜负。"
     )
 
 
@@ -522,6 +708,7 @@ def build_card_tracking_summary(
     legal_actions: list[dict[str, object]],
     *,
     current_level_rank: str | None = None,
+    preferred_action_ids: tuple[int, ...] = (),
 ) -> str:
     """Return concise public card facts and comparisons of displayed canonical actions."""
     state = _validated_public_state(observation)
@@ -531,18 +718,6 @@ def build_card_tracking_summary(
     my_counts = Counter(state.my_hand)
     played_count = sum(len(player.played_cards) for player in state.belief.players)
     external_count = state.belief.external_unknown_count
-    active_external = [
-        player for player in state.constraints.players
-        if player.relation != "self" and player.remaining_capacity > 0
-    ]
-    teammate_capacity = sum(
-        player.remaining_capacity for player in active_external
-        if state.player_rows[int(player.player_id)].get("team") == state.my_team
-    )
-    opponent_capacity = sum(
-        player.remaining_capacity for player in active_external
-        if state.player_rows[int(player.player_id)].get("team") != state.my_team
-    )
     owner = _exact_single_owner(state)
     urgent_opponents = [
         int(row["hand_count"])
@@ -555,88 +730,58 @@ def build_card_tracking_summary(
     ]
     evidence = "E2唯一归属" if owner is not None else "E1精确牌池/多人未分配"
     lines = [
-        f"证据级={evidence}；实体牌守恒108张：已出{played_count}、本家持有{len(state.my_hand)}、外部未见{external_count}。",
+        f"证据级={evidence}；守恒108张：已出{played_count}、本家{len(state.my_hand)}、外部未见{external_count}。",
     ]
     if owner is not None:
         row = state.player_rows[int(owner.player_id)]
         relation = "队友" if row.get("team") == state.my_team else "对手"
-        lines.append(f"已确认持有人={relation}玩家{owner.player_id}，手牌点数={_count_text(list(owner.confirmed_cards))}。")
+        lines.append(f"已确认持有人={relation}P{owner.player_id}余{owner.remaining_capacity}；仅由公开守恒确认。")
     else:
-        possible_roles = []
-        if opponent_capacity:
-            possible_roles.append(f"对手余{opponent_capacity}张可能持有")
-        if teammate_capacity:
-            possible_roles.append(f"队友余{teammate_capacity}张可能持有")
-        possible_holders = []
-        for player in sorted(active_external, key=lambda item: int(item.player_id)):
-            role = (
-                "队友"
-                if state.player_rows[int(player.player_id)].get("team") == state.my_team
-                else "对手"
-            )
-            possible_holders.append(
-                f"玩家{player.player_id}({role},余{player.remaining_capacity}张)"
-            )
+        player_facts = []
+        for player in _active_external_order(state):
+            role = "友" if state.player_rows[int(player.player_id)].get("team") == state.my_team else "敌"
+            next_marker = "*" if int(player.player_id) == _next_active_player(state) else ""
+            player_facts.append(f"{next_marker}P{player.player_id}{role}余{player.remaining_capacity}")
         lines.append(
-            "外部归属未确认：" + ("、".join(possible_roles) if possible_roles else "无活动外部持牌人")
-            + ("；可能持牌人=" + "、".join(possible_holders) if possible_holders else "")
-            + "；具体牌归属未知，不能视为单家手牌。"
+            "外部归属未确认；行动顺序=" + ("/".join(player_facts) or "无活动外部持牌人")
+            + "；pass不证明无牌，未见牌不指派给单家。"
         )
-    lines.append(
-        "公开紧迫对手最少余="
-        + (f"{min(urgent_opponents)}张；比较高单阻断时核对外部响应牌池" if urgent_opponents else "无1–2张对手")
-        + "，不把紧迫度当作其具体持牌事实。"
-    )
-
-    bomb_ranks = [
-        rank for rank in NORMAL_RANKS
-        if state.belief.unseen_cards_by_rank.get(rank, 0) >= 4
-    ]
-    lines.append(
-        "外部同点炸弹线索="
-        + ("未见池仍有至少4张的点数:" + "/".join(bomb_ranks[:5]) if bomb_ranks else "未见池无4张同点集中")
-        + "（不证明同一家持有）；同花顺是独立炸弹类别，同点数统计不能排除它。"
-    )
+    if urgent_opponents:
+        lines.append(f"公开紧迫对手最少余{min(urgent_opponents)}张；这不是具体持牌事实。")
 
     comparisons = _candidate_pairs(
         list(legal_actions),
         my_counts,
         prefer_high_single=_has_urgent_opponent(state),
+        preferred_action_ids=preferred_action_ids,
         level=state.level,
     )
-    urgent_opponent = _has_urgent_opponent(state)
+    engine = BaseRuleEngine()
+    response_cache: dict[
+        tuple[tuple[tuple[str, str | None], ...], int], tuple[object, ...] | None
+    ] = {}
     for first, second in comparisons:
-        notes = [_external_control_note(state, first)]
-        if first["declared_pattern"] != second["declared_pattern"]:
-            notes.append(_external_control_note(state, second))
-        if "pair_straight" in {first["declared_pattern"], second["declared_pattern"]}:
-            route_context = (
-                "当前有公开紧迫对手：将实际高单候选的即时拦截价值与连对清理并列比较；"
-                "只按可核验牌型和外部响应池衡量，未分配牌的持有人仍未知。"
-                if urgent_opponent
-                else "当前无公开1–2张对手；若自然连对出后仍保留高点候选且余组更轻，可考虑先清组合；"
-                "小单保组路线仍须比较，不把牌数优势当作固定指令。"
-            )
-        else:
-            route_context = "结合队友/对手余牌、可能接管资源和余组比较；不固定偏向任一路线。"
-        lines.append(
-            f"M3候选对照 action_id={first['action_id']}({ _candidate_display(first) }) vs "
-            f"action_id={second['action_id']}({ _candidate_display(second) })："
-            f"本次出牌张数={len(first['carrier_cards'])}/{len(second['carrier_cards'])}；"
-            f"出后资源={_residual_summary(first, my_counts, state.level)}；"
-            f"另一候选出后={_residual_summary(second, my_counts, state.level)}；"
-            f"{'；'.join(notes)}。"
-            + route_context
+        lines.append(_candidate_comparison_line(
+            state, first, second, my_counts, engine, response_cache, owner,
+            recommendation_anchored=(
+                int(first["action_id"]) in preferred_action_ids
+                or int(second["action_id"]) in preferred_action_ids
+            ),
+        ))
+    if not comparisons and owner is not None:
+        unique_line = _known_hand_response_line(
+            state, list(legal_actions), my_counts, owner, engine, response_cache,
+            preferred_action_ids,
         )
+        if unique_line:
+            lines.append(unique_line)
 
-    unique_line = _known_hand_response_line(state, list(legal_actions), my_counts)
-    if unique_line:
-        lines.append(unique_line)
-
-    summary = "【记牌信息】\n" + "\n".join(lines)
-    if len(summary) <= _TRACKING_LIMIT:
-        return summary
-    return summary[:_TRACKING_LIMIT - 1].rstrip() + "…"
+    prefix = "【记牌信息】\n"
+    summary = prefix + "\n".join(lines)
+    while len(summary) > _TRACKING_LIMIT and len(lines) > (3 if owner is not None else 2):
+        lines.pop()
+        summary = prefix + "\n".join(lines)
+    return summary
 
 
 class CardTracker:
@@ -653,6 +798,7 @@ class CardTracker:
         *,
         observation: dict[str, object] | None = None,
         legal_actions: list[dict[str, object]] | None = None,
+        preferred_action_ids: tuple[int, ...] = (),
     ) -> None:
         del history_actions, my_hand
         if observation is None:
@@ -662,6 +808,7 @@ class CardTracker:
                 observation,
                 legal_actions or [],
                 current_level_rank=self.current_level_rank,
+                preferred_action_ids=preferred_action_ids,
             )
 
     def get_summary(self, my_hand: list[str]) -> str:

@@ -241,6 +241,42 @@ class TestRules(unittest.TestCase):
         self.assertTrue(self.rules.can_beat(bomb6, straight_flush, current_level_rank="2"))
         self.assertTrue(self.rules.can_beat(joker_bomb, bomb6, current_level_rank="2"))
 
+    def test_public_response_requirements_cover_bomb_families_and_wildcard_carriers(self) -> None:
+        hand = _cards(
+            "7S", "7H", "7C", "7D",
+            "3S", "4S", "5S", "6S", "8S",
+            "8H", "8C", "8D", "2H",
+            "9H", "10H", "JH", "QH",
+            "SJ", "SJ", "BJ", "BJ",
+        )
+        highest_single = _action(2, PatternType.SINGLE, (BIG_JOKER_RANK,))
+
+        requirements = self.rules.public_beating_response_requirements(
+            hand, highest_single, current_level_rank="2",
+        )
+        signatures = {
+            (item.pattern_type, item.card_count, item.wildcard_count)
+            for item in requirements
+        }
+        self.assertIn(("bomb", 4, 0), signatures)
+        self.assertIn(("bomb", 4, 1), signatures)
+        self.assertIn(("straight_flush", 5, 0), signatures)
+        self.assertIn(("straight_flush", 5, 1), signatures)
+        self.assertIn(("joker_bomb", 4, 0), signatures)
+        self.assertEqual(
+            self.rules.public_beating_pattern_types(hand, highest_single, current_level_rank="2"),
+            tuple(dict.fromkeys(item.pattern_type for item in requirements)),
+        )
+
+        highest_bomb = _action(
+            2, PatternType.JOKER_BOMB,
+            (SMALL_JOKER_RANK, SMALL_JOKER_RANK, BIG_JOKER_RANK, BIG_JOKER_RANK),
+        )
+        self.assertEqual(
+            self.rules.public_beating_response_requirements(hand, highest_bomb, current_level_rank="2"),
+            (),
+        )
+
     def test_follow_context_only_exposes_beating_actions_or_pass(self) -> None:
         table_action = _action(2, PatternType.PAIR, ("9", "9"), ("9S", "9H"))
         state = _state(

@@ -661,6 +661,10 @@ class DeepSeekAIAgent(BaseAgent):
                 my_hand_cards,
                 observation=observation,
                 legal_actions=pruned,
+                preferred_action_ids=tuple(
+                    action_id for action_id in getattr(strategy_recommendation, "action_ids", ())
+                    if type(action_id) is int
+                ),
             )
             card_tracking_summary = self.card_tracker.get_summary(my_hand_cards)
 

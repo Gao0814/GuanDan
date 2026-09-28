@@ -1,6 +1,7 @@
 """Rules and legal-action generation for the single-game GuanDan mainline."""
 
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from itertools import combinations
 from typing import Iterable
 
@@ -79,6 +80,15 @@ _RANK_STRENGTH_BASE: dict[str, int] = {
     SMALL_JOKER_RANK: 17,
     BIG_JOKER_RANK: 18,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class PublicResponseRequirement:
+    """Low-sensitivity summary of a generated response from explicit cards."""
+
+    pattern_type: str
+    card_count: int
+    wildcard_count: int
 
 
 def _validate_current_level_rank(current_level_rank: str) -> None:
@@ -280,28 +290,59 @@ class BaseRuleEngine:
         is intended for consumers that have a uniquely confirmed public hand.
         All pattern generation and comparison still use the engine's rule truth.
         """
+        requirements = self.public_beating_response_requirements(
+            hand_cards, leading_action, current_level_rank,
+        )
+        beating = {item.pattern_type for item in requirements}
+        return tuple(pattern for pattern in _PATTERN_SORT_ORDER if pattern in beating)
+
+    def public_beating_response_requirements(
+        self,
+        available_cards: tuple[Card, ...],
+        leading_action: Action,
+        current_level_rank: str,
+    ) -> tuple[PublicResponseRequirement, ...]:
+        """Return rule-verified response families and physical card counts.
+
+        ``available_cards`` may be an explicitly known hand or a public pool of
+        cards whose owner is unknown. The result contains no card identities,
+        generated action, action ID, or game state. Every included response is
+        generated and compared by the engine, including ordinary bombs, flush
+        bombs, joker bombs, and wildcard declarations.
+        """
         _validate_current_level_rank(current_level_rank)
         if leading_action.action_type != ActionType.PLAY:
             return ()
 
         player_id = leading_action.player_id
         candidates: list[Action] = []
-        candidates.extend(self._generate_single_actions(player_id, hand_cards, current_level_rank))
-        candidates.extend(self._generate_group_actions(player_id, hand_cards, current_level_rank))
-        candidates.extend(self._generate_triple_with_pair_actions(player_id, hand_cards, current_level_rank))
-        candidates.extend(self._generate_straight_actions(player_id, hand_cards, current_level_rank))
-        candidates.extend(self._generate_pair_straight_actions(player_id, hand_cards, current_level_rank))
-        candidates.extend(self._generate_steel_plate_actions(player_id, hand_cards, current_level_rank))
-        candidates.extend(self._generate_straight_flush_actions(player_id, hand_cards, current_level_rank))
+        candidates.extend(self._generate_single_actions(player_id, available_cards, current_level_rank))
+        candidates.extend(self._generate_group_actions(player_id, available_cards, current_level_rank))
+        candidates.extend(self._generate_triple_with_pair_actions(player_id, available_cards, current_level_rank))
+        candidates.extend(self._generate_straight_actions(player_id, available_cards, current_level_rank))
+        candidates.extend(self._generate_pair_straight_actions(player_id, available_cards, current_level_rank))
+        candidates.extend(self._generate_steel_plate_actions(player_id, available_cards, current_level_rank))
+        candidates.extend(self._generate_straight_flush_actions(player_id, available_cards, current_level_rank))
 
-        beating = {
-            action.declared_pattern.value
+        requirements = {
+            PublicResponseRequirement(
+                pattern_type=action.declared_pattern.value,
+                card_count=len(action.carrier_cards),
+                wildcard_count=action.wildcard_count,
+            )
             for action in candidates
             if action.declared_pattern is not None
-            and _carrier_is_payable(action, hand_cards)
+            and _carrier_is_payable(action, available_cards)
             and self.can_beat(action, leading_action, current_level_rank)
         }
-        return tuple(pattern for pattern in _PATTERN_SORT_ORDER if pattern in beating)
+        return tuple(sorted(
+            requirements,
+            key=lambda item: (
+                _PATTERN_SORT_ORDER.get(item.pattern_type, 99),
+                item.card_count,
+                item.wildcard_count,
+            ),
+        ))
 
     def can_beat(self, candidate: Action, leading_action: Action, current_level_rank: str) -> bool:
         _validate_current_level_rank(current_level_rank)

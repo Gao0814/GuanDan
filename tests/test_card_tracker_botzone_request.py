@@ -87,6 +87,9 @@ class CardTrackerBotzoneRequestTests(unittest.TestCase):
         prompt = captured_prompts[0]
         self.assertIn("证据级=E1精确牌池/多人未分配", prompt)
         self.assertIn("M3候选对照", prompt)
+        self.assertIn("逐家即时应手", prompt)
+        self.assertIn("可能[", prompt)
+        self.assertNotIn("外部四张同点池", prompt)
 
         candidate_section = prompt.split("【候选动作】", 1)[1].split("【规则库依据】", 1)[0]
         candidate_ids = {int(value) for value in re.findall(r"action_id=(\d+)", candidate_section)}
