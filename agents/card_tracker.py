@@ -29,8 +29,6 @@ _PATTERN_ORDER = (
 )
 _TRACKING_LIMIT = 1_350
 _ResponseSignature = tuple[str, tuple[tuple[str, str | None], ...]]
-_ResponseCacheKey = tuple[tuple[tuple[str, str | None], ...], _ResponseSignature]
-_ResourceCacheKey = tuple[tuple[tuple[str, str | None], ...], _ResponseSignature, int]
 
 
 def _physical_rank(token: object) -> str | None:
@@ -82,6 +80,16 @@ class _ValidatedPublicState:
     my_team: str
     level: str
     my_hand: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _CandidateFacts:
+    residual: tuple[int, tuple[int, int, int, int], str]
+    control_cost: int
+    carrier_count: int
+    wildcard_count: int
+    declared_strength: int
+    pattern: str
 
 
 def _validated_public_state(observation: object) -> _ValidatedPublicState | None:
@@ -367,22 +375,19 @@ def _declared_strength(action: dict[str, object], level: str) -> tuple[int, ...]
 def _candidate_difference(
     first: dict[str, object],
     second: dict[str, object],
-    hand_counts: Counter[str],
-    level: str,
+    first_facts: _CandidateFacts,
+    second_facts: _CandidateFacts,
 ) -> int:
     if int(first["action_id"]) == int(second["action_id"]):
         return 0
     difference = (
-        abs(len(first["carrier_cards"]) - len(second["carrier_cards"])) * 2
-        + abs(_control_cost(first, level) - _control_cost(second, level)) * 4
-        + abs(int(first.get("wildcard_count", 0)) - int(second.get("wildcard_count", 0))) * 3
-        + sum(abs(a - b) for a, b in zip(
-            _residual_facts(first, hand_counts, level)[1],
-            _residual_facts(second, hand_counts, level)[1],
-        ))
-        + abs(sum(_declared_strength(first, level)) - sum(_declared_strength(second, level)))
+        abs(first_facts.carrier_count - second_facts.carrier_count) * 2
+        + abs(first_facts.control_cost - second_facts.control_cost) * 4
+        + abs(first_facts.wildcard_count - second_facts.wildcard_count) * 3
+        + sum(abs(a - b) for a, b in zip(first_facts.residual[1], second_facts.residual[1]))
+        + abs(first_facts.declared_strength - second_facts.declared_strength)
     )
-    if first["declared_pattern"] != second["declared_pattern"]:
+    if first_facts.pattern != second_facts.pattern:
         difference += 2
     return difference
 
@@ -394,8 +399,8 @@ def _candidate_pairs(
     state: _ValidatedPublicState,
     engine: BaseRuleEngine,
     owner: object | None,
-    response_cache: dict[_ResponseCacheKey, tuple[object, ...] | None],
-    resource_cache: dict[_ResourceCacheKey, tuple[object, ...] | None],
+    profile_cache: dict[int, tuple[dict[str, object], ...]],
+    facts_cache: dict[int, _CandidateFacts],
     preferred_action_ids: tuple[int, ...] = (),
     level: str = "2",
 ) -> tuple[tuple[dict[str, object], dict[str, object]], ...]:
@@ -409,15 +414,19 @@ def _candidate_pairs(
             continue
         valid_by_id[action_id] = action
 
-    profile_cache: dict[int, tuple[dict[str, object], ...]] = {}
-
-    def profiles(action: dict[str, object]) -> tuple[dict[str, object], ...]:
-        action_id = int(action["action_id"])
-        if action_id not in profile_cache:
-            profile_cache[action_id] = _candidate_response_profiles(
-                state, action, engine, response_cache, resource_cache, owner,
-            )
-        return profile_cache[action_id]
+    profile_cache.update(_candidate_response_profiles(
+        state, tuple(valid_by_id.values()), engine, owner,
+    ))
+    for action_id, action in valid_by_id.items():
+        residual = _residual_facts(action, hand_counts, level)
+        facts_cache[action_id] = _CandidateFacts(
+            residual=residual,
+            control_cost=_control_cost(action, level),
+            carrier_count=len(action["carrier_cards"]),
+            wildcard_count=int(action.get("wildcard_count", 0)),
+            declared_strength=sum(_declared_strength(action, level)),
+            pattern=str(action["declared_pattern"]),
+        )
 
     def response_difference(
         first_profiles: tuple[dict[str, object], ...],
@@ -448,10 +457,14 @@ def _candidate_pairs(
     def pair_priority(
         first: dict[str, object], second: dict[str, object],
     ) -> tuple[int, int, int, int, int] | None:
-        first_profiles = profiles(first)
-        second_profiles = profiles(second)
+        first_id = int(first["action_id"])
+        second_id = int(second["action_id"])
+        first_profiles = profile_cache[first_id]
+        second_profiles = profile_cache[second_id]
         response_score = response_difference(first_profiles, second_profiles)
-        structure_score = _candidate_structure_difference(first, second, hand_counts, level)
+        first_facts = facts_cache[first_id]
+        second_facts = facts_cache[second_id]
+        structure_score = _candidate_structure_difference(first, second, first_facts, second_facts)
         if response_score == 0 and structure_score == 0:
             return None
         preferred_count = int(
@@ -463,7 +476,7 @@ def _candidate_pairs(
             preferred_count,
             response_score,
             structure_score,
-            _candidate_difference(first, second, hand_counts, level),
+            _candidate_difference(first, second, first_facts, second_facts),
             -min(int(first["action_id"]), int(second["action_id"])),
         )
 
@@ -496,24 +509,22 @@ def _candidate_pairs(
 def _candidate_structure_difference(
     first: dict[str, object],
     second: dict[str, object],
-    hand_counts: Counter[str],
-    level: str,
+    first_facts: _CandidateFacts,
+    second_facts: _CandidateFacts,
 ) -> int:
     if int(first["action_id"]) == int(second["action_id"]):
         return 0
-    first_groups = _residual_facts(first, hand_counts, level)[1]
-    second_groups = _residual_facts(second, hand_counts, level)[1]
-    first_summary = _residual_facts(first, hand_counts, level)[2]
-    second_summary = _residual_facts(second, hand_counts, level)[2]
-    first_controls = first_summary.rsplit("/留", 1)[-1]
-    second_controls = second_summary.rsplit("/留", 1)[-1]
+    first_groups = first_facts.residual[1]
+    second_groups = second_facts.residual[1]
+    first_controls = first_facts.residual[2].rsplit("/留", 1)[-1]
+    second_controls = second_facts.residual[2].rsplit("/留", 1)[-1]
     return (
-        abs(_control_cost(first, level) - _control_cost(second, level)) * 4
-        + abs(int(first.get("wildcard_count", 0)) - int(second.get("wildcard_count", 0))) * 3
-        + abs(len(first["carrier_cards"]) - len(second["carrier_cards"])) * 2
+        abs(first_facts.control_cost - second_facts.control_cost) * 4
+        + abs(first_facts.wildcard_count - second_facts.wildcard_count) * 3
+        + abs(first_facts.carrier_count - second_facts.carrier_count) * 2
         + sum(abs(a - b) for a, b in zip(first_groups, second_groups))
         + (2 if first_controls != second_controls else 0)
-        + (1 if first["declared_pattern"] != second["declared_pattern"] else 0)
+        + (1 if first_facts.pattern != second_facts.pattern else 0)
     )
 
 
@@ -585,49 +596,6 @@ def _possible_cards_for_player(
             for _ in range(count)
         )
     return tuple(cards)
-
-
-def _response_requirements(
-    engine: BaseRuleEngine,
-    action: dict[str, object],
-    cards: tuple[Card, ...],
-    state: _ValidatedPublicState,
-    cache: dict[_ResponseCacheKey, tuple[object, ...] | None],
-) -> tuple[object, ...] | None:
-    leading = _pattern_action(action, state.my_player_id)
-    if leading is None:
-        return None
-    hand_key = tuple(sorted((card.rank, card.suit) for card in cards))
-    cache_key = (hand_key, _response_signature(action))
-    if cache_key not in cache:
-        try:
-            cache[cache_key] = engine.public_beating_response_requirements(cards, leading, state.level)
-        except (TypeError, ValueError):
-            cache[cache_key] = None
-    return cache[cache_key]
-
-
-def _response_resource_counts(
-    engine: BaseRuleEngine,
-    action: dict[str, object],
-    cards: tuple[Card, ...],
-    state: _ValidatedPublicState,
-    capacity: int,
-    cache: dict[_ResourceCacheKey, tuple[object, ...] | None],
-) -> tuple[object, ...] | None:
-    leading = _pattern_action(action, state.my_player_id)
-    if leading is None:
-        return None
-    hand_key = tuple(sorted((card.rank, card.suit) for card in cards))
-    cache_key = (hand_key, _response_signature(action), capacity)
-    if cache_key not in cache:
-        try:
-            cache[cache_key] = engine.public_beating_response_resource_counts(
-                cards, leading, state.level, max_cards=capacity,
-            )
-        except (TypeError, ValueError):
-            cache[cache_key] = None
-    return cache[cache_key]
 
 
 def _response_signature(action: dict[str, object]) -> _ResponseSignature:
@@ -708,10 +676,10 @@ def _player_response_profile(
     state: _ValidatedPublicState,
     player: object,
     action: dict[str, object],
-    engine: BaseRuleEngine,
-    response_cache: dict[_ResponseCacheKey, tuple[object, ...] | None],
-    resource_cache: dict[_ResourceCacheKey, tuple[object, ...] | None],
-    owner: object | None,
+    response_summary: object | None,
+    confirmed: bool,
+    *,
+    unknown_reason: str = "未知(规则核验)",
 ) -> dict[str, object]:
     player_id = int(getattr(player, "player_id"))
     capacity = int(getattr(player, "remaining_capacity"))
@@ -728,21 +696,12 @@ def _player_response_profile(
             "is_next": is_next, "urgent": urgent,
         }
 
-    if owner is not None and int(getattr(owner, "player_id")) == player_id:
-        cards = _cards_from_tokens(tuple(getattr(owner, "confirmed_cards")))
-        confirmed = True
-    else:
-        constraint = next(item for item in state.constraints.players if int(item.player_id) == player_id)
-        cards = _possible_cards_for_player(state, constraint.possible_tokens)
-        confirmed = False
-    if cards is None:
-        return unknown("未知")
-    requirements = _response_requirements(engine, action, cards, state, response_cache)
-    if requirements is None:
-        return unknown("未知(规则核验)")
-    resource_counts = _response_resource_counts(
-        engine, action, cards, state, capacity, resource_cache,
-    )
+    if response_summary is None:
+        return unknown(unknown_reason)
+    requirements = getattr(response_summary, "requirements", None)
+    resource_counts = getattr(response_summary, "resource_counts", None)
+    if not isinstance(requirements, tuple) or not isinstance(resource_counts, tuple):
+        return unknown(unknown_reason)
     leading_pattern = str(action["declared_pattern"])
     resource_text, resource_signature = _resource_text(
         resource_counts, confirmed=confirmed, leading_pattern=leading_pattern,
@@ -787,40 +746,98 @@ def _player_response_profile(
 
 def _candidate_response_profiles(
     state: _ValidatedPublicState,
-    action: dict[str, object],
+    candidates: tuple[dict[str, object], ...],
     engine: BaseRuleEngine,
-    response_cache: dict[_ResponseCacheKey, tuple[object, ...] | None],
-    resource_cache: dict[_ResourceCacheKey, tuple[object, ...] | None],
     owner: object | None,
-) -> tuple[dict[str, object], ...]:
-    return tuple(
-        _player_response_profile(
-            state, player, action, engine, response_cache, resource_cache, owner,
-        )
-        for player in _active_external_order(state)
-    )
+) -> dict[int, tuple[dict[str, object], ...]]:
+    profiles_by_action: dict[int, list[dict[str, object]]] = {
+        int(action["action_id"]): [] for action in candidates
+    }
+    lead_by_signature: dict[_ResponseSignature, Action] = {}
+    signature_by_action: dict[int, _ResponseSignature] = {}
+    invalid_leads: set[int] = set()
+    for action in candidates:
+        action_id = int(action["action_id"])
+        signature = _response_signature(action)
+        signature_by_action[action_id] = signature
+        if signature in lead_by_signature:
+            continue
+        lead = _pattern_action(action, state.my_player_id)
+        if lead is None:
+            invalid_leads.add(action_id)
+        else:
+            lead_by_signature[signature] = lead
+
+    constraints_by_player = {
+        int(item.player_id): item for item in state.constraints.players
+    }
+    batch_cache: dict[
+        tuple[tuple[tuple[str, str | None], ...], int],
+        dict[_ResponseSignature, object] | None,
+    ] = {}
+    for player in _active_external_order(state):
+        player_id = int(getattr(player, "player_id"))
+        confirmed = owner is not None and int(getattr(owner, "player_id")) == player_id
+        if confirmed:
+            cards = _cards_from_tokens(tuple(getattr(owner, "confirmed_cards")))
+        else:
+            constraint = constraints_by_player[player_id]
+            cards = _possible_cards_for_player(state, constraint.possible_tokens)
+
+        summaries_by_signature: dict[_ResponseSignature, object] = {}
+        if cards is not None and lead_by_signature:
+            capacity = int(getattr(player, "remaining_capacity"))
+            card_domain = tuple(sorted((card.rank, card.suit) for card in cards))
+            batch_key = (card_domain, capacity)
+            if batch_key not in batch_cache:
+                try:
+                    leads = tuple(lead_by_signature.values())
+                    summaries = engine.public_beating_response_summaries(
+                        cards,
+                        leads,
+                        state.level,
+                        max_cards=capacity,
+                    )
+                    batch_cache[batch_key] = dict(zip(lead_by_signature, summaries))
+                except (TypeError, ValueError):
+                    batch_cache[batch_key] = None
+            summaries_by_signature = batch_cache[batch_key] or {}
+
+        for action in candidates:
+            action_id = int(action["action_id"])
+            if cards is None:
+                profile = _player_response_profile(
+                    state, player, action, None, confirmed, unknown_reason="未知",
+                )
+            elif action_id in invalid_leads:
+                profile = _player_response_profile(state, player, action, None, confirmed)
+            else:
+                profile = _player_response_profile(
+                    state,
+                    player,
+                    action,
+                    summaries_by_signature.get(signature_by_action[action_id]),
+                    confirmed,
+                )
+            profiles_by_action[action_id].append(profile)
+
+    return {action_id: tuple(profiles) for action_id, profiles in profiles_by_action.items()}
 
 
 def _candidate_comparison_line(
-    state: _ValidatedPublicState,
     first: dict[str, object],
     second: dict[str, object],
-    hand_counts: Counter[str],
-    engine: BaseRuleEngine,
-    response_cache: dict[_ResponseCacheKey, tuple[object, ...] | None],
-    resource_cache: dict[_ResourceCacheKey, tuple[object, ...] | None],
-    owner: object | None,
+    profile_cache: dict[int, tuple[dict[str, object], ...]],
+    facts_cache: dict[int, _CandidateFacts],
     *,
     recommendation_anchored: bool,
 ) -> str:
-    first_residual = _residual_facts(first, hand_counts, state.level)[2]
-    second_residual = _residual_facts(second, hand_counts, state.level)[2]
-    first_profiles = _candidate_response_profiles(
-        state, first, engine, response_cache, resource_cache, owner,
-    )
-    second_profiles = _candidate_response_profiles(
-        state, second, engine, response_cache, resource_cache, owner,
-    )
+    first_id = int(first["action_id"])
+    second_id = int(second["action_id"])
+    first_residual = facts_cache[first_id].residual[2]
+    second_residual = facts_cache[second_id].residual[2]
+    first_profiles = profile_cache[first_id]
+    second_profiles = profile_cache[second_id]
     first_responses = ";".join(str(profile["text"]) for profile in first_profiles) or "无活动外部玩家"
     second_responses = ";".join(str(profile["text"]) for profile in second_profiles) or "无活动外部玩家"
     recommendation_note = "含公开推荐候选；" if recommendation_anchored else ""
@@ -839,9 +856,8 @@ def _known_hand_response_line(
     candidates: list[object],
     hand_counts: Counter[str],
     owner: object,
-    engine: BaseRuleEngine,
-    response_cache: dict[_ResponseCacheKey, tuple[object, ...] | None],
-    resource_cache: dict[_ResourceCacheKey, tuple[object, ...] | None],
+    profile_cache: dict[int, tuple[dict[str, object], ...]],
+    facts_cache: dict[int, _CandidateFacts],
     preferred_action_ids: tuple[int, ...],
 ) -> str | None:
     candidate = None
@@ -859,14 +875,10 @@ def _known_hand_response_line(
                 break
     if candidate is None:
         return None
-    player = next(
-        item for item in state.constraints.players
-        if int(item.player_id) == int(getattr(owner, "player_id"))
-    )
-    response = str(_player_response_profile(
-        state, player, candidate, engine, response_cache, resource_cache, owner,
-    )["text"])
-    residual = _residual_facts(candidate, hand_counts, state.level)[2]
+    action_id = int(candidate["action_id"])
+    confirmed_profile = profile_cache[action_id][0] if profile_cache[action_id] else None
+    response = str(confirmed_profile["text"] if confirmed_profile else "资源未知")
+    residual = facts_cache[action_id].residual[2]
     return (
         f"M3唯一归属核验 action_id={candidate['action_id']}({_candidate_display(candidate)})；"
         f"逐家即时应手={response}；出后{residual}；"
@@ -924,22 +936,22 @@ def build_card_tracking_summary(
         lines.append(f"公开紧迫对手最少余{min(urgent_opponents)}张；这不是具体持牌事实。")
 
     engine = BaseRuleEngine()
-    response_cache: dict[_ResponseCacheKey, tuple[object, ...] | None] = {}
-    resource_cache: dict[_ResourceCacheKey, tuple[object, ...] | None] = {}
+    profile_cache: dict[int, tuple[dict[str, object], ...]] = {}
+    facts_cache: dict[int, _CandidateFacts] = {}
     comparisons = _candidate_pairs(
         list(legal_actions),
         my_counts,
         state=state,
         engine=engine,
         owner=owner,
-        response_cache=response_cache,
-        resource_cache=resource_cache,
+        profile_cache=profile_cache,
+        facts_cache=facts_cache,
         preferred_action_ids=preferred_action_ids,
         level=state.level,
     )
     for first, second in comparisons:
         lines.append(_candidate_comparison_line(
-            state, first, second, my_counts, engine, response_cache, resource_cache, owner,
+            first, second, profile_cache, facts_cache,
             recommendation_anchored=(
                 int(first["action_id"]) in preferred_action_ids
                 or int(second["action_id"]) in preferred_action_ids
@@ -947,7 +959,7 @@ def build_card_tracking_summary(
         ))
     if not comparisons and owner is not None:
         unique_line = _known_hand_response_line(
-            state, list(legal_actions), my_counts, owner, engine, response_cache, resource_cache,
+            state, list(legal_actions), my_counts, owner, profile_cache, facts_cache,
             preferred_action_ids,
         )
         if unique_line:

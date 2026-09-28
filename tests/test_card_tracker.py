@@ -5,10 +5,13 @@ import re
 import unittest
 from collections import Counter
 from copy import deepcopy
+from unittest.mock import patch
 
+import agents.card_tracker as card_tracker_module
 from agents.card_tracker import CardTracker, _action_record, build_card_tracking_summary
 from engine.cards import Card, build_double_deck
 from engine.game import GuanDanGame
+from engine.rules import BaseRuleEngine
 
 
 def _card(token: str) -> Card:
@@ -346,6 +349,31 @@ class TestCardTracker(unittest.TestCase):
         self.assertIn("上界", comparison)
         self.assertNotIn("持有人", summary)
         self.assertNotIn("概率", summary)
+
+    def test_candidate_profiles_and_residual_facts_are_built_once(self) -> None:
+        game = GuanDanGame(seed=0, current_level_rank="2")
+        observation = game.reset()
+        candidates = game.legal_actions()[:80]
+        hand_counts = Counter(observation["my_info"]["hand_cards"])
+        valid_count = sum(
+            _action_record(action, hand_counts) is not None
+            for action in candidates
+        )
+
+        class CountingEngine(BaseRuleEngine):
+            batch_call_total = 0
+
+            def public_beating_response_summaries(self, *args, **kwargs):
+                type(self).batch_call_total += 1
+                return super().public_beating_response_summaries(*args, **kwargs)
+
+        with patch.object(card_tracker_module, "BaseRuleEngine", CountingEngine):
+            with patch.object(card_tracker_module, "_residual_facts", wraps=card_tracker_module._residual_facts) as residual:
+                summary = build_card_tracking_summary(observation, candidates)
+
+        self.assertIn("M3候选对照", summary)
+        self.assertEqual(residual.call_count, valid_count)
+        self.assertEqual(CountingEngine.batch_call_total, 1)
 
     def test_midgame_public_play_and_capacity_change_control_comparison(self) -> None:
         game = _game_with_pair_straight()

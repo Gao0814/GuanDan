@@ -100,6 +100,14 @@ class PublicResponseResourceCount:
     wildcard_resource_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class PublicResponseSummary:
+    """Rule-verified response requirements and resource counts for one lead."""
+
+    requirements: tuple[PublicResponseRequirement, ...]
+    resource_counts: tuple[PublicResponseResourceCount, ...]
+
+
 def _validate_current_level_rank(current_level_rank: str) -> None:
     if current_level_rank not in {"2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"}:
         raise ValueError("current_level_rank must be one of 2-10,J,Q,K,A")
@@ -541,6 +549,295 @@ class BaseRuleEngine:
             for family in _PATTERN_SORT_ORDER
             if category_sets.get(family)
         )
+
+    def public_beating_response_summaries(
+        self,
+        available_cards: tuple[Card, ...],
+        leading_actions: tuple[Action, ...],
+        current_level_rank: str,
+        *,
+        max_cards: int | None = None,
+    ) -> tuple[PublicResponseSummary, ...]:
+        """Summarize many possible leads after generating one response catalog.
+
+        The candidate responses are generated only from ``available_cards``.
+        For every lead, response requirements retain the full card-domain view;
+        resource counts additionally obey ``max_cards``. The catalog exists only
+        for this call and contains no game state or hidden-card access.
+        """
+        _validate_current_level_rank(current_level_rank)
+        leads = tuple(leading_actions)
+        capacity = len(available_cards) if max_cards is None else max_cards
+        if type(capacity) is not int or capacity < 0:
+            raise ValueError("max_cards must be a non-negative integer")
+        capacity = min(capacity, len(available_cards))
+
+        token_counts: Counter[tuple[str, str | None]] = Counter()
+        for card in available_cards:
+            is_normal = card.rank in _NON_JOKER_RANKS and card.suit in {"S", "H", "C", "D"}
+            is_joker_card = card.rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} and card.suit is None
+            if not (is_normal or is_joker_card):
+                raise ValueError("available_cards must contain physical cards")
+            token_counts[(card.rank, card.suit)] += 1
+            if token_counts[(card.rank, card.suit)] > 2:
+                raise ValueError("available_cards exceeds the double-deck token pool")
+
+        player_ids = {
+            lead.player_id for lead in leads
+            if lead.action_type == ActionType.PLAY and lead.declared_pattern is not None
+        }
+        if not player_ids or not available_cards:
+            return tuple(PublicResponseSummary((), ()) for _ in leads)
+
+        def carrier_key(cards: tuple[Card, ...]) -> tuple[tuple[str, str | None], ...]:
+            return tuple((card.rank, card.suit) for card in sort_cards(cards))
+
+        # A GuanDan lead is always made by one player. Keeping catalogs keyed by
+        # player also makes this read-only API safe for mixed-player callers.
+        candidates_by_player: dict[int, dict[str, list[Action]]] = {}
+        resource_candidates_by_player: dict[int, dict[str, list[Action]]] = {}
+        for player_id in player_ids:
+            generated: list[Action] = []
+            generated.extend(self._generate_single_actions(player_id, available_cards, current_level_rank))
+            generated.extend(self._generate_group_actions(player_id, available_cards, current_level_rank))
+            generated.extend(self._generate_triple_with_pair_actions(player_id, available_cards, current_level_rank))
+            generated.extend(self._generate_straight_actions(player_id, available_cards, current_level_rank))
+            generated.extend(self._generate_pair_straight_actions(player_id, available_cards, current_level_rank))
+            generated.extend(self._generate_steel_plate_actions(player_id, available_cards, current_level_rank))
+            generated.extend(self._generate_straight_flush_actions(player_id, available_cards, current_level_rank))
+
+            by_pattern: dict[str, list[Action]] = defaultdict(list)
+            seen_actions: set[tuple[object, ...]] = set()
+            for response in generated:
+                if response.declared_pattern is None or not _carrier_is_payable(response, available_cards):
+                    continue
+                carrier = tuple(
+                    (card.rank, card.suit) for card in sort_cards(response.carrier_cards)
+                )
+                declared = tuple((card.rank, card.suit) for card in response.declared_cards)
+                action_key = (
+                    response.declared_pattern.value,
+                    carrier,
+                    declared,
+                    response.wildcard_count,
+                )
+                if action_key in seen_actions:
+                    continue
+                seen_actions.add(action_key)
+                by_pattern[response.declared_pattern.value].append(response)
+            candidates_by_player[player_id] = by_pattern
+
+            # The ordinary full-hand generators choose a representative carrier
+            # for each declared group. M3c resource counts instead enumerate all
+            # distinct physical carriers, so build that exact domain once here
+            # and reuse it for each candidate lead.
+            resource_by_pattern: dict[str, list[Action]] = defaultdict(list)
+            visited_carriers: set[tuple[tuple[str, str | None], ...]] = set()
+            seen_resource_actions: set[tuple[object, ...]] = set()
+
+            def record_resource(cards: tuple[Card, ...]) -> None:
+                if len(cards) > capacity:
+                    return
+                carrier = carrier_key(cards)
+                if carrier in visited_carriers:
+                    return
+                visited_carriers.add(carrier)
+
+                responses: list[Action] = []
+                if len(cards) == 1:
+                    responses.extend(self._generate_single_actions(player_id, cards, current_level_rank))
+                if len(cards) == 2 or 4 <= len(cards) <= 8:
+                    responses.extend(self._generate_group_actions(player_id, cards, current_level_rank))
+                if len(cards) == 5:
+                    responses.extend(self._generate_straight_flush_actions(player_id, cards, current_level_rank))
+
+                for response in responses:
+                    if (
+                        response.declared_pattern is None
+                        or carrier_key(response.carrier_cards) != carrier
+                    ):
+                        continue
+                    family = response.declared_pattern.value
+                    if family not in {"single", "pair", "bomb", "straight_flush", "joker_bomb"}:
+                        continue
+                    declared = tuple((card.rank, card.suit) for card in response.declared_cards)
+                    action_key = (family, carrier, declared, response.wildcard_count)
+                    if action_key in seen_resource_actions:
+                        continue
+                    seen_resource_actions.add(action_key)
+                    resource_by_pattern[family].append(response)
+
+            card_by_key = {
+                key: Card(rank=key[0], suit=key[1])
+                for key in token_counts
+            }
+            token_keys = tuple(sorted(
+                card_by_key,
+                key=lambda key: card_sort_key(card_by_key[key]),
+            ))
+            if capacity >= 1:
+                for token in token_keys:
+                    record_resource((card_by_key[token],))
+            if capacity >= 2:
+                for first_index, first in enumerate(token_keys):
+                    for second in token_keys[first_index:]:
+                        if first == second and token_counts[first] < 2:
+                            continue
+                        record_resource((card_by_key[first], card_by_key[second]))
+
+            by_rank: dict[str, list[Card]] = defaultdict(list)
+            for token, count in token_counts.items():
+                by_rank[token[0]].extend(card_by_key[token] for _ in range(count))
+            if capacity >= 4:
+                for rank in _NON_JOKER_RANKS:
+                    ranked_cards = tuple(sorted(by_rank.get(rank, ()), key=card_sort_key))
+                    for size in range(4, min(8, capacity, len(ranked_cards)) + 1):
+                        for subset in combinations(ranked_cards, size):
+                            record_resource(tuple(subset))
+
+                wildcard = Card(rank=current_level_rank, suit="H")
+                if token_counts.get((current_level_rank, "H"), 0):
+                    for rank in _NON_JOKER_RANKS:
+                        non_wild = tuple(
+                            card for card in by_rank.get(rank, ())
+                            if not _is_wildcard(card, current_level_rank)
+                        )
+                        max_size = min(8, capacity, len(non_wild) + 1)
+                        for size in range(4, max_size + 1):
+                            for subset in combinations(non_wild, size - 1):
+                                record_resource(tuple(subset) + (wildcard,))
+
+                if (
+                    token_counts.get((SMALL_JOKER_RANK, None), 0) >= 2
+                    and token_counts.get((BIG_JOKER_RANK, None), 0) >= 2
+                ):
+                    record_resource((
+                        Card(rank=SMALL_JOKER_RANK), Card(rank=SMALL_JOKER_RANK),
+                        Card(rank=BIG_JOKER_RANK), Card(rank=BIG_JOKER_RANK),
+                    ))
+
+            if capacity >= 5:
+                available_tokens = set(token_keys)
+                wildcard_key = (current_level_rank, "H")
+                for suit in _SUIT_ORDER:
+                    for window in _STRAIGHT_WINDOWS:
+                        for missing_rank in (None, *window):
+                            if missing_rank is None:
+                                keys = tuple((rank, suit) for rank in window)
+                                if all(key in available_tokens for key in keys):
+                                    record_resource(tuple(card_by_key[key] for key in keys))
+                                continue
+                            if wildcard_key not in available_tokens:
+                                continue
+                            keys = tuple((rank, suit) for rank in window if rank != missing_rank)
+                            if all(
+                                key in available_tokens and key != wildcard_key
+                                for key in keys
+                            ):
+                                record_resource(
+                                    tuple(card_by_key[key] for key in keys)
+                                    + (card_by_key[wildcard_key],)
+                                )
+            resource_candidates_by_player[player_id] = resource_by_pattern
+
+        resource_families = {"single", "pair", "bomb", "straight_flush", "joker_bomb"}
+        summaries_by_lead: dict[tuple[object, ...], PublicResponseSummary] = {}
+
+        def lead_key(lead: Action) -> tuple[object, ...]:
+            return (
+                lead.player_id,
+                lead.action_type,
+                lead.declared_pattern,
+                tuple((card.rank, card.suit) for card in lead.declared_cards),
+                lead.wildcard_count,
+            )
+
+        def summarize(lead: Action) -> PublicResponseSummary:
+            if lead.action_type != ActionType.PLAY or lead.declared_pattern is None:
+                return PublicResponseSummary((), ())
+            key = lead_key(lead)
+            cached = summaries_by_lead.get(key)
+            if cached is not None:
+                return cached
+
+            leading_pattern = lead.declared_pattern.value
+            if leading_pattern == "joker_bomb":
+                possible_patterns: tuple[str, ...] = ()
+            elif leading_pattern in {"bomb", "straight_flush"}:
+                possible_patterns = ("bomb", "straight_flush", "joker_bomb")
+            else:
+                possible_patterns = (
+                    leading_pattern, "bomb", "straight_flush", "joker_bomb",
+                )
+            by_pattern = candidates_by_player.get(lead.player_id, {})
+            resource_by_pattern = resource_candidates_by_player.get(lead.player_id, {})
+            requirements: set[PublicResponseRequirement] = set()
+            families_by_carrier: dict[
+                tuple[tuple[str, str | None], ...], set[str]
+            ] = defaultdict(set)
+            wildcard_families_by_carrier: dict[
+                tuple[tuple[str, str | None], ...], set[str]
+            ] = defaultdict(set)
+
+            for pattern in possible_patterns:
+                for response in by_pattern.get(pattern, ()):
+                    if not self.can_beat(response, lead, current_level_rank):
+                        continue
+                    family = response.declared_pattern.value
+                    requirements.add(PublicResponseRequirement(
+                        pattern_type=family,
+                        card_count=len(response.carrier_cards),
+                        wildcard_count=response.wildcard_count,
+                    ))
+            for pattern in possible_patterns:
+                for response in resource_by_pattern.get(pattern, ()):
+                    if not self.can_beat(response, lead, current_level_rank):
+                        continue
+                    family = response.declared_pattern.value
+                    carrier = tuple(
+                        (card.rank, card.suit) for card in sort_cards(response.carrier_cards)
+                    )
+                    families_by_carrier[carrier].add(family)
+                    if response.wildcard_count:
+                        wildcard_families_by_carrier[carrier].add(family)
+
+            ordered_requirements = tuple(sorted(
+                requirements,
+                key=lambda item: (
+                    _PATTERN_SORT_ORDER.get(item.pattern_type, 99),
+                    item.card_count,
+                    item.wildcard_count,
+                ),
+            ))
+            category_sets: dict[str, set[tuple[tuple[str, str | None], ...]]] = defaultdict(set)
+            wildcard_sets: dict[str, set[tuple[tuple[str, str | None], ...]]] = defaultdict(set)
+            for carrier, families in families_by_carrier.items():
+                category = next((
+                    family for family in (
+                        "joker_bomb", "straight_flush", "bomb", leading_pattern, "single", "pair",
+                    )
+                    if family in families
+                ), None)
+                if category not in resource_families:
+                    continue
+                category_sets[category].add(carrier)
+                if wildcard_families_by_carrier.get(carrier):
+                    wildcard_sets[category].add(carrier)
+
+            resources = tuple(
+                PublicResponseResourceCount(
+                    pattern_type=family,
+                    resource_count=len(category_sets[family]),
+                    wildcard_resource_count=len(wildcard_sets[family]),
+                )
+                for family in _PATTERN_SORT_ORDER
+                if category_sets.get(family)
+            )
+            summary = PublicResponseSummary(ordered_requirements, resources)
+            summaries_by_lead[key] = summary
+            return summary
+
+        return tuple(summarize(lead) for lead in leads)
 
     def can_beat(self, candidate: Action, leading_action: Action, current_level_rank: str) -> bool:
         _validate_current_level_rank(current_level_rank)

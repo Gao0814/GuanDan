@@ -323,6 +323,42 @@ class TestRules(unittest.TestCase):
         self.assertEqual(resources[0].resource_count, 1)
         self.assertEqual(resources[0].wildcard_resource_count, 1)
 
+    def test_batched_public_response_summaries_match_single_lead_queries(self) -> None:
+        domain = _cards(
+            "3S", "4S", "5S", "6S", "7S",
+            "5S", "5H", "5C", "5D",
+            "9S", "9H", "9C", "2H",
+            "SJ", "SJ", "BJ", "BJ",
+        )
+        leads = (
+            _action(1, PatternType.SINGLE, ("3",)),
+            _action(1, PatternType.PAIR, ("4", "4")),
+            _action(1, PatternType.BOMB, ("5", "5", "5", "5")),
+            _action(1, PatternType.STRAIGHT_FLUSH, ("3S", "4S", "5S", "6S", "7S")),
+            _action(1, PatternType.JOKER_BOMB, ("SJ", "SJ", "BJ", "BJ")),
+        )
+
+        batched = self.rules.public_beating_response_summaries(
+            domain, leads, current_level_rank="2", max_cards=8,
+        )
+
+        self.assertEqual(len(batched), len(leads))
+        single_resource_types = {item.pattern_type for item in batched[0].resource_counts}
+        self.assertTrue({"single", "bomb", "straight_flush", "joker_bomb"}.issubset(single_resource_types))
+        bomb_resources = next(item for item in batched[0].resource_counts if item.pattern_type == "bomb")
+        self.assertGreater(bomb_resources.wildcard_resource_count, 0)
+        for lead, summary in zip(leads, batched):
+            self.assertEqual(
+                summary.requirements,
+                self.rules.public_beating_response_requirements(domain, lead, "2"),
+            )
+            self.assertEqual(
+                summary.resource_counts,
+                self.rules.public_beating_response_resource_counts(
+                    domain, lead, "2", max_cards=8,
+                ),
+            )
+
     def test_follow_context_only_exposes_beating_actions_or_pass(self) -> None:
         table_action = _action(2, PatternType.PAIR, ("9", "9"), ("9S", "9H"))
         state = _state(
