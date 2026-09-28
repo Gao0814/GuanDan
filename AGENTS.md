@@ -139,7 +139,7 @@ python -m unittest tests.test_cli_debug_output -q
 - 普通人工 Botzone 单局执行必须读取并遵守项目 Skill `.agents/skills/botzone-manual-live/SKILL.md`。网页建桌、配置和开始默认由项目所有者手工完成；除非当前任务明确授权，否则 Codex 只做 best-effort 只读监督，不点击、输入或提交。
 - 人工 live 的硬顺序是：workspace/preflight 就绪 → 唯一 connector 持续运行 → 页面确认“已连接” → 才提示 seed 和建桌配置 → 核对后开始并持续监测。页面不可读时接受项目所有者明确确认；页面明确显示配置不匹配时必须等待修正。seed 从执行 Codex 首次向项目所有者发送含该 seed 的建桌配置时起视为已使用。
 - Codex 执行的 Botzone 运行产生的 state、audit、manifest、progress 和其他 evidence 统一放在仓库外固定根目录 `D:\VsCodeProject\BotzoneWorkspace`。项目所有者亲自进行的轻量试局默认使用独立的 `D:\VsCodeProject\GuanDanManualWorkspace`，不得写入或覆盖 Codex workspace；个人目录不进入正式评测或 Codex 自动清理清单。
-- 当前项目所有者自行完成所有真实 Botzone 页面和 connector 启停操作；Codex 仅在所有者交付结果或保留的 evidence 后做只读审计。下一次真实 Botzone 试测前，Coding Codex 应先交付供所有者亲自启动的连续试局脚本；这项脚本任务目前暂缓，不在当前算法工作包内编写或运行。脚本默认最多记录 10 局、允许调整，启动后持续运行而不逐局等待人工按键；网页建桌和开始仍由所有者操作。上文 Codex 托管 live 的顺序和项目 Skill 不强加给所有者的自操作试局。所有者若明确选用固定 `D:\VsCodeProject\BotzoneWorkspace` 留证，应将新证据与旧文件隔离并保留原件，Codex 不替其轮换或清理。个人轻量试局仍默认使用 `GuanDanManualWorkspace`。人工 10 局的胜负比例可作方向性观察，须列明有效局数、对手/条件差异和异常局；有前后两组时直接比较胜局/有效完局，不设正式实验门槛，也不把小样本比例写成已证明的算法增益。
+- 当前项目所有者自行完成所有真实 Botzone 页面和 connector 启停操作；Codex 仅在所有者交付结果或保留的 evidence 后做只读审计。连续试局脚本已经交付，默认持续轮询、不逐局等按键，`--games N` 表示最近 N 局证据容量而非自动停机局数；网页建桌和开始仍由所有者操作。上文 Codex 托管 live 的顺序和项目 Skill 不强加给所有者的自操作试局。所有者当前选用固定 `D:\VsCodeProject\BotzoneWorkspace` 留证；正在运行的旧批次和此前目录必须原样保留，新版写盘只在所有者下次亲自重启脚本后生效。个人轻量试局仍默认使用 `GuanDanManualWorkspace`。人工约十局的胜负比例可作方向性观察，须列明有效局数、对手/条件差异和异常局；有前后两组时直接比较胜局/有效完局，不设正式实验门槛，也不把小样本比例写成已证明的算法增益。
 - `D:\VsCodeProject` 下不得再创建其他以 `Botzone` 开头的顶层运行目录；不得按 seed、pilot、pair 或 capacity 新建顶层目录。上述个人目录虽不以 `Botzone` 开头，也只能用于项目所有者的个人试局，不得借其绕过 Codex live 的固定 workspace 和审计边界。
 - 个人试局可在下一次启动时覆盖自己目录中的上一轮证据，但启动器必须先确认精确目录归属、普通非链接属性、内容白名单及无运行中的项目 connector；仅处理该个人目录，优先采用回收站等可恢复方式，不得通配清理 Codex workspace。若所有者发现问题并要求 Codex 复查，暂停下一次个人试局，保留该局目录供 Codex 只读检查；复查前不得自动覆盖。无问题时无需逐局提交报告。个人试局的 prompt、模型自由文本、凭据和连接 URL 仍不得持久化或共享。
 - 独立目录只隔离文件，不隔离 Botzone 本地 AI 连接：同一连接地址下个人与 Codex connector 不得同时轮询；若需要并行，必须由项目所有者明确提供互不相同的连接端点，并另行规划。个人启动器默认不得启动第二个项目 connector。
@@ -147,6 +147,8 @@ python -m unittest tests.test_cli_debug_output -q
 - workspace 的清理/准备与 Botzone live 执行必须是不同任务边界。live 执行开始后不得删除、清空或重置 workspace；需要修复或重跑时先停止并交回项目规划 Codex。
 - connector 的显式 opt-in 可读牌谱允许记录本家完整初始/当前手牌、Botzone 请求实际暴露的公开出牌历史、本家已确认动作和终局结果；本家手牌只能进入仓库外牌谱文件，不能进入聚合 audit 或普通日志。其他玩家暗牌只允许在终局后、已证明动作尾部完整且能由 108 张实体牌守恒唯一推出时标注为“推导”，否则必须写未知。不得记录密钥、连接 URL、Cookie 或模型自由文本，也不得把可能缺少终局前末尾动作的观测历史声称为完整裁判牌谱。
 - connector 的显式 opt-in decision trace 必须写入仓库外的新文件且默认关闭；只允许在响应 Header 已确认后记录本家当时的公开 observation、逐字段一致的原始 canonical legal actions、最终原始合法 action ID/action 与固定低基数 source。pending 未确认动作不得落盘；单文件只能绑定一个 match，fresh CLI 不得覆盖既有 trace。trace 不得包含 match ID、run token、URL、Header、Cookie、密钥、prompt、模型响应/reasoning、notes 或异常正文，也不得进入聚合 audit 或普通日志。
+- 2026-09-28 所有者明确要求固定 workspace 的自操作连续试局**另外**保存每局完整模型请求正文，供逐动作调试；这是该固定批次专用、按局隔离的私有诊断证据，对上一条通用 decision trace 的 prompt 禁令及个人轻量试局禁令作局部例外。保存模型实际发送的完整请求 body 与其摘要、当时的公开观察/本家手牌、完整 canonical 候选、实际展示候选、模型选择与最终 ACK 状态；不得保存 Authorization、API Key、连接 URL、Cookie、原始模型响应/reasoning 或异常正文，不得把请求正文写入 stdout、聚合 audit、仓库或共享报告。未 ACK 的动作也要记录为待确认以便定位停牌，但不得冒充已确认出牌。此类可恢复留证失败必须显式标记 evidence 不完整，不改变合法动作、响应或 ACK 事务。
+- 固定 workspace 新版逐局证据按本地时间命名，每局一个私有目录，连续运行和跨启动只滚动保留最近 N 局（默认 10，异常/未确认局也计入）；只允许在精确归属、非链接、版本化目录内有界移除已退出且不在审计保留中的最早新版逐局证据。清理旧 `manual-batch-*`、未知目录或运行中证据仍遵守上文单独审计与 workspace recycle 规则，不得把新的滚动授权扩展过去。内部会话哈希文件可以继续用于协议恢复，但不能冒充用户可查阅的逐局记录。
 
 ## Codex 工作规则
 
