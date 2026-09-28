@@ -1,5 +1,14 @@
 # 项目状态看板
 
+## M4 复审：候选比较交付，效果未定（2026-09-28）
+
+- `04f694b1b08677661699fdd9cf76e9b4f87d2f89` 仅提交 `agents/action_structure.py`、`agents/deepseek_client.py`、`agents/rag_advisor.py`、`agents/strategy_intent_prompt.py` 和两份相关测试。自然五炸/三带二、自然四炸/额外花红桃 2 加长炸、队友领出 pass/接牌、对手单张普通/控制应手的公开候选关系进入默认 factory 请求；两端展示后才渲染，最多 80 候选，模型原始合法 ID/source 契约不变。合法完整牌池 fixture 为现场截图的近似复现，不是原局逐动作证据。
+- 规划复跑 M4/关系/推荐/RAG 相关 68 项和主规则 43 项均通过，`git show --check` 通过。Coding 报告四个同状态基线/当前各一次真实 `deepseek-flash` 请求，8/8 合法、0 重试；两对选择变化，两对相同，不能认定策略收益。M4 输入缺口已改善，模型策略效果仍 `inconclusive`。
+- 全量 971 项中两项 `test_botzone_manual_batch` 进程探测失败，规划单独复跑 17 项仍是同两项；只读进程检查见一个真实 connector 的 venv 父子进程，`connector_running` 与现场一致。未检查/终止未知进程、未运行 Botzone 页面或改 workspace。全量通过尚未证实；运行中 connector 解释了测试预期与环境冲突，这不是本次算法逻辑回归的证据。待所有者自行结束 connector 后，若需要完整绿灯可在空闲环境重跑，不以此阻断当前算法输入复审。
+- 当前下一步是所有者自行决定是否进行人工试局，规划收到结果后只读复审。没有新 Coding 任务，已撤下已完成的 `docs/NEXT_PROMPT.md`；不得把已有八次请求或四局现场结果写成胜率改进。现场具体动作的模型理由仍无逐动作证据。
+
+以下“M4 待 Coding”为交付前状态快照，以本节为准。
+
 ## M4 待 Coding：四局现场反例指向模型前取舍缺口（2026-09-28）
 
 - M3d 后所有者自操作四局，按其规则判断 1 胜 3 负；固定 `BotzoneWorkspace` 新批次的四条低敏结果同为平台 1 胜 3 负。stage trace 中四次 `finished/qualified`，55 次 `model_complete/success`，未见模型 timeout；批次仍在运行，规划未启动、停止或改动它。现有记录不含逐动作牌谱，不能反推某一步的 prompt 或模型理由。四局比例只能作方向性观察，不证明 M3 效果变差。
