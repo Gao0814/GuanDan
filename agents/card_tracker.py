@@ -75,13 +75,13 @@ def _valid_play_card_count(pattern: str, card_count: int) -> bool:
     if pattern in {"straight", "triple_with_pair", "straight_flush"}:
         return card_count == 5
     if pattern == "pair_straight":
-        return card_count >= 6 and card_count % 2 == 0
+        return card_count == 6
     if pattern == "steel_plate":
         return card_count == 6
     if pattern == "bomb":
         return card_count >= 4
     if pattern == "joker_bomb":
-        return card_count == 2
+        return card_count == 4
     return False
 
 

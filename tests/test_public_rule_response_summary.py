@@ -46,6 +46,23 @@ class PublicRuleResponseSummaryTests(unittest.TestCase):
 
         self.assertEqual(result, ("bomb",))
 
+    def test_four_joker_bomb_has_no_immediate_public_response_pattern(self) -> None:
+        leading = Action(
+            player_id=1,
+            action_type=ActionType.PLAY,
+            declared_pattern=PatternType.JOKER_BOMB,
+            declared_cards=(Card("SJ"), Card("SJ"), Card("BJ"), Card("BJ")),
+            carrier_cards=(Card("SJ"), Card("SJ"), Card("BJ"), Card("BJ")),
+        )
+
+        result = BaseRuleEngine().public_beating_pattern_types(
+            (Card("2", "S"), Card("2", "H"), Card("BJ")),
+            leading,
+            "2",
+        )
+
+        self.assertEqual(result, ())
+
     def test_pass_has_no_beating_pattern_and_level_is_validated(self) -> None:
         self.assertEqual(
             BaseRuleEngine().public_beating_pattern_types((), Action.make_pass(1), "2"),

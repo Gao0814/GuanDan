@@ -3,8 +3,10 @@ from __future__ import annotations
 import random
 import re
 import unittest
+from collections import Counter
+from copy import deepcopy
 
-from agents.card_tracker import CardTracker, build_card_tracking_summary
+from agents.card_tracker import CardTracker, _action_record, build_card_tracking_summary
 from engine.cards import Card, build_double_deck
 from engine.game import GuanDanGame
 
@@ -36,6 +38,23 @@ def _game_with_pair_straight() -> GuanDanGame:
         4: tuple(remaining[54:81]),
     }
     return GuanDanGame(preset_hands=hands, current_level_rank="2", starting_player_id=1)
+
+
+def _game_with_all_jokers() -> GuanDanGame:
+    deck = build_double_deck()
+    jokers = [card for card in deck if card.rank in {"SJ", "BJ"}]
+    fillers = [card for card in deck if card.rank not in {"SJ", "BJ"}][:23]
+    own = jokers + fillers
+    for card in own:
+        deck.remove(card)
+    return GuanDanGame(
+        preset_hands={
+            1: tuple(own), 2: tuple(deck[:27]),
+            3: tuple(deck[27:54]), 4: tuple(deck[54:81]),
+        },
+        current_level_rank="2",
+        starting_player_id=1,
+    )
 
 
 def _action(actions: list[dict[str, object]], predicate):
@@ -140,6 +159,94 @@ def _urgent_multiplayer_pair_straight_state() -> tuple[dict[str, object], list[d
 
 
 class TestCardTracker(unittest.TestCase):
+    def test_candidate_size_validation_matches_legal_joker_bomb_and_pair_straight(self) -> None:
+        joker_game = _game_with_all_jokers()
+        joker_observation = joker_game.reset()
+        joker_hand = Counter(joker_observation["my_info"]["hand_cards"])
+        joker_action = _action(
+            joker_game.legal_actions(), lambda item: item["declared_pattern"] == "joker_bomb"
+        )
+        self.assertEqual(len(joker_action["carrier_cards"]), 4)
+        self.assertIsNotNone(_action_record(joker_action, joker_hand))
+        forged_joker = dict(joker_action)
+        forged_joker["carrier_cards"] = joker_action["carrier_cards"][:2]
+        forged_joker["declared_cards"] = joker_action["declared_cards"][:2]
+        self.assertIsNone(_action_record(forged_joker, joker_hand))
+
+        pair_game = _game_with_pair_straight()
+        pair_observation = pair_game.reset()
+        pair_hand = Counter(pair_observation["my_info"]["hand_cards"])
+        pair_action = _action(
+            pair_game.legal_actions(), lambda item: item["declared_pattern"] == "pair_straight"
+        )
+        self.assertEqual(len(pair_action["carrier_cards"]), 6)
+        self.assertIsNotNone(_action_record(pair_action, pair_hand))
+        remaining_cards = list(pair_observation["my_info"]["hand_cards"])
+        for carrier in pair_action["carrier_cards"]:
+            remaining_cards.remove(carrier)
+        extra_cards = remaining_cards[:2]
+        forged_pair = dict(pair_action)
+        forged_pair["carrier_cards"] = list(pair_action["carrier_cards"]) + extra_cards
+        forged_pair["declared_cards"] = list(pair_action["declared_cards"]) + [
+            card[:-1] for card in extra_cards
+        ]
+        self.assertIsNone(_action_record(forged_pair, pair_hand))
+
+    def test_legal_four_joker_bomb_history_keeps_exact_public_pool(self) -> None:
+        game = _game_with_all_jokers()
+        game.reset()
+        action = _action(game.legal_actions(), lambda item: item["declared_pattern"] == "joker_bomb")
+        self.assertEqual(len(action["carrier_cards"]), 4)
+        game.step(action["action_id"])
+
+        observation = game.observe()
+        legal_actions = game.legal_actions()
+        summary = build_card_tracking_summary(observation, legal_actions)
+
+        self.assertEqual(observation["my_info"]["player_id"], 2)
+        self.assertIn("证据级=E1精确牌池/多人未分配", summary)
+        self.assertIn("已出4、本家持有27、外部未见77", summary)
+
+    def test_forged_two_card_joker_bomb_and_eight_card_pair_straight_fail_closed(self) -> None:
+        joker_game = _game_with_all_jokers()
+        joker_game.reset()
+        joker_action = _action(
+            joker_game.legal_actions(), lambda item: item["declared_pattern"] == "joker_bomb"
+        )
+        joker_game.step(joker_action["action_id"])
+        forged_joker = deepcopy(joker_game.observe())
+        forged_joker_action = forged_joker["history"]["actions"][-1]
+        forged_joker_action["carrier_cards"] = ["SJ", "BJ"]
+        forged_joker_action["declared_cards"] = ["SJ", "BJ"]
+        player_one = next(player for player in forged_joker["other_players"] if player["player_id"] == 1)
+        player_one["hand_count"] = 25
+        joker_summary = build_card_tracking_summary(forged_joker, joker_game.legal_actions())
+        self.assertIn("证据级=E0", joker_summary)
+        self.assertNotIn("M3候选对照", joker_summary)
+
+        pair_game = _game_with_pair_straight()
+        pair_initial = pair_game.reset()
+        pair_action = _action(
+            pair_game.legal_actions(), lambda item: item["declared_pattern"] == "pair_straight"
+        )
+        remaining_cards = list(pair_initial["my_info"]["hand_cards"])
+        for carrier in pair_action["carrier_cards"]:
+            remaining_cards.remove(carrier)
+        pair_game.step(pair_action["action_id"])
+        forged_pair = deepcopy(pair_game.observe())
+        forged_pair_action = forged_pair["history"]["actions"][-1]
+        extra_cards = remaining_cards[:2]
+        forged_carriers = list(forged_pair_action["carrier_cards"]) + extra_cards
+        forged_pair_action["carrier_cards"] = forged_carriers
+        forged_pair_action["declared_cards"] = list(forged_pair_action["declared_cards"]) + [
+            card[:-1] for card in extra_cards
+        ]
+        player_one = next(player for player in forged_pair["other_players"] if player["player_id"] == 1)
+        player_one["hand_count"] -= 2
+        pair_summary = build_card_tracking_summary(forged_pair, pair_game.legal_actions())
+        self.assertIn("证据级=E0", pair_summary)
+        self.assertNotIn("M3候选对照", pair_summary)
+
     def test_exact_public_pool_compares_only_displayed_candidates_and_corrects_bomb_scope(self) -> None:
         game = _game_with_pair_straight()
         observation = game.reset()
