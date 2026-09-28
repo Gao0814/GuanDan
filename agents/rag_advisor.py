@@ -43,6 +43,8 @@ _CANDIDATE_REQUIREMENTS = frozenset(
         "natural_group_single",
         "natural_sequence_single",
         "bomb_strength_resource",
+        "triple_bomb_split",
+        "bomb_wildcard_strength",
         "natural_single_cost",
         "straight_strength",
         "sequence_structure_loss",
@@ -58,6 +60,7 @@ _CANDIDATE_REQUIREMENTS = frozenset(
         "teammate_table_choice",
         "danger_block_resource",
         "danger_block_choice",
+        "opponent_single_control_cost",
     }
 )
 _RELATION_SPECIFIC_SOFT_REQUIREMENTS = frozenset(
@@ -69,6 +72,8 @@ _RELATION_SPECIFIC_SOFT_REQUIREMENTS = frozenset(
         "straight_flush_bomb_fragment",
         "steel_plate_strength",
         "triple_pair_kicker_gradient",
+        "triple_bomb_split",
+        "bomb_wildcard_strength",
     }
 )
 _KNOWLEDGE_METADATA_KEYS = frozenset(
@@ -369,9 +374,11 @@ class RAGAdvisor:
         if relations & {
             "natural_pair_single", "natural_group_single", "sequence_structure_loss",
             "natural_sequence_single",
-            "triple_split_repartition", "triple_pair_kicker_gradient",
+            "triple_split_repartition", "triple_pair_kicker_gradient", "triple_bomb_split",
         }:
             topics.update({"pair", "structure", "probe"})
+        if relations & {"triple_bomb_split", "bomb_wildcard_strength"}:
+            topics.update({"bomb", "wildcard", "structure", "control", "resource"})
         if "natural_sequence_single" in relations:
             topics.update({"straight", "singles"})
             if scene == "lead_opening" and phase == "opening":
@@ -392,6 +399,8 @@ class RAGAdvisor:
             topics.update({"teammate", "support", "control", "pass"})
         if relations & {"danger_block_resource", "danger_block_choice"}:
             topics.update({"opponent_pressure", "block", "control"})
+        if "opponent_single_control_cost" in relations:
+            topics.update({"opponent_pressure", "control", "resource", "follow_response"})
         intent = str(scene_tags.get("strategy_intent", ""))
         if intent == "support_teammate":
             topics.update({"teammate", "support"})
@@ -429,11 +438,14 @@ class RAGAdvisor:
             "triple_pair_kicker_gradient": "三带二 携带对子 梯度 余组",
             "bomb_residual": "自然炸弹 不同长度 出后残余 点数组 自然组合 用途",
             "bomb_strength_resource": "自然小炸弹 大炸 强度 控制 资源成本 余组",
+            "triple_bomb_split": "三带二 携带对子 拆自然炸弹 炸弹强度 余手结构",
+            "bomb_wildcard_strength": "自然炸弹 加长炸 逢人配 控制强度 通配机会成本",
             "wildcard_resource": "逢人配 自然路线 通配资源",
             "teammate_control_resource": "队友控桌 pass 让牌 控制资源",
             "teammate_table_choice": "队友控桌 pass 让牌 争夺牌权",
             "danger_block_resource": "危险对手 阻断 pass 控制资源",
             "danger_block_choice": "危险对手 阻断 pass 合法压制",
+            "opponent_single_control_cost": "对手单张 跟牌 低单 高单 控制资源 压制成本",
         }
         for relation in RAGAdvisor._metadata_values(scene_tags, "candidate_relation_kinds"):
             if relation in relation_terms:
@@ -588,6 +600,29 @@ class RAGAdvisor:
                     exact_relations.add("bomb_strength_resource")
                 if "bomb_residual" in active_relations:
                     exact_relations.add("bomb_residual")
+                if "triple_bomb_split" in active_relations:
+                    exact_relations.add("triple_bomb_split")
+                if "bomb_wildcard_strength" in active_relations:
+                    exact_relations.add("bomb_wildcard_strength")
+            if exact_relations & {"triple_bomb_split", "bomb_wildcard_strength"}:
+                # These C-level hypotheses only enter when both the generic
+                # bomb/wildcard prerequisite and this exact canonical tradeoff
+                # are present.  Let that semantic match win the single RAG
+                # experience slot over unrelated soft hints.
+                score += 24.0
+            document_domains = self._metadata_values(doc.metadata, "strategy_domain")
+            if (
+                doc.metadata.get("guidance_mode") == "source_principle"
+                and active_relations & {"teammate_control_resource", "teammate_table_choice"}
+                and "teammate_coordination" in document_domains
+            ):
+                score += 24.0
+            if (
+                doc.metadata.get("guidance_mode") == "source_principle"
+                and "opponent_single_control_cost" in active_relations
+                and document_domains & {"control_return_resource", "follow_control"}
+            ):
+                score += 24.0
             # In an opening free lead, reserve the ordinary first slot for an
             # applicable source principle. A conditional soft hypothesis is
             # eligible for the companion slot only when its canonical public

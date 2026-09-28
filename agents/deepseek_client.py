@@ -106,7 +106,8 @@ _RESIDUAL_USE_RELATION_KINDS = frozenset(
         "triple_split_repartition", "straight_flush_bomb_fragment", "straight_strength",
         "steel_plate_strength", "triple_pair_kicker_gradient", "natural_single_cost",
         "single_control_resource", "wildcard_resource", "bomb_strength_resource",
-        "bomb_residual",
+        "bomb_residual", "triple_bomb_split", "bomb_wildcard_strength",
+        "opponent_single_control_cost",
     }
 )
 
@@ -132,6 +133,8 @@ _OPENING_PATTERN_ORDER = (
 _PROMPT_RELATION_KIND_ORDER = (
     "danger_block_resource", "danger_block_choice",
     "teammate_control_resource", "teammate_table_choice",
+    "opponent_single_control_cost",
+    "triple_bomb_split", "bomb_wildcard_strength",
     "bomb_residual", "bomb_strength_resource", "straight_flush_bomb_fragment",
     "wildcard_resource", "triple_split_repartition", "sequence_structure_loss",
     "triple_pair_kicker_gradient", "natural_pair_single", "natural_group_single",
@@ -152,11 +155,14 @@ _PROMPT_RELATION_SOURCE_IDS = {
     "straight_flush_bomb_fragment": frozenset({"exp_soft_straight_flush_bomb_cost_001", "exp_bomb_wildcard_001"}),
     "bomb_residual": frozenset({"exp_bomb_wildcard_001"}),
     "bomb_strength_resource": frozenset({"exp_bomb_wildcard_001", "exp_midgame_control_001"}),
+    "triple_bomb_split": frozenset({"exp_bomb_wildcard_001"}),
+    "bomb_wildcard_strength": frozenset({"exp_bomb_wildcard_001"}),
     "wildcard_resource": frozenset({"exp_bomb_wildcard_001"}),
     "teammate_control_resource": frozenset({"exp_midgame_teammate_001"}),
     "teammate_table_choice": frozenset({"exp_midgame_teammate_001"}),
     "danger_block_resource": frozenset({"exp_midgame_block_001"}),
     "danger_block_choice": frozenset({"exp_midgame_block_001"}),
+    "opponent_single_control_cost": frozenset({"exp_midgame_control_001"}),
 }
 PROMPT_MAX_ACTION_DISPLAY_CHARS = 96
 PROMPT_MAX_ACTION_CARRIER_CHARS = 160
@@ -645,6 +651,35 @@ class DeepSeekClient:
         return (
             f"留牌事实：{retained_text}候选{first_id}[{first}]；候选{second_id}[{second}]。{context_text}"
         )
+
+    @staticmethod
+    def _follow_order_context(contrast: CandidateContrast) -> str:
+        """Format only the validated public leader and next-seat facts."""
+        parts: list[str] = []
+        if contrast.table_leader_relation in {"teammate", "opponent"}:
+            relation = "队友" if contrast.table_leader_relation == "teammate" else "对手"
+            count_text = (
+                f"公开余{contrast.table_leader_hand_count}张"
+                if contrast.table_leader_hand_count is not None
+                else "公开余牌数未知"
+            )
+            parts.append(f"当前桌面由{relation}领出（{count_text}）")
+        if (
+            contrast.next_active_player_id is not None
+            and contrast.next_active_player_relation in {"teammate", "opponent"}
+        ):
+            relation = "队友" if contrast.next_active_player_relation == "teammate" else "对手"
+            count_text = (
+                f"公开余{contrast.next_active_player_hand_count}张"
+                if contrast.next_active_player_hand_count is not None
+                else "公开余牌数未知"
+            )
+            parts.append(
+                f"本家出后座位顺序下一名仍在局玩家为玩家{contrast.next_active_player_id}（{relation}，{count_text}）"
+            )
+        if parts:
+            return "行动顺序/当前压制：" + "；".join(parts) + "；下一席能否接牌及后续牌权仍未知。"
+        return "行动顺序/当前压制的公开归属不足；不推断后续牌权。"
 
     @staticmethod
     def _compact_json(value: object) -> str:
@@ -1650,7 +1685,11 @@ class DeepSeekClient:
             kind = contrast.kind
             expected_sources = _PROMPT_RELATION_SOURCE_IDS.get(kind, frozenset())
             source_applicable = bool(expected_sources & source_ids)
-            urgent = kind.startswith(("danger_block", "teammate_"))
+            urgent = kind.startswith(("danger_block", "teammate_")) or (
+                kind == "opponent_single_control_cost"
+                and contrast.table_leader_hand_count is not None
+                and contrast.table_leader_hand_count <= 2
+            )
             recommendation_overlap = sum(
                 action_id in recommendation_ids for action_id in contrast.action_ids
             )
@@ -2459,6 +2498,37 @@ class DeepSeekClient:
                         "一次出完、公开紧急性、队友/对手牌权和整体结构都可改变取舍。"
                         + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id)
                     )
+                elif contrast.kind == "triple_bomb_split":
+                    triple_rank, kicker_rank = (
+                        contrast.rank_labels
+                        if len(contrast.rank_labels) == 2
+                        else ("未知", "未知")
+                    )
+                    bomb_fact = candidate_facts_by_id.get(second_id)
+                    bomb_length = bomb_fact.bomb_length if bomb_fact is not None else None
+                    length_text = f"{bomb_length}张" if bomb_length is not None else "多张"
+                    lines.append(
+                        f"三带二拆自然炸/对子成本：action_id={first_id} 是自然三带二，消耗三张{triple_rank}并带走一对{kicker_rank}；"
+                        f"action_id={second_id} 是同点数{triple_rank}的当前合法{length_text}自然炸弹，不消耗{kicker_rank}对子，"
+                        "并以炸弹牌型获得高于普通三带二的即时压制层级。三带二留下的同点余牌按下面当前余手线索核对；"
+                        "不能据此保证以后能走或取得牌权。炸弹多花同点实体牌，三带二消耗所带对子；一次出完、公开紧急阻断、队友控桌和余组结构都可推翻局部倾向。"
+                        + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id)
+                    )
+                elif contrast.kind == "bomb_wildcard_strength":
+                    rank = contrast.rank_labels[0] if contrast.rank_labels else "目标点数"
+                    natural_fact = candidate_facts_by_id.get(first_id)
+                    wildcard_fact = candidate_facts_by_id.get(second_id)
+                    natural_length = natural_fact.bomb_length if natural_fact is not None else None
+                    wildcard_length = wildcard_fact.bomb_length if wildcard_fact is not None else None
+                    natural_length_text = f"{natural_length}张" if natural_length is not None else "较短"
+                    wildcard_length_text = f"{wildcard_length}张" if wildcard_length is not None else "更长"
+                    lines.append(
+                        f"自然炸/通配加长炸对照：action_id={first_id} 为{rank}点{natural_length_text}自然炸弹，"
+                        f"action_id={second_id} 为{rank}点{wildcard_length_text}炸弹，多用一张逢人配换取更长炸弹的较强即时压制；"
+                        "前者保留逢人配的其他合法用途，后者消耗该通配资源。只比较当前压制层级与出后实体余牌，不假定未来必然牌权；"
+                        "急需更强压制、公开危险对手或本次出完可以支持花配，队友已控桌、结构损失和其他后续资源也可推翻。"
+                        + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id)
+                    )
                 elif contrast.kind == "bomb_residual":
                     first_fact = candidate_facts_by_id.get(first_id)
                     second_fact = candidate_facts_by_id.get(second_id)
@@ -2536,10 +2606,17 @@ class DeepSeekClient:
                         "不据此推断对手持有小钢板；立即出完、队友/对手紧急性、回手和整体结构均可改变顺序。"
                     )
                 elif contrast.kind == "triple_pair_kicker_gradient":
+                    triple_rank, lower_pair_rank, higher_pair_rank = (
+                        contrast.rank_labels
+                        if len(contrast.rank_labels) == 3
+                        else ("同一", "较低", "较高")
+                    )
                     lines.append(
-                        f"三带二携带对子梯度：action_id={first_id} 与 action_id={second_id} 使用同一自然三张主组、不同自然对子；"
-                        "比较带走中间对子后保留大小对子路线与当前余组，不把固定大小顺序当公式。"
-                        "出后结构、立即出完、公开紧急性及回手价值都可推翻该可撤回假设。"
+                        f"三带二携带对子成本：action_id={first_id} 使用较低自然对子{lower_pair_rank}，"
+                        f"action_id={second_id} 使用较高自然对子{higher_pair_rank}；两侧共用{triple_rank}点自然三张主组。"
+                        f"较低对子路线保留手中可核验的{higher_pair_rank}自然对子，较高对子路线会消耗它；"
+                        "比较高对子带走后的剩余强组、实际余组与清理张数，不把固定大小顺序当公式。"
+                        "出后结构、立即出完、公开紧急性、队友/对手牌权及回手价值都可推翻该可撤回假设。"
                     )
                 elif contrast.kind == "natural_single_cost":
                     lines.append(
@@ -2581,11 +2658,37 @@ class DeepSeekClient:
                         f"危险对手对照：action_id={first_id} 为pass，action_id={second_id} 是本家可合法压制候选；"
                         "比较公开阻断机会与牌型/结构成本，不保证后续牌权，队友更紧急或代价过高可推翻。"
                     )
+                elif contrast.kind == "opponent_single_control_cost":
+                    low_rank, high_rank = (
+                        contrast.rank_labels
+                        if len(contrast.rank_labels) == 2
+                        else ("普通单张", "控制单张")
+                    )
+                    leader_count = (
+                        f"对手领出后公开余{contrast.table_leader_hand_count}张"
+                        if contrast.table_leader_hand_count is not None
+                        else "对手领出后的公开余张未知"
+                    )
+                    lines.append(
+                        f"对手单张低/高跟牌成本：action_id={first_id} 是自然普通单张{low_rank}，"
+                        f"action_id={second_id} 是控制资源自然单张{high_rank}；两者均是当前合法应手。{leader_count}，"
+                        "较低应手保留控制牌，较高应手可能提高本轮争取牌权的力度但付出控制资源。"
+                        "若对手公开接近走完，可值得花控制牌阻断；下一席顺序和队友状态也要核对，压住当前单张不保证后续牌权。"
+                        "队友控桌、余手结构或控制资源另有可见用途时可反向选择。"
+                    )
+                if contrast.kind in {
+                    "teammate_control_resource", "teammate_table_choice",
+                    "danger_block_resource", "danger_block_choice",
+                    "opponent_single_control_cost",
+                }:
+                    lines.append(DeepSeekClient._follow_order_context(contrast))
                 if contrast.kind in {
                     "natural_pair_single", "natural_group_single", "natural_sequence_single", "sequence_structure_loss",
                     "triple_split_repartition", "straight_flush_bomb_fragment",
                     "straight_strength", "steel_plate_strength", "triple_pair_kicker_gradient",
                     "natural_single_cost", "single_control_resource", "wildcard_resource",
+                    "triple_bomb_split", "bomb_wildcard_strength",
+                    "opponent_single_control_cost",
                 }:
                     lines.append(
                         DeepSeekClient._residual_use_contrast_text(

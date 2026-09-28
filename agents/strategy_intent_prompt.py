@@ -24,6 +24,8 @@ RELATION_PROMPT_TEXT = {
     "natural_group_single": "自然对子/三张与普通单张的清理和余组取舍",
     "natural_sequence_single": "自然顺子整体清理与顺子内自然单张试探的取舍",
     "bomb_strength_resource": "较小自然炸弹的资源节省与较大自然炸弹控制力度的取舍",
+    "triple_bomb_split": "三带二消耗所带对子并拆动自然炸弹与保留炸弹压制路线的取舍",
+    "bomb_wildcard_strength": "自然炸弹与多花逢人配形成更长炸弹的即时强度/资源取舍",
     "sequence_structure_loss": "自然顺子与其拆分的对子/三张候选之残余结构取舍",
     "triple_split_repartition": "拆出三张中的单张与现出三带二、保留重组空间的取舍",
     "straight_flush_bomb_fragment": "同花顺拆动多个炸弹点数组与现出自然四炸的资源取舍",
@@ -36,6 +38,7 @@ RELATION_PROMPT_TEXT = {
     "teammate_table_choice": "队友控桌时让牌与本家合法接牌的取舍",
     "danger_block_resource": "危险对手控桌时阻断与资源成本的取舍",
     "danger_block_choice": "危险对手控桌时pass与合法压制候选的取舍",
+    "opponent_single_control_cost": "对手单张跟牌时普通低单与高控制单张的当前压制/保留取舍",
 }
 _REASON_DETAILS = {
     "can_finish_now": ("run_out", "本次可直接出完"),
@@ -218,7 +221,7 @@ def _valid_candidate_relations(context: StrategyIntentContext) -> bool:
         return False
     free_lead_kinds = {
         "natural_single_cost", "single_control_resource", "natural_pair_single", "natural_group_single", "natural_sequence_single",
-        "bomb_strength_resource", "sequence_structure_loss", "triple_split_repartition", "straight_flush_bomb_fragment", "straight_strength",
+        "bomb_strength_resource", "triple_bomb_split", "sequence_structure_loss", "triple_split_repartition", "straight_flush_bomb_fragment", "straight_strength",
         "steel_plate_strength", "triple_pair_kicker_gradient",
     }
     if any(kind in free_lead_kinds for kind in kinds) and context.is_free_lead is not True:

@@ -614,7 +614,8 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
         full_contrasts = summarize_candidate_contrasts(observation, actions)
         self.assertIsNotNone(full_contrasts)
         assert full_contrasts is not None
-        self.assertEqual(len(full_contrasts), 63)
+        self.assertEqual(len(full_contrasts), 64)
+        self.assertTrue(any(item.kind == "bomb_wildcard_strength" for item in full_contrasts))
         rag_context = client.captured_kwargs.get("rag_context")
         self.assertIsInstance(rag_context, dict)
         assert isinstance(rag_context, dict)
