@@ -72,6 +72,8 @@ class RunnerSummary:
     recent_results_retained_count: int = 0
     recent_results_category_counts: tuple[tuple[str, int], ...] = ()
     recent_results_snapshot_valid: bool = True
+    game_evidence_status: str = "disabled"
+    game_evidence_error_category: str | None = None
 
 
 class ForegroundRunner:
@@ -223,6 +225,7 @@ class ForegroundRunner:
         except KeyboardInterrupt:
             stopped = "interrupted"
         self._close_game_results()
+        self._close_game_evidence(stopped)
         observability_valid = True
         try:
             snapshot = (
@@ -309,6 +312,8 @@ class ForegroundRunner:
             recent_retained,
             recent_counts,
             recent_snapshot_valid,
+            self._game_evidence_status(),
+            self._game_evidence_error_category(),
         )
         record_stage(self._stage_trace, "runner_exit", summary.stopped)
         return summary
@@ -329,9 +334,27 @@ class ForegroundRunner:
             except Exception:
                 pass
 
+    def _close_game_evidence(self, stop_reason: str) -> None:
+        close = getattr(self._connector, "close_game_evidence", None)
+        if callable(close):
+            try:
+                close(stop_reason)
+            except Exception:
+                pass
+
     def _game_results_recorded(self) -> int:
         value = getattr(self._connector, "game_results_recorded", 0)
         return value if type(value) is int and value >= 0 else 0
+
+    def _game_evidence_status(self) -> str:
+        status = getattr(self._connector, "game_evidence_status", "disabled")
+        return status if status in {"disabled", "ok", "failed"} else "failed"
+
+    def _game_evidence_error_category(self) -> str | None:
+        category = getattr(self._connector, "game_evidence_error_category", None)
+        if isinstance(category, str) and category.startswith("evidence_") and category.replace("_", "").isalnum():
+            return category
+        return "evidence_write_failed" if self._game_evidence_status() == "failed" else None
 
     def _recent_results_status(self) -> str:
         status = getattr(self._connector, "recent_results_status", "disabled")
@@ -373,6 +396,7 @@ def build_foreground_runner(
     game_results_file: Path | str | None = None,
     recent_results_file: Path | str | None = None,
     recent_results_capacity: int | None = None,
+    game_evidence_recorder: object | None = None,
     stage_trace: StageTraceSink | None = None,
 ) -> ForegroundRunner:
     observability = AgentObservabilityRecorder()
@@ -380,7 +404,8 @@ def build_foreground_runner(
         handler = NoTributeRuleBasedHandler(
             agent_mode="rule",
             observability=observability,
-            decision_trace_enabled=decision_trace_file is not None,
+            decision_trace_enabled=decision_trace_file is not None or game_evidence_recorder is not None,
+            game_evidence_recorder=game_evidence_recorder,
         )
     elif agent_mode == "deepseek":
         if prepared_agent_factory is not None:
@@ -395,7 +420,8 @@ def build_foreground_runner(
             cache_agents=True,
             agent_mode="deepseek",
             observability=observability,
-            decision_trace_enabled=decision_trace_file is not None,
+            decision_trace_enabled=decision_trace_file is not None or game_evidence_recorder is not None,
+            game_evidence_recorder=game_evidence_recorder,
         )
     elif agent_mode == "conditional_pressure_pass":
         handler = NoTributeRuleBasedHandler(
@@ -404,7 +430,8 @@ def build_foreground_runner(
             cache_agents=True,
             agent_mode="conditional_pressure_pass",
             observability=observability,
-            decision_trace_enabled=decision_trace_file is not None,
+            decision_trace_enabled=decision_trace_file is not None or game_evidence_recorder is not None,
+            game_evidence_recorder=game_evidence_recorder,
         )
     else:
         raise ValueError("invalid_agent_mode")
@@ -423,13 +450,14 @@ def build_foreground_runner(
         SessionStore(
             config.state_directory,
             run_token=run_token,
-            decision_trace_enabled=decision_trace_file is not None,
+            decision_trace_enabled=decision_trace_file is not None or game_evidence_recorder is not None,
         ),
         transport,
         handler,
         history_recorder=recorder,
         decision_trace_recorder=decision_trace_recorder,
         game_result_recorder=game_result_recorder,
+        game_evidence_recorder=game_evidence_recorder,
         stage_trace=stage_trace,
         decision_timeout_seconds=getattr(config, "decision_timeout_seconds", None),
         clock=clock,

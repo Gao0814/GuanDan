@@ -78,7 +78,8 @@ def _write_fake_evidence(
     audit_path.write_text(json.dumps(audit, separators=(",", ":")), encoding="utf-8")
     summary = (
         f"connector_finished cycles=12 finished={len(results)} history=disabled "
-        f"decision_trace=disabled game_results=ok game_results_recorded={len(results)} exit={exit_code}\n"
+        f"decision_trace=disabled game_results=ok game_results_recorded={len(results)} "
+        f"game_evidence=ok exit={exit_code}\n"
     )
     stdout.write(summary)  # type: ignore[attr-defined]
 
@@ -176,13 +177,10 @@ class BotzoneManualBatchTests(unittest.TestCase):
                 announce=messages.append,
             )
 
-            batch_directories = [
-                path
-                for path in workspace.iterdir()
-                if path.is_dir() and path not in {old_batch, workspace / "manual-batch-records"}
-            ]
-            batch = batch_directories[0]
+            batch = outcome.batch_directory
+            batch_directories = [path for path in (workspace / "runtime" / "v2" / "runs").iterdir() if path.is_dir()]
             old_after = old_evidence.read_bytes()
+            workspace_names = {path.name for path in workspace.iterdir()}
             batch_files_exist = all(
                 (batch / relative).is_file()
                 for relative in (
@@ -194,6 +192,8 @@ class BotzoneManualBatchTests(unittest.TestCase):
             )
 
         self.assertEqual(len(batch_directories), 1)
+        self.assertEqual(workspace_names, {"old-batch", "runtime", "games", "manual-batch-records"})
+        self.assertFalse(any(path.name.startswith("manual-batch-") for path in batch_directories))
         self.assertEqual(runtime_count, 1)
         self.assertEqual(len(calls), 3)  # process guard, zero-network preflight, one connector
         self.assertEqual(old_after, old_bytes)
@@ -209,6 +209,7 @@ class BotzoneManualBatchTests(unittest.TestCase):
         self.assertNotIn("--max-cycles", calls[2][0])
         self.assertNotIn("--max-wall-seconds", calls[2][0])
         self.assertEqual(_option(calls[2][0], "--recent-results-capacity"), "10")
+        self.assertEqual(_option(calls[2][0], "--manual-game-evidence-dir"), str(workspace / "games"))
         self.assertIn("--stage-trace", calls[2][0])
         self.assertEqual(_option(calls[2][0], "--agent"), "deepseek")
         self.assertEqual(_option(calls[2][0], "--timeout-seconds"), "30")
@@ -220,7 +221,7 @@ class BotzoneManualBatchTests(unittest.TestCase):
         self.assertEqual([kwargs["env"]["DEEPSEEK_MODEL"] for _, kwargs in calls[1:]], ["deepseek-flash", "deepseek-flash"])
         self.assertEqual([kwargs["cwd"] for _, kwargs in calls], [base, base, base])
         self.assertIn("请等页面显示“已连接”", "\n".join(messages))
-        self.assertEqual(len(messages), 5)  # startup notices and final summary only
+        self.assertEqual(len(messages), 6)  # startup notices and final summary only
         self.assertTrue(batch_files_exist)
 
     def test_custom_target_and_limits_reach_same_single_connector_process(self) -> None:
@@ -335,9 +336,10 @@ class BotzoneManualBatchTests(unittest.TestCase):
                     repository_root=base,
                 )
 
-            batch_dirs = [path for path in workspace.iterdir() if path.is_dir()]
+            run_dirs = list((workspace / "runtime" / "v2" / "runs").iterdir())
+            batch_dirs = [workspace / "runtime"] if (workspace / "runtime").is_dir() else []
             sentinel_after = sentinel.read_text(encoding="utf-8")
-            streams_created = (batch_dirs[0] / "streams" / "stdout.txt").exists()
+            streams_created = (run_dirs[0] / "streams" / "stdout.txt").exists()
 
         self.assertEqual(exit_code, 2)
         self.assertIn("batch_error category=preflight_failed exit=2", stderr.getvalue())
@@ -346,6 +348,7 @@ class BotzoneManualBatchTests(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertEqual(sentinel_after, "keep")
         self.assertEqual(len(batch_dirs), 1)
+        self.assertEqual(len(run_dirs), 1)
         self.assertFalse(streams_created)
 
     def test_existing_connector_stops_before_creating_batch_directory(self) -> None:
@@ -566,7 +569,7 @@ class BotzoneManualBatchTests(unittest.TestCase):
                 )
                 kwargs["stdout"].write(  # type: ignore[attr-defined]
                     "connector_finished cycles=5 finished=2 history=disabled decision_trace=disabled "
-                    "game_results=failed game_results_recorded=1 exit=0\n"
+                    "game_results=failed game_results_recorded=1 game_evidence=ok exit=0\n"
                 )
                 return subprocess.CompletedProcess(argv, 0, "", "")
 

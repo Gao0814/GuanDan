@@ -137,6 +137,7 @@ class NoTributeRuleBasedHandler:
         agent_mode: str = "rule",
         observability: AgentObservabilityRecorder | None = None,
         decision_trace_enabled: bool = False,
+        game_evidence_recorder: object | None = None,
     ) -> None:
         self._agent_factory = agent_factory or (lambda player_id: RuleBasedAIAgent(player_id=player_id))
         self._fallback_to_rule = fallback_to_rule
@@ -146,6 +147,7 @@ class NoTributeRuleBasedHandler:
         self._observability = observability
         self._observability_failed = False
         self._decision_trace_enabled = decision_trace_enabled
+        self._game_evidence_recorder = game_evidence_recorder
 
     def release_match(self, match_key: str) -> None:
         """Forget mutable agent state after a match has been durably finished."""
@@ -184,6 +186,14 @@ class NoTributeRuleBasedHandler:
                     agent = self._agent_factory(engine_player)
                     if self._cache_agents:
                         self._agents[cache_key] = agent
+                if self._game_evidence_recorder is not None:
+                    begin_decision = getattr(self._game_evidence_recorder, "begin_decision", None)
+                    evidence_sink = getattr(self._game_evidence_recorder, "agent_sink", None)
+                    set_evidence_sink = getattr(agent, "set_evidence_sink", None)
+                    if callable(begin_decision) and callable(evidence_sink) and callable(set_evidence_sink):
+                        decision_no = begin_decision(context.match_key)
+                        if type(decision_no) is int:
+                            set_evidence_sink(evidence_sink(context.match_key, decision_no))
                 if context.decision_deadline is not None:
                     deadline_client = getattr(agent, "client", getattr(agent, "_client", None))
                     candidate_setter = getattr(deadline_client, "set_decision_deadline", None)

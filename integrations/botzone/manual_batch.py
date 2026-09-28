@@ -21,6 +21,7 @@ import sys
 from typing import Callable, Sequence
 
 from .result_observability import RESULT_CATEGORIES
+from .game_evidence import GameEvidenceError, GAME_EVIDENCE_DIRECTORY, prepare_game_evidence
 from .rolling_results import (
     RecentResultsError,
     RecentResultsLock,
@@ -60,9 +61,10 @@ _BATCH_LAUNCHER_COMMAND_LINE_PATTERN = r'(?i)\s-m\s+"?integrations\.botzone\.man
 _CONNECTOR_SUMMARY = re.compile(
     r"^connector_finished cycles=([0-9]+) finished=([0-9]+) "
     r"history=disabled decision_trace=disabled game_results=(ok|failed) "
-    r"game_results_recorded=([0-9]+) exit=([0-9]+)$",
+    r"game_results_recorded=([0-9]+)(?: game_evidence=(ok|failed))? exit=([0-9]+)$",
     re.MULTILINE,
 )
+_EVIDENCE_FAILURE = re.compile(r"^evidence_incomplete category=(evidence_[a-z_]+)$", re.MULTILINE)
 
 
 class BatchLaunchError(ValueError):
@@ -93,6 +95,7 @@ class BatchPaths:
     stderr: Path
     recent_results: Path
     recent_lock: Path
+    game_evidence: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +112,8 @@ class BatchOutcome:
     recent_results_total_games: int = 0
     recent_results_retained_count: int = 0
     recent_results_capacity: int = 0
+    game_evidence_status: str = "incomplete"
+    game_evidence_error_category: str | None = None
 
     @property
     def category(self) -> str:
@@ -123,7 +128,9 @@ class BatchOutcome:
     @property
     def exit_code(self) -> int:
         if self.connector_exit_code == 0 and (
-            self.game_results_status != "complete" or self.recent_results_status != "ok"
+            self.game_results_status != "complete"
+            or self.recent_results_status != "ok"
+            or self.game_evidence_status != "ok"
         ):
             return RECORDING_INCOMPLETE_EXIT
         return self.connector_exit_code
@@ -147,7 +154,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
             "Wait for the page to show connected, then create and start each table manually."
         ),
     )
-    parser.add_argument("--games", type=_positive_int, default=10, help="retain the most recent N result records (default: 10)")
+    parser.add_argument("--games", type=_positive_int, default=10, help="retain the most recent N per-game evidence directories (default: 10)")
     parser.add_argument("--max-cycles", type=_positive_int, help="explicit poll-cycle stop limit")
     parser.add_argument("--max-wall-seconds", type=_positive_int, help="explicit wall-clock stop limit")
     parser.add_argument("--import-from", help="exact legacy manual-batch directory to import on first migration")
@@ -185,14 +192,32 @@ def _assert_inside(root: Path, child: Path) -> None:
         raise BatchLaunchError("workspace_path_invalid") from None
 
 
+def _ensure_workspace_child(parent: Path, name: str) -> Path:
+    child = parent / name
+    if os.path.lexists(child):
+        _assert_ordinary_directory(child, category="workspace_path_invalid")
+        _assert_inside(parent, child)
+        return child
+    try:
+        child.mkdir()
+    except OSError:
+        raise BatchLaunchError("workspace_prepare_failed") from None
+    _assert_ordinary_directory(child, category="workspace_path_invalid")
+    _assert_inside(parent, child)
+    return child
+
+
 def create_batch_workspace(workspace_root: Path = DEFAULT_WORKSPACE_ROOT) -> BatchPaths:
-    """Create one fresh child without enumerating or changing existing evidence."""
+    """Create a versioned internal run directory; visible game data lives under games/."""
 
     root = Path(workspace_root)
     _assert_ordinary_directory(root.parent, category="workspace_unavailable")
     _assert_ordinary_directory(root, category="workspace_unavailable")
+    runtime = _ensure_workspace_child(root, "runtime")
+    versioned = _ensure_workspace_child(runtime, "v2")
+    runs = _ensure_workspace_child(versioned, "runs")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    batch_root = root / f"manual-batch-{stamp}-{secrets.token_hex(8)}"
+    batch_root = runs / f"run-{stamp}-{secrets.token_hex(8)}"
     _, recent_results, recent_lock = recent_results_paths(root)
     try:
         batch_root.mkdir()
@@ -212,6 +237,7 @@ def create_batch_workspace(workspace_root: Path = DEFAULT_WORKSPACE_ROOT) -> Bat
             stderr=batch_root / "streams" / "stderr.txt",
             recent_results=recent_results,
             recent_lock=recent_lock,
+            game_evidence=root / GAME_EVIDENCE_DIRECTORY,
         )
         write_new_batch_marker(batch_root)
         for directory in (paths.state, paths.audit, paths.stdout.parent):
@@ -275,6 +301,8 @@ def _cli_argv(
             str(paths.recent_results),
             "--recent-results-capacity",
             str(recent_results_capacity),
+            "--manual-game-evidence-dir",
+            str(paths.game_evidence),
             "--run-token",
             run_token,
             "--stage-trace",
@@ -423,7 +451,7 @@ def _inspect_batch(
     complete = (
         summary_status == "ok"
         and summary_recorded == len(rows)
-        and int(summary.group(5)) == process_exit
+        and int(summary.group(6)) == process_exit
         and audit_exit == process_exit
         and len(rows) == finished
         and row_counts == counts
@@ -435,6 +463,26 @@ def _inspect_batch(
         len(rows),
         tuple(sorted(row_counts.items())),
     )
+
+
+def _game_evidence_status(path: Path) -> str:
+    try:
+        output = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return "incomplete"
+    summaries = list(_CONNECTOR_SUMMARY.finditer(output))
+    if len(summaries) != 1:
+        return "incomplete"
+    return summaries[0].group(5) or "incomplete"
+
+
+def _game_evidence_error_category(path: Path) -> str | None:
+    try:
+        output = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return "evidence_write_failed"
+    match = _EVIDENCE_FAILURE.search(output)
+    return match.group(1) if match is not None else None
 
 
 def run_batch(
@@ -487,7 +535,8 @@ def run_batch(
         raise BatchLaunchError("batch_launcher_already_running")
 
     paths = create_batch_workspace(workspace_root)
-    announce(f"批次目录：{paths.root}")
+    announce(f"本次运行内部目录：{paths.root}")
+    announce(f"逐局留证目录：{paths.game_evidence}")
 
     preflight_argv = _cli_argv(paths.state, preflight=True)
     preflight_argv[0] = executable
@@ -514,9 +563,22 @@ def run_batch(
         ensure_recent_results_directory(workspace_root)
         with RecentResultsLock(paths.recent_lock):
             try:
-                recent_snapshot = prepare_recent_results(workspace_root, games, import_from=import_from)
+                recent_snapshot = prepare_recent_results(
+                    workspace_root,
+                    games,
+                    import_from=import_from,
+                    allow_legacy_scan=False,
+                )
             except RecentResultsError as exc:
                 raise BatchLaunchError(exc.category, paths.root) from None
+            try:
+                prepare_game_evidence(
+                    paths.game_evidence,
+                    games,
+                    legacy_recent_results=paths.recent_results,
+                )
+            except GameEvidenceError as exc:
+                raise BatchLaunchError(exc.category, paths.game_evidence) from None
             runtime_argv = _cli_argv(
                 paths.state,
                 preflight=False,
@@ -583,6 +645,8 @@ def run_batch(
     except RecentResultsError:
         recent_status = "failed"
         recent_snapshot = None
+    evidence_status = _game_evidence_status(paths.stdout)
+    evidence_error_category = _game_evidence_error_category(paths.stdout)
     outcome = BatchOutcome(
         paths.root,
         games,
@@ -596,6 +660,8 @@ def run_batch(
         0 if recent_snapshot is None else recent_snapshot.total_games,
         0 if recent_snapshot is None else recent_snapshot.retained_count,
         games if recent_snapshot is None else recent_snapshot.capacity,
+        evidence_status,
+        evidence_error_category,
     )
     confirmed = "unknown" if outcome.confirmed_finished is None else str(outcome.confirmed_finished)
     announce(
@@ -605,9 +671,12 @@ def run_batch(
         f"game_results={outcome.game_results_status} recorded={outcome.recorded_games} "
         f"recent_results={outcome.recent_results_status} retained={outcome.recent_results_retained_count}/"
         f"{outcome.recent_results_capacity} total={outcome.recent_results_total_games} "
-        f"batch_directory={outcome.batch_directory}"
+        f"game_evidence={outcome.game_evidence_status}"
+        f" evidence_error={outcome.game_evidence_error_category or 'none'}"
+        f" runtime_directory={outcome.batch_directory} "
+        f"games_directory={paths.game_evidence}"
     )
-    announce("history.txt 与 decision-trace.json 未启用；保留逐局低敏结果、聚合 audit 和阶段 trace。")
+    announce("完整逐局请求与决策证据仅写入 games 子目录；聚合 audit 和普通输出不含手牌或 prompt。")
     return outcome
 
 

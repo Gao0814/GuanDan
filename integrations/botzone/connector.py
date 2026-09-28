@@ -83,6 +83,7 @@ class MockConnector:
         decision_timeout_seconds: float | None = None,
         clock: Callable[[], float] = time.monotonic,
         game_result_recorder: GameResultRecorder | None = None,
+        game_evidence_recorder: object | None = None,
     ) -> None:
         self._store = store
         self._transport = transport
@@ -94,6 +95,7 @@ class MockConnector:
         self._history_recorder = history_recorder
         self._decision_trace_recorder = decision_trace_recorder
         self._game_result_recorder = game_result_recorder
+        self._game_evidence_recorder = game_evidence_recorder
         self._stage_trace = stage_trace
         self._decision_timeout_seconds = decision_timeout_seconds
         self._clock = clock
@@ -111,6 +113,7 @@ class MockConnector:
             headers = MappingProxyType({item.header_name: item.response for item in deliveries})
             self._store.mark_inflight(deliveries)
         except SessionStorageError:
+            self._record_game_evidence("record_poll", "transport_failure")
             return _cycle(False, 0, 0, 0, 0, 0, {"session_error": 1})
 
         self._record_stage("poll_enter", "started")
@@ -124,11 +127,13 @@ class MockConnector:
         except TransportError as exc:
             self._store.restore_pending(deliveries)
             if exc.category == "timeout":
+                self._record_game_evidence("record_poll", "timeout")
                 self._record_stage("poll_exit", "timeout")
                 return _cycle(
                     True, len(headers), 0, 0, 0, 0, {"transport_timeout": 1}, transport_timeouts=1
                 )
             category = exc.category if exc.category in TRANSPORT_FAILURE_CATEGORIES else "unclassified"
+            self._record_game_evidence("record_poll", "transport_failure")
             self._record_stage("poll_exit", "transport_failure")
             return _cycle(
                 True,
@@ -142,6 +147,7 @@ class MockConnector:
             )
         except Exception:
             self._store.restore_pending(deliveries)
+            self._record_game_evidence("record_poll", "transport_failure")
             self._record_stage("poll_exit", "transport_failure")
             return _cycle(
                 True,
@@ -175,6 +181,12 @@ class MockConnector:
                 if record is not None:
                     self._record_history(record)
                     self._record_decision_trace(record)
+                    traces = record.confirmed_decision_traces
+                    self._record_game_evidence(
+                        "record_acknowledged",
+                        match_id,
+                        traces[-1] if traces else None,
+                    )
             except SessionStorageError:
                 # The acknowledgement has already committed; diagnostic output
                 # must not alter its transaction result.
@@ -186,10 +198,12 @@ class MockConnector:
         try:
             batch = parse_poll(raw_poll)
         except PollFormatError:
+            self._record_game_evidence("record_poll", "malformed")
             self._record_stage("poll_exit", "malformed")
             return _cycle(True, len(headers), 0, 0, 0, 0, {"poll_malformed": 1})
 
         poll_outcome = "finished" if batch.finished else ("payload" if batch.requests else "idle")
+        self._record_game_evidence("record_poll", poll_outcome)
         self._record_stage("poll_exit", poll_outcome)
 
         if self._game_result_recorder is not None:
@@ -209,6 +223,14 @@ class MockConnector:
                         begin_game(request.match_id)
                     except Exception:
                         self._game_result_recorder.failed = True
+            if isinstance(request.stage, DealRequest):
+                self._record_game_evidence(
+                    "begin_game",
+                    request.match_id,
+                    own_hand=request.stage.deliver,
+                    player_id=request.stage.your_id,
+                    global_state=request.stage.global_state,
+                )
             outcome = self._process_request(request)
             diagnostics.update(outcome[1])
             diagnostic_details.update(outcome[2])
@@ -257,6 +279,12 @@ class MockConnector:
                         finish_unconfirmed(row.match_id)
                     except Exception:
                         self._game_result_recorder.failed = True
+            self._record_game_evidence(
+                "record_finished",
+                row.match_id,
+                qualified_result,
+                platform_finished=qualified_result is not None,
+            )
             self._record_stage("finished", category)
             finished_categories[category] += 1
             if cleaned:
@@ -320,6 +348,34 @@ class MockConnector:
         except Exception:
             self._game_result_recorder.failed = True
 
+    @property
+    def game_evidence_status(self) -> str:
+        if self._game_evidence_recorder is None:
+            return "disabled"
+        return "failed" if bool(getattr(self._game_evidence_recorder, "failed", True)) else "ok"
+
+    @property
+    def game_evidence_error_category(self) -> str | None:
+        category = getattr(self._game_evidence_recorder, "error_category", None)
+        return category if isinstance(category, str) and category.startswith("evidence_") else None
+
+    def close_game_evidence(self, stop_reason: str = "interrupted") -> None:
+        self._record_game_evidence("close", stop_reason)
+
+    def _record_game_evidence(self, method: str, *args: object, **kwargs: object) -> None:
+        if self._game_evidence_recorder is None:
+            return
+        callback = getattr(self._game_evidence_recorder, method, None)
+        if not callable(callback):
+            return
+        try:
+            callback(*args, **kwargs)
+        except Exception:
+            try:
+                self._game_evidence_recorder.failed = True
+            except Exception:
+                pass
+
     def _process_request(self, request: PollRequest) -> tuple[int, Counter[str], Counter[str], Counter[str]]:
         diagnostics: Counter[str] = Counter()
         details: Counter[str] = Counter()
@@ -358,6 +414,7 @@ class MockConnector:
         except SessionStorageError as exc:
             diagnostics[_normalized_session_error(exc)] += 1
             return 0, diagnostics, details, profiles
+        self._record_game_evidence("record_observation", request.match_id, record, request.stage)
         if not call_handler:
             if record.pending_response is not None:
                 self._record_stage("response_waiting_ack", "pending")
@@ -373,6 +430,7 @@ class MockConnector:
             )
         except Exception:
             self._store.complete_handler(record, HandlerResult(None))
+            self._record_game_evidence("record_handler_failure", request.match_id)
             diagnostics["handler_failure"] += 1
             self._record_stage("response_prepared", "handler_failure")
             return 0, diagnostics, details, profiles
@@ -399,6 +457,8 @@ class MockConnector:
             "response_prepared",
             "prepared" if completed.pending_response is not None else "no_response",
         )
+        if completed.pending_decision_trace is not None:
+            self._record_game_evidence("record_action_pending", request.match_id, completed.pending_decision_trace)
         if completed.pending_response is not None:
             self._record_stage("response_waiting_ack", "pending")
         if isinstance(request.stage, PlayRequest) and completed.pending_response:

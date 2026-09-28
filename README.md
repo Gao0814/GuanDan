@@ -16,6 +16,20 @@
 
 Botzone 主线使用人工创建的四人无贡桌，并在 connector 中**显式选择 `--agent deepseek`**。CLI 的 `--agent` 默认值仍是 `rule`，所以不能省略该选项来启动 DeepSeek。
 
+### 所有者连续试局：按局留证与最近 N 局轮换
+
+在仓库根目录双击 `scripts/run_manual_botzone_batch.cmd`，或从 PowerShell 运行：
+
+```powershell
+.\scripts\run_manual_botzone_batch.cmd --games 10
+```
+
+同一个前台 connector 会持续等待、轮询和重连；页面确认“已连接”后，再由所有者逐局建桌并开始。达到 10 局不会停机；`--games N` 表示跨启动保留最近 N 个逐局目录（默认 10），异常或未确认局也占一个位置。按 Ctrl+C 停止；`--max-cycles` 和 `--max-wall-seconds` 只在显式传入时形成运行上限。双击窗口会在退出后等待按键，自动调用可加 `--no-pause`。
+
+逐局目录固定在 `D:\VsCodeProject\BotzoneWorkspace\games\`，例如 `2026_9_28_20-17-46_000017`；文件夹名使用本地时间与单调局序号，`manifest.json` 同时记录 UTC、本地时区、状态、结果类别和最后阶段。`observations.jsonl` 与 `decisions.jsonl` 保存 connector 实际观察的公开历史、本家手牌、完整 canonical 合法动作、展示候选、推荐/关系引用、所选原始 ID/source 以及 ACK 边界；`requests\request_000001.json` 保存实际发送的 JSON request body，旁边的 `.meta.json` 保存摘要和候选引用。没有 DeepSeek 调用时，决策 source 仍会记录。
+
+这些逐局文件包含本家手牌和完整 prompt，按私有诊断证据处理。文件不保存认证头、密钥、Cookie、连接 URL、模型回复/reasoning 或异常正文；通用 CLI trace、个人试局和聚合 audit 不启用完整 request 保存。公开历史标注为“connector 已观察”，不代表裁判完整牌谱。旧 `manual-batch-*` 运行目录保持原样；只有可信的旧 `recent-games.json` 摘要可幂等导入为 `summary_only`，不能据此恢复过去动作或模型请求。内部 state/audit/streams 放在版本化 `runtime\v2\runs\` 下，不作为逐局记录。
+
 ### 所有者自用：一条命令启动轻量试局
 
 在仓库根目录的 Windows PowerShell 5.1 中运行：

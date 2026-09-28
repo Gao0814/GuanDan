@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 import json
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from config import AppConfig
@@ -412,6 +413,7 @@ class DeepSeekAIAgent(BaseAgent):
     strategy_router_shadow_enabled: bool = False
     strategy_intent_prompt_enabled: bool = False
     strategy_recommendation_enabled: bool = True
+    evidence_sink: Callable[[str, dict[str, object]], None] | None = field(default=None, repr=False)
     last_decision_source: str | None = field(default=None, init=False, repr=False)
     card_tracker: object | None = field(default=None, init=False, repr=False)
     last_card_confidence: "CardConfidenceState | None" = field(
@@ -778,6 +780,13 @@ class DeepSeekAIAgent(BaseAgent):
         # --- call DeepSeek API ---
         failure_reason: str | None = None
         reasoning: str | None = None
+        request_evidence_observer = None
+        if self.evidence_sink is not None:
+            self._emit_evidence("model_enter", {"outcome": "started"})
+
+            def request_evidence_observer(body: bytes, metadata: dict[str, object]) -> None:
+                self._emit_evidence("request_prepared", {"body": body, "metadata": metadata})
+
         try:
             suggestion_kwargs: dict[str, object] = {
                 "observation": observation,
@@ -790,6 +799,8 @@ class DeepSeekAIAgent(BaseAgent):
                 "verbose": False,
                 "debug_prefix": f"[DeepSeek] 玩家{player_id}",
             }
+            if request_evidence_observer is not None:
+                suggestion_kwargs["request_evidence_observer"] = request_evidence_observer
             if card_confidence_prompt is not None:
                 suggestion_kwargs["card_confidence_prompt"] = card_confidence_prompt
             if strategy_intent_prompt is not None:
@@ -804,6 +815,12 @@ class DeepSeekAIAgent(BaseAgent):
         except Exception as exc:
             suggestion = DeepSeekSuggestion(action_id=None, reasoning=None)
             failure_reason = f"请求异常：{exc.__class__.__name__}: {exc}"
+
+        if self.evidence_sink is not None:
+            outcome = getattr(self.client, "last_outcome", None)
+            if outcome not in {"success", "timeout", "exception", "invalid_suggestion"}:
+                outcome = "success" if suggestion.action_id is not None else "invalid_suggestion"
+            self._emit_evidence("model_complete", {"outcome": outcome})
 
         reasoning = suggestion.reasoning
         suggested = suggestion.action_id
@@ -849,6 +866,21 @@ class DeepSeekAIAgent(BaseAgent):
                     print(f"[DeepSeek] 玩家{player_id} 无有效action_id，回退规则AI", flush=True)
 
         return chosen
+
+    def set_evidence_sink(self, sink: Callable[[str, dict[str, object]], None] | None) -> None:
+        """Install a per-match private evidence callback for owner batch only."""
+
+        self.evidence_sink = sink
+
+    def _emit_evidence(self, event: str, data: dict[str, object]) -> None:
+        sink = self.evidence_sink
+        if sink is None:
+            return
+        try:
+            sink(event, data)
+        except Exception:
+            # Evidence storage must never alter a selected action.
+            pass
 
     @staticmethod
     def _opening_action_display_cn(action: dict[str, object]) -> str:

@@ -398,6 +398,7 @@ def prepare_recent_results(
     capacity: int,
     *,
     import_from: Path | str | None = None,
+    allow_legacy_scan: bool = True,
 ) -> RecentResultsSnapshot:
     """Prepare the managed store, importing one exact legacy source at most once."""
 
@@ -427,7 +428,7 @@ def prepare_recent_results(
                 raise RecentResultsError("legacy_import_not_initial")
             else:
                 _append_import(state, metadata, rows)
-        elif state["total_games"] == 0 and not state["imports"]:
+        elif allow_legacy_scan and state["total_games"] == 0 and not state["imports"]:
             source = _resolve_source(root, None)
             if source is not None:
                 raw, rows = _read_legacy_source(source)
@@ -436,7 +437,7 @@ def prepare_recent_results(
         state["records"] = state["records"][-capacity:]
         _atomic_write(state_path, state)
     else:
-        source = _resolve_source(root, import_from)
+        source = _resolve_source(root, import_from) if import_from is not None or allow_legacy_scan else None
         state = {
             "schema": RECENT_RESULTS_SCHEMA,
             "version": RECENT_RESULTS_VERSION,

@@ -2950,6 +2950,7 @@ class DeepSeekClient:
         strategy_recommendation: "StrategyRecommendation | None" = None,
         opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
         decision_deadline: DecisionDeadline | None = None,
+        request_evidence_observer: Callable[[bytes, dict[str, object]], None] | None = None,
     ) -> DeepSeekSuggestion:
         current_round = dict(observation.get("current_round", {}))
         step_no = self._coerce_int(current_round.get("step_no"), default=0)
@@ -3131,6 +3132,23 @@ class DeepSeekClient:
         req.add_header("Content-Type", "application/json")
         req.add_header("Authorization", f"Bearer {self._api_key}")
 
+        visible_prompt_ids = {
+            action.get("action_id") for action in pruned_actions
+            if type(action.get("action_id")) is int
+        }
+        request_metadata = {
+            "model": self._model,
+            "candidate_action_ids": [
+                action.get("action_id") for action in pruned_actions
+                if type(action.get("action_id")) is int
+            ],
+            "recommended_action_ids": [
+                action_id for action_id in getattr(strategy_recommendation, "action_ids", ())
+                if type(action_id) is int and action_id in visible_prompt_ids
+            ],
+            "relation_references": self._prompt_relation_references(user_message, pruned_actions),
+        }
+
         # --- streaming request with retry ---
         last_error: Exception | None = None
         content: str = ""
@@ -3141,6 +3159,13 @@ class DeepSeekClient:
             try:
                 if decision_deadline is not None:
                     decision_deadline.check(reserve_seconds=MODEL_RESPONSE_RESERVE_SECONDS)
+                if request_evidence_observer is not None and isinstance(req.data, bytes):
+                    try:
+                        request_evidence_observer(req.data, request_metadata)
+                    except Exception:
+                        # Owner evidence is best effort and must not alter the
+                        # existing model/fallback/action or ACK transaction.
+                        pass
                 if decision_deadline is None:
                     # Keep the longstanding two-argument override contract for
                     # test transports and client subclasses.  The deadline
@@ -3209,3 +3234,28 @@ class DeepSeekClient:
         if verbose:
             print(f"{debug_prefix} 解析得到 action_id={int(action_id)} (合法)", flush=True)
         return DeepSeekSuggestion(action_id=int(action_id), reasoning=reasoning_text)
+
+    @staticmethod
+    def _prompt_relation_references(
+        user_message: str,
+        prompt_actions: list[dict[str, object]],
+    ) -> list[list[int]]:
+        """Return only action-ID references actually printed in prompt relation lines."""
+
+        visible = {
+            action["action_id"] for action in prompt_actions
+            if type(action.get("action_id")) is int
+        }
+        references: list[list[int]] = []
+        seen: set[tuple[int, ...]] = set()
+        for line in user_message.splitlines():
+            ids = tuple(dict.fromkeys(
+                int(match.group(1))
+                for match in re.finditer(r"action_id=([0-9]+)", line)
+                if int(match.group(1)) in visible
+            ))
+            if len(ids) < 2 or ids in seen:
+                continue
+            seen.add(ids)
+            references.append(list(ids))
+        return references

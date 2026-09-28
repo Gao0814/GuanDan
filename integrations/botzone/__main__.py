@@ -6,10 +6,12 @@ import argparse
 from collections.abc import Mapping
 import os
 from pathlib import Path
+import re
 import stat
 import sys
 
 from .agent_runtime import prepare_agent_factory
+from .game_evidence import GameEvidenceError
 from .http_transport import LocalAIHttpTransport
 from .runner import build_foreground_runner, exit_code_for, write_audit
 from .run_provenance import RunProvenanceError, validate_run_token
@@ -36,6 +38,11 @@ def _paths_overlap(first: Path, second: Path | None) -> bool:
     return second is not None and (
         first == second or first.is_relative_to(second) or second.is_relative_to(first)
     )
+
+
+def _is_reparse_point(info: os.stat_result) -> bool:
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & reparse_flag)
 
 
 def _history_path(
@@ -206,6 +213,10 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     parser.add_argument("--game-results-file", help="optional low-sensitivity per-finished-game JSONL artifact")
     parser.add_argument("--recent-results-file", help="managed rolling results state file")
     parser.add_argument("--recent-results-capacity", type=int, help="number of newest result records to retain")
+    parser.add_argument(
+        "--manual-game-evidence-dir",
+        help="owner batch only: managed per-game evidence directory under the fixed workspace",
+    )
     parser.add_argument("--run-token")
     parser.add_argument("--preflight-only", action="store_true", help="validate configuration and storage without polling")
     parser.add_argument(
@@ -272,6 +283,21 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             decision_trace_file=decision_trace_file,
             game_results_file=game_results_file,
         )
+        game_evidence_directory = _manual_game_evidence_path(
+            arguments.manual_game_evidence_dir,
+            agent=arguments.agent,
+            continuous=arguments.continuous,
+            recent_results_file=recent_results_file,
+            state_directory=config.state_directory,
+            audit_file=arguments.audit_file,
+            history_file=history_file,
+            game_results_file=game_results_file,
+        )
+        game_evidence_recorder = None
+        if game_evidence_directory is not None:
+            from .game_evidence import ManualGameEvidenceRecorder
+
+            game_evidence_recorder = ManualGameEvidenceRecorder(game_evidence_directory)
         if decision_trace_file is not None and decision_trace_file.exists():
             raise ValueError("decision_trace_output_exists")
         runner = build_foreground_runner(
@@ -289,6 +315,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             game_results_file=game_results_file,
             recent_results_file=recent_results_file,
             recent_results_capacity=arguments.recent_results_capacity if recent_results_file is not None else None,
+            game_evidence_recorder=game_evidence_recorder,
             stage_trace=stage_trace,
         )
         max_cycles = arguments.max_cycles if arguments.continuous or arguments.max_cycles is not None else 100
@@ -305,11 +332,17 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             retry_network_failures=arguments.continuous,
         )
         exit_code = exit_code_for(summary)
+        if exit_code == 0 and getattr(summary, "game_evidence_status", "disabled") == "failed":
+            exit_code = 7
         if arguments.audit_file is not None:
             if runner.run_token != run_token:
                 raise ValueError("run_token_mismatch")
             write_audit(arguments.audit_file, summary, exit_code, run_token=run_token)
         record_stage(stage_trace, "connector_exit", getattr(summary, "stopped", "diagnostic_failure"))
+    except GameEvidenceError as error:
+        record_stage(stage_trace, "connector_exit", "evidence_incomplete")
+        print(f"evidence_incomplete category={error.category}")
+        return 7
     except (RuntimeConfigError, ValueError) as error:
         record_stage(stage_trace, "connector_exit", "configuration_error")
         print(_configuration_output(preflight_only=arguments.preflight_only, stage=stage, error=error))
@@ -318,7 +351,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
         f"connector_finished cycles={summary.cycles} finished={summary.finished_seen} "
         f"history={getattr(summary, 'history_status', 'disabled')} "
         f"decision_trace={getattr(summary, 'decision_trace_status', 'disabled')}"
-        f"{_game_results_summary(summary)} exit={exit_code}"
+        f"{_game_results_summary(summary)}{_game_evidence_summary(summary)} exit={exit_code}"
     )
     return exit_code
 
@@ -331,6 +364,75 @@ def _game_results_summary(summary: object) -> str:
     if type(count) is not int or count < 0:
         count = 0
     return f" game_results={status} game_results_recorded={count}"
+
+
+def _game_evidence_summary(summary: object) -> str:
+    status = getattr(summary, "game_evidence_status", "disabled")
+    if status not in {"ok", "failed"}:
+        return ""
+    if status == "failed":
+        category = getattr(summary, "game_evidence_error_category", None)
+        if not isinstance(category, str) or re.fullmatch(r"evidence_[a-z_]+", category) is None:
+            category = "evidence_write_failed"
+        print(f"evidence_incomplete category={category}")
+    return f" game_evidence={status}"
+
+
+def _manual_game_evidence_path(
+    value: str | None,
+    *,
+    agent: str,
+    continuous: bool,
+    recent_results_file: Path | None,
+    state_directory: Path,
+    audit_file: str | None,
+    history_file: Path | None,
+    game_results_file: Path | None,
+) -> Path | None:
+    """Constrain full-request evidence to the explicit continuous batch layout."""
+
+    if value is None:
+        return None
+    if agent != "deepseek" or not continuous or recent_results_file is None:
+        raise ValueError("invalid_manual_game_evidence_mode")
+    # This option is deliberately narrower than the ordinary CLI artifacts:
+    # only the owner batch's fixed workspace may receive complete model bodies.
+    from .manual_batch import DEFAULT_WORKSPACE_ROOT
+
+    candidate = Path(value)
+    if not candidate.is_absolute() or candidate.name != "games" or not os.path.lexists(candidate):
+        raise ValueError("invalid_manual_game_evidence_path")
+    try:
+        info = candidate.lstat()
+        resolved = candidate.resolve(strict=True)
+        workspace_candidate = Path(DEFAULT_WORKSPACE_ROOT)
+        workspace_info = workspace_candidate.lstat()
+        workspace_root = workspace_candidate.resolve(strict=True)
+        results_root = recent_results_file.parent.parent.resolve(strict=True)
+        candidate_absolute = Path(os.path.abspath(candidate))
+        expected_recent_results = workspace_root / "manual-batch-records" / "recent-games.json"
+        actual_recent_results = recent_results_file.resolve(strict=True)
+    except OSError:
+        raise ValueError("invalid_manual_game_evidence_path") from None
+    project_root = Path(__file__).resolve().parents[2]
+    audit_target = Path(audit_file).resolve() if audit_file is not None else None
+    if (
+        not stat.S_ISDIR(info.st_mode)
+        or _is_reparse_point(info)
+        or not stat.S_ISDIR(workspace_info.st_mode)
+        or _is_reparse_point(workspace_info)
+        or os.path.normcase(str(candidate_absolute)) != os.path.normcase(str(resolved))
+        or results_root != workspace_root
+        or actual_recent_results != expected_recent_results
+        or resolved.parent != workspace_root
+        or resolved.is_relative_to(project_root)
+        or resolved.is_relative_to(state_directory.resolve())
+        or _paths_overlap(resolved, audit_target)
+        or _paths_overlap(resolved, history_file)
+        or _paths_overlap(resolved, game_results_file)
+    ):
+        raise ValueError("invalid_manual_game_evidence_path")
+    return resolved
 
 
 if __name__ == "__main__":
