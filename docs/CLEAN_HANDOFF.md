@@ -1,5 +1,9 @@
 # Clean Project Handoff
 
+2026-09-28 最新交接：`b5daf9f` 已把记牌器天王炸/连对长度与引擎真值对齐；规划独立定向 15 项通过，合法四王出牌后的摘要从先前 E0 恢复为 E1。Coding 报告全量 957 项与同模型 8 次零重试请求通过；四个冻结状态的 baseline/current 模型 ID 均未变化，两个残局的条件 RuleBased 续局都为 loss。M3 的输入准确性已交付，策略收益 `inconclusive`，不因这四对结果直接回退或宣称有效。下一项 `docs/NEXT_PROMPT.md` 为 M3b 整体记牌器算法任务：逐个玩家的公开余牌容量对应手可行性作保守判断，改进同牌型及跨牌型实际候选对照，压缩低价值总池文字，并用有反例的引擎局面做有限真实选择对照。旧四组不简单重跑，DeepSeek 仍是取舍决策者。规划本轮仅改 docs，不访问两个 workspace、不操作 Botzone。
+
+以下“`e10057d` 后的牌型校验复审”为历史交接，以本段为准。
+
 2026-09-28 最新交接：`e10057d` 已接入默认 M3 公开记牌事实与展示候选比较，禁网 Request/source 闭环成立；Coding 报告全量 953 项通过、真实模型请求 0，规划独立定向 11 项通过，动作质量仍未知。规划以真实引擎四张天王炸出牌复现新记牌摘要错误降为 E0：`card_tracker` 将 `joker_bomb` 长度误写为 2，另将固定 6 张连对宽松接受为 6 张以上偶数张。下一份 `docs/NEXT_PROMPT.md` 为一个 Coding 任务，先修两处规则长度映射并做引擎状态回归，再做最多 8 次、零重试、相同 `deepseek-flash` 的代表状态改前/改后选择对照。评测进程的 `deepseek-v4-flash`/`deepseek_enabled=false` 不是人工 Botzone 批次配置证据：批次启动器明确覆盖模型为 `deepseek-flash`，显式 deepseek factory 不依赖该布尔标志。不得改 `.env`，不得让此配置差异变成另一纯检查阶段。本轮规划未改代码/tests，未访问两个 workspace 或启动现场。
 
 以下“整体记牌器算法优化”为实现前历史交接，以本段为准。
