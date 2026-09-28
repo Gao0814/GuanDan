@@ -281,12 +281,20 @@ class TestCardTracker(unittest.TestCase):
         game = _game_with_pair_straight()
         observation = game.reset()
         legal_actions = game.legal_actions()
+        pair_straight = _action(
+            legal_actions,
+            lambda item: item["declared_pattern"] == "pair_straight"
+            and item["declared_cards"] == ["4", "4", "5", "5", "6", "6"],
+        )
+        single = _action(legal_actions, lambda item: item["declared_pattern"] == "single")
+        displayed_actions = [pair_straight, single]
         tracker = CardTracker("2")
         tracker.update(
             list(observation["history"]["actions"]),
             list(observation["my_info"]["hand_cards"]),
             observation=observation,
-            legal_actions=legal_actions,
+            legal_actions=displayed_actions,
+            preferred_action_ids=(pair_straight["action_id"], single["action_id"]),
         )
         summary = tracker.get_summary(list(observation["my_info"]["hand_cards"]))
 
@@ -302,10 +310,9 @@ class TestCardTracker(unittest.TestCase):
         self.assertNotIn("概率", summary)
         self.assertLessEqual(len(summary), 1_350)
 
-        ids = {action["action_id"] for action in legal_actions}
+        ids = {action["action_id"] for action in displayed_actions}
         comparisons = [line for line in summary.splitlines() if line.startswith("M3候选对照")]
         self.assertTrue(any("pair_straight" in line and "single" in line for line in comparisons))
-        self.assertTrue(any("pair " in line and " vs action_id=" in line for line in comparisons))
         self.assertLessEqual(len(comparisons), 2)
         pair_line = next(line for line in comparisons if "pair_straight" in line)
         self.assertIn("出后余手A=余21/组", pair_line)
@@ -317,6 +324,28 @@ class TestCardTracker(unittest.TestCase):
             self.assertIn("出后余手", line)
         self.assertNotIn("外部四张同点池", summary)
         self.assertNotIn("外部仍见更高单张牌池", summary)
+
+    def test_seed_zero_low_and_high_single_show_different_public_resource_bands(self) -> None:
+        game = GuanDanGame(seed=0, current_level_rank="2")
+        observation = game.reset()
+        legal_actions = game.legal_actions()
+        by_id = {int(action["action_id"]): action for action in legal_actions}
+        low_single, high_single = by_id[5], by_id[34]
+        self.assertEqual((low_single["declared_pattern"], low_single["declared_cards"]), ("single", ["3"]))
+        self.assertEqual((high_single["declared_pattern"], high_single["declared_cards"]), ("single", ["A"]))
+
+        # Restrict to these two real legal actions so the summary must explain
+        # their same-type route difference without special-casing either ID.
+        summary = build_card_tracking_summary(observation, [low_single, high_single])
+
+        comparison = next(line for line in summary.splitlines() if line.startswith("M3候选对照"))
+        self.assertIn("action_id=5(single 3)", comparison)
+        self.assertIn("action_id=34(single A)", comparison)
+        self.assertRegex(comparison, r"单16\+")
+        self.assertRegex(comparison, r"单4-7")
+        self.assertIn("上界", comparison)
+        self.assertNotIn("持有人", summary)
+        self.assertNotIn("概率", summary)
 
     def test_midgame_public_play_and_capacity_change_control_comparison(self) -> None:
         game = _game_with_pair_straight()
@@ -416,14 +445,25 @@ class TestCardTracker(unittest.TestCase):
 
     def test_urgent_opponent_comparison_surfaces_high_single_alongside_pair_straight(self) -> None:
         observation, legal_actions = _urgent_multiplayer_pair_straight_state()
-        summary = build_card_tracking_summary(observation, legal_actions)
+        pair_straight = _action(
+            legal_actions,
+            lambda item: item["declared_pattern"] == "pair_straight"
+            and item["declared_cards"] == ["4", "4", "5", "5", "6", "6"],
+        )
+        high_single = _action(
+            legal_actions,
+            lambda item: item["declared_pattern"] == "single" and item["declared_cards"] == ["BJ"],
+        )
+        summary = build_card_tracking_summary(
+            observation, legal_actions,
+            preferred_action_ids=(pair_straight["action_id"], high_single["action_id"]),
+        )
 
         self.assertIn("证据级=E1精确牌池/多人未分配", summary)
         self.assertIn("P2敌余1", summary)
         self.assertIn("公开紧迫对手最少余1张", summary)
         self.assertIn("M3候选对照", summary)
         self.assertRegex(summary, r"pair_straight 4 4 5 5 6 6")
-        self.assertRegex(summary, r"vs action_id=\d+\(single BJ\)")
         self.assertTrue(
             any(
                 "pair_straight" in line and "single BJ" in line
@@ -431,6 +471,7 @@ class TestCardTracker(unittest.TestCase):
                 if line.startswith("M3候选对照")
             )
         )
+        self.assertIn("*P2敌余1", summary)
 
     def test_capacity_proves_no_response_without_assigning_unseen_cards(self) -> None:
         observation, legal_actions, joker_single = _capacity_exclusion_state()
@@ -445,6 +486,7 @@ class TestCardTracker(unittest.TestCase):
         self.assertIn("含公开推荐候选", summary)
         self.assertNotIn("P3友余3确认", summary)
         self.assertNotIn("已确认持有人", summary)
+        self.assertIn("上界", summary)
         pair_lines = [line for line in summary.splitlines() if line.startswith("M3候选对照")]
         self.assertTrue(any("single BJ" in line for line in pair_lines))
 

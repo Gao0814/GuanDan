@@ -2,7 +2,7 @@ import unittest
 from collections import Counter
 
 from engine.actions import Action, ActionType
-from engine.cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card
+from engine.cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card, build_double_deck
 from engine.game import GuanDanGame
 from engine.patterns import PatternType
 from engine.rules import BaseRuleEngine
@@ -276,6 +276,52 @@ class TestRules(unittest.TestCase):
             self.rules.public_beating_response_requirements(hand, highest_bomb, current_level_rank="2"),
             (),
         )
+
+    def test_public_response_resource_counts_are_capacity_filtered_and_deduplicated(self) -> None:
+        hand_domain = tuple(build_double_deck())
+        leading = _action(2, PatternType.SINGLE, ("3",))
+
+        resources = self.rules.public_beating_response_resource_counts(
+            hand_domain, leading, current_level_rank="2", max_cards=27,
+        )
+        by_pattern = {item.pattern_type: item for item in resources}
+        self.assertGreater(by_pattern["single"].resource_count, 1)
+        self.assertGreater(by_pattern["bomb"].resource_count, 0)
+        self.assertGreater(by_pattern["bomb"].wildcard_resource_count, 0)
+        self.assertGreater(by_pattern["straight_flush"].resource_count, 0)
+        # All four physical joker copies form one carrier multiset, not several
+        # declared-resource counts.
+        self.assertEqual(by_pattern["joker_bomb"].resource_count, 1)
+
+        short_capacity = self.rules.public_beating_response_resource_counts(
+            hand_domain, leading, current_level_rank="2", max_cards=3,
+        )
+        self.assertEqual({item.pattern_type for item in short_capacity}, {"single"})
+
+        pair_lead = _action(2, PatternType.PAIR, ("K", "K"))
+        wildcard_pair = self.rules.public_beating_response_resource_counts(
+            _cards("AS", "2H"), pair_lead, current_level_rank="2", max_cards=2,
+        )
+        self.assertEqual(
+            [(item.pattern_type, item.resource_count, item.wildcard_resource_count) for item in wildcard_pair],
+            [("pair", 1, 1)],
+        )
+
+    def test_same_wildcard_carrier_for_two_flush_windows_counts_once(self) -> None:
+        leading = _action(
+            2, PatternType.STRAIGHT_FLUSH,
+            ("AS", "2S", "3S", "4S", "5S"),
+        )
+        carriers = _cards("3S", "4S", "5S", "6S", "2H")
+
+        resources = self.rules.public_beating_response_resource_counts(
+            carriers, leading, current_level_rank="2", max_cards=5,
+        )
+
+        self.assertEqual(len(resources), 1)
+        self.assertEqual(resources[0].pattern_type, "straight_flush")
+        self.assertEqual(resources[0].resource_count, 1)
+        self.assertEqual(resources[0].wildcard_resource_count, 1)
 
     def test_follow_context_only_exposes_beating_actions_or_pass(self) -> None:
         table_action = _action(2, PatternType.PAIR, ("9", "9"), ("9S", "9H"))

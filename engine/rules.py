@@ -91,6 +91,15 @@ class PublicResponseRequirement:
     wildcard_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class PublicResponseResourceCount:
+    """Count of distinct physical carrier multisets for one response family."""
+
+    pattern_type: str
+    resource_count: int
+    wildcard_resource_count: int
+
+
 def _validate_current_level_rank(current_level_rank: str) -> None:
     if current_level_rank not in {"2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"}:
         raise ValueError("current_level_rank must be one of 2-10,J,Q,K,A")
@@ -343,6 +352,195 @@ class BaseRuleEngine:
                 item.wildcard_count,
             ),
         ))
+
+    def public_beating_response_resource_counts(
+        self,
+        available_cards: tuple[Card, ...],
+        leading_action: Action,
+        current_level_rank: str,
+        *,
+        max_cards: int | None = None,
+    ) -> tuple[PublicResponseResourceCount, ...]:
+        """Count rule-verified, de-duplicated carrier resources in a card domain.
+
+        If ``available_cards`` is a player's confirmed hand, the counts are exact.
+        If it is a public possible-card domain, ``max_cards`` filters resources by
+        that player's remaining capacity and the counts are only a feasible upper
+        bound.  A carrier multiset is counted once even when multiple wildcard
+        declarations or straight windows use the same physical cards.  This
+        summary deliberately exposes no card identities, actions, or action IDs.
+        """
+        _validate_current_level_rank(current_level_rank)
+        if leading_action.action_type != ActionType.PLAY:
+            return ()
+        capacity = len(available_cards) if max_cards is None else max_cards
+        if type(capacity) is not int or capacity < 0:
+            raise ValueError("max_cards must be a non-negative integer")
+        if capacity == 0:
+            return ()
+
+        counts: Counter[tuple[str, str | None]] = Counter()
+        for card in available_cards:
+            is_normal = card.rank in _NON_JOKER_RANKS and card.suit in {"S", "H", "C", "D"}
+            is_joker_card = card.rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} and card.suit is None
+            if not (is_normal or is_joker_card):
+                raise ValueError("available_cards must contain physical cards")
+            counts[(card.rank, card.suit)] += 1
+            if counts[(card.rank, card.suit)] > 2:
+                raise ValueError("available_cards exceeds the double-deck token pool")
+
+        capacity = min(capacity, len(available_cards))
+        if capacity == 0:
+            return ()
+
+        def card_key(card: Card) -> tuple[str, str | None]:
+            return (card.rank, card.suit)
+
+        def carrier_key(cards: tuple[Card, ...]) -> tuple[tuple[str, str | None], ...]:
+            return tuple(card_key(card) for card in sort_cards(cards))
+
+        player_id = leading_action.player_id
+        leading_pattern = (
+            leading_action.declared_pattern.value
+            if leading_action.declared_pattern is not None else ""
+        )
+        families_by_carrier: dict[
+            tuple[tuple[str, str | None], ...], set[str]
+        ] = defaultdict(set)
+        wildcard_families_by_carrier: dict[
+            tuple[tuple[str, str | None], ...], set[str]
+        ] = defaultdict(set)
+        visited: set[tuple[tuple[str, str | None], ...]] = set()
+
+        def record_resource(cards: tuple[Card, ...]) -> None:
+            if len(cards) > capacity:
+                return
+            key = carrier_key(cards)
+            if key in visited:
+                return
+            visited.add(key)
+
+            actions: list[Action] = []
+            if len(cards) == 1:
+                actions.extend(self._generate_single_actions(player_id, cards, current_level_rank))
+            if len(cards) == 2 or 4 <= len(cards) <= 8:
+                actions.extend(self._generate_group_actions(player_id, cards, current_level_rank))
+            if len(cards) == 5:
+                actions.extend(self._generate_straight_flush_actions(player_id, cards, current_level_rank))
+
+            for response in actions:
+                if (
+                    response.declared_pattern is None
+                    or carrier_key(response.carrier_cards) != key
+                    or not self.can_beat(response, leading_action, current_level_rank)
+                ):
+                    continue
+                family = response.declared_pattern.value
+                if family not in {"single", "pair", "bomb", "straight_flush", "joker_bomb"}:
+                    continue
+                families_by_carrier[key].add(family)
+                if response.wildcard_count:
+                    wildcard_families_by_carrier[key].add(family)
+
+        card_by_key = {
+            key: Card(rank=key[0], suit=key[1])
+            for key in counts
+        }
+        token_keys = tuple(sorted(
+            card_by_key,
+            key=lambda key: card_sort_key(card_by_key[key]),
+        ))
+
+        if capacity >= 1:
+            for key in token_keys:
+                record_resource((card_by_key[key],))
+
+        if capacity >= 2:
+            for first_index, first_key in enumerate(token_keys):
+                for second_key in token_keys[first_index:]:
+                    if first_key == second_key and counts[first_key] < 2:
+                        continue
+                    record_resource((card_by_key[first_key], card_by_key[second_key]))
+
+        by_rank: dict[str, list[Card]] = defaultdict(list)
+        for key, count in counts.items():
+            by_rank[key[0]].extend(card_by_key[key] for _ in range(count))
+
+        if capacity >= 4:
+            # Natural bombs: enumerate each distinct multiset within a rank.
+            for rank in _NON_JOKER_RANKS:
+                ranked_cards = tuple(sorted(by_rank.get(rank, ()), key=card_sort_key))
+                for size in range(4, min(8, capacity, len(ranked_cards)) + 1):
+                    for subset in combinations(ranked_cards, size):
+                        record_resource(tuple(subset))
+
+            # A single red-heart level card may complete a same-rank bomb.
+            wildcard = Card(rank=current_level_rank, suit="H")
+            if counts.get(card_key(wildcard), 0):
+                for rank in _NON_JOKER_RANKS:
+                    non_wild = tuple(
+                        card for card in by_rank.get(rank, ())
+                        if not _is_wildcard(card, current_level_rank)
+                    )
+                    max_size = min(8, capacity, len(non_wild) + 1)
+                    for size in range(4, max_size + 1):
+                        for subset in combinations(non_wild, size - 1):
+                            record_resource(tuple(subset) + (wildcard,))
+
+            if counts.get((SMALL_JOKER_RANK, None), 0) >= 2 and counts.get((BIG_JOKER_RANK, None), 0) >= 2:
+                record_resource((
+                    Card(rank=SMALL_JOKER_RANK), Card(rank=SMALL_JOKER_RANK),
+                    Card(rank=BIG_JOKER_RANK), Card(rank=BIG_JOKER_RANK),
+                ))
+
+        if capacity >= 5:
+            # Straight flush windows are few; each physical carrier multiset is
+            # recorded once even when a wildcard fits more than one window.
+            available_tokens = set(token_keys)
+            wildcard_key = (current_level_rank, "H")
+            for suit in _SUIT_ORDER:
+                for window in _STRAIGHT_WINDOWS:
+                    for missing_rank in (None, *window):
+                        if missing_rank is None:
+                            keys = tuple((rank, suit) for rank in window)
+                            if not all(key in available_tokens for key in keys):
+                                continue
+                            record_resource(tuple(card_by_key[key] for key in keys))
+                            continue
+                        if wildcard_key not in available_tokens:
+                            continue
+                        keys = tuple((rank, suit) for rank in window if rank != missing_rank)
+                        if not all(
+                            key in available_tokens and key != wildcard_key
+                            for key in keys
+                        ):
+                            continue
+                        record_resource(tuple(card_by_key[key] for key in keys) + (card_by_key[wildcard_key],))
+
+        # Categories are made disjoint by assigning a carrier that supports
+        # multiple legal declarations to its strongest applicable bomb family.
+        category_sets: dict[str, set[tuple[tuple[str, str | None], ...]]] = defaultdict(set)
+        wildcard_sets: dict[str, set[tuple[tuple[str, str | None], ...]]] = defaultdict(set)
+        for key, families in families_by_carrier.items():
+            category = next((
+                family for family in ("joker_bomb", "straight_flush", "bomb", leading_pattern, "single", "pair")
+                if family in families
+            ), None)
+            if category is None or category not in {"single", "pair", "bomb", "straight_flush", "joker_bomb"}:
+                continue
+            category_sets[category].add(key)
+            if wildcard_families_by_carrier.get(key):
+                wildcard_sets[category].add(key)
+
+        return tuple(
+            PublicResponseResourceCount(
+                pattern_type=family,
+                resource_count=len(category_sets[family]),
+                wildcard_resource_count=len(wildcard_sets[family]),
+            )
+            for family in _PATTERN_SORT_ORDER
+            if category_sets.get(family)
+        )
 
     def can_beat(self, candidate: Action, leading_action: Action, current_level_rank: str) -> bool:
         _validate_current_level_rank(current_level_rank)

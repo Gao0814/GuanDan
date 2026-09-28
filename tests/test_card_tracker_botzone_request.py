@@ -89,7 +89,11 @@ class CardTrackerBotzoneRequestTests(unittest.TestCase):
         self.assertIn("M3候选对照", prompt)
         self.assertIn("逐家即时应手", prompt)
         self.assertIn("可能[", prompt)
+        self.assertIn("上界", prompt)
         self.assertNotIn("外部四张同点池", prompt)
+        tracker_summary = agent.card_tracker.get_summary(list(observation["my_info"]["hand_cards"]))
+        self.assertLessEqual(len(tracker_summary), 1_350)
+        self.assertIn("上界", tracker_summary)
 
         candidate_section = prompt.split("【候选动作】", 1)[1].split("【规则库依据】", 1)[0]
         candidate_ids = {int(value) for value in re.findall(r"action_id=(\d+)", candidate_section)}
