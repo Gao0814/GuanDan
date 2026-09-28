@@ -1,5 +1,14 @@
 # 项目状态看板
 
+## 当前阶段：逐局留证代码已交付，等待所有者现场验收（2026-09-28）
+
+- Coding 提交 `a870c6b6aff82e9fcb188ba49bdc60a0b8242e7e`，新增固定 workspace 的 `games/<本地日期时间>_<局序号>/`：逐局保存 connector 已观察历史、本家手牌、完整合法动作、展示候选、决策与 ACK 时间线，以及每次模型调用交给传输层的完整 JSON 请求 body。请求留证发生在传输调用前，`request_prepared` 只证明请求已准备，不能单凭该事件断定服务端已收到。原始模型回复、reasoning、凭据和连接 URL 不写入这些文件。没有更改 AI 选牌和 ACK 协议。
+- `--games N` 在新版 `games/` 中跨启动保留最近 N 个逐局目录，默认 10，达到容量不会停止 connector；未确认局也计入。旧结果只能以 `summary_only` 导入，不能补造旧牌谱。新版内部 state/audit/streams 另置于 `runtime/v2/runs/`，该内部运行目录及旧 `manual-batch-*` 不在最近 N 局轮换范围，后续按独立审计/清理规则处理。
+- 规划核对提交范围、工作树与接线，独立运行 `tests.test_botzone_game_evidence`、`tests.test_botzone_manual_batch`：29 项通过、1 项因本机符号链接不可用跳过。Coding 报告全量 983 项通过、1 项跳过，主规则 43 项通过；本轮无真实 Botzone 或 DeepSeek 请求，未启动 connector，也未访问或改动现场证据。代码层交付完成；真实页面持续连接、实际逐局文件和第 11 局轮换尚未经现场验收。
+- 下一步由所有者亲自停止旧 connector、启动新版并操作页面；规划在所有者交付新局目录后只读核对时间命名、动作/请求/ACK 关联及异常边界。现阶段无需 Coding 任务，已执行的 `docs/NEXT_PROMPT.md` 撤下。M4 模型前策略效果仍为 `inconclusive`，待有现场证据再做算法效果复审。
+
+以下“最近 10 局只有摘要”为交付前快照，以本节为准。
+
 ## 当前阻断：最近 10 局只有摘要，缺可复盘逐局证据（2026-09-28）
 
 - 固定 workspace 只读清单显示两次 2026-09-28 启动目录：UTC `021001Z`=北京时间 10:10，`115001Z`=19:50；均为运行批次而不是某一局。较晚批次有 `game-results.jsonl`、stage `stdout.txt`、内部 `state/` 和审计目录；`state` 文件名由 match ID 哈希生成，不是日期命名的出牌记录。没有读取会话正文或变更旧证据。
