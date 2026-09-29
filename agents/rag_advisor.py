@@ -61,6 +61,7 @@ _CANDIDATE_REQUIREMENTS = frozenset(
         "danger_block_resource",
         "danger_block_choice",
         "opponent_single_control_cost",
+        "follow_response_net_tradeoff",
     }
 )
 _RELATION_SPECIFIC_SOFT_REQUIREMENTS = frozenset(
@@ -446,6 +447,7 @@ class RAGAdvisor:
             "danger_block_resource": "危险对手 阻断 pass 控制资源",
             "danger_block_choice": "危险对手 阻断 pass 合法压制",
             "opponent_single_control_cost": "对手单张 跟牌 低单 高单 控制资源 压制成本",
+            "follow_response_net_tradeoff": "pass 保留手牌结构 合法应手 当前牌型收益 控制牌代价 孤张变化 队友 对手",
         }
         for relation in RAGAdvisor._metadata_values(scene_tags, "candidate_relation_kinds"):
             if relation in relation_terms:

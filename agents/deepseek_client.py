@@ -26,6 +26,7 @@ from agents.action_structure import (
     CandidateContrast,
     CandidateStructure,
     FreeLeadResidualStructure,
+    candidate_response_net_effect,
     representative_candidate_contrasts,
     select_candidate_structure_representatives,
     summarize_candidate_contrasts,
@@ -108,6 +109,7 @@ _RESIDUAL_USE_RELATION_KINDS = frozenset(
         "single_control_resource", "wildcard_resource", "bomb_strength_resource",
         "bomb_residual", "triple_bomb_split", "bomb_wildcard_strength",
         "opponent_single_control_cost",
+        "follow_response_net_tradeoff",
     }
 )
 
@@ -133,6 +135,7 @@ _OPENING_PATTERN_ORDER = (
 _PROMPT_RELATION_KIND_ORDER = (
     "danger_block_resource", "danger_block_choice",
     "teammate_control_resource", "teammate_table_choice",
+    "follow_response_net_tradeoff",
     "opponent_single_control_cost",
     "triple_bomb_split", "bomb_wildcard_strength",
     "bomb_residual", "bomb_strength_resource", "straight_flush_bomb_fragment",
@@ -163,6 +166,9 @@ _PROMPT_RELATION_SOURCE_IDS = {
     "danger_block_resource": frozenset({"exp_midgame_block_001"}),
     "danger_block_choice": frozenset({"exp_midgame_block_001"}),
     "opponent_single_control_cost": frozenset({"exp_midgame_control_001"}),
+    # The general pass/response comparison is derived from public actions;
+    # no experience source is required to establish it.
+    "follow_response_net_tradeoff": frozenset(),
 }
 PROMPT_MAX_ACTION_DISPLAY_CHARS = 96
 PROMPT_MAX_ACTION_CARRIER_CHARS = 160
@@ -681,6 +687,87 @@ class DeepSeekClient:
         if parts:
             return "行动顺序/当前压制：" + "；".join(parts) + "；下一席能否接牌及后续牌权仍未知。"
         return "行动顺序/当前压制的公开归属不足；不推断后续牌权。"
+
+    @staticmethod
+    def _response_net_tradeoff_text(
+        contrast: CandidateContrast,
+        candidate_facts_by_id: dict[int, CandidateStructure],
+    ) -> str:
+        """Render the public cost and immediate effect of one response/pass pair."""
+        pass_fact = candidate_facts_by_id.get(contrast.action_ids[0])
+        response_fact = candidate_facts_by_id.get(contrast.action_ids[1])
+        if pass_fact is None or response_fact is None:
+            return ""
+        effect = candidate_response_net_effect(pass_fact, response_fact)
+        if effect is None:
+            return ""
+        relation_label = (
+            "队友控桌对照" if contrast.table_leader_relation == "teammate"
+            else "危险对手对照"
+            if contrast.table_leader_relation == "opponent"
+            and contrast.table_leader_hand_count is not None
+            and contrast.table_leader_hand_count <= 2
+            else "应手/让牌对照"
+        )
+        response_name = _PATTERN_FULL.get(response_fact.pattern, "合法牌型")
+        pass_count = pass_fact.residual_card_count
+        retained = f"保留当前全部{pass_count}张手牌" if pass_count is not None else "不消耗手牌"
+        costs: list[str] = []
+        if effect.spends_control_resource:
+            costs.append("消耗可识别的控制牌")
+        if effect.uses_wildcard:
+            costs.append("使用逢人配")
+        if effect.fragments_rank_group:
+            costs.append("拆动已识别同点组")
+        if effect.singleton_rank_delta > 0:
+            costs.append(f"余手孤张点数增加{effect.singleton_rank_delta}")
+        elif effect.singleton_rank_delta < 0:
+            costs.append(f"余手孤张点数减少{-effect.singleton_rank_delta}")
+        if effect.lost_natural_uses:
+            use_labels = {
+                "pair": "对子", "triple": "三张", "bomb": "炸弹",
+                "triple_with_pair": "三带二", "straight": "顺子",
+                "pair_straight": "连对", "steel_plate": "钢板",
+            }
+            lost_labels = "、".join(
+                use_labels.get(kind, "组牌") for kind in effect.lost_natural_uses
+            )
+            costs.append(f"出后不再保有部分当前可识别的{lost_labels}线索")
+        if effect.rank_group_delta > 0:
+            costs.append(f"余手点数类增加{effect.rank_group_delta}")
+        elif effect.rank_group_delta < 0:
+            costs.append(f"余手点数类减少{-effect.rank_group_delta}")
+        if effect.control_resource_delta is not None and effect.control_resource_delta > 0 and not effect.spends_control_resource:
+            costs.append(f"余手可识别控制资源减少{effect.control_resource_delta}")
+        cost_text = "；".join(costs) if costs else "未显示上述控制牌或同点组损耗"
+        finish_text = "并可立即出完" if effect.finishes_hand else ""
+        teammate_route = (
+            "当前领出为队友，pass保留其当前领出机会（若后续无人改写桌面）；"
+            if contrast.table_leader_relation == "teammate"
+            else ""
+        )
+        opponent_route = (
+            "当前领出为对手，pass后由后续玩家继续应对；若无人再接，对手可能保持本轮领出优势；"
+            if contrast.table_leader_relation == "opponent"
+            else ""
+        )
+        urgency_route = (
+            "公开紧迫对手或本家立即出完可能使当前应手收益高于保留资源；"
+            if (
+                contrast.table_leader_relation == "opponent"
+                and contrast.table_leader_hand_count is not None
+                and contrast.table_leader_hand_count <= 2
+            ) or effect.finishes_hand
+            else ""
+        )
+        return (
+            f"{relation_label}：action_id={contrast.action_ids[0]} 为pass，{retained}且保留当前可识别余手结构，"
+            f"但放弃本家这次应手；action_id={contrast.action_ids[1]} 是当前合法{response_name}应手，"
+            f"即时以本家这手替换当前桌面并清理{effect.cards_played}张{finish_text}。可见代价：{cost_text}。"
+            f"{teammate_route}{opponent_route}{urgency_route}pass不消耗这些资源，但其他行动者仍可能接牌；"
+            "后续若有人要改写桌面，需出合法更强牌并消耗实体牌，是否持有未知；"
+            "任何一侧都不保证最终控桌。"
+        )
 
     @staticmethod
     def _compact_json(value: object) -> str:
@@ -1690,6 +1777,21 @@ class DeepSeekClient:
                 kind == "opponent_single_control_cost"
                 and contrast.table_leader_hand_count is not None
                 and contrast.table_leader_hand_count <= 2
+            ) or (
+                kind == "follow_response_net_tradeoff"
+                and (
+                    contrast.table_leader_relation == "teammate"
+                    or (
+                        contrast.table_leader_relation == "opponent"
+                        and contrast.table_leader_hand_count is not None
+                        and contrast.table_leader_hand_count <= 2
+                    )
+                    or (
+                        contrast.next_active_player_relation == "opponent"
+                        and contrast.next_active_player_hand_count is not None
+                        and contrast.next_active_player_hand_count <= 2
+                    )
+                )
             )
             recommendation_overlap = sum(
                 action_id in recommendation_ids for action_id in contrast.action_ids
@@ -1705,12 +1807,24 @@ class DeepSeekClient:
                 for action_id in contrast.action_ids
             )
             cross_family = endpoint_families[0] != endpoint_families[1]
+            response_information = 0
+            response_finisher = 0
+            if kind == "follow_response_net_tradeoff":
+                effect = candidate_response_net_effect(
+                    facts_by_id[contrast.action_ids[0]],
+                    facts_by_id[contrast.action_ids[1]],
+                )
+                if effect is not None:
+                    response_information = effect.comparison_information
+                    response_finisher = int(effect.finishes_hand)
             return (
                 0 if (kind, contrast.action_ids) in formula_keys else 1,
                 0 if urgent else 1,
                 0 if source_applicable else 1,
                 -recommendation_overlap,
                 -opening_overlap,
+                -response_finisher,
+                -response_information,
                 -int(cross_family),
                 -residual_difference(contrast),
                 kind_order.get(kind, len(kind_order)),
@@ -2540,9 +2654,40 @@ class DeepSeekClient:
                     "组合线索可能重叠、需拆别组或无后续牌权，并不自动等于高价值。若没有可证用途且留牌增加负担，另一侧又不损更高价值结构/控制资源，可有条件倾向一并打出；"
                     "价值不明时只比较当前可证成本，不断言未来无用、必然可走或能取得牌权，也不保证未来牌权。"
                 )
+            rendered_response_pairs: set[tuple[int, int]] = set()
+            rendered_follow_contexts: set[tuple[object, ...]] = set()
+
+            def append_follow_context(contrast: CandidateContrast) -> None:
+                context_key = (
+                    contrast.table_leader_relation,
+                    contrast.table_leader_hand_count,
+                    contrast.next_active_player_id,
+                    contrast.next_active_player_relation,
+                    contrast.next_active_player_hand_count,
+                )
+                if context_key not in rendered_follow_contexts:
+                    rendered_follow_contexts.add(context_key)
+                    lines.append(DeepSeekClient._follow_order_context(contrast))
+
+            response_relation_kinds = {
+                "follow_response_net_tradeoff",
+                "teammate_control_resource", "teammate_table_choice",
+                "danger_block_resource", "danger_block_choice",
+            }
             for contrast in visible_contrasts:
                 first_id, second_id = contrast.action_ids
-                if contrast.kind == "bomb_strength_resource":
+                if contrast.kind in response_relation_kinds:
+                    pair_key = tuple(sorted((first_id, second_id)))
+                    if pair_key in rendered_response_pairs:
+                        continue
+                    rendered_response_pairs.add(pair_key)
+                    tradeoff_text = DeepSeekClient._response_net_tradeoff_text(
+                        contrast, candidate_facts_by_id,
+                    )
+                    if tradeoff_text:
+                        lines.append(tradeoff_text)
+                        append_follow_context(contrast)
+                elif contrast.kind == "bomb_strength_resource":
                     lines.append(
                         f"自然炸弹强度/资源对照：action_id={first_id} 是较弱的自然炸弹，action_id={second_id} 是较强的自然炸弹；"
                         "比较少出留下的牌是否值得保留、炸弹强度/牌权机会与资源成本；不规定先出小炸或大炸。"
@@ -2687,28 +2832,6 @@ class DeepSeekClient:
                         "自然路线保留逢人配，通配路线可能改善余牌结构；比较资源成本与结构收益，"
                         "不把保留通配当硬规则，一次出完、阻断或牌权需求可以推翻。"
                     )
-                elif contrast.kind == "teammate_control_resource":
-                    lines.append(
-                        f"队友控桌对照：action_id={first_id} 为pass，action_id={second_id} 消耗控制资源争夺牌权；"
-                        f"队友公开剩余{contrast.teammate_hand_count}张，比较让队友继续与本家争取牌权，"
-                        "不能推断队友暗牌；公开危险对手或本家走牌计划可推翻。"
-                    )
-                elif contrast.kind == "teammate_table_choice":
-                    lines.append(
-                        f"队友控桌对照：action_id={first_id} 为pass，action_id={second_id} 是本家可合法接牌；"
-                        f"队友公开剩余{contrast.teammate_hand_count}张，比较让队友继续与本家接牌，"
-                        "不能推断队友暗牌；公开危险对手或本家走牌计划可推翻。"
-                    )
-                elif contrast.kind == "danger_block_resource":
-                    lines.append(
-                        f"危险对手对照：action_id={first_id} 为pass，action_id={second_id} 消耗控制资源尝试阻断；"
-                        "按公开剩余张数比较阻断收益和控制成本，不保证压住后续牌权，队友更紧急或代价过高可推翻。"
-                    )
-                elif contrast.kind == "danger_block_choice":
-                    lines.append(
-                        f"危险对手对照：action_id={first_id} 为pass，action_id={second_id} 是本家可合法压制候选；"
-                        "比较公开阻断机会与牌型/结构成本，不保证后续牌权，队友更紧急或代价过高可推翻。"
-                    )
                 elif contrast.kind == "opponent_single_control_cost":
                     low_rank, high_rank = (
                         contrast.rank_labels
@@ -2728,11 +2851,9 @@ class DeepSeekClient:
                         "队友控桌、余手结构或控制资源另有可见用途时可反向选择。"
                     )
                 if contrast.kind in {
-                    "teammate_control_resource", "teammate_table_choice",
-                    "danger_block_resource", "danger_block_choice",
                     "opponent_single_control_cost",
                 }:
-                    lines.append(DeepSeekClient._follow_order_context(contrast))
+                    append_follow_context(contrast)
                 if contrast.kind in {
                     "natural_pair_single", "natural_group_single", "natural_sequence_single", "sequence_structure_loss",
                     "triple_split_repartition", "straight_flush_bomb_fragment",

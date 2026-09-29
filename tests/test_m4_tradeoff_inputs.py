@@ -10,7 +10,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from agents.action_structure import summarize_candidate_contrasts
+from agents.action_structure import (
+    candidate_response_net_effect,
+    summarize_candidate_contrasts,
+    summarize_candidate_structures,
+)
 from agents.deepseek_client import DeepSeekClient
 from engine.cards import Card, build_double_deck, card_to_token
 from engine.game import GuanDanGame
@@ -224,6 +228,40 @@ def _urgent_bomb_follow_game() -> GuanDanGame:
     return game
 
 
+def _fresh_follow_game(
+    own_tokens: list[str],
+    *,
+    teammate_leads: bool = False,
+    leader_token: str = "5S",
+) -> GuanDanGame:
+    """Build a complete 108-card deal, then reach a real single-card follow."""
+    leader_id = 3 if teammate_leads else 2
+    hands = _deal(
+        own_tokens=own_tokens,
+        own_excluded_ranks={token[:-1] for token in own_tokens if token not in {"SJ", "BJ"}},
+        player_two_tokens=[leader_token] if leader_id == 2 else None,
+        player_two_excluded_ranks={leader_token[:-1]} if leader_id == 2 else None,
+        player_three_tokens=[leader_token] if leader_id == 3 else None,
+        player_three_excluded_ranks={leader_token[:-1]} if leader_id == 3 else None,
+    )
+    game = GuanDanGame(
+        current_level_rank="2", preset_hands=hands, starting_player_id=leader_id,
+    )
+    game.reset()
+    lead = _action(
+        game,
+        lambda item: item["declared_pattern"] == "single"
+        and item["carrier_cards"] == [leader_token],
+    )
+    game.step(int(lead["action_id"]))
+    for _ in range(2 if leader_id == 2 else 1):
+        _step_pass(game)
+    observation = game.observe()
+    assert observation["my_info"]["player_id"] == 1
+    assert observation["current_round"]["table_action"]["carrier_cards"] == [leader_token]
+    return game
+
+
 class M4TradeoffInputTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -357,7 +395,10 @@ class M4TradeoffInputTests(unittest.TestCase):
         self.assertTrue(set(table_choice.action_ids).issubset(visible))
         self.assertTrue(set(resource_choice.action_ids).issubset(visible))
         self.assertIn("队友控桌对照", prompt)
-        self.assertIn("比较让队友继续与本家接牌", prompt)
+        self.assertIn("保留其当前领出机会", prompt)
+        self.assertIn("若后续无人改写桌面", prompt)
+        self.assertIn("保留当前全部", prompt)
+        self.assertIn("但放弃本家这次应手", prompt)
         self.assertIn("下一名仍在局玩家为玩家2（对手", prompt)
         self.assertIn("队友协同与让牌", prompt)
         _pass_prompt, pass_visible, _raw_count = self._factory_request(game, table_choice.action_ids[0])
@@ -410,10 +451,127 @@ class M4TradeoffInputTests(unittest.TestCase):
                     self.assertEqual(contrast.table_leader_hand_count, 2)
                     self.assertIn("对手领出后公开余2张", prompt)
                     self.assertIn("可值得花控制牌阻断", prompt)
+                    self.assertIn("危险对手对照", prompt)
+                    self.assertIn("公开紧迫对手", prompt)
+                    self.assertIn("pass后由后续玩家继续应对", prompt)
+                    self.assertIn("对手可能保持本轮领出优势", prompt)
                     _high_prompt, _high_visible, _raw_count = self._factory_request(game, contrast.action_ids[1])
                 else:
                     self.assertGreater(contrast.table_leader_hand_count or 0, 2)
                     self.assertIn("控制牌与牌权争夺", prompt)
+                    self.assertIn("应手/让牌对照", prompt)
+
+    def test_general_response_pass_relations_cover_each_real_action_and_request_ids(self) -> None:
+        game = _follow_game(teammate_leads=False)
+        observation = game.observe()
+        actions = game.legal_actions()
+        pass_id = int(_action(game, lambda item: item["declared_pattern"] == "pass")["action_id"])
+        contrasts = summarize_candidate_contrasts(observation, actions)
+        assert contrasts is not None
+        net_contrasts = tuple(
+            item for item in contrasts if item.kind == "follow_response_net_tradeoff"
+        )
+        expected = {
+            (pass_id, int(action["action_id"]))
+            for action in actions if action["declared_pattern"] != "pass"
+        }
+        self.assertEqual({item.action_ids for item in net_contrasts}, expected)
+        self.assertTrue(all(item.table_leader_relation == "opponent" for item in net_contrasts))
+
+        facts = summarize_candidate_structures(observation, actions)
+        assert facts is not None
+        facts_by_id = {item.action_id: item for item in facts}
+        selected = DeepSeekClient._prompt_candidate_contrasts(observation, actions)
+        selected_net = tuple(
+            item for item in selected or ()
+            if item.kind == "follow_response_net_tradeoff"
+        )
+        self.assertGreaterEqual(len(selected_net), 1)
+        self.assertLessEqual(len(selected_net), 2)
+        selected_information = [
+            candidate_response_net_effect(
+                facts_by_id[item.action_ids[0]], facts_by_id[item.action_ids[1]],
+            ).comparison_information
+            for item in selected_net
+        ]
+        self.assertEqual(selected_information, sorted(selected_information, reverse=True))
+
+        prompt, visible, _raw_count = self._factory_request(game, pass_id)
+        self.assertIn("应手/让牌对照", prompt)
+        self.assertIn("替换当前桌面", prompt)
+        self.assertIn("需出合法更强牌并消耗实体牌，是否持有未知", prompt)
+        self.assertIn("任何一侧都不保证最终控桌", prompt)
+        self.assertLessEqual(len([line for line in prompt.splitlines() if "action_id=" in line and "为pass" in line]), 2)
+        self.assertEqual(prompt.count("行动顺序/当前压制："), 1)
+        request_pairs = re.findall(
+            r"action_id=(\d+) 为pass，[^\n]*?action_id=(\d+) 是当前合法", prompt,
+        )
+        self.assertTrue(request_pairs)
+        for first_id, second_id in request_pairs:
+            self.assertIn(int(first_id), visible)
+            self.assertIn(int(second_id), visible)
+        request_effects = [
+            candidate_response_net_effect(facts_by_id[pass_id], facts_by_id[int(second_id)])
+            for _first_id, second_id in request_pairs
+        ]
+        self.assertTrue(any(effect is not None and effect.fragments_rank_group for effect in request_effects))
+        self.assertTrue(any(effect is not None and effect.uses_wildcard for effect in request_effects))
+
+    def test_public_net_effect_distinguishes_group_split_control_cost_and_pass(self) -> None:
+        game = _fresh_follow_game(
+            ["7S", "7H", "7C", "7D", "8S", "2H"],
+        )
+        observation = game.observe()
+        actions = game.legal_actions()
+        facts = summarize_candidate_structures(observation, actions)
+        assert facts is not None
+        pass_fact = next(item for item in facts if item.pattern == "pass")
+        fact_by_id = {item.action_id: item for item in facts}
+        split_action = next(
+            item for item in actions
+            if item["declared_pattern"] == "single"
+            and item["carrier_cards"] == ["7S"]
+            and item["wildcard_count"] == 0
+        )
+        split_effect = candidate_response_net_effect(
+            pass_fact, fact_by_id[int(split_action["action_id"])],
+        )
+        assert split_effect is not None
+        self.assertTrue(split_effect.fragments_rank_group)
+        self.assertFalse(split_effect.spends_control_resource)
+        self.assertEqual(split_effect.cards_played, 1)
+
+        wildcard_action = next(
+            item for item in actions
+            if item["declared_pattern"] == "single"
+            and item["carrier_cards"] == ["2H"]
+            and item["wildcard_count"] == 1
+        )
+        wildcard_effect = candidate_response_net_effect(
+            pass_fact, fact_by_id[int(wildcard_action["action_id"])],
+        )
+        assert wildcard_effect is not None
+        self.assertTrue(wildcard_effect.uses_wildcard)
+        self.assertTrue(wildcard_effect.spends_control_resource)
+        self.assertGreater(wildcard_effect.comparison_information, 0)
+
+        prompt, visible, _raw_count = self._factory_request(
+            game, int(_action(game, lambda item: item["declared_pattern"] == "pass")["action_id"]),
+        )
+        self.assertTrue(set((int(split_action["action_id"]), int(wildcard_action["action_id"]))).issubset(
+            {int(item["action_id"]) for item in actions}
+        ))
+        self.assertIn("应手/让牌对照", prompt)
+        self.assertIn("消耗可识别的控制牌", prompt)
+        self.assertIn("使用逢人配", prompt)
+        self.assertIn("拆动已识别同点组", prompt)
+        request_pairs = re.findall(
+            r"action_id=(\d+) 为pass，[^\n]*?action_id=(\d+) 是当前合法", prompt,
+        )
+        self.assertTrue(request_pairs)
+        for first_id, second_id in request_pairs:
+            self.assertIn(int(first_id), visible)
+            self.assertIn(int(second_id), visible)
 
     def test_urgent_opponent_bomb_response_can_spend_wildcard_for_a_longer_bomb(self) -> None:
         game = _urgent_bomb_follow_game()

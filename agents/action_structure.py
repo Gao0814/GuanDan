@@ -103,6 +103,41 @@ class CandidateContrast:
     next_active_player_hand_count: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class CandidateNetEffect:
+    """Public facts changed by one canonical response versus passing.
+
+    This is a compact description of observable gains and costs, not a score
+    for choosing the response.  The same fields may prioritize which real
+    response/pass comparison is shown and render that comparison.
+    """
+
+    cards_played: int
+    finishes_hand: bool
+    uses_wildcard: bool
+    spends_control_resource: bool
+    fragments_rank_group: bool
+    singleton_rank_delta: int
+    rank_group_delta: int
+    control_resource_delta: int | None
+    lost_natural_uses: tuple[str, ...]
+
+    @property
+    def comparison_information(self) -> int:
+        """Stable display priority for contrasts with distinct public costs."""
+        return (
+            int(self.finishes_hand) * 20
+            + self.cards_played
+            + int(self.uses_wildcard) * 8
+            + int(self.spends_control_resource) * 6
+            + int(self.fragments_rank_group) * 5
+            + abs(self.singleton_rank_delta) * 2
+            + abs(self.rank_group_delta)
+            + max(0, self.control_resource_delta or 0) * 2
+            + len(self.lost_natural_uses) * 2
+        )
+
+
 _RANK_VALUES = {
     "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
     "10": 10, "J": 11, "Q": 12, "K": 13, "A": 14, "2": 15,
@@ -156,6 +191,7 @@ CANDIDATE_RELATION_KINDS = (
     "danger_block_resource",
     "danger_block_choice",
     "opponent_single_control_cost",
+    "follow_response_net_tradeoff",
 )
 
 
@@ -592,7 +628,9 @@ def summarize_candidate_structures(
                 played_ranks=set(),
             )
             results.append(CandidateStructure(
-                action_id, pattern, 0, False, False, False, 0, len({_rank_of(card) for card in hand}),
+                action_id, pattern, 0, False, False, False,
+                sum(1 for count in Counter(_rank_of(card) for card in hand).values() if count == 1),
+                len({_rank_of(card) for card in hand}),
                 False, None, False, None, None, teammate_count, teammate_active,
                 min(opponent_counts) if opponent_counts else None,
                 current_round.get("constraint") == "free",
@@ -636,6 +674,47 @@ def summarize_candidate_structures(
         ))
         seen.add(action_id)
     return tuple(results)
+
+
+def candidate_response_net_effect(
+    passing: CandidateStructure,
+    response: CandidateStructure,
+) -> CandidateNetEffect | None:
+    """Compare a canonical non-pass response's public effects with pass.
+
+    ``summarize_candidate_structures`` has already validated carrier ownership
+    and canonical action shape.  No action is created or re-evaluated here.
+    """
+    if passing.pattern != "pass" or response.pattern == "pass":
+        return None
+    pass_uses = set(passing.residual_hand_natural_pattern_kinds or ())
+    response_uses = set(response.residual_hand_natural_pattern_kinds or ())
+    control_delta = None
+    if (
+        passing.residual_natural_control_resource_count is not None
+        and response.residual_natural_control_resource_count is not None
+    ):
+        control_delta = (
+            passing.residual_natural_control_resource_count
+            - response.residual_natural_control_resource_count
+        )
+    return CandidateNetEffect(
+        cards_played=response.carrier_count,
+        finishes_hand=response.finishes_hand,
+        uses_wildcard=response.uses_wildcard,
+        spends_control_resource=response.consumes_control_resource,
+        fragments_rank_group=response.fragments_played_rank_group,
+        singleton_rank_delta=(
+            response.residual_singleton_rank_count
+            - passing.residual_singleton_rank_count
+        ),
+        rank_group_delta=(
+            response.estimated_remaining_rank_groups
+            - passing.estimated_remaining_rank_groups
+        ),
+        control_resource_delta=control_delta,
+        lost_natural_uses=tuple(sorted(pass_uses - response_uses)),
+    )
 
 
 def _natural_same_rank(action: Mapping[str, object], *, count: int) -> str | None:
@@ -1589,6 +1668,19 @@ def summarize_candidate_contrasts(
                 (fact for fact in facts if fact.pattern != "pass"),
                 key=lambda fact: (fact.carrier_count, fact.action_id),
             )
+            if pass_fact is not None:
+                # Keep the full legal response denominator here. Prompt-time
+                # ranking below can then choose a recommended or structurally
+                # informative response without inventing an action or relying
+                # on the leader being an opponent with a low card count.
+                contrasts.extend(
+                    follow_contrast(
+                        "follow_response_net_tradeoff",
+                        (pass_fact.action_id, fact.action_id),
+                        teammate_hand_count=pass_fact.teammate_hand_count,
+                    )
+                    for fact in nonpass_facts
+                )
             if pass_fact is not None and is_teammate_leader and nonpass_facts:
                 table_pattern = table_action.get("declared_pattern")
                 same_shape = [fact for fact in nonpass_facts if fact.pattern == table_pattern]

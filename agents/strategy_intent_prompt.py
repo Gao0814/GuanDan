@@ -39,6 +39,7 @@ RELATION_PROMPT_TEXT = {
     "danger_block_resource": "危险对手控桌时阻断与资源成本的取舍",
     "danger_block_choice": "危险对手控桌时pass与合法压制候选的取舍",
     "opponent_single_control_cost": "对手单张跟牌时普通低单与高控制单张的当前压制/保留取舍",
+    "follow_response_net_tradeoff": "pass保留本家余手与合法应手取得当前牌型机会、付出出牌结构/控制资源的净得失",
 }
 _REASON_DETAILS = {
     "can_finish_now": ("run_out", "本次可直接出完"),
@@ -227,6 +228,8 @@ def _valid_candidate_relations(context: StrategyIntentContext) -> bool:
     if any(kind in free_lead_kinds for kind in kinds) and context.is_free_lead is not True:
         return False
     kind_set = set(kinds)
+    if "follow_response_net_tradeoff" in kind_set and context.is_free_lead is not False:
+        return False
     if kind_set & {"teammate_control_resource", "teammate_table_choice"} and not (
         context.is_free_lead is False and context.table_leader_relation == "teammate"
     ):
