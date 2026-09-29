@@ -453,7 +453,7 @@ class ActionQualityProxyTests(unittest.TestCase):
         self.assertEqual(repeated.to_json().encode("utf-8"), serialized.encode("utf-8"))
         self.assertEqual(repeated_transport.calls, 6)
 
-    def test_transport_failure_unshown_id_body_mutation_and_zero_call_fail_closed(self) -> None:
+    def test_transport_failure_unshown_id_body_mutation_and_formula_reaches_model_path(self) -> None:
         sample = self.samples[0]
         reference_id = RuleBasedAIAgent(player_id=1).select_action(sample.observation, sample.legal_actions)
         failure_transport = _FakeSSETransport(lambda ids: ids[0], failure=True)
@@ -473,16 +473,17 @@ class ActionQualityProxyTests(unittest.TestCase):
         self.assertEqual(mutated.failure_code, "request_body_mutated")
 
         shortcut_transport = _FakeSSETransport(lambda ids: ids[0])
+        valid_rollout = RuleRolloutOutcome("draw", 1, 4, 10, True, ())
         with patch(
             "agents.opening_strategy.OpeningFormulaStrategy.analyze_action",
             return_value=OpeningFormulaAnalysis(action_id=reference_id),
         ):
-            with patch.object(proxy, "_rollout") as rollout:
+            with patch.object(proxy, "_rollout", return_value=valid_rollout) as rollout:
                 shortcut = evaluate_quality_sample(sample, transport=shortcut_transport, advisor=self.advisor)
-        rollout.assert_not_called()
-        self.assertEqual(shortcut_transport.calls, 0)
-        self.assertEqual(shortcut.comparison, Comparison.UNEVALUABLE)
-        self.assertEqual(shortcut.failure_code, "model_path_not_reached")
+        self.assertEqual(shortcut_transport.calls, 1)
+        self.assertEqual(rollout.call_count, 2)
+        self.assertEqual(shortcut.comparison, Comparison.TIE)
+        self.assertIsNone(shortcut.failure_code)
 
     def test_prompt_candidate_drift_fails_before_injected_transport_or_rollout(self) -> None:
         sample = self.samples[0]

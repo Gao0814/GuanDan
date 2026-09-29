@@ -4,7 +4,7 @@ from unittest import mock
 
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
-from agents.game_phase import MIDGAME, GamePhaseContext
+from agents.game_phase import MIDGAME, OPENING, GamePhaseContext
 from agents.opening_strategy import OpeningFormulaAnalysis
 from agents.strategy_router import StrategyIntentContext
 
@@ -129,7 +129,7 @@ class TestStrategyRouterShadow(unittest.TestCase):
         router.assert_not_called()
         evaluate.assert_not_called()
 
-    def test_opening_formula_shortcut_skips_router(self) -> None:
+    def test_opening_formula_becomes_model_before_recommendation(self) -> None:
         agent = DeepSeekAIAgent(
             player_id=1,
             client=RecordingClient(),
@@ -137,15 +137,32 @@ class TestStrategyRouterShadow(unittest.TestCase):
             hand_evaluation_enabled=False,
             strategy_router_shadow_enabled=True,
         )
+        client = agent.client
+        opening_phase = GamePhaseContext(OPENING, 5, (5, 5, 5), 15, 0, 0)
+        observation = _observation()
+        current_round = dict(observation["current_round"])
+        current_round.update({"step_no": 0, "round_no": 1})
+        observation["current_round"] = current_round
+        analysis = OpeningFormulaAnalysis(
+            action_id=1,
+            recommendation_basis="low_cost_single",
+        )
         with mock.patch(
             "agents.deepseek_ai.OpeningFormulaStrategy.analyze_action",
-            return_value=OpeningFormulaAnalysis(action_id=1),
+            return_value=analysis,
         ), mock.patch(
-            "agents.strategy_router.route_strategy_intent"
+            "agents.deepseek_ai.classify_game_phase", return_value=opening_phase,
+        ), mock.patch(
+            "agents.deepseek_client.classify_game_phase", return_value=opening_phase,
+        ), mock.patch(
+            "agents.strategy_router.route_strategy_intent", return_value=_intent(),
         ) as router:
-            self.assertEqual(agent.select_action(_observation(), [_action(1), _action(2)]), 1)
-        router.assert_not_called()
-        self.assertIsNone(agent.last_strategy_intent)
+            self.assertEqual(agent.select_action(observation, [_action(1), _action(2)]), 1)
+        router.assert_called_once()
+        self.assertEqual(len(client.calls), 1)
+        self.assertIs(client.calls[0]["opening_formula_recommendation"], analysis)
+        self.assertEqual(agent.last_decision_source, "model")
+        self.assertIsNotNone(agent.last_strategy_intent)
 
     def test_shadow_on_uses_same_phase_original_actions_and_available_or_unavailable_audit(self) -> None:
         client = RecordingClient()

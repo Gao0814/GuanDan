@@ -16,11 +16,12 @@ from agents.action_structure import (
     summarize_candidate_contrasts,
     summarize_candidate_structures,
 )
-from agents.deepseek_ai import DeepSeekAIAgent
+from agents.deepseek_ai import DeepSeekAIAgent, _structural_failure_fallback_action_id
 from agents.deepseek_client import DeepSeekClient
 from agents.game_phase import classify_game_phase
 from agents.hand_evaluator import evaluate_hand
 from agents.opening_strategy import OpeningFormulaStrategy, normalize_hand_strength
+from agents.rule_based_ai import FrozenRuleBasedAIAgent
 from agents.rag_advisor import RAGAdvisor
 from agents.strategy_recommendation import StrategyRecommendation
 from engine.cards import Card, build_double_deck
@@ -85,6 +86,60 @@ def _shape_games() -> tuple[tuple[str, GuanDanGame], ...]:
             ),
         ),
     )
+
+
+def _complete_group_fallback_game() -> GuanDanGame:
+    return _complete_game_with_hand(
+        (("8", 3), ("9", 3), ("3", 4), ("5", 4), ("7", 4), ("10", 4), ("Q", 4), ("SJ", 1))
+    )
+
+
+def _bomb_follow_game(*, leader_player_id: int) -> GuanDanGame:
+    if leader_player_id not in {3, 4}:
+        raise ValueError("bomb_leader_must_be_other_team_or_teammate")
+    deck = list(build_double_deck())
+
+    def take(predicate: Callable[[Card], bool], count: int) -> list[Card]:
+        selected = [card for card in deck if predicate(card)][:count]
+        if len(selected) != count:
+            raise AssertionError("teammate_bomb_deal_incomplete")
+        for card in selected:
+            deck.remove(card)
+        return selected
+
+    leader_bomb = take(lambda card: card.rank == "7", 4)
+    our_bomb = take(lambda card: card.rank == "9", 4)
+    leader_hand = leader_bomb + take(lambda _card: True, 23)
+    ours = our_bomb + take(lambda _card: True, 23)
+    player_two = take(lambda _card: True, 27)
+    other_player_id = 7 - leader_player_id
+    other_player_hand = take(lambda _card: True, 27)
+    game = GuanDanGame(
+        current_level_rank="2",
+        starting_player_id=leader_player_id,
+        preset_hands={
+            1: tuple(ours),
+            2: tuple(player_two),
+            leader_player_id: tuple(leader_hand),
+            other_player_id: tuple(other_player_hand),
+        },
+    )
+    game.reset()
+    lead_rank = "7"
+    lead = next(
+        action for action in game.legal_actions()
+        if action["declared_pattern"] == "bomb"
+        and len(action["carrier_cards"]) == 4
+        and all(card[:-1] == lead_rank for card in action["carrier_cards"])
+        and action["wildcard_count"] == 0
+    )
+    game.step(int(lead["action_id"]))
+    if leader_player_id == 3:
+        pass_action = next(action for action in game.legal_actions() if action["declared_pattern"] == "pass")
+        game.step(int(pass_action["action_id"]))
+    if game.observe()["my_info"]["player_id"] != 1:
+        raise AssertionError("bomb_follow_player_mismatch")
+    return game
 
 
 class _OfflineConfig:
@@ -156,10 +211,17 @@ def _run_factory_opening_request(
     strategy_recommendation_enabled: bool = True,
     advisor: object | None = None,
     selected_candidate_index: int = 0,
+    avoid_action_id: int | None = None,
+    transport_failure: str | None = None,
+    opening_formula_enabled: bool | None = None,
 ) -> tuple[DeepSeekAIAgent, _CapturingClient, _CapturingTransport, int]:
     """Exercise the production Botzone factory while keeping transport offline."""
 
-    transport = _CapturingTransport(selected_candidate_index=selected_candidate_index)
+    transport = _CapturingTransport(
+        selected_candidate_index=selected_candidate_index,
+        avoid_action_id=avoid_action_id,
+        failure_mode=transport_failure,
+    )
     created: dict[str, _CapturingClient] = {}
 
     def client_factory(**kwargs: object) -> _CapturingClient:
@@ -175,7 +237,11 @@ def _run_factory_opening_request(
 
     factory = build_agent_factory(
         "deepseek",
-        config_loader=_OfflineConfig,
+        config_loader=(
+            type("_FactoryOfflineConfig", (_OfflineConfig,), {"opening_formula_enabled": opening_formula_enabled})
+            if opening_formula_enabled is not None
+            else _OfflineConfig
+        ),
         client_factory=client_factory,
         deepseek_agent_factory=agent_factory,
         rag_factory=lambda: advisor if advisor is not None else _opening_advisor(),
@@ -192,12 +258,20 @@ def _run_factory_opening_request(
 class _CapturingTransport:
     """Capture the actual production Request and answer with a displayed ID."""
 
-    def __init__(self, *, selected_candidate_index: int = 0) -> None:
+    def __init__(
+        self,
+        *,
+        selected_candidate_index: int = 0,
+        avoid_action_id: int | None = None,
+        failure_mode: str | None = None,
+    ) -> None:
         self.calls = 0
         self.prompt = ""
         self.candidate_ids: tuple[int, ...] = ()
         self.action_id: int | None = None
         self.selected_candidate_index = selected_candidate_index
+        self.avoid_action_id = avoid_action_id
+        self.failure_mode = failure_mode
 
     def __call__(self, request: object, _timeout: float) -> str:
         self.calls += 1
@@ -220,7 +294,17 @@ class _CapturingTransport:
         if not rows or any(left != right for left, right in rows):
             raise OSError("offline_candidates_invalid")
         self.candidate_ids = tuple(int(left) for left, _ in rows)
-        self.action_id = self.candidate_ids[self.selected_candidate_index]
+        if self.failure_mode == "timeout":
+            raise TimeoutError("offline_timeout")
+        choices = tuple(
+            action_id for action_id in self.candidate_ids
+            if action_id != self.avoid_action_id
+        )
+        if not choices:
+            raise OSError("offline_alternative_candidate_missing")
+        self.action_id = choices[self.selected_candidate_index]
+        if self.failure_mode == "invalid":
+            self.action_id = max(self.candidate_ids) + 1
         response = json.dumps({"action_id": self.action_id}, separators=(",", ":"))
         chunk = json.dumps({"choices": [{"delta": {"content": response}}]})
         return f"data: {chunk}\n\ndata: [DONE]\n"
@@ -229,10 +313,19 @@ class _CapturingTransport:
 class _CapturingClient(DeepSeekClient):
     def __init__(self, *args: object, **kwargs: object) -> None:
         self.suggestion_kwargs: dict[str, object] = {}
+        self.request_metadata: dict[str, object] = {}
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
     def suggest_action_id(self, **kwargs: object):
         self.suggestion_kwargs = dict(kwargs)
+        original_observer = kwargs.get("request_evidence_observer")
+
+        def capture_metadata(body: bytes, metadata: dict[str, object]) -> None:
+            self.request_metadata = dict(metadata)
+            if callable(original_observer):
+                original_observer(body, metadata)
+
+        kwargs["request_evidence_observer"] = capture_metadata
         return super().suggest_action_id(**kwargs)
 
 
@@ -474,6 +567,154 @@ class MultiPatternOpeningTests(unittest.TestCase):
                         observation, actions, evaluate_hand(observation, actions),
                     )
                 self.assertEqual(reordered_display_analysis.action_id, analysis.action_id)
+
+    def test_source_qualified_opening_routes_reach_factory_request_without_owning_choice(self) -> None:
+        natural_straight_game = GuanDanGame(seed=153, current_level_rank="2")
+        cases = [
+            (
+                f"structured_single_{rank}",
+                _complete_game_with_hand(
+                    (("4", 1), ("5", 1), ("6", 1), ("7", 1), ("8", 1), (rank, 1),
+                     ("3", 8), ("10", 8), ("A", 4), ("SJ", 1))
+                ),
+                "low_cost_single",
+                rank,
+            )
+            for rank in ("K", "Q")
+        ]
+        cases.append(("natural_straight", natural_straight_game, "natural_straight_cleanup", None))
+        for name, game, expected_basis, target_rank in cases:
+            with self.subTest(route=name):
+                observation = game.reset()
+                actions = game.legal_actions()
+                analysis = self.strategy.analyze_action(
+                    observation,
+                    actions,
+                    evaluate_hand(observation, actions),
+                )
+                self.assertEqual(analysis.recommendation_basis, expected_basis)
+                self.assertIsNotNone(analysis.action_id)
+                suggested = next(item for item in actions if item["action_id"] == analysis.action_id)
+                actions_by_id = {int(action["action_id"]): action for action in actions}
+                if target_rank is not None:
+                    self.assertEqual(suggested["declared_pattern"], "single")
+                    self.assertEqual(suggested["carrier_cards"], [f"{target_rank}S"])
+                    contrasts = summarize_candidate_contrasts(observation, actions)
+                    assert contrasts is not None
+                    destructive_route = next(
+                        item for item in contrasts
+                        if item.kind == "natural_sequence_single"
+                        and {
+                            str(actions_by_id[action_id]["declared_pattern"])
+                            for action_id in item.action_ids
+                        } == {"straight", "single"}
+                    )
+                    related_single_id = next(
+                        action_id for action_id in destructive_route.action_ids
+                        if actions_by_id[action_id]["declared_pattern"] == "single"
+                    )
+                    self.assertNotEqual(analysis.action_id, related_single_id)
+                else:
+                    self.assertEqual(suggested["declared_pattern"], "straight")
+                    self.assertTrue(analysis.model_contrasts)
+                    destructive_route = analysis.model_contrasts[0]
+
+                fixture = ProbeFixture(name, observation, actions, game_snapshot=game)
+                agent, client, transport, chosen = _run_factory_opening_request(
+                    fixture,
+                    avoid_action_id=int(analysis.action_id),
+                )
+                final_ids = set(transport.candidate_ids)
+                strategy_recommendation = client.suggestion_kwargs.get("strategy_recommendation")
+                strategy_ids = tuple(getattr(strategy_recommendation, "action_ids", ()))
+                combined_recommendation_ids = set(strategy_ids)
+                combined_recommendation_ids.add(int(analysis.action_id))
+                self.assertEqual(transport.calls, 1)
+                self.assertNotEqual(chosen, analysis.action_id)
+                self.assertEqual(chosen, transport.action_id)
+                self.assertEqual(agent.last_decision_source, "model")
+                self.assertLessEqual(len(final_ids), 80)
+                self.assertTrue(final_ids.issubset({int(item["action_id"]) for item in actions}))
+                self.assertEqual(len(combined_recommendation_ids), 4)
+                self.assertTrue(combined_recommendation_ids.issubset(final_ids))
+                self.assertTrue(set(destructive_route.action_ids).issubset(final_ids))
+                self.assertIn(
+                    f"来源条件适用的开局公式优先建议：核验 action_id={analysis.action_id}",
+                    transport.prompt,
+                )
+                relation_lines = [
+                    line for line in _prompt_section(transport.prompt, "公开关系对照").splitlines()
+                    if "action_id=" in line
+                ]
+                self.assertTrue(any(
+                    all(f"action_id={action_id}" in line for action_id in destructive_route.action_ids)
+                    for line in relation_lines
+                ))
+                self.assertEqual(
+                    client.suggestion_kwargs.get("opening_formula_recommendation"),
+                    analysis,
+                )
+                self.assertIn(
+                    analysis.action_id,
+                    client.request_metadata.get("recommended_action_ids", []),
+                )
+
+    def test_structural_failure_fallback_compares_residuals_and_preserves_pressure_passes(self) -> None:
+        game = _complete_group_fallback_game()
+        observation = game.reset()
+        actions = game.legal_actions()
+        expected = next(
+            action for action in actions
+            if action["declared_pattern"] == "steel_plate"
+            and Counter(card[:-1] for card in action["carrier_cards"]) == Counter({"8": 3, "9": 3})
+        )
+        old_static = FrozenRuleBasedAIAgent(1).select_action(observation, actions)
+        self.assertEqual(
+            next(item for item in actions if item["action_id"] == old_static)["declared_pattern"],
+            "pair_straight",
+        )
+        fixture = ProbeFixture("structural-fallback", observation, actions, game_snapshot=game)
+        for failure in ("timeout", "invalid"):
+            with self.subTest(failure=failure):
+                agent, _client, transport, chosen = _run_factory_opening_request(
+                    fixture,
+                    opening_formula_enabled=False,
+                    transport_failure=failure,
+                )
+                self.assertEqual(transport.calls, 1)
+                self.assertEqual(
+                    chosen,
+                    int(expected["action_id"]),
+                )
+                self.assertIn(chosen, {int(item["action_id"]) for item in actions})
+                self.assertEqual(agent.last_decision_source, "model")
+
+        for leader_player_id, label in ((3, "teammate"), (4, "opponent_pressure")):
+            with self.subTest(pressure=label):
+                pressure_game = _bomb_follow_game(leader_player_id=leader_player_id)
+                pressure_observation = pressure_game.observe()
+                pressure_actions = pressure_game.legal_actions()
+                pressure_fixture = ProbeFixture(
+                    f"{label}-fallback", pressure_observation, pressure_actions,
+                    game_snapshot=pressure_game,
+                )
+                pressure_agent, _pressure_client, pressure_transport, pressure_choice = _run_factory_opening_request(
+                    pressure_fixture,
+                    opening_formula_enabled=False,
+                    transport_failure="invalid",
+                )
+                pass_action = next(item for item in pressure_actions if item["declared_pattern"] == "pass")
+                self.assertEqual(pressure_transport.calls, 1)
+                self.assertEqual(pressure_choice, int(pass_action["action_id"]))
+                self.assertEqual(pressure_agent.last_decision_source, "model")
+
+        incomplete_observation = {}
+        self.assertIsNone(summarize_candidate_structures(incomplete_observation, actions))
+        fail_closed_choice = _structural_failure_fallback_action_id(
+            incomplete_observation, actions, player_id=1,
+        )
+        self.assertEqual(fail_closed_choice, old_static)
+        self.assertIn(fail_closed_choice, {int(item["action_id"]) for item in actions})
 
     def test_group_relation_needs_public_structure_proof_and_other_conflicts_still_defer(self) -> None:
         from agents.opening_strategy import _rank_of

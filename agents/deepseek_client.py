@@ -34,7 +34,11 @@ from agents.action_structure import (
     summarize_free_lead_residual_structures,
 )
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
-from agents.opening_strategy import MAX_OPENING_FORMULA_CONTRASTS
+from agents.opening_strategy import (
+    MAX_OPENING_FORMULA_CONTRASTS,
+    OPENING_FORMULA_BASIS_TEXT,
+    OpeningFormulaAnalysis,
+)
 from agents.short_endgame_planner import (
     analyze_free_lead_grouping,
     free_lead_grouping_comparison_pairs,
@@ -115,6 +119,7 @@ _RESIDUAL_USE_RELATION_KINDS = frozenset(
 
 # Prompt limits are deliberately centralized so context growth stays auditable.
 PROMPT_MAX_CANDIDATE_ACTIONS = 80
+MAX_PROMPT_PROTECTED_ACTIONS = 4
 MAX_OPENING_PATTERN_REPRESENTATIVES = 20
 MAX_OPENING_ACTIONS_PER_PATTERN_FAMILY = 8
 MAX_PROMPT_RELATION_PAIRS = 24
@@ -819,7 +824,7 @@ class DeepSeekClient:
         legal_actions: list[dict[str, object]],
         protected_action_ids: tuple[int, ...],
         *,
-        max_count: int = 3,
+        max_count: int = MAX_PROMPT_PROTECTED_ACTIONS,
     ) -> tuple[dict[str, object], ...]:
         """Resolve a small, exact canonical protection set or fail closed.
 
@@ -1953,6 +1958,7 @@ class DeepSeekClient:
         strategy_recommendation: "StrategyRecommendation | None" = None,
         observation: dict[str, object] | None = None,
         opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
+        opening_formula_recommendation: OpeningFormulaAnalysis | None = None,
         rag_context: dict[str, object] | None = None,
     ) -> list[dict[str, object]]:
         """Build the one bounded canonical candidate set used by the model.
@@ -1966,12 +1972,29 @@ class DeepSeekClient:
             strategy_recommendation,
             legal_actions,
         )
-        protected_ids = validated.action_ids if validated is not None else ()
+        validated_opening = DeepSeekClient._validated_opening_formula_recommendation(
+            opening_formula_recommendation,
+            observation,
+            legal_actions,
+        )
+        formula_action_ids = (
+            (validated_opening.action_id,)
+            if validated_opening is not None and validated_opening.action_id is not None
+            else ()
+        )
+        protected_ids = tuple(dict.fromkeys(
+            formula_action_ids + (validated.action_ids if validated is not None else ())
+        ))
+        formula_contrasts = (
+            validated_opening.model_contrasts
+            if validated_opening is not None
+            else opening_formula_contrasts
+        )
         contrasts = (
             DeepSeekClient._prompt_candidate_contrasts(
                 observation,
                 legal_actions,
-                opening_formula_contrasts,
+                formula_contrasts,
                 strategy_recommendation=strategy_recommendation,
                 rag_context=rag_context,
             )
@@ -2424,6 +2447,81 @@ class DeepSeekClient:
         return payload
 
     @staticmethod
+    def _validated_opening_formula_recommendation(
+        payload: object,
+        observation: object,
+        legal_actions: list[dict[str, object]],
+    ) -> OpeningFormulaAnalysis | None:
+        """Validate a model-before opening hint without granting it action authority."""
+        if type(payload) is not OpeningFormulaAnalysis:
+            return None
+        if (
+            type(payload.model_contrasts) is not tuple
+            or len(payload.model_contrasts) > MAX_OPENING_FORMULA_CONTRASTS
+        ):
+            return None
+        legal_by_id: dict[int, dict[str, object]] = {}
+        for action in legal_actions:
+            if not isinstance(action, dict) or type(action.get("action_id")) is not int:
+                return None
+            action_id = int(action["action_id"])
+            if action_id in legal_by_id:
+                return None
+            legal_by_id[action_id] = action
+        if payload.action_id is None:
+            if payload.recommendation_basis is not None:
+                return None
+        else:
+            if (
+                type(payload.action_id) is not int
+                or payload.action_id not in legal_by_id
+                or payload.recommendation_basis not in OPENING_FORMULA_BASIS_TEXT
+            ):
+                return None
+            current_round = observation.get("current_round") if isinstance(observation, dict) else None
+            if (
+                not isinstance(current_round, dict)
+                or current_round.get("constraint") != "free"
+                or current_round.get("table_action") is not None
+            ):
+                return None
+            try:
+                if classify_game_phase(observation).phase != "opening":
+                    return None
+            except Exception:
+                return None
+            action = legal_by_id[payload.action_id]
+            pattern = str(action.get("declared_pattern", ""))
+            carriers = action.get("carrier_cards")
+            if not isinstance(carriers, list):
+                return None
+            if payload.recommendation_basis == "low_cost_single":
+                expected_pattern, expected_count = "single", 1
+            elif payload.recommendation_basis == "natural_straight_cleanup":
+                expected_pattern, expected_count = "straight", 5
+            else:
+                expected_pattern = pattern
+                expected_count = {"pair": 2, "triple": 3}.get(pattern, -1)
+            if (
+                pattern != expected_pattern
+                or len(carriers) != expected_count
+                or action.get("wildcard_count") != 0
+                or expected_count < 0
+            ):
+                return None
+        for contrast in payload.model_contrasts:
+            if (
+                type(contrast) is not CandidateContrast
+                or contrast.kind not in CANDIDATE_RELATION_KINDS
+                or type(contrast.action_ids) is not tuple
+                or len(contrast.action_ids) != 2
+                or any(type(action_id) is not int or action_id not in legal_by_id for action_id in contrast.action_ids)
+                or contrast.action_ids[0] == contrast.action_ids[1]
+            ):
+                return None
+        return payload
+
+    @staticmethod
     def _build_structured_prompt(
         my_info: dict[str, object],
         current_round: dict[str, object],
@@ -2440,6 +2538,7 @@ class DeepSeekClient:
         strategy_recommendation: "StrategyRecommendation | None" = None,
         residual_structure_source_actions: list[dict[str, object]] | None = None,
         opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
+        opening_formula_recommendation: OpeningFormulaAnalysis | None = None,
     ) -> str:
         """Build the final Step-H structured prompt from public payloads."""
         lines: list[str] = []
@@ -2460,10 +2559,26 @@ class DeepSeekClient:
             if residual_structure_source_actions is not None
             else legal_actions
         )
+        prompt_observation = {
+            "my_info": my_info,
+            "current_round": current_round,
+            "other_players": other_players,
+            "history": history,
+        }
+        validated_opening_recommendation = DeepSeekClient._validated_opening_formula_recommendation(
+            opening_formula_recommendation,
+            prompt_observation,
+            contrast_source_actions,
+        )
+        formula_contrasts = (
+            validated_opening_recommendation.model_contrasts
+            if validated_opening_recommendation is not None
+            else opening_formula_contrasts
+        )
         representative_contrasts = DeepSeekClient._prompt_candidate_contrasts(
             {"my_info": my_info, "current_round": current_round, "other_players": other_players, "history": history},
             contrast_source_actions,
-            opening_formula_contrasts,
+            formula_contrasts,
             strategy_recommendation=strategy_recommendation,
             rag_context=rag_context,
         )
@@ -2661,14 +2776,40 @@ class DeepSeekClient:
         validated_recommendation = DeepSeekClient._validated_strategy_recommendation(
             strategy_recommendation, prompt_actions,
         )
+        formula_recommendation_id = (
+            validated_opening_recommendation.action_id
+            if validated_opening_recommendation is not None
+            and validated_opening_recommendation.action_id in available_ids
+            else None
+        )
         candidate_representatives = select_candidate_structure_representatives(
             candidate_facts,
-            recommended_ids=validated_recommendation.action_ids if validated_recommendation is not None else (),
+            recommended_ids=(
+                ((formula_recommendation_id,) if formula_recommendation_id is not None else ())
+                + (validated_recommendation.action_ids if validated_recommendation is not None else ())
+            ),
             contrast_action_id_groups=tuple(item.action_ids for item in visible_contrasts),
         ) if candidate_facts is not None else ()
         opening_cross_pattern_guidance_rendered = False
-        if validated_recommendation is not None or opening_cross_pattern_guidance is not None:
+        if (
+            validated_recommendation is not None
+            or opening_cross_pattern_guidance is not None
+            or formula_recommendation_id is not None
+        ):
             lines.append("【模型前建议】")
+            if (
+                formula_recommendation_id is not None
+                and validated_opening_recommendation is not None
+                and validated_opening_recommendation.recommendation_basis is not None
+            ):
+                basis_text = OPENING_FORMULA_BASIS_TEXT[
+                    validated_opening_recommendation.recommendation_basis
+                ]
+                lines.append(
+                    f"来源条件适用的开局公式优先建议：核验 action_id={formula_recommendation_id}（{basis_text}）。"
+                    "可见关系、余组/孤张、拆组与控制/通配成本、公开紧急性和队友控桌均可推翻；"
+                    "仅因单张参与某个组合不足以判定保留价值。"
+                )
             if validated_recommendation is not None:
                 if validated_recommendation.action_ids:
                     lines.append("优先核验候选 action_id：" + ", ".join(str(item) for item in validated_recommendation.action_ids))
@@ -3171,6 +3312,7 @@ class DeepSeekClient:
         strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None,
         strategy_recommendation: "StrategyRecommendation | None" = None,
         opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
+        opening_formula_recommendation: OpeningFormulaAnalysis | None = None,
         decision_deadline: DecisionDeadline | None = None,
         request_evidence_observer: Callable[[bytes, dict[str, object]], None] | None = None,
     ) -> DeepSeekSuggestion:
@@ -3186,6 +3328,22 @@ class DeepSeekClient:
         phase_context = phase_context or classify_game_phase(observation)
 
         constraint = str(current_round.get("constraint", "free"))
+        validated_opening_recommendation = self._validated_opening_formula_recommendation(
+            opening_formula_recommendation,
+            observation,
+            legal_actions,
+        )
+        formula_recommendation_ids = (
+            (validated_opening_recommendation.action_id,)
+            if validated_opening_recommendation is not None
+            and validated_opening_recommendation.action_id is not None
+            else ()
+        )
+        formula_contrasts = (
+            validated_opening_recommendation.model_contrasts
+            if validated_opening_recommendation is not None
+            else opening_formula_contrasts
+        )
         if prompt_actions is None:
             pruned_actions = self.prepare_prompt_actions(
                 legal_actions,
@@ -3195,7 +3353,8 @@ class DeepSeekClient:
                 phase_context=phase_context,
                 strategy_recommendation=strategy_recommendation,
                 observation=observation,
-                opening_formula_contrasts=opening_formula_contrasts,
+                opening_formula_contrasts=formula_contrasts,
+                opening_formula_recommendation=validated_opening_recommendation,
                 rag_context=rag_context,
             )
         else:
@@ -3214,10 +3373,13 @@ class DeepSeekClient:
                 if validated_recommendation is not None
                 else ()
             )
+            protected_ids = tuple(dict.fromkeys(
+                formula_recommendation_ids + protected_ids
+            ))
             contrasts = self._prompt_candidate_contrasts(
                 observation,
                 legal_actions,
-                opening_formula_contrasts,
+                formula_contrasts,
                 strategy_recommendation=strategy_recommendation,
                 rag_context=rag_context,
             )
@@ -3273,6 +3435,18 @@ class DeepSeekClient:
                 if int(action["action_id"]) not in present_ids
             ]
             present_ids.update(int(action["action_id"]) for action in protected_actions)
+            formula_actions = self._protected_actions_by_id(
+                legal_actions,
+                ((validated_opening_recommendation.action_id,)
+                 if validated_opening_recommendation is not None
+                 and validated_opening_recommendation.action_id is not None
+                 else ()),
+            )
+            candidate_actions.extend([
+                action for action in formula_actions
+                if int(action["action_id"]) not in present_ids
+            ])
+            present_ids.update(int(action["action_id"]) for action in formula_actions)
             candidate_actions.extend([
                 action for action in opening_route_actions
                 if int(action["action_id"]) not in present_ids
@@ -3306,7 +3480,8 @@ class DeepSeekClient:
             strategy_intent_prompt=strategy_intent_prompt,
             strategy_recommendation=strategy_recommendation,
             residual_structure_source_actions=legal_actions,
-            opening_formula_contrasts=opening_formula_contrasts,
+            opening_formula_contrasts=formula_contrasts,
+            opening_formula_recommendation=validated_opening_recommendation,
         )
 
         if verbose:
@@ -3384,7 +3559,11 @@ class DeepSeekClient:
                 if type(action.get("action_id")) is int
             ],
             "recommended_action_ids": [
-                action_id for action_id in getattr(strategy_recommendation, "action_ids", ())
+                action_id for action_id in dict.fromkeys(
+                    formula_recommendation_ids + tuple(
+                        getattr(strategy_recommendation, "action_ids", ())
+                    )
+                )
                 if type(action_id) is int and action_id in visible_prompt_ids
             ],
             "relation_references": self._prompt_relation_references(user_message, pruned_actions),

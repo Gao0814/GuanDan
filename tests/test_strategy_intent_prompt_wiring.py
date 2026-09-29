@@ -174,9 +174,10 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
         self.assertIsNone(agent.last_strategy_intent)
         self.assertIsNone(agent.last_strategy_intent_prompt)
 
-    def test_local_shortcuts_skip_router_and_formatter(self) -> None:
+    def test_forced_pass_and_finish_skip_router_but_opening_formula_does_not(self) -> None:
+        client = _Client()
         agent = self._agent(
-            _Client(),
+            client,
             opening_formula_enabled=True,
             strategy_router_shadow_enabled=True,
             strategy_intent_prompt_enabled=True,
@@ -189,11 +190,15 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
         ):
             self.assertEqual(agent.select_action(_observation(), [_action(1, "pass")]), 1)
             self.assertEqual(agent.select_action(_observation(hand_count=2), [_action(2, "pair", ["9S", "9H"])]), 2)
-            self.assertEqual(agent.select_action(_observation(), [_action(1), _action(2)]), 2)
-        router.assert_not_called()
-        formatter.assert_not_called()
-        self.assertIsNone(agent.last_strategy_intent)
-        self.assertIsNone(agent.last_strategy_intent_prompt)
+            self.assertEqual(agent.select_action(_observation(), [_action(1), _action(2)]), 1)
+        router.assert_called_once()
+        formatter.assert_called_once()
+        self.assertEqual(len(client.calls), 1)
+        recommendation = client.calls[0].get("opening_formula_recommendation")
+        self.assertEqual(getattr(recommendation, "action_id", None), 2)
+        self.assertEqual(agent.last_decision_source, "model")
+        self.assertIsNotNone(agent.last_strategy_intent)
+        self.assertIsNotNone(agent.last_strategy_intent_prompt)
 
     def test_off_shadow_omitted_and_ready_kwargs_contract(self) -> None:
         observation = _observation()

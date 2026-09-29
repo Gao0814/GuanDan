@@ -16,13 +16,21 @@ from typing import TYPE_CHECKING
 
 from config import AppConfig
 from agents.base import BaseAgent, require_legal_action_id
-from agents.action_structure import CandidateContrast
+from agents.action_structure import (
+    CandidateContrast,
+    CandidateStructure,
+    summarize_candidate_structures,
+)
 from agents.deepseek_client import DeepSeekClient, DeepSeekSuggestion
 from agents.game_phase import classify_game_phase
 from agents.hand_evaluator import evaluate_hand
-from agents.opening_strategy import OpeningFormulaStrategy
+from agents.opening_strategy import OpeningFormulaAnalysis, OpeningFormulaStrategy
 from agents.rag_advisor import RAGAdvisor, RAGEvidence
 from agents.rule_based_ai import FrozenRuleBasedAIAgent
+from agents.conditional_pressure_pass_policy import (
+    conditional_pressure_pass_id,
+    teammate_pressure_pass_id,
+)
 
 if TYPE_CHECKING:
     from agents.card_confidence import CardConfidenceState
@@ -298,6 +306,63 @@ def _only_pass_action_id(legal_actions: list[dict[str, object]]) -> int | None:
     return None
 
 
+def _structural_failure_fallback_action_id(
+    observation: dict[str, object],
+    legal_actions: list[dict[str, object]],
+    *,
+    player_id: int,
+) -> int:
+    """Choose a legal fallback using public residual structure after model failure.
+
+    Publicly proved teammate/opponent pressure-pass decisions retain their
+    existing precedence.  If the canonical public structure cannot be
+    validated, preserve the frozen selector as a fail-closed fallback.
+    """
+    pass_id = conditional_pressure_pass_id(observation, legal_actions, player_id)
+    if pass_id is None:
+        pass_id = teammate_pressure_pass_id(observation, legal_actions, player_id)
+    if pass_id is not None:
+        return int(pass_id)
+
+    facts = summarize_candidate_structures(observation, legal_actions)
+    if facts is None or len(facts) != len(legal_actions):
+        return FrozenRuleBasedAIAgent(player_id=player_id).select_action(
+            observation, legal_actions,
+        )
+    actions_by_id = {
+        int(action["action_id"]): action
+        for action in legal_actions
+        if isinstance(action, dict) and type(action.get("action_id")) is int
+    }
+    if len(actions_by_id) != len(legal_actions) or any(
+        fact.action_id not in actions_by_id for fact in facts
+    ):
+        return FrozenRuleBasedAIAgent(player_id=player_id).select_action(
+            observation, legal_actions,
+        )
+
+    candidates = [
+        fact for fact in facts
+        if fact.pattern != "pass"
+    ] or list(facts)
+
+    def key(fact: CandidateStructure) -> tuple[object, ...]:
+        action = actions_by_id[fact.action_id]
+        return (
+            int(action.get("wildcard_count", 0)),
+            -fact.carrier_count,
+            int(fact.consumes_control_resource),
+            int(fact.fragments_played_rank_group),
+            fact.estimated_remaining_rank_groups,
+            fact.residual_singleton_rank_count,
+            fact.pattern,
+            tuple(str(token) for token in action.get("declared_cards", [])),
+            fact.action_id,
+        )
+
+    return min(candidates, key=key).action_id
+
+
 def _build_rag_context(
     *,
     rule_evidence: tuple[RAGEvidence, ...],
@@ -495,31 +560,8 @@ class DeepSeekAIAgent(BaseAgent):
             return chosen
 
         phase_context = classify_game_phase(observation)
-        opening_evaluation: dict[str, object] | None = None
-        opening_formula_contrasts: tuple[CandidateContrast, ...] = ()
-        if self.opening_formula_enabled:
-            opening_evaluation = evaluate_hand(observation, legal_actions)
-            opening_analysis = OpeningFormulaStrategy().analyze_action(
-                observation,
-                legal_actions,
-                opening_evaluation,
-                phase_context=phase_context,
-            )
-            opening_action_id = opening_analysis.action_id
-            opening_formula_contrasts = opening_analysis.model_contrasts
-            if opening_action_id is not None:
-                chosen = require_legal_action_id(opening_action_id, legal_actions)
-                self.last_decision_source = "local_opening_formula"
-                player_id = _coerce_int(my_info.get("player_id"), default=self.player_id)
-                verbose = bool(self.verbose and player_id == 1)
-                if verbose:
-                    action = _action_by_id(legal_actions, chosen)
-                    display = _action_display_cn(action) if action is not None else "(unknown)"
-                    print(f"[DeepSeek 思考] 开局公式策略：{display}", flush=True)
-                return chosen
 
-        # Exact public-hand endgames are searched only after ordinary forced
-        # shortcuts and the opening formula have declined the decision.
+        # Exact public-hand endgames retain their approved shortcut priority.
         raw_other_players = observation.get("other_players", [])
         active_sizes = []
         if type(my_info.get("hand_count")) is int and hand_count > 0:
@@ -562,6 +604,22 @@ class DeepSeekAIAgent(BaseAgent):
                     chosen = require_legal_action_id(unique_winner, legal_actions)
                     self.last_decision_source = "local"
                     return chosen
+
+        opening_evaluation: dict[str, object] | None = None
+        opening_formula_contrasts: tuple[CandidateContrast, ...] = ()
+        opening_formula_recommendation: OpeningFormulaAnalysis | None = None
+        if self.opening_formula_enabled:
+            opening_evaluation = evaluate_hand(observation, legal_actions)
+            opening_analysis = OpeningFormulaStrategy().analyze_action(
+                observation,
+                legal_actions,
+                opening_evaluation,
+                phase_context=phase_context,
+            )
+            opening_formula_recommendation = opening_analysis
+            opening_formula_contrasts = opening_analysis.model_contrasts
+            if opening_analysis.action_id is not None:
+                require_legal_action_id(opening_analysis.action_id, legal_actions)
 
         card_confidence_prompt: "CardConfidencePromptPayload | None" = None
         if self.card_confidence_shadow_enabled:
@@ -692,6 +750,7 @@ class DeepSeekAIAgent(BaseAgent):
             strategy_recommendation=strategy_recommendation,
             observation=observation,
             opening_formula_contrasts=opening_formula_contrasts,
+            opening_formula_recommendation=opening_formula_recommendation,
             rag_context=rag_context,
         )
 
@@ -823,6 +882,7 @@ class DeepSeekAIAgent(BaseAgent):
                 strategy_recommendation=strategy_recommendation,
                 residual_structure_source_actions=legal_actions,
                 opening_formula_contrasts=opening_formula_contrasts,
+                opening_formula_recommendation=opening_formula_recommendation,
             )
             payload = {
                 "model": self.client._model,
@@ -879,6 +939,8 @@ class DeepSeekAIAgent(BaseAgent):
                 suggestion_kwargs["strategy_recommendation"] = strategy_recommendation
             if opening_formula_contrasts:
                 suggestion_kwargs["opening_formula_contrasts"] = opening_formula_contrasts
+            if opening_formula_recommendation is not None:
+                suggestion_kwargs["opening_formula_recommendation"] = opening_formula_recommendation
             suggestion = self.client.suggest_action_id(
                 **suggestion_kwargs,
             )
@@ -918,8 +980,11 @@ class DeepSeekAIAgent(BaseAgent):
         if failure_reason is None:
             failure_reason = "未返回有效 action_id"
 
-        fallback = FrozenRuleBasedAIAgent(player_id=self.player_id)
-        chosen = fallback.select_action(observation, legal_actions)
+        chosen = _structural_failure_fallback_action_id(
+            observation,
+            legal_actions,
+            player_id=self.player_id,
+        )
         chosen = require_legal_action_id(chosen, legal_actions)
 
         if verbose:

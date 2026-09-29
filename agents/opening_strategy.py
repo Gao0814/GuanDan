@@ -52,14 +52,20 @@ _RANK_ORDER = {
     "BJ": 17,
 }
 MAX_OPENING_FORMULA_CONTRASTS = 12
+OPENING_FORMULA_BASIS_TEXT = {
+    "low_cost_single": "自然单张未拆已识别同点组、非控制牌，并保留公开可见回手资源",
+    "natural_straight_cleanup": "自然顺子清除了所用点数组，且公开余组/孤张条件严格占优",
+    "natural_group_cleanup": "自然对子或三张未拆点数组，且公开余组/孤张条件严格改善",
+}
 
 
 @dataclass(frozen=True, slots=True)
 class OpeningFormulaAnalysis:
-    """A local result plus full public contrasts relevant to model deferral."""
+    """A source-conditioned model suggestion and its relevant public contrasts."""
 
     action_id: int | None = None
     model_contrasts: tuple[CandidateContrast, ...] = ()
+    recommendation_basis: str | None = None
 
 # The direct rule is intentionally narrower than the model-before knowledge.
 # All other public openings are routed to the existing RAG + DeepSeek path.
@@ -262,7 +268,7 @@ class OpeningFormulaStrategy:
                 if self._small_single_relationships_are_source_supported(
                     target_id, contrasts, facts_by_id,
                 ):
-                    return OpeningFormulaAnalysis(action_id=int(target_id))
+                    return self._recommendation(int(target_id), "low_cost_single", contrasts)
                 # A conflict attached to the actual lowest applicable probe is
                 # still a model choice; do not quietly choose a higher one.
                 representatives = representative_candidate_contrasts(observation, legal_actions)
@@ -365,7 +371,9 @@ class OpeningFormulaStrategy:
                     contrasts,
                     representatives,
                 )
-            return OpeningFormulaAnalysis(action_id=selected_fact.action_id)
+            return self._recommendation(
+                selected_fact.action_id, "natural_straight_cleanup", contrasts,
+            )
 
         if selected_fact.pattern not in {"pair", "triple"}:
             return OpeningFormulaAnalysis()
@@ -389,7 +397,27 @@ class OpeningFormulaStrategy:
                 contrasts,
                 representatives,
             )
-        return OpeningFormulaAnalysis(action_id=selected_group_id)
+        return self._recommendation(
+            selected_group_id, "natural_group_cleanup", contrasts,
+        )
+
+    @staticmethod
+    def _recommendation(
+        action_id: int,
+        basis: str,
+        contrasts: tuple[CandidateContrast, ...],
+    ) -> OpeningFormulaAnalysis:
+        """Keep actual relations touching a source-qualified route with the suggestion."""
+        if basis not in OPENING_FORMULA_BASIS_TEXT:
+            return OpeningFormulaAnalysis()
+        related = tuple(
+            item for item in contrasts if action_id in item.action_ids
+        )[:MAX_OPENING_FORMULA_CONTRASTS]
+        return OpeningFormulaAnalysis(
+            action_id=action_id,
+            model_contrasts=related,
+            recommendation_basis=basis,
+        )
 
     @classmethod
     def _eligible_natural_single_routes(
