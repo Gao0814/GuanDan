@@ -101,16 +101,15 @@ def select_proven_endgame_action(
     legal_actions: list[dict[str, object]],
     route_signatures: Mapping[int, object],
 ) -> int | None:
-    """Choose only when one M8-equivalent strategy route is completely proven.
+    """Choose a completed guaranteed route, then apply full-profile shortcuts.
 
     The M8 signature keeps suit-flush and wildcard resource differences apart.
-    Exact solved outcome profiles further split aliases if the engine proves
-    their continuations differ. All returned IDs are original legal IDs.
+    It is used only for non-guaranteed full-profile comparisons; a guaranteed
+    raw route is selected directly and never merged with another route. All
+    returned IDs are original legal IDs.
     """
-    if analysis.status != "solved" or not legal_actions:
+    if not legal_actions:
         return None
-    guarantees = dict(analysis.action_values)
-    reachable = dict(analysis.action_reachable_values)
     legal_ids = [
         int(action["action_id"])
         for action in legal_actions
@@ -119,12 +118,33 @@ def select_proven_endgame_action(
     if (
         len(legal_ids) != len(legal_actions)
         or len(set(legal_ids)) != len(legal_ids)
-        or set(guarantees) != set(legal_ids)
+    ):
+        return None
+
+    if analysis.status == "proven_win":
+        proven_id = analysis.proven_action_id
+        if type(proven_id) is int and proven_id in legal_ids:
+            return proven_id
+        return None
+    if analysis.status != "solved":
+        return None
+
+    guarantees = dict(analysis.action_values)
+    reachable = dict(analysis.action_reachable_values)
+    if (
+        set(guarantees) != set(legal_ids)
         or set(reachable) != set(legal_ids)
         or any(type(value) is not int or value not in _OUTCOME_TEXT for value in guarantees.values())
         or any(not _valid_reachable_values(values) for values in reachable.values())
     ):
         return None
+
+    # Full analyses remain selectable if constructed by another bounded
+    # producer. Do not require route uniqueness: one completed guarantee is
+    # sufficient, and distinct M8 signatures stay as distinct raw routes.
+    guaranteed_ids = [action_id for action_id in legal_ids if guarantees[action_id] == 1]
+    if guaranteed_ids:
+        return guaranteed_ids[0]
 
     routes: dict[tuple[object, ...], list[int]] = {}
     route_by_action: dict[int, tuple[object, ...]] = {}
@@ -142,14 +162,6 @@ def select_proven_endgame_action(
         # Legal action order is stable and matches the M8 projection's first
         # surviving representative for equivalent ordinary actions.
         return next(action_id for action_id in legal_ids if route_by_action[action_id] == route)
-
-    guaranteed_routes = {
-        route for route in routes if route[1] == 1
-    }
-    if len(guaranteed_routes) == 1:
-        return representative(next(iter(guaranteed_routes)))
-    if guaranteed_routes:
-        return None
 
     reachable_win_routes = {
         route for route in routes if 1 in route[2]
@@ -172,7 +184,16 @@ def describe_proven_endgame_choice(
     action_id: int,
 ) -> str | None:
     """Explain the exact bounded-search basis for a local original action ID."""
-    if analysis.status != "solved" or type(action_id) is not int:
+    if type(action_id) is not int:
+        return None
+    if analysis.status == "proven_win":
+        if analysis.proven_action_id != action_id:
+            return None
+        return (
+            f"公开确证残局本地选择 action_id={action_id}："
+            "该首手的完整引擎续局证明显示按队伍最优应对可保底本队胜。"
+        )
+    if analysis.status != "solved":
         return None
     guarantee = dict(analysis.action_values).get(action_id)
     reachable = dict(analysis.action_reachable_values).get(action_id)

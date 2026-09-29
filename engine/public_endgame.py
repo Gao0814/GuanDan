@@ -42,7 +42,7 @@ _JOKERS = frozenset({SMALL_JOKER_RANK, BIG_JOKER_RANK})
 
 @dataclass(frozen=True, slots=True)
 class PublicEndgameAnalysis:
-    """Exact root guarantees and reachable outcomes, or a fail-closed reason."""
+    """Exact root profiles, a completed winning-root proof, or a fail-closed reason."""
 
     status: str
     action_values: tuple[tuple[int, int], ...] = ()
@@ -52,6 +52,7 @@ class PublicEndgameAnalysis:
     nodes: int = 0
     elapsed_seconds: float = 0.0
     reason: str = ""
+    proven_action_id: int | None = None
 
 
 class _SearchBudgetExceeded(Exception):
@@ -512,6 +513,16 @@ def analyze_public_endgame(
             else:
                 profile = _search_profile(branch, root_team, context)
             action_id = int(action["action_id"])
+            if profile.guaranteed_value == 1:
+                # _search_profile only returns after every legal continuation
+                # below this root action has been evaluated. A completed proof
+                # for this route cannot be invalidated by another root move.
+                return PublicEndgameAnalysis(
+                    status="proven_win",
+                    proven_action_id=action_id,
+                    nodes=context.nodes,
+                    elapsed_seconds=monotonic() - started,
+                )
             values.append((action_id, profile.guaranteed_value))
             reachable_values.append((action_id, profile.reachable_values))
         best = max(value for _, value in values)

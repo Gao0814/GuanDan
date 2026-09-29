@@ -127,18 +127,35 @@ class M9PublicEndgameOpportunityTests(unittest.TestCase):
         # These generated legal games cover loss/draw floor differences,
         # pass-versus-play opportunity, multiple winning routes, aliases, and
         # a teammate-led pass reset after finish order has shortened the table.
-        for seed, step in ((10, 86), (10, 87), (9, 78), (26, 85), (288, 83), (12, 87)):
+        # The last two states have multiple independently proven winning roots.
+        for seed, step in (
+            (10, 86), (10, 87), (9, 78), (26, 85), (288, 83), (12, 87),
+            (13, 99), (6, 93),
+        ):
             with self.subTest(seed=seed, step=step):
                 game, observation, actions = _rollout_to_step(seed, step)
                 assignment = exact_public_hand_assignment(observation)
                 self.assertIsNotNone(assignment)
                 analysis = analyze_public_endgame(observation, actions, assignment)
-                self.assertEqual(analysis.status, "solved")
                 expected_values, expected_reachable = _reference_root_profiles(game)
-                self.assertEqual(analysis.action_values, expected_values)
-                self.assertEqual(analysis.action_reachable_values, expected_reachable)
+                first_guaranteed = next(
+                    (action_id for action_id, value in expected_values if value == 1),
+                    None,
+                )
+                if first_guaranteed is not None:
+                    self.assertEqual(analysis.status, "proven_win")
+                    self.assertEqual(analysis.proven_action_id, first_guaranteed)
+                    self.assertEqual(analysis.action_values, ())
+                    self.assertEqual(analysis.action_reachable_values, ())
+                    self.assertEqual(analysis.best_action_ids, ())
+                    self.assertIsNone(analysis.unique_best_action_id)
+                else:
+                    self.assertEqual(analysis.status, "solved")
+                    self.assertIsNone(analysis.proven_action_id)
+                    self.assertEqual(analysis.action_values, expected_values)
+                    self.assertEqual(analysis.action_reachable_values, expected_reachable)
 
-    def test_shortcut_requires_a_single_proven_strategy_route(self) -> None:
+    def test_any_completed_guarantee_shortcuts_even_if_other_routes_also_win(self) -> None:
         from agents.known_endgame import (
             describe_proven_endgame_choice,
             select_proven_endgame_action,
@@ -146,12 +163,15 @@ class M9PublicEndgameOpportunityTests(unittest.TestCase):
 
         cases = (
             (10, 87, "guaranteed"),
+            (13, 99, "multiple_guaranteed"),
+            (6, 93, "multiple_guaranteed"),
             (9, 78, "unique_reachable"),
+            (26, 85, "multiple_reachable"),
             (10, 86, "strict_floor"),
         )
         for seed, step, expected_kind in cases:
             with self.subTest(seed=seed, step=step):
-                _, observation, actions = _rollout_to_step(seed, step)
+                game, observation, actions = _rollout_to_step(seed, step)
                 assignment = exact_public_hand_assignment(observation)
                 self.assertIsNotNone(assignment)
                 analysis = analyze_public_endgame(observation, actions, assignment)
@@ -163,17 +183,19 @@ class M9PublicEndgameOpportunityTests(unittest.TestCase):
                 guarantees = dict(analysis.action_values)
                 reachable = dict(analysis.action_reachable_values)
                 selected = select_proven_endgame_action(analysis, actions, signatures)
-                self.assertIn(selected, {int(action["action_id"]) for action in actions})
-                if expected_kind == "guaranteed":
-                    proven_routes = {
-                        (signatures[action_id], guarantees[action_id], reachable[action_id])
-                        for action_id in guarantees
-                        if guarantees[action_id] == 1
-                    }
-                    self.assertEqual(len(proven_routes), 1)
-                    self.assertEqual(guarantees[selected], 1)
+                if expected_kind in {"guaranteed", "multiple_guaranteed"}:
+                    expected_values, _ = _reference_root_profiles(game)
+                    proven_ids = [action_id for action_id, value in expected_values if value == 1]
+                    self.assertTrue(proven_ids)
+                    if expected_kind == "multiple_guaranteed":
+                        self.assertGreater(len(proven_ids), 1)
+                    self.assertEqual(analysis.status, "proven_win")
+                    self.assertEqual(analysis.proven_action_id, proven_ids[0])
+                    self.assertEqual(selected, proven_ids[0])
+                    self.assertIn(selected, {int(action["action_id"]) for action in actions})
                     expected_wording = "可保底本队胜"
                 elif expected_kind == "unique_reachable":
+                    self.assertEqual(analysis.status, "solved")
                     winning_routes = {
                         (signatures[action_id], guarantees[action_id], reachable[action_id])
                         for action_id in guarantees
@@ -182,8 +204,26 @@ class M9PublicEndgameOpportunityTests(unittest.TestCase):
                     self.assertEqual(len(winning_routes), 1)
                     self.assertLess(guarantees[selected], 1)
                     self.assertIn(1, reachable[selected])
+                    self.assertTrue(
+                        all(
+                            1 not in values and 0 in values
+                            for action_id, values in reachable.items()
+                            if action_id != selected
+                        )
+                    )
                     expected_wording = "唯一存在合法本队胜局续线"
+                elif expected_kind == "multiple_reachable":
+                    self.assertEqual(analysis.status, "solved")
+                    reachable_routes = {
+                        (signatures[action_id], guarantees[action_id], reachable[action_id])
+                        for action_id in guarantees
+                        if 1 in reachable[action_id]
+                    }
+                    self.assertGreater(len(reachable_routes), 1)
+                    self.assertIsNone(selected)
+                    continue
                 else:
+                    self.assertEqual(analysis.status, "solved")
                     self.assertTrue(all(1 not in values for values in reachable.values()))
                     best_floor = max(guarantees.values())
                     best_routes = {
@@ -222,6 +262,75 @@ class M9PublicEndgameOpportunityTests(unittest.TestCase):
         self.assertIn("唯一存在合法本队胜局续线", agent.last_public_endgame_decision_summary)
         self.assertIn("不保证获胜", agent.last_public_endgame_decision_summary)
 
+    def test_guaranteed_root_stops_before_searching_later_root_at_exact_budget(self) -> None:
+        from engine import public_endgame
+
+        _, observation, actions = _rollout_to_step(13, 99)
+        assignment = exact_public_hand_assignment(observation)
+        self.assertIsNotNone(assignment)
+        baseline = analyze_public_endgame(observation, actions, assignment)
+        self.assertEqual(baseline.status, "proven_win")
+        self.assertEqual(baseline.proven_action_id, int(actions[0]["action_id"]))
+        self.assertGreater(baseline.nodes, 0)
+
+        original_build = public_endgame._build_public_game
+        original_copy = public_endgame._copy_game
+        built_games = []
+        root_copies = 0
+
+        def capture_build(*args, **kwargs):
+            game = original_build(*args, **kwargs)
+            built_games.append(game)
+            return game
+
+        def reject_later_root_copy(game):
+            nonlocal root_copies
+            if built_games and game._require_state() is built_games[0]._require_state():
+                root_copies += 1
+                if root_copies > 1:
+                    raise AssertionError("a later root action was searched after a complete win proof")
+            return original_copy(game)
+
+        with (
+            patch("engine.public_endgame._build_public_game", side_effect=capture_build),
+            patch("engine.public_endgame._copy_game", side_effect=reject_later_root_copy),
+        ):
+            result = analyze_public_endgame(
+                observation,
+                actions,
+                assignment,
+                max_nodes=baseline.nodes,
+            )
+
+        self.assertEqual(result.status, "proven_win")
+        self.assertEqual(result.proven_action_id, baseline.proven_action_id)
+        self.assertEqual(root_copies, 1)
+
+    def test_default_factory_skips_model_for_multiple_proven_routes(self) -> None:
+        for seed, step in ((13, 99), (6, 93)):
+            with self.subTest(seed=seed, step=step):
+                game, observation, actions = _rollout_to_step(seed, step)
+                assignment = exact_public_hand_assignment(observation)
+                analysis = analyze_public_endgame(observation, actions, assignment)
+                expected_values, _ = _reference_root_profiles(game)
+                proven_ids = [action_id for action_id, value in expected_values if value == 1]
+                self.assertGreater(len(proven_ids), 1)
+                self.assertEqual(analysis.status, "proven_win")
+                self.assertEqual(analysis.proven_action_id, proven_ids[0])
+
+                captured: list[dict[str, object]] = []
+                config, factory = _factory_agent(captured)
+                with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+                    agent = factory(int(observation["my_info"]["player_id"]))
+                    selected = agent.select_action(observation, actions)
+
+                self.assertEqual(selected, proven_ids[0])
+                self.assertIn(selected, {int(action["action_id"]) for action in actions})
+                self.assertEqual(agent.last_decision_source, "local")
+                self.assertEqual(agent.last_public_endgame_analysis.status, "proven_win")
+                self.assertIn("可保底本队胜", agent.last_public_endgame_decision_summary)
+                self.assertEqual(captured, [])
+
     def test_equivalent_raw_ids_choose_one_stable_original_representative(self) -> None:
         from agents.known_endgame import select_proven_endgame_action
 
@@ -245,8 +354,8 @@ class M9PublicEndgameOpportunityTests(unittest.TestCase):
             raw_single_ids[0],
         )
 
-    def test_default_factory_formats_multiple_reachable_win_routes_and_keeps_model_id(self) -> None:
-        _, observation, actions = _rollout_to_step(6, 93)
+    def test_default_factory_formats_unresolved_endgame_and_keeps_model_id(self) -> None:
+        _, observation, actions = _rollout_to_step(6, 94)
         assignment = exact_public_hand_assignment(observation)
         solved = analyze_public_endgame(observation, actions, assignment)
         self.assertEqual(solved.status, "solved")

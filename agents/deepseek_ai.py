@@ -613,17 +613,19 @@ class DeepSeekAIAgent(BaseAgent):
                             # A second, rule-backed consistency check failed;
                             # do not promote the conservation result to prompt fact.
                             public_confirmed_hands_summary = None
-                        elif getattr(analysis, "status", None) == "solved":
-                            projected = DeepSeekClient._project_prompt_actions(
-                                observation,
-                                legal_actions,
-                            )
-                            route_signatures = {
-                                int(action["action_id"]): DeepSeekClient._action_signature(action)
-                                for action in projected
-                                if isinstance(action, dict)
-                                and type(action.get("action_id")) is int
-                            }
+                        elif getattr(analysis, "status", None) in {"proven_win", "solved"}:
+                            route_signatures = {}
+                            if getattr(analysis, "status", None) == "solved":
+                                projected = DeepSeekClient._project_prompt_actions(
+                                    observation,
+                                    legal_actions,
+                                )
+                                route_signatures = {
+                                    int(action["action_id"]): DeepSeekClient._action_signature(action)
+                                    for action in projected
+                                    if isinstance(action, dict)
+                                    and type(action.get("action_id")) is int
+                                }
                             shortcut_id = select_proven_endgame_action(
                                 analysis,
                                 legal_actions,

@@ -444,15 +444,14 @@ class M5PublicEndgameTests(unittest.TestCase):
         }
         self.assertLessEqual(len(displayed), 80)
 
-    def test_unique_proven_winning_action_is_the_only_endgame_shortcut(self) -> None:
+    def test_completed_proven_winning_root_shortcuts_before_model(self) -> None:
         _, observation, actions = _rollout_to_step(10, 87)
         assignment = exact_public_hand_assignment(observation)
         self.assertIsNotNone(assignment)
         assert assignment is not None
         analysis = analyze_public_endgame(observation, actions, assignment)
-        self.assertEqual(analysis.status, "solved")
-        self.assertIsNotNone(analysis.unique_best_action_id)
-        self.assertEqual(dict(analysis.action_values)[analysis.unique_best_action_id], 1)
+        self.assertEqual(analysis.status, "proven_win")
+        self.assertIsNotNone(analysis.proven_action_id)
 
         class _NoCallClient:
             calls = 0
@@ -475,7 +474,7 @@ class M5PublicEndgameTests(unittest.TestCase):
                 opening_formula_enabled=False,
             )
             selected = agent.select_action(observation, actions)
-        self.assertEqual(selected, analysis.unique_best_action_id)
+        self.assertEqual(selected, analysis.proven_action_id)
         self.assertEqual(agent.last_decision_source, "local")
         self.assertEqual(client.calls, 0)
 
