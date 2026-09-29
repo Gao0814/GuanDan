@@ -1,5 +1,13 @@
 # 项目状态看板
 
+## 当前阶段：新版逐局留证首局现场只读验收通过（2026-09-29）
+
+- 所有者亲自完成一局后，规划只读核对固定 workspace 的 `games/2026_9_28_23-56-54_000018/`。目录名为本地开局时间；索引容量 10，现为 9 条旧 `summary_only` 与 1 条新版完整局，局号 18。索引与 manifest 一致，状态 `finished`、平台结果 `local_team_loss`、最后事件 `platform_result`，`evidence_incomplete=false`。旧九局没有可补出的逐动作内容。
+- 该局有 26 条 observation、26 条 decision、199 条时间线事件、13 份模型请求。26 个所选 ID 均来自各自完整合法动作，26 个决策均有 ACK；另外 1 条无动作 ID 的 ACK 是会话边界事件，不能算成第 27 次出牌。13 份请求的 body/metadata 摘要和模型名一致，候选与推荐闭环，13 个模型选择均在当次展示候选内。13 次 `model_complete` 均为 `success`；另 13 次决策来源为 `local_shortcut`。时间线最终仅有 1 条终局事件。
+- 本局证明新版现场能够产生可定位、可关联的逐局诊断文件；`request_prepared` 仍不单独证明服务端接收，公开历史仍是 connector 已观察范围。真实连续连接与第 11 局实物轮换尚未由现场多局验证，但禁网跨启动轮换测试已通过。规划未启动/停止 connector、请求模型或修改 workspace。留证首局验收完成，M4 算法效果仍 `inconclusive`；当前不安排 Coding 任务，也不创建 Prompt。
+
+以下“等待所有者现场验收”为首局验收前快照，以本节为准。
+
 ## 当前阶段：逐局留证代码已交付，等待所有者现场验收（2026-09-28）
 
 - Coding 提交 `a870c6b6aff82e9fcb188ba49bdc60a0b8242e7e`，新增固定 workspace 的 `games/<本地日期时间>_<局序号>/`：逐局保存 connector 已观察历史、本家手牌、完整合法动作、展示候选、决策与 ACK 时间线，以及每次模型调用交给传输层的完整 JSON 请求 body。请求留证发生在传输调用前，`request_prepared` 只证明请求已准备，不能单凭该事件断定服务端已收到。原始模型回复、reasoning、凭据和连接 URL 不写入这些文件。没有更改 AI 选牌和 ACK 协议。

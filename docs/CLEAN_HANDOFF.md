@@ -1,5 +1,13 @@
 # Clean Project Handoff
 
+## 2026-09-29 当前交接：新版首局完整留证已现场核对
+
+所有者亲自完成一局；规划只读审计 `D:\VsCodeProject\BotzoneWorkspace\games\2026_9_28_23-56-54_000018`。索引容量 10，9 条旧摘要加 1 条完整局；manifest 为 `finished/local_team_loss`、留证完整。26 条观察、26 次决策均有合法 ID 与 ACK 关联；13 份请求 body 与 metadata 摘要、模型名、候选/推荐闭环相符，13 次模型完成均为 success，另 13 次为本地快捷决策。时间线 1 条终局事件，最后阶段为 `platform_result`。额外无动作 ID 的 ACK 不算出牌。规划没有操作 connector、页面、模型或修改 evidence。
+
+留证首局现场验收完成；旧摘要无法恢复细节，`request_prepared` 不证明网络送达，公开历史只代表 connector 已观察范围。真实长期重连与第 11 局轮换待自然试局核对。无待 Coding Prompt；接下来恢复 M4/记牌效果观察，遇到具体问题先审计该局证据再规划业务修复。
+
+以下“待所有者现场验证”为首局验收前快照，以本节为准。
+
 ## 2026-09-28 当前交接：逐局留证实现已交付，待所有者现场验证
 
 Coding `a870c6b6aff82e9fcb188ba49bdc60a0b8242e7e` 已将所有者自启的固定 workspace 连续批次接到新版 `games/<本地时间>_<单调局号>/`，保存逐动作公开观察、本家手牌、合法/展示候选、决策来源与 ACK、终局或未确认状态，以及传输调用前准备的完整模型 JSON 请求 body。最近 N 局只轮换新版逐局目录，默认 10；旧摘要仅 `summary_only` 导入，旧批次和 `runtime/v2/runs/` 内部运行目录仍保留。`request_prepared` 不证明模型服务端已收到请求。
