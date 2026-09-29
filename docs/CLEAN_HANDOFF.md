@@ -1,5 +1,13 @@
 # Clean Project Handoff
 
+## 2026-09-29 当前交接：M5 记牌推断与有界推演待 Coding
+
+所有者明确要求改进多人局 pass 线索与公开已知手牌残局的本地多步推演，而不是只等胜率测试。当前 `CardBeliefState` 保存 `pass_count`，硬约束层故意不将 pass 当作无牌；M3 E1 是外部未分配牌池上界，E2 只做即时应手；现有 1–8 张分组是条件性本家拆牌，非轮流博弈。根因仅定位到这些能力缺口，不能归因上一局负局。`docs/NEXT_PROMPT.md` 是一个完整 M5 算法任务，要求软推断、真实规则下有界多步搜索、完整局面与请求验收，保留 DeepSeek 对未知与真实取舍的决策权。
+
+“优化3”与本仓库同 checkout、当前空闲；它上一轮因 `NEXT_PROMPT.md` 不存在而正确停止，没有待提交业务改动。规划将沿用该 Coding 对话执行新 Prompt，无须新建；所有者提供的独立事实核对与反补丁原则已在该对话中。规划不运行 Botzone、connector、浏览器，也不访问现场 evidence；M4 效果仍 `inconclusive`，首局留证验收结论不变。
+
+以下“新版首局完整留证”为 M5 确定前快照，以本节为准。
+
 ## 2026-09-29 当前交接：新版首局完整留证已现场核对
 
 所有者亲自完成一局；规划只读审计 `D:\VsCodeProject\BotzoneWorkspace\games\2026_9_28_23-56-54_000018`。索引容量 10，9 条旧摘要加 1 条完整局；manifest 为 `finished/local_team_loss`、留证完整。26 条观察、26 次决策均有合法 ID 与 ACK 关联；13 份请求 body 与 metadata 摘要、模型名、候选/推荐闭环相符，13 次模型完成均为 success，另 13 次为本地快捷决策。时间线 1 条终局事件，最后阶段为 `platform_result`。额外无动作 ID 的 ACK 不算出牌。规划没有操作 connector、页面、模型或修改 evidence。
