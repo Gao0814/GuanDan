@@ -9,7 +9,7 @@ before any rule-engine state is constructed.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isfinite
 from time import monotonic
 from typing import Mapping, Sequence
@@ -42,10 +42,11 @@ _JOKERS = frozenset({SMALL_JOKER_RANK, BIG_JOKER_RANK})
 
 @dataclass(frozen=True, slots=True)
 class PublicEndgameAnalysis:
-    """Exact root action values, or a fail-closed reason when not solved."""
+    """Exact root guarantees and reachable outcomes, or a fail-closed reason."""
 
     status: str
     action_values: tuple[tuple[int, int], ...] = ()
+    action_reachable_values: tuple[tuple[int, tuple[int, ...]], ...] = ()
     best_action_ids: tuple[int, ...] = ()
     unique_best_action_id: int | None = None
     nodes: int = 0
@@ -59,6 +60,20 @@ class _SearchBudgetExceeded(Exception):
 
 class _InvalidPosition(Exception):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class _SearchProfile:
+    guaranteed_value: int
+    reachable_values: tuple[int, ...]
+
+
+@dataclass(slots=True)
+class _SearchContext:
+    deadline: float
+    max_nodes: int
+    nodes: int = 0
+    cache: dict[tuple[object, ...], _SearchProfile] = field(default_factory=dict)
 
 
 def _card_from_token(value: object, *, declared: bool = False) -> Card:
@@ -388,55 +403,66 @@ def _terminal_value(game: GuanDanGame, root_team: str) -> int:
     raise _InvalidPosition
 
 
-def _search_value(
+def _position_key(game: GuanDanGame) -> tuple[object, ...]:
+    state = game._require_state()
+    # Step/round counters and history do not affect future legal transitions or
+    # terminal ranking. Omitting them lets equivalent continuations reached by
+    # different action orders share an exact search result.
+    return (
+        state.players,
+        state.current_player_id,
+        state.current_level_rank,
+        state.table_constraint,
+        state.finish_order,
+        state.is_finished,
+        state.winner,
+    )
+
+
+def _search_profile(
     game: GuanDanGame,
     root_team: str,
-    nodes: list[int],
-    *,
-    deadline: float,
-    max_nodes: int,
-    alpha: int,
-    beta: int,
-) -> int:
-    if monotonic() > deadline or nodes[0] >= max_nodes:
+    context: _SearchContext,
+) -> _SearchProfile:
+    if monotonic() > context.deadline:
         raise _SearchBudgetExceeded
     state = game._require_state()
     if state.is_finished:
-        return _terminal_value(game, root_team)
-    nodes[0] += 1
+        value = _terminal_value(game, root_team)
+        return _SearchProfile(value, (value,))
+
+    key = _position_key(game)
+    cached = context.cache.get(key)
+    if cached is not None:
+        return cached
+    if context.nodes >= context.max_nodes:
+        raise _SearchBudgetExceeded
+    context.nodes += 1
     current_team = "team_13" if state.current_player_id in {1, 3} else "team_24"
     maximizing = current_team == root_team
-    value = -2 if maximizing else 2
     actions = game.legal_actions()
     if not actions:
         raise _InvalidPosition
+    child_profiles: list[_SearchProfile] = []
+    reachable_values: set[int] = set()
     for action in actions:
-        if monotonic() > deadline or nodes[0] >= max_nodes:
+        if monotonic() > context.deadline:
             raise _SearchBudgetExceeded
         child = _copy_game(game)
         result = child.step(int(action["action_id"]))
-        child_value = (
-            _terminal_value(child, root_team)
-            if bool(result["game_over"])
-            else _search_value(
-                child,
-                root_team,
-                nodes,
-                deadline=deadline,
-                max_nodes=max_nodes,
-                alpha=alpha,
-                beta=beta,
-            )
-        )
-        if maximizing:
-            value = max(value, child_value)
-            alpha = max(alpha, value)
+        if bool(result["game_over"]):
+            value = _terminal_value(child, root_team)
+            profile = _SearchProfile(value, (value,))
         else:
-            value = min(value, child_value)
-            beta = min(beta, value)
-        if beta <= alpha:
-            break
-    return value
+            profile = _search_profile(child, root_team, context)
+        child_profiles.append(profile)
+        reachable_values.update(profile.reachable_values)
+
+    guarantees = [profile.guaranteed_value for profile in child_profiles]
+    guaranteed_value = max(guarantees) if maximizing else min(guarantees)
+    result = _SearchProfile(guaranteed_value, tuple(sorted(reachable_values)))
+    context.cache[key] = result
+    return result
 
 
 def analyze_public_endgame(
@@ -462,7 +488,7 @@ def analyze_public_endgame(
     max_seconds = min(float(max_seconds), PUBLIC_ENDGAME_MAX_SECONDS)
     started = monotonic()
     deadline = started + max_seconds
-    nodes = [0]
+    context = _SearchContext(deadline=deadline, max_nodes=max_nodes)
     try:
         game = _build_public_game(
             observation,
@@ -474,39 +500,35 @@ def analyze_public_endgame(
         root_player_id = state.current_player_id
         root_team = "team_13" if root_player_id in {1, 3} else "team_24"
         values: list[tuple[int, int]] = []
+        reachable_values: list[tuple[int, tuple[int, ...]]] = []
         for action in game.legal_actions():
-            if monotonic() > deadline or nodes[0] >= max_nodes:
+            if monotonic() > context.deadline:
                 raise _SearchBudgetExceeded
             branch = _copy_game(game)
             result = branch.step(int(action["action_id"]))
-            value = (
-                _terminal_value(branch, root_team)
-                if bool(result["game_over"])
-                else _search_value(
-                    branch,
-                    root_team,
-                    nodes,
-                    deadline=deadline,
-                    max_nodes=max_nodes,
-                    alpha=-2,
-                    beta=2,
-                )
-            )
-            values.append((int(action["action_id"]), value))
+            if bool(result["game_over"]):
+                value = _terminal_value(branch, root_team)
+                profile = _SearchProfile(value, (value,))
+            else:
+                profile = _search_profile(branch, root_team, context)
+            action_id = int(action["action_id"])
+            values.append((action_id, profile.guaranteed_value))
+            reachable_values.append((action_id, profile.reachable_values))
         best = max(value for _, value in values)
         best_ids = tuple(action_id for action_id, value in values if value == best)
         return PublicEndgameAnalysis(
             status="solved",
             action_values=tuple(values),
+            action_reachable_values=tuple(reachable_values),
             best_action_ids=best_ids,
             unique_best_action_id=best_ids[0] if len(best_ids) == 1 else None,
-            nodes=nodes[0],
+            nodes=context.nodes,
             elapsed_seconds=monotonic() - started,
         )
     except _SearchBudgetExceeded:
         return PublicEndgameAnalysis(
             status="budget_exceeded",
-            nodes=nodes[0],
+            nodes=context.nodes,
             elapsed_seconds=monotonic() - started,
             reason="search_limit",
         )
@@ -521,7 +543,7 @@ def analyze_public_endgame(
     ):
         return PublicEndgameAnalysis(
             status="ineligible",
-            nodes=nodes[0],
+            nodes=context.nodes,
             elapsed_seconds=monotonic() - started,
             reason="public_position_unverified",
         )

@@ -482,6 +482,7 @@ class DeepSeekAIAgent(BaseAgent):
     last_decision_source: str | None = field(default=None, init=False, repr=False)
     card_tracker: object | None = field(default=None, init=False, repr=False)
     last_public_endgame_analysis: object | None = field(default=None, init=False, repr=False)
+    last_public_endgame_decision_summary: str | None = field(default=None, init=False, repr=False)
     last_card_confidence: "CardConfidenceState | None" = field(
         default=None,
         init=False,
@@ -539,6 +540,7 @@ class DeepSeekAIAgent(BaseAgent):
         self.last_strategy_intent_prompt = None
         self.last_strategy_recommendation = None
         self.last_public_endgame_analysis = None
+        self.last_public_endgame_decision_summary = None
         if not legal_actions:
             raise ValueError("legal_actions must not be empty")
 
@@ -561,7 +563,9 @@ class DeepSeekAIAgent(BaseAgent):
 
         phase_context = classify_game_phase(observation)
 
-        # Exact public-hand endgames retain their approved shortcut priority.
+        # Publicly confirmed hands are useful to the model even when the
+        # bounded endgame search is outside scope or exhausts its budget.
+        public_confirmed_hands_summary: str | None = None
         raw_other_players = observation.get("other_players", [])
         active_sizes = []
         if type(my_info.get("hand_count")) is int and hand_count > 0:
@@ -575,35 +579,68 @@ class DeepSeekAIAgent(BaseAgent):
                 and row.get("hand_count", 0) > 0
                 and row.get("finished") is False
             )
-        if (
-            len(active_sizes) == 2
-            and sum(active_sizes) <= 12
-            and max(active_sizes, default=0) <= 8
-        ):
+        if len(active_sizes) == 2:
             try:
                 from agents.card_tracker import exact_public_hand_assignment
-                from engine.public_endgame import analyze_public_endgame
+                from agents.known_endgame import (
+                    describe_proven_endgame_choice,
+                    format_confirmed_public_hands,
+                    select_proven_endgame_action,
+                )
+                from engine.public_endgame import (
+                    PUBLIC_ENDGAME_MAX_CARDS,
+                    PUBLIC_ENDGAME_MAX_HAND,
+                    analyze_public_endgame,
+                )
 
                 known_hands = exact_public_hand_assignment(observation)
                 if known_hands is not None:
-                    self.last_public_endgame_analysis = analyze_public_endgame(
+                    public_confirmed_hands_summary = format_confirmed_public_hands(
                         observation,
-                        legal_actions,
                         known_hands,
                     )
+                    if (
+                        sum(active_sizes) <= PUBLIC_ENDGAME_MAX_CARDS
+                        and max(active_sizes, default=0) <= PUBLIC_ENDGAME_MAX_HAND
+                    ):
+                        self.last_public_endgame_analysis = analyze_public_endgame(
+                            observation,
+                            legal_actions,
+                            known_hands,
+                        )
+                        analysis = self.last_public_endgame_analysis
+                        if getattr(analysis, "status", None) == "ineligible":
+                            # A second, rule-backed consistency check failed;
+                            # do not promote the conservation result to prompt fact.
+                            public_confirmed_hands_summary = None
+                        elif getattr(analysis, "status", None) == "solved":
+                            projected = DeepSeekClient._project_prompt_actions(
+                                observation,
+                                legal_actions,
+                            )
+                            route_signatures = {
+                                int(action["action_id"]): DeepSeekClient._action_signature(action)
+                                for action in projected
+                                if isinstance(action, dict)
+                                and type(action.get("action_id")) is int
+                            }
+                            shortcut_id = select_proven_endgame_action(
+                                analysis,
+                                legal_actions,
+                                route_signatures,
+                            )
+                            if shortcut_id is not None:
+                                chosen = require_legal_action_id(shortcut_id, legal_actions)
+                                self.last_public_endgame_decision_summary = (
+                                    describe_proven_endgame_choice(analysis, chosen)
+                                )
+                                self.last_decision_source = "local"
+                                return chosen
             except Exception:
                 # Invalid/unsupported public state leaves the existing model
                 # route unchanged.
                 self.last_public_endgame_analysis = None
-
-            analysis = self.last_public_endgame_analysis
-            if getattr(analysis, "status", None) == "solved":
-                unique_winner = getattr(analysis, "unique_best_action_id", None)
-                values = dict(getattr(analysis, "action_values", ()))
-                if type(unique_winner) is int and values.get(unique_winner) == 1:
-                    chosen = require_legal_action_id(unique_winner, legal_actions)
-                    self.last_decision_source = "local"
-                    return chosen
+                public_confirmed_hands_summary = None
 
         opening_evaluation: dict[str, object] | None = None
         opening_formula_contrasts: tuple[CandidateContrast, ...] = ()
@@ -876,6 +913,7 @@ class DeepSeekAIAgent(BaseAgent):
                 rag_context=rag_context,
                 hand_evaluation=hand_evaluation,
                 card_tracking_summary=card_tracking_summary,
+                public_confirmed_hands_summary=public_confirmed_hands_summary,
                 public_endgame_summary=public_endgame_summary,
                 phase_context=phase_context,
                 card_confidence_prompt=card_confidence_prompt,
@@ -924,6 +962,7 @@ class DeepSeekAIAgent(BaseAgent):
                 "rag_context": rag_context,
                 "hand_evaluation": hand_evaluation,
                 "card_tracking_summary": card_tracking_summary,
+                "public_confirmed_hands_summary": public_confirmed_hands_summary,
                 "phase_context": phase_context,
                 "verbose": False,
                 "debug_prefix": f"[DeepSeek] 玩家{player_id}",

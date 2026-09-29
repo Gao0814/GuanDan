@@ -592,6 +592,45 @@ def _exact_single_owner(state: _ValidatedPublicState):
     return player
 
 
+def _history_clock_is_complete(observation: object) -> bool:
+    if not isinstance(observation, dict):
+        return False
+    current_round = observation.get("current_round")
+    history = observation.get("history")
+    if not isinstance(current_round, dict) or not isinstance(history, dict):
+        return False
+    actions = history.get("actions")
+    step_no = current_round.get("step_no")
+    round_no = current_round.get("round_no")
+    if (
+        not isinstance(actions, list)
+        or type(step_no) is not int
+        or step_no != len(actions)
+        or type(round_no) is not int
+        or round_no < 1
+    ):
+        return False
+    previous_round = 0
+    for index, action in enumerate(actions):
+        if not isinstance(action, dict):
+            return False
+        action_step = action.get("step_no")
+        action_round = action.get("round_no")
+        if (
+            type(action_step) is not int
+            or action_step != index + 1
+            or type(action_round) is not int
+            or action_round < 1
+            or action_round < previous_round
+            or action_round > previous_round + 1
+        ):
+            return False
+        previous_round = action_round
+    if not actions:
+        return step_no == 0 and round_no == 1
+    return round_no in {previous_round, previous_round + 1}
+
+
 def exact_public_hand_assignment(
     observation: object,
 ) -> dict[int, tuple[str, ...]] | None:
@@ -603,7 +642,7 @@ def exact_public_hand_assignment(
     return None.
     """
     state = _validated_public_state(observation)
-    if state is None:
+    if state is None or not _history_clock_is_complete(observation):
         return None
     owner = _exact_single_owner(state)
     if owner is None:

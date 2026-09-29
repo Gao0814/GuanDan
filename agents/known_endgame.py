@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from itertools import combinations
+from typing import Mapping
 
 from engine.public_endgame import (
     PUBLIC_ENDGAME_MAX_CARDS,
+    PUBLIC_ENDGAME_MAX_HAND,
     PUBLIC_ENDGAME_MAX_NODES,
     PUBLIC_ENDGAME_MAX_SECONDS,
     PublicEndgameAnalysis,
@@ -13,10 +15,185 @@ from engine.public_endgame import (
 
 
 _OUTCOME_TEXT = {
-    1: "本队可保胜",
-    0: "双方最优回应下可和",
-    -1: "本队无法避免负局",
+    1: "本队胜",
+    0: "规则平",
+    -1: "负局",
 }
+
+
+def _valid_reachable_values(values: object) -> bool:
+    return (
+        isinstance(values, tuple)
+        and bool(values)
+        and all(type(value) is int and value in _OUTCOME_TEXT for value in values)
+        and tuple(sorted(set(values))) == values
+    )
+
+
+def format_confirmed_public_hands(
+    observation: object,
+    known_hands_by_player: object,
+) -> str | None:
+    """Render a unique, current public hand assignment with its evidence limit."""
+    if not isinstance(observation, dict) or not isinstance(known_hands_by_player, Mapping):
+        return None
+    if set(known_hands_by_player) != {1, 2, 3, 4}:
+        return None
+    my_info = observation.get("my_info")
+    other_players = observation.get("other_players")
+    if not isinstance(my_info, dict) or not isinstance(other_players, list):
+        return None
+    my_id = my_info.get("player_id")
+    my_team = my_info.get("team")
+    if type(my_id) is not int or my_id not in {1, 2, 3, 4} or not isinstance(my_team, str):
+        return None
+
+    rows: dict[int, dict[str, object]] = {
+        my_id: {
+            "team": my_team,
+            "hand_count": my_info.get("hand_count"),
+            "finished": my_info.get("hand_count") == 0,
+        }
+    }
+    for row in other_players:
+        if not isinstance(row, dict) or type(row.get("player_id")) is not int:
+            return None
+        player_id = int(row["player_id"])
+        if player_id in rows or player_id not in {1, 2, 3, 4}:
+            return None
+        rows[player_id] = row
+    if set(rows) != {1, 2, 3, 4}:
+        return None
+
+    active_external: list[tuple[int, tuple[str, ...], str]] = []
+    for player_id, row in rows.items():
+        cards = known_hands_by_player.get(player_id)
+        count = row.get("hand_count")
+        team = row.get("team")
+        finished = row.get("finished")
+        if (
+            not isinstance(cards, (list, tuple))
+            or any(not isinstance(card, str) or not card or len(card) > 3 for card in cards)
+            or type(count) is not int
+            or len(cards) != count
+            or type(finished) is not bool
+            or finished != (count == 0)
+            or not isinstance(team, str)
+        ):
+            return None
+        if player_id != my_id and count > 0:
+            relation = "队友" if team == my_team else "对手"
+            active_external.append((player_id, tuple(cards), relation))
+    if len(active_external) != 1:
+        return None
+
+    player_id, cards, relation = active_external[0]
+    cards_text = " ".join(cards)
+    return (
+        f"玩家{player_id}（{relation}）当前实体手牌已唯一确证：{cards_text}。"
+        "证据边界：依赖本家当前手牌、完整公开出牌carrier_cards、公开余牌容量和108张实体牌守恒；"
+        "仅描述此观察时点，不含概率、未来抽牌或未公开事实。"
+    )
+
+
+def select_proven_endgame_action(
+    analysis: PublicEndgameAnalysis,
+    legal_actions: list[dict[str, object]],
+    route_signatures: Mapping[int, object],
+) -> int | None:
+    """Choose only when one M8-equivalent strategy route is completely proven.
+
+    The M8 signature keeps suit-flush and wildcard resource differences apart.
+    Exact solved outcome profiles further split aliases if the engine proves
+    their continuations differ. All returned IDs are original legal IDs.
+    """
+    if analysis.status != "solved" or not legal_actions:
+        return None
+    guarantees = dict(analysis.action_values)
+    reachable = dict(analysis.action_reachable_values)
+    legal_ids = [
+        int(action["action_id"])
+        for action in legal_actions
+        if isinstance(action, dict) and type(action.get("action_id")) is int
+    ]
+    if (
+        len(legal_ids) != len(legal_actions)
+        or len(set(legal_ids)) != len(legal_ids)
+        or set(guarantees) != set(legal_ids)
+        or set(reachable) != set(legal_ids)
+        or any(type(value) is not int or value not in _OUTCOME_TEXT for value in guarantees.values())
+        or any(not _valid_reachable_values(values) for values in reachable.values())
+    ):
+        return None
+
+    routes: dict[tuple[object, ...], list[int]] = {}
+    route_by_action: dict[int, tuple[object, ...]] = {}
+    for action_id in legal_ids:
+        signature = route_signatures.get(action_id, ("raw-action", action_id))
+        try:
+            hash(signature)
+        except TypeError:
+            signature = ("raw-action", action_id)
+        route = (signature, guarantees[action_id], reachable[action_id])
+        routes.setdefault(route, []).append(action_id)
+        route_by_action[action_id] = route
+
+    def representative(route: tuple[object, ...]) -> int:
+        # Legal action order is stable and matches the M8 projection's first
+        # surviving representative for equivalent ordinary actions.
+        return next(action_id for action_id in legal_ids if route_by_action[action_id] == route)
+
+    guaranteed_routes = {
+        route for route in routes if route[1] == 1
+    }
+    if len(guaranteed_routes) == 1:
+        return representative(next(iter(guaranteed_routes)))
+    if guaranteed_routes:
+        return None
+
+    reachable_win_routes = {
+        route for route in routes if 1 in route[2]
+    }
+    if len(reachable_win_routes) == 1:
+        return representative(next(iter(reachable_win_routes)))
+    if reachable_win_routes:
+        return None
+
+    best_floor = max(int(route[1]) for route in routes)
+    best_routes = {route for route in routes if route[1] == best_floor}
+    has_strictly_worse_route = any(int(route[1]) < best_floor for route in routes)
+    if len(best_routes) == 1 and has_strictly_worse_route:
+        return representative(next(iter(best_routes)))
+    return None
+
+
+def describe_proven_endgame_choice(
+    analysis: PublicEndgameAnalysis,
+    action_id: int,
+) -> str | None:
+    """Explain the exact bounded-search basis for a local original action ID."""
+    if analysis.status != "solved" or type(action_id) is not int:
+        return None
+    guarantee = dict(analysis.action_values).get(action_id)
+    reachable = dict(analysis.action_reachable_values).get(action_id)
+    if guarantee not in _OUTCOME_TEXT or not _valid_reachable_values(reachable):
+        return None
+    if guarantee == 1:
+        return (
+            f"公开确证残局本地选择 action_id={action_id}："
+            "该策略路线可保底本队胜。"
+        )
+    if 1 in reachable:
+        return (
+            f"公开确证残局本地选择 action_id={action_id}："
+            "这是唯一存在合法本队胜局续线的策略路线；"
+            f"保底为{_OUTCOME_TEXT[guarantee]}，不保证获胜。"
+        )
+    return (
+        f"公开确证残局本地选择 action_id={action_id}："
+        f"这是无可达本队胜局续线时唯一严格更优的保底路线，"
+        f"保底为{_OUTCOME_TEXT[guarantee]}。"
+    )
 
 
 def format_public_endgame_comparisons(
@@ -26,29 +203,42 @@ def format_public_endgame_comparisons(
     preferred_action_ids: tuple[int, ...] = (),
     max_pairs: int = 2,
 ) -> str | None:
-    """Format only distinct, solved values for actual displayed legal IDs."""
+    """Format distinct proven guarantees or reachable outcomes for visible IDs."""
     if analysis.status != "solved" or type(max_pairs) is not int or max_pairs <= 0:
         return None
-    values = dict(analysis.action_values)
-    if any(type(value) is not int or value not in _OUTCOME_TEXT for value in values.values()):
+    guarantees = dict(analysis.action_values)
+    reachable = dict(analysis.action_reachable_values)
+    if (
+        any(type(value) is not int or value not in _OUTCOME_TEXT for value in guarantees.values())
+        or any(not _valid_reachable_values(values) for values in reachable.values())
+    ):
         return None
     visible = [
         action for action in displayed_actions
         if type(action.get("action_id")) is int
-        and int(action["action_id"]) in values
+        and int(action["action_id"]) in guarantees
+        and int(action["action_id"]) in reachable
     ]
     preferred = set(preferred_action_ids)
     pairs = []
     for first, second in combinations(visible, 2):
         first_id = int(first["action_id"])
         second_id = int(second["action_id"])
-        first_value = values[first_id]
-        second_value = values[second_id]
-        if first_value == second_value:
+        first_floor = guarantees[first_id]
+        second_floor = guarantees[second_id]
+        first_reachable = reachable[first_id]
+        second_reachable = reachable[second_id]
+        if first_floor == second_floor and first_reachable == second_reachable:
             continue
         anchored = int(first_id in preferred) + int(second_id in preferred)
+        opportunity_difference = int((1 in first_reachable) != (1 in second_reachable))
         pairs.append((
-            (anchored, abs(first_value - second_value), max(first_value, second_value)),
+            (
+                anchored,
+                opportunity_difference,
+                abs(first_floor - second_floor),
+                len(set(first_reachable) ^ set(second_reachable)),
+            ),
             first,
             second,
         ))
@@ -73,24 +263,30 @@ def format_public_endgame_comparisons(
         return None
 
     lines = [
-        "【公开残局推演】活动玩家当前手牌由108张守恒与公开历史唯一确认；"
-        "使用引擎合法动作、轮转、pass、牌权重置和终局真值作双方最优回应搜索；"
-        f"总余牌不超过{PUBLIC_ENDGAME_MAX_CARDS}张，搜索上限"
-        f"{PUBLIC_ENDGAME_MAX_NODES}节点/{PUBLIC_ENDGAME_MAX_SECONDS * 1000:.0f}毫秒；"
-        "仅适用于本局当前状态且完整搜索未超限，不是胜率或概率。"
+        "【公开残局推演】使用完整公开手牌、引擎合法动作与终局真值；"
+        f"活动余牌不超过{PUBLIC_ENDGAME_MAX_CARDS}张、单家不超过{PUBLIC_ENDGAME_MAX_HAND}张，"
+        f"搜索上限{PUBLIC_ENDGAME_MAX_NODES}节点/{PUBLIC_ENDGAME_MAX_SECONDS * 1000:.0f}毫秒。"
+        "保底是双方按队伍目标应对时的终局值；可达只表示存在一条合法续局，不表示对手会配合、概率或保证。"
     ]
     for first, second in selected:
-        first_id = int(first["action_id"])
-        second_id = int(second["action_id"])
-        first_value = values[first_id]
-        second_value = values[second_id]
-        first_label = str(first.get("display_text", first.get("declared_pattern", "")))[:72]
-        second_label = str(second.get("display_text", second.get("declared_pattern", "")))[:72]
+        entries = []
+        for action in (first, second):
+            action_id = int(action["action_id"])
+            label = str(action.get("display_text", action.get("declared_pattern", "")))[:48]
+            opportunity = (
+                "有合法本队胜局续线（非保胜）"
+                if 1 in reachable[action_id] and guarantees[action_id] != 1
+                else "可保底本队胜"
+                if guarantees[action_id] == 1
+                else "无可达本队胜局续线"
+            )
+            outcomes = ",".join(_OUTCOME_TEXT[value] for value in reachable[action_id])
+            entries.append(
+                f"action_id={action_id}({label})=保底{_OUTCOME_TEXT[guarantees[action_id]]}"
+                f"/{opportunity}/可达{{{outcomes}}}"
+            )
         lines.append(
-            f"M5公开残局对照 action_id={first_id}({first_label})"
-            f"={_OUTCOME_TEXT[first_value]} vs "
-            f"action_id={second_id}({second_label})"
-            f"={_OUTCOME_TEXT[second_value]}；"
-            "该结果来自两队分别追求本队终局结果的对抗搜索。"
+            "M5公开残局对照 " + " vs ".join(entries)
+            + "；可达结果是条件性合法路径，不是胜率预测。"
         )
     return "\n".join(lines)

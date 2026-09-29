@@ -189,6 +189,7 @@ PROMPT_MAX_RAG_TITLE_CHARS = 60
 PROMPT_MAX_RAG_BODY_CHARS = 180
 PROMPT_MAX_CARD_TRACKING_CHARS = 1_400
 PROMPT_MAX_PUBLIC_ENDGAME_CHARS = 720
+PROMPT_MAX_PUBLIC_CONFIRMED_HANDS_CHARS = 720
 
 _SCENE_TAG_ORDER = (
     "scene",
@@ -2910,6 +2911,16 @@ class DeepSeekClient:
         return [compact] if compact else ["（无）"]
 
     @staticmethod
+    def _format_public_confirmed_hands_summary(summary: str | None) -> list[str]:
+        if not isinstance(summary, str) or not summary.strip():
+            return ["（无）"]
+        compact = DeepSeekClient._bounded_text(
+            summary.strip().replace("\n", "；"),
+            PROMPT_MAX_PUBLIC_CONFIRMED_HANDS_CHARS,
+        )
+        return [compact] if compact else ["（无）"]
+
+    @staticmethod
     def _validated_card_confidence_prompt(
         payload: object,
     ) -> "CardConfidencePromptPayload | None":
@@ -3132,6 +3143,7 @@ class DeepSeekClient:
         rag_context: dict[str, object] | None = None,
         hand_evaluation: dict[str, object] | None = None,
         card_tracking_summary: str | None = None,
+        public_confirmed_hands_summary: str | None = None,
         public_endgame_summary: str | None = None,
         phase_context: GamePhaseContext | None = None,
         card_confidence_prompt: "CardConfidencePromptPayload | None" = None,
@@ -3440,6 +3452,15 @@ class DeepSeekClient:
             )
         )
         lines.append("")
+
+        if public_confirmed_hands_summary:
+            lines.append("【公开确证手牌】")
+            lines.extend(
+                DeepSeekClient._format_public_confirmed_hands_summary(
+                    public_confirmed_hands_summary,
+                )
+            )
+            lines.append("")
 
         if public_endgame_summary:
             lines.append("【公开残局推演】")
@@ -4026,6 +4047,7 @@ class DeepSeekClient:
         rag_context: dict[str, object] | None = None,
         hand_evaluation: dict[str, object] | None = None,
         card_tracking_summary: str | None = None,
+        public_confirmed_hands_summary: str | None = None,
         public_endgame_summary: str | None = None,
         phase_context: GamePhaseContext | None = None,
         verbose: bool = False,
@@ -4214,6 +4236,7 @@ class DeepSeekClient:
             rag_context=rag_context,
             hand_evaluation=hand_evaluation,
             card_tracking_summary=card_tracking_summary,
+            public_confirmed_hands_summary=public_confirmed_hands_summary,
             public_endgame_summary=public_endgame_summary,
             phase_context=phase_context,
             card_confidence_prompt=card_confidence_prompt,

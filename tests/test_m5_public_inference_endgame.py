@@ -22,7 +22,7 @@ from agents.deepseek_client import DeepSeekClient
 from agents.rule_based_ai import RuleBasedAIAgent
 from engine.cards import build_double_deck
 from engine.game import GuanDanGame
-from engine.public_endgame import analyze_public_endgame
+from engine.public_endgame import PublicEndgameAnalysis, analyze_public_endgame
 from engine.rules import BaseRuleEngine
 from integrations.botzone.agent_runtime import build_agent_factory
 
@@ -335,7 +335,7 @@ class M5PublicEndgameTests(unittest.TestCase):
         truncated = deepcopy(observation)
         truncated["history"]["actions"].pop()
         truncated_assignment = exact_public_hand_assignment(truncated)
-        self.assertIsNotNone(truncated_assignment)
+        self.assertIsNone(truncated_assignment)
         self.assertEqual(
             analyze_public_endgame(truncated, actions, truncated_assignment).status,
             "ineligible",
@@ -417,32 +417,32 @@ class M5PublicEndgameTests(unittest.TestCase):
             client_factory=lambda **kwargs: DeepSeekClient(**kwargs, transport=fake_transport),
             rag_factory=lambda: None,
         )
-        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+        with (
+            patch("agents.deepseek_ai.AppConfig.from_env", return_value=config),
+            patch(
+                "engine.public_endgame.analyze_public_endgame",
+                return_value=PublicEndgameAnalysis(
+                    status="budget_exceeded",
+                    reason="search_limit",
+                ),
+            ),
+        ):
             agent = factory(3)
             selected = agent.select_action(observation, actions)
 
         self.assertEqual(len(captured), 1)
         self.assertEqual(agent.last_decision_source, "model")
         self.assertIn(selected, {int(action["action_id"]) for action in actions})
-        self.assertEqual(agent.last_public_endgame_analysis.status, "solved")
-        self.assertGreater(
-            len({value for _, value in agent.last_public_endgame_analysis.action_values}),
-            1,
-        )
+        self.assertEqual(agent.last_public_endgame_analysis.status, "budget_exceeded")
         prompt = captured[0]["messages"][1]["content"]
-        self.assertIn("【公开残局推演】", prompt)
-        self.assertIn("M5公开残局对照", prompt)
+        self.assertIn("【公开确证手牌】", prompt)
+        self.assertIn("守恒", prompt)
+        self.assertNotIn("M5公开残局对照", prompt)
         candidate_section = prompt.split("【候选动作】", 1)[1].split("【规则库依据】", 1)[0]
         displayed = {
             int(value) for value in re.findall(r"action_id=(\d+)", candidate_section)
         }
         self.assertLessEqual(len(displayed), 80)
-        pairs = re.findall(
-            r"M5公开残局对照 action_id=(\d+).*?action_id=(\d+)",
-            prompt,
-        )
-        self.assertTrue(pairs)
-        self.assertTrue(all(int(value) in displayed for pair in pairs for value in pair))
 
     def test_unique_proven_winning_action_is_the_only_endgame_shortcut(self) -> None:
         _, observation, actions = _rollout_to_step(10, 87)
