@@ -416,6 +416,7 @@ class DeepSeekAIAgent(BaseAgent):
     evidence_sink: Callable[[str, dict[str, object]], None] | None = field(default=None, repr=False)
     last_decision_source: str | None = field(default=None, init=False, repr=False)
     card_tracker: object | None = field(default=None, init=False, repr=False)
+    last_public_endgame_analysis: object | None = field(default=None, init=False, repr=False)
     last_card_confidence: "CardConfidenceState | None" = field(
         default=None,
         init=False,
@@ -472,6 +473,7 @@ class DeepSeekAIAgent(BaseAgent):
         self.last_strategy_intent = None
         self.last_strategy_intent_prompt = None
         self.last_strategy_recommendation = None
+        self.last_public_endgame_analysis = None
         if not legal_actions:
             raise ValueError("legal_actions must not be empty")
 
@@ -515,6 +517,51 @@ class DeepSeekAIAgent(BaseAgent):
                     display = _action_display_cn(action) if action is not None else "(unknown)"
                     print(f"[DeepSeek 思考] 开局公式策略：{display}", flush=True)
                 return chosen
+
+        # Exact public-hand endgames are searched only after ordinary forced
+        # shortcuts and the opening formula have declined the decision.
+        raw_other_players = observation.get("other_players", [])
+        active_sizes = []
+        if type(my_info.get("hand_count")) is int and hand_count > 0:
+            active_sizes.append(hand_count)
+        if isinstance(raw_other_players, list):
+            active_sizes.extend(
+                int(row["hand_count"])
+                for row in raw_other_players
+                if isinstance(row, dict)
+                and type(row.get("hand_count")) is int
+                and row.get("hand_count", 0) > 0
+                and row.get("finished") is False
+            )
+        if (
+            len(active_sizes) == 2
+            and sum(active_sizes) <= 12
+            and max(active_sizes, default=0) <= 8
+        ):
+            try:
+                from agents.card_tracker import exact_public_hand_assignment
+                from engine.public_endgame import analyze_public_endgame
+
+                known_hands = exact_public_hand_assignment(observation)
+                if known_hands is not None:
+                    self.last_public_endgame_analysis = analyze_public_endgame(
+                        observation,
+                        legal_actions,
+                        known_hands,
+                    )
+            except Exception:
+                # Invalid/unsupported public state leaves the existing model
+                # route unchanged.
+                self.last_public_endgame_analysis = None
+
+            analysis = self.last_public_endgame_analysis
+            if getattr(analysis, "status", None) == "solved":
+                unique_winner = getattr(analysis, "unique_best_action_id", None)
+                values = dict(getattr(analysis, "action_values", ()))
+                if type(unique_winner) is int and values.get(unique_winner) == 1:
+                    chosen = require_legal_action_id(unique_winner, legal_actions)
+                    self.last_decision_source = "local"
+                    return chosen
 
         card_confidence_prompt: "CardConfidencePromptPayload | None" = None
         if self.card_confidence_shadow_enabled:
@@ -670,6 +717,23 @@ class DeepSeekAIAgent(BaseAgent):
             )
             card_tracking_summary = self.card_tracker.get_summary(my_hand_cards)
 
+        public_endgame_summary: str | None = None
+        analysis = self.last_public_endgame_analysis
+        if getattr(analysis, "status", None) == "solved":
+            try:
+                from agents.known_endgame import format_public_endgame_comparisons
+
+                public_endgame_summary = format_public_endgame_comparisons(
+                    analysis,
+                    pruned,
+                    preferred_action_ids=tuple(
+                        action_id for action_id in getattr(strategy_recommendation, "action_ids", ())
+                        if type(action_id) is int
+                    ),
+                )
+            except Exception:
+                public_endgame_summary = None
+
         other_players = list(observation.get("other_players", []))
         player_id = _coerce_int(my_info.get("player_id"), default=self.player_id)
         is_primary = player_id == 1
@@ -717,6 +781,9 @@ class DeepSeekAIAgent(BaseAgent):
             if card_tracking_summary:
                 for line in card_tracking_summary.splitlines():
                     print(f"[DeepSeek 思考] {line}", flush=True)
+            if public_endgame_summary:
+                for line in public_endgame_summary.splitlines():
+                    print(f"[DeepSeek 思考] {line}", flush=True)
 
             summary_lines = DeepSeekClient._grouped_legal_actions_summary(
                 pruned,
@@ -749,6 +816,7 @@ class DeepSeekAIAgent(BaseAgent):
                 rag_context=rag_context,
                 hand_evaluation=hand_evaluation,
                 card_tracking_summary=card_tracking_summary,
+                public_endgame_summary=public_endgame_summary,
                 phase_context=phase_context,
                 card_confidence_prompt=card_confidence_prompt,
                 strategy_intent_prompt=strategy_intent_prompt,
@@ -799,6 +867,8 @@ class DeepSeekAIAgent(BaseAgent):
                 "verbose": False,
                 "debug_prefix": f"[DeepSeek] 玩家{player_id}",
             }
+            if public_endgame_summary is not None:
+                suggestion_kwargs["public_endgame_summary"] = public_endgame_summary
             if request_evidence_observer is not None:
                 suggestion_kwargs["request_evidence_observer"] = request_evidence_observer
             if card_confidence_prompt is not None:

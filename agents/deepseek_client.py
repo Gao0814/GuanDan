@@ -171,6 +171,7 @@ PROMPT_MAX_RAG_HITS_PER_LAYER = 3
 PROMPT_MAX_RAG_TITLE_CHARS = 60
 PROMPT_MAX_RAG_BODY_CHARS = 180
 PROMPT_MAX_CARD_TRACKING_CHARS = 1_400
+PROMPT_MAX_PUBLIC_ENDGAME_CHARS = 720
 
 _SCENE_TAG_ORDER = (
     "scene",
@@ -2098,6 +2099,30 @@ class DeepSeekClient:
         return [compact] if compact else ["（无）"]
 
     @staticmethod
+    def _format_public_endgame_summary(
+        summary: str | None,
+        *,
+        candidate_action_ids: set[int] | None = None,
+    ) -> list[str]:
+        if not summary:
+            return ["（无）"]
+        if candidate_action_ids is not None:
+            kept = []
+            for line in summary.splitlines():
+                if line.startswith("M5公开残局对照"):
+                    referenced = [int(value) for value in re.findall(r"action_id=(\d+)", line)]
+                    if not referenced or not all(value in candidate_action_ids for value in referenced):
+                        continue
+                kept.append(line)
+            summary = "\n".join(kept)
+        lines = [line.strip() for line in summary.splitlines() if line.strip()]
+        compact = DeepSeekClient._bounded_text(
+            "；".join(lines),
+            PROMPT_MAX_PUBLIC_ENDGAME_CHARS,
+        )
+        return [compact] if compact else ["（无）"]
+
+    @staticmethod
     def _validated_card_confidence_prompt(
         payload: object,
     ) -> "CardConfidencePromptPayload | None":
@@ -2245,6 +2270,7 @@ class DeepSeekClient:
         rag_context: dict[str, object] | None = None,
         hand_evaluation: dict[str, object] | None = None,
         card_tracking_summary: str | None = None,
+        public_endgame_summary: str | None = None,
         phase_context: GamePhaseContext | None = None,
         card_confidence_prompt: "CardConfidencePromptPayload | None" = None,
         strategy_intent_prompt: "StrategyIntentPromptPayload | None" = None,
@@ -2305,8 +2331,19 @@ class DeepSeekClient:
                     card_tracking_action_ids.update(referenced)
                     if line.startswith("M3候选对照") and len(referenced) == 2:
                         card_tracking_relation_groups.append((referenced[0], referenced[1]))
+        public_endgame_relation_groups: list[tuple[int, int]] = []
+        if public_endgame_summary:
+            for line in public_endgame_summary.splitlines():
+                if not line.startswith("M5公开残局对照"):
+                    continue
+                referenced = [int(value) for value in re.findall(r"action_id=(\d+)", line)]
+                if len(referenced) == 2 and set(referenced).issubset(available_ids):
+                    public_endgame_relation_groups.append((referenced[0], referenced[1]))
+                    card_tracking_action_ids.update(referenced)
         prompt_relation_groups = tuple(
             card_tracking_relation_groups
+        ) + tuple(
+            public_endgame_relation_groups
         ) + tuple(
             item.action_ids
             for item in (representative_contrasts or ())
@@ -2437,6 +2474,20 @@ class DeepSeekClient:
             )
         )
         lines.append("")
+
+        if public_endgame_summary:
+            lines.append("【公开残局推演】")
+            lines.extend(
+                DeepSeekClient._format_public_endgame_summary(
+                    public_endgame_summary,
+                    candidate_action_ids={
+                        int(action["action_id"])
+                        for action in prompt_actions
+                        if type(action.get("action_id")) is int
+                    },
+                )
+            )
+            lines.append("")
 
         validated_confidence = DeepSeekClient._validated_card_confidence_prompt(card_confidence_prompt)
         if validated_confidence is not None:
@@ -2942,6 +2993,7 @@ class DeepSeekClient:
         rag_context: dict[str, object] | None = None,
         hand_evaluation: dict[str, object] | None = None,
         card_tracking_summary: str | None = None,
+        public_endgame_summary: str | None = None,
         phase_context: GamePhaseContext | None = None,
         verbose: bool = False,
         debug_prefix: str = "[DeepSeek]",
@@ -3012,6 +3064,24 @@ class DeepSeekClient:
                     self._coerce_int(my_info.get("player_id"), default=0),
                 )
             ))
+            if public_endgame_summary:
+                legal_ids = {
+                    int(action["action_id"])
+                    for action in legal_actions
+                    if type(action.get("action_id")) is int
+                }
+                public_endgame_groups = []
+                for line in public_endgame_summary.splitlines():
+                    if not line.startswith("M5公开残局对照"):
+                        continue
+                    referenced = [
+                        int(value) for value in re.findall(r"action_id=(\d+)", line)
+                    ]
+                    if len(referenced) == 2 and set(referenced).issubset(legal_ids):
+                        public_endgame_groups.append((referenced[0], referenced[1]))
+                relation_groups = tuple(dict.fromkeys(
+                    relation_groups + tuple(public_endgame_groups)
+                ))
             opening_route_ids = self._opening_pattern_representative_ids(
                 observation,
                 legal_actions,
@@ -3060,6 +3130,7 @@ class DeepSeekClient:
             rag_context=rag_context,
             hand_evaluation=hand_evaluation,
             card_tracking_summary=card_tracking_summary,
+            public_endgame_summary=public_endgame_summary,
             phase_context=phase_context,
             card_confidence_prompt=card_confidence_prompt,
             strategy_intent_prompt=strategy_intent_prompt,

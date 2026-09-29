@@ -92,6 +92,15 @@ class _CandidateFacts:
     pattern: str
 
 
+@dataclass(frozen=True, slots=True)
+class _PublicPassEvidence:
+    player_id: int
+    step_no: int
+    lead_action: Action
+    lead_pattern: str
+    response_confirmed_step_no: int | None
+
+
 def _validated_public_state(observation: object) -> _ValidatedPublicState | None:
     """Accept only a complete physical-card ledger consistent with four 27-card deals."""
     if not isinstance(observation, dict):
@@ -402,6 +411,7 @@ def _candidate_pairs(
     profile_cache: dict[int, tuple[dict[str, object], ...]],
     facts_cache: dict[int, _CandidateFacts],
     preferred_action_ids: tuple[int, ...] = (),
+    pass_evidence: tuple[_PublicPassEvidence, ...] = (),
     level: str = "2",
 ) -> tuple[tuple[dict[str, object], dict[str, object]], ...]:
     valid_by_id: dict[int, dict[str, object]] = {}
@@ -415,7 +425,7 @@ def _candidate_pairs(
         valid_by_id[action_id] = action
 
     profile_cache.update(_candidate_response_profiles(
-        state, tuple(valid_by_id.values()), engine, owner,
+        state, tuple(valid_by_id.values()), engine, owner, pass_evidence,
     ))
     for action_id, action in valid_by_id.items():
         residual = _residual_facts(action, hand_counts, level)
@@ -427,6 +437,20 @@ def _candidate_pairs(
             declared_strength=sum(_declared_strength(action, level)),
             pattern=str(action["declared_pattern"]),
         )
+
+    def pass_difference(
+        first_profiles: tuple[dict[str, object], ...],
+        second_profiles: tuple[dict[str, object], ...],
+    ) -> int:
+        score = 0
+        for first_profile, second_profile in zip(first_profiles, second_profiles):
+            enemy = first_profile["relation"] == "敌"
+            next_player = bool(first_profile["is_next"])
+            urgent = bool(first_profile["urgent"])
+            weight = 8 if enemy and next_player else 6 if enemy and urgent else 4 if enemy else 3 if next_player else 2
+            if first_profile.get("pass_signature") != second_profile.get("pass_signature"):
+                score += weight * 2
+        return score
 
     def response_difference(
         first_profiles: tuple[dict[str, object], ...],
@@ -456,16 +480,17 @@ def _candidate_pairs(
 
     def pair_priority(
         first: dict[str, object], second: dict[str, object],
-    ) -> tuple[int, int, int, int, int] | None:
+    ) -> tuple[int, int, int, int, int, int] | None:
         first_id = int(first["action_id"])
         second_id = int(second["action_id"])
         first_profiles = profile_cache[first_id]
         second_profiles = profile_cache[second_id]
         response_score = response_difference(first_profiles, second_profiles)
+        pass_score = pass_difference(first_profiles, second_profiles)
         first_facts = facts_cache[first_id]
         second_facts = facts_cache[second_id]
         structure_score = _candidate_structure_difference(first, second, first_facts, second_facts)
-        if response_score == 0 and structure_score == 0:
+        if response_score == 0 and pass_score == 0 and structure_score == 0:
             return None
         preferred_count = int(
             int(first["action_id"]) in preferred_action_ids
@@ -475,13 +500,14 @@ def _candidate_pairs(
         return (
             preferred_count,
             response_score,
+            pass_score,
             structure_score,
             _candidate_difference(first, second, first_facts, second_facts),
             -min(int(first["action_id"]), int(second["action_id"])),
         )
 
     scored: list[
-        tuple[tuple[int, int, int, int, int], dict[str, object], dict[str, object]]
+        tuple[tuple[int, int, int, int, int, int], dict[str, object], dict[str, object]]
     ] = []
     candidates = list(valid_by_id.values())
     for index, first in enumerate(candidates):
@@ -495,14 +521,37 @@ def _candidate_pairs(
 
     selected: list[tuple[dict[str, object], dict[str, object]]] = []
     seen: set[frozenset[int]] = set()
-    for _, first, second in scored:
+
+    def add_pair(item: tuple[tuple[int, int, int, int, int, int], dict[str, object], dict[str, object]]) -> None:
+        _, first, second = item
         key = frozenset((int(first["action_id"]), int(second["action_id"])))
-        if key in seen:
-            continue
+        if key in seen or len(selected) >= 2:
+            return
         seen.add(key)
         selected.append((first, second))
-        if len(selected) == 2:
-            break
+
+    if scored:
+        add_pair(scored[0])
+    # Reserve one of the two bounded explanation slots for a pair whose
+    # candidate-specific risk actually differs because of a public pass event.
+    selected_pass_sensitive = any(
+        priority[2] > 0
+        and frozenset((int(first["action_id"]), int(second["action_id"]))) in seen
+        for priority, first, second in scored
+    )
+    if len(selected) < 2 and not selected_pass_sensitive:
+        for item in sorted(scored, key=lambda value: (
+            value[0][2], value[0][0], value[0][1], value[0][3],
+            value[0][4], value[0][5],
+        ), reverse=True):
+            if item[0][2] > 0:
+                add_pair(item)
+                break
+    if len(selected) < 2:
+        for item in scored:
+            add_pair(item)
+            if len(selected) == 2:
+                break
     return tuple(selected)
 
 
@@ -541,6 +590,39 @@ def _exact_single_owner(state: _ValidatedPublicState):
     if len(player.confirmed_cards) != state.belief.external_unknown_count:
         return None
     return player
+
+
+def exact_public_hand_assignment(
+    observation: object,
+) -> dict[int, tuple[str, ...]] | None:
+    """Return all current hands only when public conservation proves them.
+
+    The caller receives no hidden state. External cards are exposed here only
+    when one external player's confirmed hand accounts for the full unseen
+    pool; finished players are exactly empty. Ambiguous or malformed payloads
+    return None.
+    """
+    state = _validated_public_state(observation)
+    if state is None:
+        return None
+    owner = _exact_single_owner(state)
+    if owner is None:
+        return None
+    assigned: dict[int, tuple[str, ...]] = {}
+    for player_id, row in state.player_rows.items():
+        if player_id == state.my_player_id:
+            assigned[player_id] = tuple(state.my_hand)
+        elif bool(row.get("finished")):
+            assigned[player_id] = ()
+        elif player_id == int(owner.player_id):
+            assigned[player_id] = tuple(owner.confirmed_cards)
+        else:
+            return None
+    if sum(len(cards) for cards in assigned.values()) != sum(
+        int(row.get("hand_count", 0)) for row in state.player_rows.values()
+    ):
+        return None
+    return assigned
 
 
 def _next_active_player(state: _ValidatedPublicState) -> int | None:
@@ -693,7 +775,7 @@ def _player_response_profile(
         return {
             "text": f"{label}{text}", "status": "unknown", "patterns": (),
             "resource_signature": (), "relation": relation,
-            "is_next": is_next, "urgent": urgent,
+            "is_next": is_next, "urgent": urgent, "pass_signature": (),
         }
 
     if response_summary is None:
@@ -741,7 +823,199 @@ def _player_response_profile(
         "text": f"{label}{response}{resource_text}", "status": status,
         "patterns": patterns, "resource_signature": resource_signature,
         "relation": relation, "is_next": is_next, "urgent": urgent,
+        "pass_signature": (),
     }
+
+
+def _public_pass_evidence(
+    observation: dict[str, object],
+    state: _ValidatedPublicState,
+    engine: BaseRuleEngine,
+) -> tuple[_PublicPassEvidence, ...]:
+    """Extract complete-history pass opportunities without treating them as absence.
+
+    A later public action that beats the passed-over lead proves its carrier
+    cards were in that player's hand at the earlier pass. Otherwise the event
+    remains ambiguous: it may have been no response or a strategic pass. Neither
+    outcome changes a hard card domain.
+    """
+    history = observation.get("history")
+    current_round = observation.get("current_round")
+    if not isinstance(history, dict) or not isinstance(current_round, dict):
+        return ()
+    actions = history.get("actions")
+    step_no = current_round.get("step_no")
+    current_round_no = current_round.get("round_no")
+    if (
+        not isinstance(actions, list)
+        or type(step_no) is not int or step_no != len(actions)
+        or type(current_round_no) is not int or current_round_no < 1
+    ):
+        return ()
+
+    remaining = {player_id: 27 for player_id in state.player_rows}
+    finished_order: list[int] = []
+    expected_player: int | None = None
+    round_no = 1
+    lead: Action | None = None
+    lead_raw: dict[str, object] | None = None
+    leader_id: int | None = None
+    pending: tuple[int, ...] = ()
+    passes: list[tuple[int, int, int, Action]] = []
+    parsed_plays: list[tuple[int, int, Action]] = []
+
+    def active_players() -> set[int]:
+        return {player_id for player_id, count in remaining.items() if count > 0}
+
+    def clockwise_after(player_id: int, active: set[int]) -> tuple[int, ...]:
+        ordered = []
+        for offset in range(1, 5):
+            candidate = ((player_id + offset - 1) % 4) + 1
+            if candidate in active and candidate != player_id:
+                ordered.append(candidate)
+        return tuple(ordered)
+
+    def next_round_leader(player_id: int, active: set[int]) -> int | None:
+        if player_id in active:
+            return player_id
+        partner = ((player_id + 1) % 4) + 1
+        if partner in active:
+            return partner
+        ordered = clockwise_after(player_id, active)
+        return ordered[0] if ordered else None
+
+    def reset_after_round(played_by: int) -> bool:
+        nonlocal lead, lead_raw, leader_id, pending, expected_player, round_no
+        next_player = next_round_leader(played_by, active_players())
+        if next_player is None:
+            return False
+        lead = None
+        lead_raw = None
+        leader_id = None
+        pending = ()
+        expected_player = next_player
+        round_no += 1
+        return True
+
+    for index, raw in enumerate(actions):
+        if not isinstance(raw, dict):
+            return ()
+        item_step = raw.get("step_no")
+        item_round = raw.get("round_no")
+        player_id = raw.get("player_id")
+        pattern = raw.get("declared_pattern")
+        if (
+            type(item_step) is not int or item_step != index + 1
+            or type(item_round) is not int or item_round != round_no
+            or type(player_id) is not int or player_id not in state.player_rows
+            or not isinstance(pattern, str)
+            or remaining.get(player_id, 0) <= 0
+            or (expected_player is not None and player_id != expected_player)
+        ):
+            return ()
+
+        if pattern == "pass":
+            if (
+                lead is None or leader_id is None or player_id not in pending
+                or raw.get("carrier_cards") != []
+                or raw.get("declared_cards") != []
+            ):
+                return ()
+            passes.append((item_step, round_no, player_id, lead))
+            pending = tuple(item for item in pending if item != player_id)
+            if pending:
+                expected_player = pending[0]
+            elif not reset_after_round(leader_id):
+                return ()
+            continue
+
+        action = _pattern_action(raw, player_id)
+        if (
+            action is None or action.declared_pattern is None
+            or len(action.declared_cards) != len(action.carrier_cards)
+            or not action.carrier_cards
+        ):
+            return ()
+        try:
+            detected = engine.detect_pattern(action.declared_cards)
+        except (TypeError, ValueError):
+            return ()
+        if detected.type != action.declared_pattern:
+            return ()
+        if lead is not None and not engine.can_beat(action, lead, state.level):
+            return ()
+        carrier_count = len(action.carrier_cards)
+        if carrier_count > remaining[player_id]:
+            return ()
+        remaining[player_id] -= carrier_count
+        if remaining[player_id] == 0:
+            finished_order.append(player_id)
+            # A live observation cannot follow the third finisher.
+            if len(finished_order) >= 3:
+                return ()
+        parsed_plays.append((item_step, player_id, action))
+        lead = action
+        lead_raw = raw
+        leader_id = player_id
+        pending = clockwise_after(player_id, active_players())
+        if pending:
+            expected_player = pending[0]
+        elif not reset_after_round(player_id):
+            return ()
+
+    if current_round_no != round_no:
+        return ()
+    if not actions and (
+        current_round_no != 1
+        or current_round.get("table_action") is not None
+    ):
+        return ()
+    if expected_player is None:
+        # The initial observation has not recorded an action yet.
+        expected_player = state.my_player_id
+    if current_round.get("current_player_id") != expected_player:
+        return ()
+    if any(
+        int(state.player_rows[player_id].get("hand_count", -1)) != count
+        for player_id, count in remaining.items()
+    ):
+        return ()
+    if history.get("finish_order") != finished_order:
+        return ()
+    current_table = current_round.get("table_action")
+    if lead is None:
+        if current_table is not None:
+            return ()
+    elif (
+        not isinstance(current_table, dict)
+        or lead_raw is None
+        or _response_signature(current_table) != _response_signature(lead_raw)
+        or pending[:1] != (expected_player,)
+    ):
+        return ()
+
+    evidence: list[_PublicPassEvidence] = []
+    for step, _pass_round, player_id, passed_lead in passes:
+        proving_step: int | None = None
+        for later_step, later_player, later in parsed_plays:
+            if later_step <= step or later_player != player_id:
+                continue
+            if engine.can_beat(later, passed_lead, state.level):
+                proving_step = later_step
+                break
+        evidence.append(
+            _PublicPassEvidence(
+                player_id=player_id,
+                step_no=step,
+                lead_action=passed_lead,
+                lead_pattern=(
+                    passed_lead.declared_pattern.value
+                    if passed_lead.declared_pattern is not None else ""
+                ),
+                response_confirmed_step_no=proving_step,
+            )
+        )
+    return tuple(evidence)
 
 
 def _candidate_response_profiles(
@@ -749,6 +1023,7 @@ def _candidate_response_profiles(
     candidates: tuple[dict[str, object], ...],
     engine: BaseRuleEngine,
     owner: object | None,
+    pass_evidence: tuple[_PublicPassEvidence, ...] = (),
 ) -> dict[int, tuple[dict[str, object], ...]]:
     profiles_by_action: dict[int, list[dict[str, object]]] = {
         int(action["action_id"]): [] for action in candidates
@@ -819,6 +1094,33 @@ def _candidate_response_profiles(
                     summaries_by_signature.get(signature_by_action[action_id]),
                     confirmed,
                 )
+            candidate_action = lead_by_signature.get(signature_by_action[action_id])
+            matching_passes = tuple(
+                item for item in pass_evidence
+                if item.player_id == player_id
+                and candidate_action is not None
+                and engine.can_beat(candidate_action, item.lead_action, state.level)
+            )
+            if matching_passes:
+                latest = max(matching_passes, key=lambda item: item.step_no)
+                pass_state = (
+                    "confirmed_selective"
+                    if latest.response_confirmed_step_no is not None
+                    else "ambiguous"
+                )
+                profile["pass_signature"] = ((latest.lead_pattern, pass_state),)
+                lead_name = _SHORT_PATTERN.get(latest.lead_pattern, "牌型")
+                if latest.response_confirmed_step_no is None:
+                    pass_text = (
+                        f"历史软pass：曾对本候选可压的{lead_name}领出选择pass，"
+                        "当时无应手或策略让牌无法区分"
+                    )
+                else:
+                    pass_text = (
+                        f"历史软pass：后续公开牌证实曾持有可压该{lead_name}的应手仍pass；"
+                        "仅说明当时选择，当前持牌仍按公开上界"
+                    )
+                profile["text"] = f"{profile['text']}；{pass_text}"
             profiles_by_action[action_id].append(profile)
 
     return {action_id: tuple(profiles) for action_id, profiles in profiles_by_action.items()}
@@ -936,6 +1238,12 @@ def build_card_tracking_summary(
         lines.append(f"公开紧迫对手最少余{min(urgent_opponents)}张；这不是具体持牌事实。")
 
     engine = BaseRuleEngine()
+    pass_evidence = _public_pass_evidence(observation, state, engine)
+    if pass_evidence:
+        lines.append(
+            f"公开软线索={len(pass_evidence)}次可还原pass；只描述候选相关的历史持牌/让牌，"
+            "不改变未见牌归属或当前硬牌域。"
+        )
     profile_cache: dict[int, tuple[dict[str, object], ...]] = {}
     facts_cache: dict[int, _CandidateFacts] = {}
     comparisons = _candidate_pairs(
@@ -947,6 +1255,7 @@ def build_card_tracking_summary(
         profile_cache=profile_cache,
         facts_cache=facts_cache,
         preferred_action_ids=preferred_action_ids,
+        pass_evidence=pass_evidence,
         level=state.level,
     )
     for first, second in comparisons:
