@@ -1839,6 +1839,22 @@ class DeepSeekClient:
                 for action_id in contrast.action_ids
             } - selected
 
+        def response_selection_lane(contrast: CandidateContrast) -> str | None:
+            if contrast.kind != "follow_response_net_tradeoff":
+                return None
+            response = facts_by_id[contrast.action_ids[1]]
+            effect = candidate_response_net_effect(
+                facts_by_id[contrast.action_ids[0]], response,
+            )
+            if effect is None:
+                return None
+            uses_high_cost_route = (
+                response.pattern in _PRESSURE_PATTERNS
+                or effect.uses_wildcard
+                or effect.spends_control_resource
+            )
+            return "resource" if uses_high_cost_route else "ordinary"
+
         selected_contrasts: list[CandidateContrast] = []
         selected_keys: set[tuple[str, tuple[int, int]]] = set()
         selected_kind_counts: Counter[str] = Counter()
@@ -1887,6 +1903,39 @@ class DeepSeekClient:
                     feasible.append((cost, priority_key(contrast), contrast))
             if not feasible:
                 break
+            if selected_kind_counts["follow_response_net_tradeoff"] == 1:
+                selected_response = next(
+                    item for item in selected_contrasts
+                    if item.kind == "follow_response_net_tradeoff"
+                )
+                selected_lane = response_selection_lane(selected_response)
+                if selected_lane is not None:
+                    same_lane = [
+                        item for item in feasible
+                        if item[2].kind == "follow_response_net_tradeoff"
+                        and response_selection_lane(item[2]) == selected_lane
+                    ]
+                    other_lane = [
+                        item for item in feasible
+                        if item[2].kind == "follow_response_net_tradeoff"
+                        and response_selection_lane(item[2]) not in {None, selected_lane}
+                    ]
+                    if other_lane:
+                        best_same_priority = min(
+                            (item[1][:6] for item in same_lane), default=None,
+                        )
+                        best_other_priority = min(item[1][:6] for item in other_lane)
+                        # Keep urgency, recommendation, opening priority, and
+                        # finishing actions ahead of representational balance.
+                        # When those are tied, reserve the second slot for a
+                        # different response-cost family if one fits the same
+                        # endpoint budget.
+                        if best_same_priority is None or best_other_priority <= best_same_priority:
+                            feasible = [
+                                item for item in feasible
+                                if item[2].kind != "follow_response_net_tradeoff"
+                                or response_selection_lane(item[2]) != selected_lane
+                            ]
             _cost, _priority, chosen = min(feasible, key=lambda item: (item[0], item[1]))
             try_add(chosen)
             remaining.remove(chosen)

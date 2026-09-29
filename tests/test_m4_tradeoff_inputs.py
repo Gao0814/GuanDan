@@ -262,6 +262,35 @@ def _fresh_follow_game(
     return game
 
 
+def _sequence_follow_game_with_natural_bomb_split() -> GuanDanGame:
+    """Create a full deal where a legal straight response breaks a natural bomb."""
+    own_tokens = ["9S", "9H", "9C", "9D", "5S", "6H", "7C", "8D", "2H"]
+    leader_tokens = ["4S", "5H", "6C", "7D", "8H"]
+    hands = _deal(
+        own_tokens=own_tokens,
+        own_excluded_ranks={token[:-1] for token in own_tokens},
+        player_two_tokens=leader_tokens,
+        player_two_excluded_ranks={token[:-1] for token in leader_tokens},
+    )
+    game = GuanDanGame(
+        current_level_rank="2", preset_hands=hands, starting_player_id=2,
+    )
+    game.reset()
+    lead = _action(
+        game,
+        lambda item: item["declared_pattern"] == "straight"
+        and Counter(item["carrier_cards"]) == Counter(leader_tokens)
+        and item["wildcard_count"] == 0,
+    )
+    game.step(int(lead["action_id"]))
+    _step_pass(game)
+    _step_pass(game)
+    observation = game.observe()
+    assert observation["my_info"]["player_id"] == 1
+    assert observation["current_round"]["table_action"]["declared_pattern"] == "straight"
+    return game
+
+
 class M4TradeoffInputTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -572,6 +601,83 @@ class M4TradeoffInputTests(unittest.TestCase):
         for first_id, second_id in request_pairs:
             self.assertIn(int(first_id), visible)
             self.assertIn(int(second_id), visible)
+
+    def test_second_net_relation_balances_group_response_and_pressure_resources(self) -> None:
+        game = _sequence_follow_game_with_natural_bomb_split()
+        observation = game.observe()
+        actions = game.legal_actions()
+        facts = summarize_candidate_structures(observation, actions)
+        assert facts is not None
+        facts_by_id = {item.action_id: item for item in facts}
+        contrasts = summarize_candidate_contrasts(observation, actions)
+        assert contrasts is not None
+        net_contrasts = tuple(
+            item for item in contrasts if item.kind == "follow_response_net_tradeoff"
+        )
+        self.assertTrue(any(
+            facts_by_id[item.action_ids[1]].pattern == "straight"
+            and not facts_by_id[item.action_ids[1]].uses_wildcard
+            and not facts_by_id[item.action_ids[1]].consumes_control_resource
+            and candidate_response_net_effect(
+                facts_by_id[item.action_ids[0]], facts_by_id[item.action_ids[1]],
+            ).fragments_rank_group
+            for item in net_contrasts
+        ))
+
+        selected = DeepSeekClient._prompt_candidate_contrasts(observation, actions)
+        selected_net = tuple(
+            item for item in selected or ()
+            if item.kind == "follow_response_net_tradeoff"
+        )
+        self.assertEqual(len(selected_net), 2)
+
+        def lane(action_id: int) -> str:
+            fact = facts_by_id[action_id]
+            effect = candidate_response_net_effect(
+                facts_by_id[selected_net[0].action_ids[0]], fact,
+            )
+            assert effect is not None
+            return (
+                "resource"
+                if fact.pattern in {"bomb", "straight_flush", "joker_bomb"}
+                or effect.uses_wildcard or effect.spends_control_resource
+                else "ordinary"
+            )
+
+        lanes = {lane(item.action_ids[1]) for item in selected_net}
+        self.assertEqual(lanes, {"ordinary", "resource"})
+        self.assertTrue(any(facts_by_id[item.action_ids[1]].pattern == "straight" for item in selected_net))
+
+        pass_id = next(item.action_ids[0] for item in selected_net)
+        prompt, visible, _raw_count = self._factory_request(game, pass_id)
+        self.assertLessEqual(len(visible), 80)
+        request_pairs = re.findall(
+            r"action_id=(\d+) 为pass，[^\n]*?action_id=(\d+) 是当前合法", prompt,
+        )
+        self.assertEqual(len(request_pairs), 2)
+        self.assertEqual(
+            {
+                "resource"
+                if facts_by_id[int(action_id)].pattern in {"bomb", "straight_flush", "joker_bomb"}
+                or facts_by_id[int(action_id)].uses_wildcard
+                or facts_by_id[int(action_id)].consumes_control_resource
+                else "ordinary"
+                for _pass, action_id in request_pairs
+            },
+            {"ordinary", "resource"},
+        )
+        self.assertTrue(any(
+            facts_by_id[int(action_id)].pattern == "straight"
+            and not facts_by_id[int(action_id)].uses_wildcard
+            and not facts_by_id[int(action_id)].consumes_control_resource
+            for _pass, action_id in request_pairs
+        ))
+        self.assertTrue(any(
+            facts_by_id[int(action_id)].pattern in {"bomb", "straight_flush", "joker_bomb"}
+            or facts_by_id[int(action_id)].uses_wildcard
+            for _pass, action_id in request_pairs
+        ))
+        self.assertIn("拆动已识别同点组", prompt)
 
     def test_urgent_opponent_bomb_response_can_spend_wildcard_for_a_longer_bomb(self) -> None:
         game = _urgent_bomb_follow_game()
