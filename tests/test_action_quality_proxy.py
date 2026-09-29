@@ -126,7 +126,7 @@ class ActionQualityProxyTests(unittest.TestCase):
         self.assertTrue(all(sample.source_seed is not None and 900 <= sample.source_seed <= 919 for sample in self.samples[2:]))
         self.assertEqual(
             tuple((sample.canonical_candidate_count, sample.final_candidate_count) for sample in self.samples),
-            ((53, 24), (83, 52), (6, 6), (6, 6), (9, 9), (8, 4)),
+            ((53, 24), (83, 56), (6, 6), (6, 6), (9, 8), (8, 4)),
         )
         for sample in self.samples:
             observation = sample.game_snapshot.observe()

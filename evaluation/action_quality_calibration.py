@@ -72,14 +72,14 @@ _QUALITY_COMPARISONS = {
 # contract: each run takes the actual final IDs emitted by the existing queue.
 _H3_A8_CONTRACT = (
     ("opening_low_cost_single", "opening", 53, 24),
-    ("opening_neutral_soft_pair", "opening", 83, 52),
+    ("opening_neutral_soft_pair", "opening", 83, 56),
     ("midgame_1", "midgame", 6, 6),
     ("midgame_2", "midgame", 6, 6),
-    ("endgame_1", "endgame", 9, 9),
+    ("endgame_1", "endgame", 9, 8),
     ("endgame_2", "near_open_endgame", 8, 4),
 )
 _H3_A9_CONTRACT = (
-    ("opening_1", "opening", 77, 55),
+    ("opening_1", "opening", 77, 58),
     # Preserve seed 921's original step-zero state.  If the local opening
     # formula resolves it, the queue marks and disables that shortcut only
     # for counterfactual model-candidate calibration; it never substitutes a
@@ -88,8 +88,8 @@ _H3_A9_CONTRACT = (
     ("opening_2", "opening", 74, 49),
     ("midgame_1", "midgame", 25, 13),
     ("midgame_2", "midgame", 11, 11),
-    ("endgame_1", "critical_endgame", 8, 8),
-    ("endgame_2", "near_open_endgame", 9, 9),
+    ("endgame_1", "critical_endgame", 8, 7),
+    ("endgame_2", "near_open_endgame", 9, 6),
 )
 _FIXED_CONTRACTS = {
     **{

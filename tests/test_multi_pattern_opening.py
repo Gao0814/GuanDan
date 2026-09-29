@@ -1031,7 +1031,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
         )
         expected = {
             "low_cost_single": (53, 24, 9882, "exp_soft_single_cost_probe_001"),
-            "neutral_soft_pair": (83, 52, 15233, "exp_soft_pair_probe_001"),
+            "neutral_soft_pair": (83, 56, 15233, "exp_soft_pair_probe_001"),
             "seed29": (80, 52, 15680, "exp_soft_pair_probe_001"),
         }
         covered_patterns: set[str] = set()
@@ -1245,7 +1245,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
         )
         expected = {
             "low_cost_single": (53, 24, 9340, 16336, "exp_soft_single_cost_probe_001", 4100, 4700, 680, 1520),
-            "neutral_soft_pair": (83, 52, 14500, 23358, "exp_soft_pair_probe_001", 8600, 9200, 650, 1460),
+            "neutral_soft_pair": (83, 56, 14500, 23358, "exp_soft_pair_probe_001", 8600, 9200, 650, 1460),
             "seed29": (80, 52, 15000, 24723, "exp_soft_pair_probe_001", 8550, 9250, 650, 1460),
         }
 

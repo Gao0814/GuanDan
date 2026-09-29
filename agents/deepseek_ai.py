@@ -752,6 +752,7 @@ class DeepSeekAIAgent(BaseAgent):
             opening_formula_contrasts=opening_formula_contrasts,
             opening_formula_recommendation=opening_formula_recommendation,
             rag_context=rag_context,
+            project_prompt_suits=True,
         )
 
         history = dict(observation.get("history", {}))

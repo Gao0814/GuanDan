@@ -64,17 +64,17 @@ class ActionQualityCalibrationTests(unittest.TestCase):
             tuple((row.phase, row.canonical_candidate_count, row.final_candidate_count) for row in self.report.samples),
             (
                 ("opening", 53, 24),
-                ("opening", 83, 52),
+                ("opening", 83, 56),
                 ("midgame", 6, 6),
                 ("midgame", 6, 6),
-                ("endgame", 9, 9),
+                ("endgame", 9, 8),
                 ("near_open_endgame", 8, 4),
-                ("opening", 77, 55),
+                ("opening", 77, 58),
                 ("opening", 74, 49),
                 ("midgame", 25, 13),
                 ("midgame", 11, 11),
-                ("critical_endgame", 8, 8),
-                ("near_open_endgame", 9, 9),
+                ("critical_endgame", 8, 7),
+                ("near_open_endgame", 9, 6),
             ),
         )
         self.assertEqual(tuple(row.status for row in self.report.samples), (CalibrationStatus.READY,) * 12)

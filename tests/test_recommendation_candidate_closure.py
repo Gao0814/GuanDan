@@ -311,6 +311,7 @@ class RecommendationCandidateClosureTests(unittest.TestCase):
             phase_context=classify_game_phase(observation),
             strategy_recommendation=recommendation,
             observation=observation,
+            project_prompt_suits=True,
         )
         returned_id = int(expected_actions[-1]["action_id"])
         captured: dict[str, object] = {}

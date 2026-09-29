@@ -277,6 +277,47 @@ class TestRules(unittest.TestCase):
             (),
         )
 
+    def test_public_straight_flush_resources_reuse_engine_natural_and_wildcard_rules(self) -> None:
+        natural = self.rules.public_straight_flush_resources(
+            _cards("9S", "10S", "JS", "QS", "KS"),
+            current_level_rank="2",
+        )
+        self.assertEqual(len(natural), 1)
+        self.assertEqual(natural[0].suit, "S")
+        self.assertEqual(natural[0].rank_window, ("9", "10", "J", "Q", "K"))
+        self.assertEqual(natural[0].wildcard_count, 0)
+        self.assertEqual(
+            tuple(card.suit for card in natural[0].carrier_cards),
+            ("S", "S", "S", "S", "S"),
+        )
+
+        wildcard_completed = self.rules.public_straight_flush_resources(
+            _cards("9D", "10D", "JD", "QD", "2H"),
+            current_level_rank="2",
+        )
+        self.assertEqual(len(wildcard_completed), 2)
+        self.assertEqual(
+            {item.rank_window for item in wildcard_completed},
+            {
+                ("8", "9", "10", "J", "Q"),
+                ("9", "10", "J", "Q", "K"),
+            },
+        )
+        self.assertTrue(all(item.suit == "D" and item.wildcard_count == 1 for item in wildcard_completed))
+        self.assertEqual(
+            {
+                tuple((card.rank, card.suit) for card in item.wildcard_declared_as)
+                for item in wildcard_completed
+            },
+            {(("8", "D"),), (("K", "D"),)},
+        )
+
+        with self.assertRaises(ValueError):
+            self.rules.public_straight_flush_resources(
+                _cards("9S", "9S", "9S", "10S", "JS"),
+                current_level_rank="2",
+            )
+
     def test_public_response_resource_counts_are_capacity_filtered_and_deduplicated(self) -> None:
         hand_domain = tuple(build_double_deck())
         leading = _action(2, PatternType.SINGLE, ("3",))

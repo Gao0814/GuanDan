@@ -108,6 +108,23 @@ class PublicResponseSummary:
     resource_counts: tuple[PublicResponseResourceCount, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class PublicStraightFlushResource:
+    """One rule-generated straight-flush route from an explicit physical hand.
+
+    This read-only resource description contains no action ID or game state and
+    cannot be submitted to ``step``.  It lets AI-facing code compare what a
+    public, explicit hand would still be able to construct after spending cards
+    without duplicating wildcard or sequence rules.
+    """
+
+    suit: str
+    rank_window: tuple[str, ...]
+    carrier_cards: tuple[Card, ...]
+    wildcard_count: int
+    wildcard_declared_as: tuple[Card, ...]
+
+
 def _validate_current_level_rank(current_level_rank: str) -> None:
     if current_level_rank not in {"2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"}:
         raise ValueError("current_level_rank must be one of 2-10,J,Q,K,A")
@@ -294,6 +311,82 @@ def _carrier_is_payable(action: Action, hand_cards: tuple[Card, ...]) -> bool:
 class BaseRuleEngine:
     def detect_pattern(self, cards: tuple[Card, ...]) -> Pattern:
         return detect_pattern(cards)
+
+    def public_straight_flush_resources(
+        self,
+        hand_cards: tuple[Card, ...],
+        current_level_rank: str,
+    ) -> tuple[PublicStraightFlushResource, ...]:
+        """Return rule-generated straight-flush resources for an explicit hand.
+
+        The returned objects are resource facts, not canonical actions: they
+        have no player, action ID, or state-transition capability.  Generation
+        remains delegated to the same engine routine used by legal actions, so
+        wildcard completion and sequence boundaries stay aligned with the
+        rules of the current profile.
+        """
+
+        _validate_current_level_rank(current_level_rank)
+        if not isinstance(hand_cards, tuple):
+            raise ValueError("hand_cards must be a tuple of physical cards")
+
+        counts: Counter[tuple[str, str | None]] = Counter()
+        for card in hand_cards:
+            if not isinstance(card, Card):
+                raise ValueError("hand_cards must contain physical Card values")
+            is_normal = card.rank in _NON_JOKER_RANKS and card.suit in _SUIT_ORDER
+            is_joker_card = card.rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} and card.suit is None
+            if not (is_normal or is_joker_card):
+                raise ValueError("hand_cards must contain physical cards")
+            key = (card.rank, card.suit)
+            counts[key] += 1
+            if counts[key] > 2:
+                raise ValueError("hand_cards exceeds the double-deck token pool")
+
+        generated = self._generate_straight_flush_actions(
+            player_id=0,
+            hand_cards=hand_cards,
+            current_level_rank=current_level_rank,
+        )
+        resources: dict[tuple[object, ...], PublicStraightFlushResource] = {}
+        for action in generated:
+            declared_suits = {card.suit for card in action.declared_cards}
+            if len(declared_suits) != 1:
+                continue
+            suit = next(iter(declared_suits))
+            if suit not in _SUIT_ORDER or len(action.declared_cards) != 5:
+                continue
+            key = (
+                suit,
+                tuple(card.rank for card in action.declared_cards),
+                tuple((card.rank, card.suit) for card in action.carrier_cards),
+                action.wildcard_count,
+                tuple(
+                    (item.declared_as.rank, item.declared_as.suit)
+                    for item in action.wildcard_info
+                ),
+            )
+            resources[key] = PublicStraightFlushResource(
+                suit=suit,
+                rank_window=tuple(card.rank for card in action.declared_cards),
+                carrier_cards=action.carrier_cards,
+                wildcard_count=action.wildcard_count,
+                wildcard_declared_as=tuple(item.declared_as for item in action.wildcard_info),
+            )
+
+        return tuple(
+            resources[key]
+            for key in sorted(
+                resources,
+                key=lambda item: (
+                    _SUIT_ORDER.index(str(item[0])),
+                    tuple(_RANK_STRENGTH_BASE.get(str(rank), 0) for rank in item[1]),
+                    int(item[3]),
+                    item[4],
+                    item[2],
+                ),
+            )
+        )
 
     def public_beating_pattern_types(
         self,

@@ -255,11 +255,11 @@ class H3ModelProbeFixtureTests(unittest.TestCase):
 
     def test_other_six_fixtures_keep_their_qualified_projection(self) -> None:
         expected = {
-            "bomb_residual": (10, 8, "endgame", "critical_endgame", True, True),
-            "pair_cleanup": (7, 6, "endgame", "critical_endgame", True, False),
+            "bomb_residual": (10, 7, "endgame", "critical_endgame", True, True),
+            "pair_cleanup": (7, 5, "endgame", "critical_endgame", True, False),
             "teammate_controls": (3, 3, "endgame", "critical_endgame", False, False),
             "danger_block": (3, 3, "endgame", "critical_endgame", False, False),
-            "short_endgame": (5, 5, "endgame", "near_open_endgame", False, False),
+            "short_endgame": (5, 4, "endgame", "near_open_endgame", False, False),
             "bomb_wildcard_soft": (30, 26, "endgame", "critical_endgame", False, True),
         }
         fixtures = {fixture.name: fixture for fixture in build_h3_model_probe_fixtures()}

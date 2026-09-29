@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import re
 import time
@@ -43,6 +43,8 @@ from agents.short_endgame_planner import (
     analyze_free_lead_grouping,
     free_lead_grouping_comparison_pairs,
 )
+from engine.cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card, sort_cards
+from engine.rules import BaseRuleEngine, PublicStraightFlushResource
 
 if TYPE_CHECKING:
     from agents.card_confidence_prompt import CardConfidencePromptPayload
@@ -105,6 +107,10 @@ _RANK_ORDER: dict[str, int] = {
     "J": 11, "Q": 12, "K": 13, "A": 14, "2": 15, "SJ": 16, "BJ": 17,
 }
 _PRESSURE_PATTERNS = {"bomb", "straight_flush", "joker_bomb"}
+_SUIT_RESOURCE_PATTERNS = frozenset(
+    {"single", "pair", "triple", "triple_with_pair", "straight", "pair_straight", "steel_plate"}
+)
+_MAX_PROMPT_SUIT_RESOURCE_PAIRS = 2
 _RESIDUAL_USE_RELATION_KINDS = frozenset(
     {
         "natural_pair_single", "natural_group_single", "natural_sequence_single", "sequence_structure_loss",
@@ -245,6 +251,38 @@ class DeepSeekSuggestion:
 
     action_id: int | None
     reasoning: str | None
+
+
+class _ProjectedPromptAction(dict[str, object]):
+    """Ephemeral prompt-only view retaining its original canonical fields."""
+
+    __slots__ = (
+        "prompt_signature",
+        "prompt_carrier_cards",
+        "suit_resource_base",
+        "suit_resource_profile",
+        "suit_resource_text",
+        "suit_resource_row_text",
+    )
+
+    def __init__(
+        self,
+        action: dict[str, object],
+        *,
+        prompt_signature: tuple[object, ...],
+        prompt_carrier_cards: tuple[str, ...],
+        suit_resource_base: tuple[object, ...],
+        suit_resource_profile: tuple[object, ...],
+        suit_resource_text: str,
+        suit_resource_row_text: str = "",
+    ) -> None:
+        super().__init__(action)
+        self.prompt_signature = prompt_signature
+        self.prompt_carrier_cards = prompt_carrier_cards
+        self.suit_resource_base = suit_resource_base
+        self.suit_resource_profile = suit_resource_profile
+        self.suit_resource_text = suit_resource_text
+        self.suit_resource_row_text = suit_resource_row_text
 
 
 class DeepSeekTransport(Protocol):
@@ -514,8 +552,14 @@ class DeepSeekClient:
         action_id = action.get("action_id")
         pattern = str(action.get("declared_pattern", ""))
         wildcard_count = DeepSeekClient._coerce_int(action.get("wildcard_count"), default=0)
+        projected_carriers = getattr(action, "prompt_carrier_cards", None)
+        carrier_payload: object = (
+            list(projected_carriers)
+            if isinstance(projected_carriers, tuple)
+            else action.get("carrier_cards", [])
+        )
         carrier_text = DeepSeekClient._bounded_text(
-            DeepSeekClient._compact_json(action.get("carrier_cards", [])),
+            DeepSeekClient._compact_json(carrier_payload),
             PROMPT_MAX_ACTION_CARRIER_CHARS,
         )
         action_id_text = DeepSeekClient._compact_json(action_id)
@@ -565,13 +609,22 @@ class DeepSeekClient:
                     PROMPT_MAX_WILDCARD_INFO_CHARS,
                 )
             )
+        suit_resource_text = getattr(action, "suit_resource_row_text", "")
+        if isinstance(suit_resource_text, str) and suit_resource_text:
+            fields.append(
+                "花色资源="
+                + DeepSeekClient._bounded_text(
+                    suit_resource_text,
+                    PROMPT_MAX_ACTION_DISPLAY_CHARS,
+                )
+            )
         if residual_structure is not None:
             if compact_opening:
+                clears = "是" if residual_structure.clears_played_rank_groups else "否"
                 fields.append(
-                    "after=clear_groups:"
-                    f"{str(residual_structure.clears_played_rank_groups).lower()},"
-                    f"singletons:{residual_structure.residual_singleton_rank_count},"
-                    f"groups_est:{residual_structure.estimated_remaining_rank_groups}"
+                    f"after=clear:{clears},"
+                    f"single:{residual_structure.residual_singleton_rank_count},"
+                    f"groups:{residual_structure.estimated_remaining_rank_groups}"
                 )
             else:
                 clears = "是" if residual_structure.clears_played_rank_groups else "否"
@@ -793,7 +846,413 @@ class DeepSeekClient:
         return DeepSeekClient._unique_actions_by_signature(actions)
 
     @staticmethod
+    def _physical_card(token: object) -> Card | None:
+        if not isinstance(token, str):
+            return None
+        if token in {SMALL_JOKER_RANK, BIG_JOKER_RANK}:
+            return Card(rank=token)
+        if len(token) < 2 or token[-1] not in _SUIT_DISPLAY:
+            return None
+        rank = token[:-1]
+        if rank not in _RANK_ORDER or rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK}:
+            return None
+        return Card(rank=rank, suit=token[-1])
+
+    @staticmethod
+    def _public_flush_resource_key(
+        resource: PublicStraightFlushResource,
+    ) -> tuple[object, ...]:
+        return (
+            resource.suit,
+            resource.rank_window,
+            tuple((card.rank, card.suit) for card in resource.carrier_cards),
+            resource.wildcard_count,
+            tuple((card.rank, card.suit) for card in resource.wildcard_declared_as),
+        )
+
+    @staticmethod
+    def _flush_resource_label(key: tuple[object, ...]) -> str:
+        suit = str(key[0])
+        ranks = tuple(str(rank) for rank in key[1])
+        if not ranks:
+            return "同花顺路线"
+        label = f"{suit}{ranks[0]}-{ranks[-1]}"
+        return label + ("W" if int(key[3]) else "")
+
+    @staticmethod
+    def _prompt_projection_resource_text(
+        *,
+        lost_routes: tuple[tuple[object, ...], ...],
+        gained_routes: tuple[tuple[object, ...], ...],
+        wildcard_spent: int,
+        wildcard_count: int,
+        wildcard_token: str,
+        before_route_count: int,
+        after_route_count: int,
+    ) -> str:
+        parts: list[str] = []
+        if lost_routes or gained_routes:
+            route_parts: list[str] = []
+            if lost_routes:
+                labels = [DeepSeekClient._flush_resource_label(item) for item in lost_routes[:2]]
+                remainder = len(lost_routes) - len(labels)
+                route_parts.append("-" + ",".join(labels))
+                if remainder:
+                    route_parts.append(f"more{remainder}")
+            if gained_routes:
+                labels = [DeepSeekClient._flush_resource_label(item) for item in gained_routes[:2]]
+                remainder = len(gained_routes) - len(labels)
+                route_parts.append("+" + ",".join(labels))
+                if remainder:
+                    route_parts.append(f"more{remainder}")
+            parts.append(f"SF{before_route_count}>{after_route_count}")
+            if route_parts:
+                parts[-1] += "(" + ",".join(route_parts) + ")"
+        if wildcard_spent:
+            natural_count = wildcard_spent - wildcard_count
+            parts.append(
+                f"{wildcard_token}-{wildcard_spent}(N{natural_count}/W{wildcard_count})"
+            )
+        return ";".join(parts)
+
+    @staticmethod
+    def _project_prompt_actions(
+        observation: object,
+        legal_actions: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        """Build a fail-closed, request-local suit-equivalence prompt view.
+
+        Canonical action dictionaries are copied, never edited.  Only the
+        ordinary candidate signature and carrier text are projected; the
+        original action ID, declaration, physical carriers, and all engine
+        payloads remain available for validation and selection.
+        """
+        if legal_actions and any(isinstance(action, _ProjectedPromptAction) for action in legal_actions) and all(
+            isinstance(action, _ProjectedPromptAction)
+            or (
+                isinstance(action, dict)
+                and str(action.get("declared_pattern", "")) not in _SUIT_RESOURCE_PATTERNS
+            )
+            for action in legal_actions
+        ):
+            return list(legal_actions)
+        if not isinstance(observation, dict):
+            return legal_actions
+        my_info = observation.get("my_info")
+        current_round = observation.get("current_round")
+        if not isinstance(my_info, dict) or not isinstance(current_round, dict):
+            return legal_actions
+        tokens = my_info.get("hand_cards")
+        hand_count = my_info.get("hand_count")
+        player_id = my_info.get("player_id")
+        level = current_round.get("current_level_rank")
+        if (
+            not isinstance(tokens, list)
+            or type(hand_count) is not int
+            or hand_count != len(tokens)
+            or type(player_id) is not int
+            or current_round.get("current_player_id") != player_id
+            or not isinstance(level, str)
+            or level not in _RANK_ORDER
+        ):
+            return legal_actions
+
+        try:
+            hand_counter: Counter[str] = Counter()
+            hand_cards: list[Card] = []
+            for token in tokens:
+                card = DeepSeekClient._physical_card(token)
+                if card is None:
+                    return legal_actions
+                token_text = str(token)
+                hand_counter[token_text] += 1
+                if hand_counter[token_text] > 2:
+                    return legal_actions
+                hand_cards.append(card)
+            if any(
+                not isinstance(action, dict) or type(action.get("action_id")) is not int
+                for action in legal_actions
+            ):
+                return legal_actions
+            if len({int(action["action_id"]) for action in legal_actions}) != len(legal_actions):
+                return legal_actions
+
+            rule_engine = BaseRuleEngine()
+            before_resources = rule_engine.public_straight_flush_resources(
+                sort_cards(tuple(hand_cards)), level,
+            )
+            before_by_key = {
+                DeepSeekClient._public_flush_resource_key(item): item
+                for item in before_resources
+            }
+            before_keys = tuple(sorted(before_by_key))
+            wildcard_token = f"{level}H"
+            wildcard_before = hand_counter.get(wildcard_token, 0)
+            residual_route_cache: dict[
+                tuple[tuple[str, int], ...], tuple[tuple[object, ...], ...]
+            ] = {}
+            projected: list[dict[str, object]] = []
+
+            for action in legal_actions:
+                pattern = str(action.get("declared_pattern", ""))
+                if pattern not in _SUIT_RESOURCE_PATTERNS:
+                    projected.append(action)
+                    continue
+
+                carriers = action.get("carrier_cards")
+                declared = action.get("declared_cards")
+                wildcard_count = action.get("wildcard_count")
+                wildcard_info = action.get("wildcard_info")
+                action_id = action.get("action_id")
+                if (
+                    not isinstance(carriers, list)
+                    or not carriers
+                    or not isinstance(declared, list)
+                    or not declared
+                    or type(wildcard_count) is not int
+                    or wildcard_count < 0
+                    or not isinstance(wildcard_info, list)
+                    or type(action_id) is not int
+                ):
+                    return legal_actions
+                used = Counter(str(token) for token in carriers)
+                if any(
+                    DeepSeekClient._physical_card(token) is None
+                    or count > hand_counter.get(token, 0)
+                    for token, count in used.items()
+                ):
+                    return legal_actions
+                declared_ranks = tuple(_rank_of(str(token)) for token in declared)
+                if (
+                    len(wildcard_info) != wildcard_count
+                    or used.get(wildcard_token, 0) < wildcard_count
+                ):
+                    return legal_actions
+                wildcard_declared_ranks: list[str] = []
+                for item in wildcard_info:
+                    if (
+                        not isinstance(item, dict)
+                        or item.get("carrier_card") != wildcard_token
+                        or not isinstance(item.get("declared_as"), str)
+                    ):
+                        return legal_actions
+                    declared_as = _rank_of(str(item["declared_as"]))
+                    if declared_as not in _RANK_ORDER:
+                        return legal_actions
+                    wildcard_declared_ranks.append(declared_as)
+                natural_carriers = used.copy()
+                natural_carriers[wildcard_token] -= wildcard_count
+                if natural_carriers[wildcard_token] <= 0:
+                    natural_carriers.pop(wildcard_token, None)
+                carrier_ranks = Counter()
+                for token, count in natural_carriers.items():
+                    carrier_ranks[_rank_of(token)] += count
+                if carrier_ranks + Counter(wildcard_declared_ranks) != Counter(declared_ranks):
+                    return legal_actions
+
+                residual = hand_counter.copy()
+                residual.subtract(used)
+                residual = Counter({token: count for token, count in residual.items() if count > 0})
+                residual_key = tuple(sorted(residual.items()))
+                route_keys = residual_route_cache.get(residual_key)
+                if route_keys is None:
+                    residual_cards: list[Card] = []
+                    for token, count in residual.items():
+                        card = DeepSeekClient._physical_card(token)
+                        if card is None:
+                            return legal_actions
+                        residual_cards.extend([card] * count)
+                    after_resources = rule_engine.public_straight_flush_resources(
+                        sort_cards(tuple(residual_cards)), level,
+                    )
+                    route_keys = tuple(sorted({
+                        DeepSeekClient._public_flush_resource_key(item)
+                        for item in after_resources
+                    }))
+                    residual_route_cache[residual_key] = route_keys
+
+                after_key_set = set(route_keys)
+                before_key_set = set(before_keys)
+                lost_routes = tuple(sorted(before_key_set - after_key_set))
+                gained_routes = tuple(sorted(after_key_set - before_key_set))
+                wildcard_after = residual.get(wildcard_token, 0)
+                wildcard_spent = wildcard_before - wildcard_after
+                resource_profile: tuple[object, ...] = (
+                    lost_routes,
+                    gained_routes,
+                    wildcard_spent,
+                    wildcard_after,
+                )
+                base_signature: tuple[object, ...] = (pattern, declared_ranks)
+                residual_rank_counts = Counter(
+                    _rank_of(token) for token, count in residual.items() for _ in range(count)
+                )
+                rank_key = tuple(sorted(
+                    residual_rank_counts.items(),
+                    key=lambda item: (_RANK_ORDER.get(item[0], 0), item[0]),
+                ))
+                wildcard_declared_key = tuple(sorted(
+                    wildcard_declared_ranks,
+                    key=lambda rank: (_RANK_ORDER.get(rank, 0), rank),
+                ))
+                projected_signature: tuple[object, ...] = (
+                    "ordinary-rank-projection",
+                    base_signature,
+                    rank_key,
+                    route_keys,
+                    wildcard_count,
+                    wildcard_declared_key,
+                    wildcard_after,
+                    wildcard_spent,
+                )
+
+                display_carriers: list[str] = []
+                for token in carriers:
+                    token_text = str(token)
+                    if token_text == wildcard_token:
+                        display_carriers.append(token_text)
+                    else:
+                        display_carriers.append(_rank_of(token_text))
+                resource_text = DeepSeekClient._prompt_projection_resource_text(
+                    lost_routes=lost_routes,
+                    gained_routes=gained_routes,
+                    wildcard_spent=wildcard_spent,
+                    wildcard_count=wildcard_count,
+                    wildcard_token=wildcard_token,
+                    before_route_count=len(before_keys),
+                    after_route_count=len(route_keys),
+                )
+                projected.append(_ProjectedPromptAction(
+                    action,
+                    prompt_signature=projected_signature,
+                    prompt_carrier_cards=tuple(display_carriers),
+                    suit_resource_base=base_signature,
+                    suit_resource_profile=resource_profile,
+                    suit_resource_text=resource_text,
+                ))
+            candidates_by_base: dict[tuple[object, ...], list[_ProjectedPromptAction]] = {}
+            for action in projected:
+                if isinstance(action, _ProjectedPromptAction):
+                    candidates_by_base.setdefault(action.suit_resource_base, []).append(action)
+            for candidates in candidates_by_base.values():
+                if len({item.suit_resource_profile for item in candidates}) <= 1:
+                    continue
+                for action in candidates:
+                    action.suit_resource_row_text = action.suit_resource_text
+            return projected
+        except Exception:
+            # The prior prompt path is the safe fallback if an observation or
+            # rule-resource projection cannot be validated.
+            return legal_actions
+
+    @staticmethod
+    def _prompt_suit_resource_groups(
+        actions: list[dict[str, object]],
+    ) -> tuple[tuple[int, int], ...]:
+        """Select a small set of same-pattern/rank candidates with distinct costs."""
+        grouped: dict[tuple[object, ...], list[_ProjectedPromptAction]] = {}
+        for action in actions:
+            if not isinstance(action, _ProjectedPromptAction):
+                continue
+            if type(action.get("action_id")) is not int:
+                continue
+            grouped.setdefault(action.suit_resource_base, []).append(action)
+
+        choices: list[tuple[int, int, tuple[int, int], tuple[object, ...], str]] = []
+        for candidates in grouped.values():
+            best: tuple[int, tuple[int, int]] | None = None
+            best_profiles: tuple[object, ...] | None = None
+            best_kind = "routes"
+            for index, first in enumerate(candidates):
+                for second in candidates[index + 1:]:
+                    if first.suit_resource_profile == second.suit_resource_profile:
+                        continue
+                    first_lost, first_gained, first_spent, first_remaining = first.suit_resource_profile
+                    second_lost, second_gained, second_spent, second_remaining = second.suit_resource_profile
+                    difference = (
+                        5 * abs(int(first_spent) - int(second_spent))
+                        + 3 * len(set(first_lost) ^ set(second_lost))
+                        + 2 * len(set(first_gained) ^ set(second_gained))
+                        + abs(int(first_remaining) - int(second_remaining))
+                    )
+                    if difference <= 0:
+                        continue
+                    action_ids = tuple(sorted((int(first["action_id"]), int(second["action_id"]))))
+                    candidate = (difference, action_ids)
+                    if best is None or (-candidate[0], candidate[1]) < (-best[0], best[1]):
+                        best = candidate
+                        best_profiles = tuple(sorted(
+                            (first.suit_resource_profile, second.suit_resource_profile),
+                            key=repr,
+                        ))
+                        spends_natural_level = any(
+                            int(action.suit_resource_profile[2])
+                            > DeepSeekClient._coerce_int(action.get("wildcard_count"), default=0)
+                            for action in (first, second)
+                        )
+                        spends_as_wildcard = any(
+                            int(action.suit_resource_profile[2]) > 0
+                            and DeepSeekClient._coerce_int(action.get("wildcard_count"), default=0) > 0
+                            for action in (first, second)
+                        )
+                        best_kind = (
+                            "mixed_wildcard_use"
+                            if spends_natural_level and spends_as_wildcard
+                            else "natural_level_use"
+                            if spends_natural_level
+                            else "declared_wildcard_use"
+                            if spends_as_wildcard
+                            else "routes"
+                        )
+            if best is not None:
+                assert best_profiles is not None
+                priority = {
+                    "mixed_wildcard_use": 3,
+                    "natural_level_use": 2,
+                    "declared_wildcard_use": 1,
+                    "routes": 0,
+                }[best_kind]
+                choices.append((priority, best[0], best[1], best_profiles, best_kind))
+        choices.sort(key=lambda item: (-item[0], -item[1], item[2]))
+        selected: list[tuple[int, int]] = []
+        selected_profiles: set[tuple[object, ...]] = set()
+        selected_special_kinds: set[str] = set()
+        for _priority, _score, pair, profiles, kind in choices:
+            if profiles in selected_profiles:
+                continue
+            if kind != "routes" and kind in selected_special_kinds:
+                continue
+            selected.append(pair)
+            selected_profiles.add(profiles)
+            if kind != "routes":
+                selected_special_kinds.add(kind)
+            if len(selected) >= _MAX_PROMPT_SUIT_RESOURCE_PAIRS:
+                break
+        return tuple(selected)
+
+    @staticmethod
+    def _prompt_suit_resource_contrast_text(
+        action_ids: tuple[int, int],
+        actions_by_id: dict[int, dict[str, object]],
+    ) -> str:
+        entries: list[str] = []
+        for action_id in action_ids:
+            action = actions_by_id.get(action_id)
+            cost = (
+                action.suit_resource_text
+                if isinstance(action, _ProjectedPromptAction) and action.suit_resource_text
+                else "资源未减少"
+            )
+            entries.append(f"action_id={action_id}[{cost}]")
+        return (
+            "同型花色资源对照：" + "；".join(entries)
+        )
+
+    @staticmethod
     def _action_signature(action: dict[str, object]) -> tuple[object, ...]:
+        projected_signature = getattr(action, "prompt_signature", None)
+        if isinstance(projected_signature, tuple):
+            return projected_signature
         wildcard_info = action.get("wildcard_info", [])
         try:
             wildcard_info_text = json.dumps(wildcard_info, ensure_ascii=False, sort_keys=True)
@@ -806,6 +1265,141 @@ class DeepSeekClient:
             DeepSeekClient._coerce_int(action.get("wildcard_count"), default=0),
             wildcard_info_text,
         )
+
+    @staticmethod
+    def _prompt_action_alias_map(
+        source_actions: list[dict[str, object]],
+        visible_actions: list[dict[str, object]],
+    ) -> dict[int, int]:
+        """Map hidden projected aliases to the visible original-ID representative."""
+        visible_by_signature: dict[tuple[object, ...], int] = {}
+        for action in visible_actions:
+            action_id = action.get("action_id")
+            if type(action_id) is int:
+                visible_by_signature.setdefault(
+                    DeepSeekClient._action_signature(action),
+                    action_id,
+                )
+        aliases: dict[int, int] = {}
+        for action in source_actions:
+            action_id = action.get("action_id")
+            if type(action_id) is not int:
+                continue
+            representative = visible_by_signature.get(
+                DeepSeekClient._action_signature(action),
+            )
+            if representative is not None:
+                aliases[action_id] = representative
+        return aliases
+
+    @staticmethod
+    def _remap_prompt_relation_groups(
+        groups: tuple[tuple[int, int], ...],
+        aliases: dict[int, int],
+    ) -> tuple[tuple[int, int], ...]:
+        remapped: list[tuple[int, int]] = []
+        for group in groups:
+            if type(group) is not tuple or len(group) != 2:
+                continue
+            first = aliases.get(group[0])
+            second = aliases.get(group[1])
+            if first is None or second is None or first == second:
+                continue
+            pair = (first, second)
+            if pair not in remapped:
+                remapped.append(pair)
+        return tuple(remapped)
+
+    @staticmethod
+    def _remap_prompt_contrasts(
+        contrasts: tuple[CandidateContrast, ...] | None,
+        aliases: dict[int, int],
+    ) -> tuple[CandidateContrast, ...] | None:
+        if contrasts is None:
+            return None
+        remapped: list[CandidateContrast] = []
+        for contrast in contrasts:
+            if type(contrast) is not CandidateContrast:
+                continue
+            group = DeepSeekClient._remap_prompt_relation_groups(
+                (contrast.action_ids,),
+                aliases,
+            )
+            if not group:
+                continue
+            remapped.append(replace(contrast, action_ids=group[0]))
+        return tuple(remapped)
+
+    @staticmethod
+    def _remap_prompt_strategy_recommendation(
+        recommendation: object,
+        aliases: dict[int, int],
+    ) -> object | None:
+        action_ids = getattr(recommendation, "action_ids", None)
+        if not isinstance(action_ids, tuple):
+            return recommendation
+        if not action_ids:
+            return recommendation
+        if any(type(action_id) is not int or action_id not in aliases for action_id in action_ids):
+            return None
+        mapped = tuple(dict.fromkeys(aliases[action_id] for action_id in action_ids))
+        try:
+            return replace(recommendation, action_ids=mapped)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _remap_prompt_opening_recommendation(
+        recommendation: OpeningFormulaAnalysis | None,
+        aliases: dict[int, int],
+    ) -> OpeningFormulaAnalysis | None:
+        if recommendation is None:
+            return None
+        action_id = recommendation.action_id
+        if action_id is not None and action_id not in aliases:
+            return None
+        contrasts = DeepSeekClient._remap_prompt_contrasts(
+            recommendation.model_contrasts,
+            aliases,
+        )
+        if contrasts is None:
+            return None
+        try:
+            return replace(
+                recommendation,
+                action_id=aliases.get(action_id) if action_id is not None else None,
+                model_contrasts=contrasts,
+            )
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _remap_prompt_summary_ids(
+        summary: str | None,
+        aliases: dict[int, int],
+        *,
+        prefixes: tuple[str, ...],
+    ) -> str | None:
+        if not isinstance(summary, str):
+            return summary
+        rendered: list[str] = []
+        for line in summary.splitlines():
+            if not line.startswith(prefixes):
+                rendered.append(line)
+                continue
+            source_ids = [int(value) for value in re.findall(r"action_id=(\d+)", line)]
+            mapped_ids = [aliases.get(action_id) for action_id in source_ids]
+            if not source_ids or any(action_id is None for action_id in mapped_ids):
+                continue
+            if len(mapped_ids) > 1 and len(set(mapped_ids)) != len(mapped_ids):
+                continue
+            mapped_iter = iter(mapped_ids)
+            rendered.append(re.sub(
+                r"action_id=\d+",
+                lambda _match: f"action_id={next(mapped_iter)}",
+                line,
+            ))
+        return "\n".join(rendered)
 
     @staticmethod
     def _unique_actions_by_signature(actions: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -1960,6 +2554,7 @@ class DeepSeekClient:
         opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
         opening_formula_recommendation: OpeningFormulaAnalysis | None = None,
         rag_context: dict[str, object] | None = None,
+        project_prompt_suits: bool = False,
     ) -> list[dict[str, object]]:
         """Build the one bounded canonical candidate set used by the model.
 
@@ -1968,6 +2563,8 @@ class DeepSeekClient:
         exact original IDs survive both display pruning stages.  Invalid advice
         receives no protection and cannot alter the candidate set.
         """
+        if project_prompt_suits:
+            legal_actions = DeepSeekClient._project_prompt_actions(observation, legal_actions)
         validated = DeepSeekClient._validated_strategy_recommendation(
             strategy_recommendation,
             legal_actions,
@@ -2006,6 +2603,10 @@ class DeepSeekClient:
             if contrasts is not None
             else ()
         )
+        suit_resource_groups = DeepSeekClient._prompt_suit_resource_groups(legal_actions)
+        protected_relation_groups = tuple(dict.fromkeys(
+            suit_resource_groups + protected_relation_groups
+        ))
         if observation is not None:
             route_my_info = observation.get("my_info")
             grouping_pairs = free_lead_grouping_comparison_pairs(
@@ -2550,10 +3151,6 @@ class DeepSeekClient:
         table_action = current_round.get("table_action")
         round_no = current_round.get("round_no", 0)
         constraint = str(current_round.get("constraint", "free"))
-        raw_validated_recommendation = DeepSeekClient._validated_strategy_recommendation(
-            strategy_recommendation,
-            legal_actions,
-        )
         contrast_source_actions = (
             residual_structure_source_actions
             if residual_structure_source_actions is not None
@@ -2565,21 +3162,59 @@ class DeepSeekClient:
             "other_players": other_players,
             "history": history,
         }
-        validated_opening_recommendation = DeepSeekClient._validated_opening_formula_recommendation(
+        if any(isinstance(action, _ProjectedPromptAction) for action in legal_actions):
+            contrast_source_actions = DeepSeekClient._project_prompt_actions(
+                prompt_observation,
+                contrast_source_actions,
+            )
+        initial_aliases = DeepSeekClient._prompt_action_alias_map(
+            contrast_source_actions,
+            legal_actions,
+        )
+        card_tracking_summary = DeepSeekClient._remap_prompt_summary_ids(
+            card_tracking_summary,
+            initial_aliases,
+            prefixes=("M3候选对照", "M3唯一归属核验"),
+        )
+        public_endgame_summary = DeepSeekClient._remap_prompt_summary_ids(
+            public_endgame_summary,
+            initial_aliases,
+            prefixes=("M5公开残局对照",),
+        )
+        prompt_strategy_recommendation = DeepSeekClient._remap_prompt_strategy_recommendation(
+            strategy_recommendation,
+            initial_aliases,
+        )
+        raw_validated_recommendation = DeepSeekClient._validated_strategy_recommendation(
+            prompt_strategy_recommendation,
+            legal_actions,
+        )
+        suit_resource_groups = DeepSeekClient._prompt_suit_resource_groups(
+            contrast_source_actions,
+        )
+        source_opening_recommendation = DeepSeekClient._validated_opening_formula_recommendation(
             opening_formula_recommendation,
             prompt_observation,
             contrast_source_actions,
         )
         formula_contrasts = (
-            validated_opening_recommendation.model_contrasts
-            if validated_opening_recommendation is not None
+            source_opening_recommendation.model_contrasts
+            if source_opening_recommendation is not None
             else opening_formula_contrasts
+        )
+        validated_opening_recommendation = DeepSeekClient._validated_opening_formula_recommendation(
+            DeepSeekClient._remap_prompt_opening_recommendation(
+                source_opening_recommendation,
+                initial_aliases,
+            ),
+            prompt_observation,
+            legal_actions,
         )
         representative_contrasts = DeepSeekClient._prompt_candidate_contrasts(
             {"my_info": my_info, "current_round": current_round, "other_players": other_players, "history": history},
             contrast_source_actions,
             formula_contrasts,
-            strategy_recommendation=strategy_recommendation,
+            strategy_recommendation=prompt_strategy_recommendation,
             rag_context=rag_context,
         )
         route_my_player_id = my_info.get("player_id")
@@ -2623,10 +3258,25 @@ class DeepSeekClient:
         ) + tuple(
             public_endgame_relation_groups
         ) + tuple(
+            suit_resource_groups
+        ) + tuple(
             item.action_ids
             for item in (representative_contrasts or ())
             if set(item.action_ids).issubset(available_ids)
         ) + tuple(group for group in grouping_pairs if set(group).issubset(available_ids))
+        source_by_id = {
+            int(action["action_id"]): action
+            for action in contrast_source_actions
+            if isinstance(action, dict) and type(action.get("action_id")) is int
+        }
+        prompt_relation_groups = tuple(
+            group for group in prompt_relation_groups
+            if len(group) == 2
+            and group[0] in source_by_id
+            and group[1] in source_by_id
+            and DeepSeekClient._action_signature(source_by_id[group[0]])
+            != DeepSeekClient._action_signature(source_by_id[group[1]])
+        )
         recommendation_action_ids = (
             raw_validated_recommendation.action_ids
             if raw_validated_recommendation is not None
@@ -2641,6 +3291,44 @@ class DeepSeekClient:
             hand_count=hand_count,
             protected_action_ids=protected_prompt_action_ids,
             protected_relation_groups=prompt_relation_groups,
+        )
+        prompt_aliases = DeepSeekClient._prompt_action_alias_map(
+            contrast_source_actions,
+            prompt_actions,
+        )
+        prompt_strategy_recommendation = DeepSeekClient._remap_prompt_strategy_recommendation(
+            strategy_recommendation,
+            prompt_aliases,
+        )
+        validated_opening_recommendation = DeepSeekClient._validated_opening_formula_recommendation(
+            DeepSeekClient._remap_prompt_opening_recommendation(
+                source_opening_recommendation,
+                prompt_aliases,
+            ),
+            prompt_observation,
+            prompt_actions,
+        )
+        representative_contrasts = DeepSeekClient._remap_prompt_contrasts(
+            representative_contrasts,
+            prompt_aliases,
+        )
+        suit_resource_groups = DeepSeekClient._remap_prompt_relation_groups(
+            suit_resource_groups,
+            prompt_aliases,
+        )
+        grouping_pairs = DeepSeekClient._remap_prompt_relation_groups(
+            grouping_pairs,
+            prompt_aliases,
+        )
+        card_tracking_summary = DeepSeekClient._remap_prompt_summary_ids(
+            card_tracking_summary,
+            prompt_aliases,
+            prefixes=("M3候选对照", "M3唯一归属核验"),
+        )
+        public_endgame_summary = DeepSeekClient._remap_prompt_summary_ids(
+            public_endgame_summary,
+            prompt_aliases,
+            prefixes=("M5公开残局对照",),
         )
         residual_facts = summarize_free_lead_residual_structures(
             {"my_info": my_info, "current_round": current_round},
@@ -2774,7 +3462,7 @@ class DeepSeekClient:
             lines.append("")
 
         validated_recommendation = DeepSeekClient._validated_strategy_recommendation(
-            strategy_recommendation, prompt_actions,
+            prompt_strategy_recommendation, prompt_actions,
         )
         formula_recommendation_id = (
             validated_opening_recommendation.action_id
@@ -3060,6 +3748,39 @@ class DeepSeekClient:
             lines.append("边界：这些是公开条件下的可撤回比较，不是动作指令。")
             lines.append("")
 
+        visible_suit_resource_groups = tuple(
+            group for group in suit_resource_groups
+            if set(group).issubset(prompt_action_ids)
+        )
+        if visible_suit_resource_groups:
+            lines.append("【同花顺/逢人配花色资源对照】")
+            resource_endpoint_ids = {
+                action_id
+                for group in visible_suit_resource_groups
+                for action_id in group
+            }
+            for action in legal_actions:
+                action_id = action.get("action_id")
+                if (
+                    isinstance(action, _ProjectedPromptAction)
+                    and type(action_id) is int
+                    and action_id in resource_endpoint_ids
+                ):
+                    action.suit_resource_row_text = ""
+            for group in visible_suit_resource_groups:
+                lines.append(
+                    DeepSeekClient._prompt_suit_resource_contrast_text(
+                        group,
+                        source_by_id,
+                    )
+                )
+            lines.append(
+                f"资源码：SF数前>后；-S9-K=失黑桃9-K路线，+=新增；"
+                f"{current_level_rank}H-n(Na/Wb)=自然/逢人配各消耗a/b张。"
+                "保留仅指当前实体手牌，不保证未来牌权；紧急/走完可推翻。"
+            )
+            lines.append("")
+
         validated_strategy_intent = DeepSeekClient._validated_strategy_intent_prompt(
             strategy_intent_prompt,
         )
@@ -3076,6 +3797,7 @@ class DeepSeekClient:
         if residual_structures is not None:
             lines.append(
                 "出后用途仅按当前公开手牌与canonical carrier归纳；自然结构可重叠，未识别不等于无未来用途；"
+                "after字段为clear:清空所出点数组、single:余孤张点数、groups:估计余点数组；"
                 "不推断暗牌、未来合法出牌或牌权，估计余组不是动作指令。"
             )
         if len(prompt_actions) < len(legal_actions):
@@ -3344,9 +4066,10 @@ class DeepSeekClient:
             if validated_opening_recommendation is not None
             else opening_formula_contrasts
         )
+        projected_legal_actions = self._project_prompt_actions(observation, legal_actions)
         if prompt_actions is None:
             pruned_actions = self.prepare_prompt_actions(
-                legal_actions,
+                projected_legal_actions,
                 constraint=constraint,
                 step_no=step_no,
                 hand_count=hand_count,
@@ -3356,6 +4079,7 @@ class DeepSeekClient:
                 opening_formula_contrasts=formula_contrasts,
                 opening_formula_recommendation=validated_opening_recommendation,
                 rag_context=rag_context,
+                project_prompt_suits=True,
             )
         else:
             supplied_actions = self._canonical_subset_actions(
@@ -3364,9 +4088,21 @@ class DeepSeekClient:
             )
             if supplied_actions is None:
                 return DeepSeekSuggestion(action_id=None, reasoning=None)
+            projected_by_id = {
+                int(action["action_id"]): action
+                for action in projected_legal_actions
+                if type(action.get("action_id")) is int
+            }
+            try:
+                supplied_actions = [
+                    projected_by_id[int(action["action_id"])]
+                    for action in supplied_actions
+                ]
+            except KeyError:
+                return DeepSeekSuggestion(action_id=None, reasoning=None)
             validated_recommendation = self._validated_strategy_recommendation(
                 strategy_recommendation,
-                legal_actions,
+                projected_legal_actions,
             )
             protected_ids = (
                 validated_recommendation.action_ids
@@ -3378,7 +4114,7 @@ class DeepSeekClient:
             ))
             contrasts = self._prompt_candidate_contrasts(
                 observation,
-                legal_actions,
+                projected_legal_actions,
                 formula_contrasts,
                 strategy_recommendation=strategy_recommendation,
                 rag_context=rag_context,
@@ -3389,17 +4125,21 @@ class DeepSeekClient:
                 else ()
             )
             relation_groups = tuple(dict.fromkeys(
+                self._prompt_suit_resource_groups(projected_legal_actions)
+                + relation_groups
+            ))
+            relation_groups = tuple(dict.fromkeys(
                 relation_groups
                 + free_lead_grouping_comparison_pairs(
                     observation,
-                    legal_actions,
+                    projected_legal_actions,
                     self._coerce_int(my_info.get("player_id"), default=0),
                 )
             ))
             if public_endgame_summary:
                 legal_ids = {
                     int(action["action_id"])
-                    for action in legal_actions
+                    for action in projected_legal_actions
                     if type(action.get("action_id")) is int
                 }
                 public_endgame_groups = []
@@ -3416,19 +4156,19 @@ class DeepSeekClient:
                 ))
             opening_route_ids = self._opening_pattern_representative_ids(
                 observation,
-                legal_actions,
+                projected_legal_actions,
                 phase_context,
             )
             protected_actions = self._protected_actions_by_id(
-                legal_actions,
+                projected_legal_actions,
                 protected_ids,
             )
             opening_route_actions = self._protected_actions_by_id(
-                legal_actions,
+                projected_legal_actions,
                 opening_route_ids,
                 max_count=MAX_OPENING_PATTERN_REPRESENTATIVES,
             )
-            relation_actions = self._relation_actions_by_groups(legal_actions, relation_groups)
+            relation_actions = self._relation_actions_by_groups(projected_legal_actions, relation_groups)
             present_ids = {int(action["action_id"]) for action in supplied_actions}
             candidate_actions = supplied_actions + [
                 action for action in protected_actions
@@ -3436,7 +4176,7 @@ class DeepSeekClient:
             ]
             present_ids.update(int(action["action_id"]) for action in protected_actions)
             formula_actions = self._protected_actions_by_id(
-                legal_actions,
+                projected_legal_actions,
                 ((validated_opening_recommendation.action_id,)
                  if validated_opening_recommendation is not None
                  and validated_opening_recommendation.action_id is not None
@@ -3479,7 +4219,7 @@ class DeepSeekClient:
             card_confidence_prompt=card_confidence_prompt,
             strategy_intent_prompt=strategy_intent_prompt,
             strategy_recommendation=strategy_recommendation,
-            residual_structure_source_actions=legal_actions,
+            residual_structure_source_actions=projected_legal_actions,
             opening_formula_contrasts=formula_contrasts,
             opening_formula_recommendation=validated_opening_recommendation,
         )

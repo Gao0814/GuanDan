@@ -553,7 +553,7 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
         )
         opening_cases = (
             ("low_cost_single", 53, 24, 10_000),
-            ("neutral_soft_pair", 83, 52, 16_000),
+            ("neutral_soft_pair", 83, 56, 16_000),
         )
         for fixture, expected in zip(build_h3_model_probe_opening_fixtures(), opening_cases):
             name, raw_count, candidate_count, char_budget = expected

@@ -17,6 +17,8 @@ class _CapturingSSETransport:
 
     def __init__(self) -> None:
         self.chosen_id: int | None = None
+        self.choice_index = 0
+        self.returned_id: int | None = None
         self.calls = 0
         self.candidate_ids: tuple[int, ...] = ()
         self.route_ids: tuple[int, ...] = ()
@@ -63,10 +65,17 @@ class _CapturingSSETransport:
         self.route_ids = tuple(int(action_id) for action_id, _ in route_rows)
         if len(self.route_ids) > 4 or not set(self.route_ids).issubset(self.candidate_ids):
             raise OSError("request_route_candidates_mismatch")
-        if self.chosen_id is None or self.chosen_id not in self.candidate_ids:
+        if self.chosen_id is None:
+            if self.choice_index >= len(self.route_ids):
+                raise OSError("fake_route_choice_missing")
+            selected_id = self.route_ids[self.choice_index]
+        else:
+            selected_id = self.chosen_id
+        if selected_id not in self.candidate_ids:
             raise OSError("fake_choice_not_displayed")
+        self.returned_id = selected_id
 
-        content = json.dumps({"action_id": self.chosen_id}, separators=(",", ":"))
+        content = json.dumps({"action_id": selected_id}, separators=(",", ":"))
         event = json.dumps({"choices": [{"delta": {"content": content}}]})
         return f"data: {event}\n\ndata: [DONE]\n"
 
@@ -106,46 +115,64 @@ class ShortEndgameModelInputTests(unittest.TestCase):
                     )
                     self.assertTrue(route_pairs)
                     agent = factory(1)
-                    for selected_id in route_pairs[0]:
-                        transport.chosen_id = selected_id
-                        actual_id = agent.select_action(scenario.observation, scenario.legal_actions)
-                        request_count += 1
+                    transport.chosen_id = None
+                    transport.choice_index = 0
+                    actual_id = agent.select_action(scenario.observation, scenario.legal_actions)
+                    selected_id = transport.returned_id
+                    request_count += 1
 
-                        self.assertEqual(actual_id, selected_id)
-                        self.assertEqual(agent.last_decision_source, "model")
-                        self.assertEqual(agent.client.last_outcome, "success")
-                        self.assertIn(selected_id, original_ids)
-                        self.assertLessEqual(len(transport.candidate_ids), 80)
-                        self.assertEqual(len(transport.candidate_ids), len(set(transport.candidate_ids)))
-                        self.assertTrue(set(transport.candidate_ids).issubset(original_ids))
-                        self.assertTrue(set(route_pairs[0]).issubset(transport.candidate_ids))
-                        self.assertTrue(set(transport.route_ids).issubset(transport.candidate_ids))
-                        experience_section = transport.prompt.split("【经验库依据】", 1)[1].split("【输出格式】", 1)[0]
-                        if scenario.name in {"natural_bomb_residual", "wildcard_and_natural_groups"}:
-                            self.assertTrue(
-                                "残局规划" in experience_section
-                                or "炸弹与通配牌管理" in experience_section
-                            )
-                            if "炸弹与通配牌管理" in experience_section:
-                                self.assertIn("可撤回软假设", experience_section)
-                        else:
-                            self.assertIn("残局规划", experience_section)
+                    self.assertIsNotNone(selected_id)
+                    self.assertEqual(actual_id, selected_id)
+                    self.assertEqual(agent.last_decision_source, "model")
+                    self.assertEqual(agent.client.last_outcome, "success")
+                    self.assertIn(selected_id, original_ids)
+                    self.assertLessEqual(len(transport.candidate_ids), 80)
+                    self.assertEqual(len(transport.candidate_ids), len(set(transport.candidate_ids)))
+                    self.assertTrue(set(transport.candidate_ids).issubset(original_ids))
+                    self.assertTrue(set(transport.route_ids).issubset(transport.candidate_ids))
+                    experience_section = transport.prompt.split("【经验库依据】", 1)[1].split("【输出格式】", 1)[0]
+                    if scenario.name in {"natural_bomb_residual", "wildcard_and_natural_groups"}:
+                        self.assertTrue(
+                            "残局规划" in experience_section
+                            or "炸弹与通配牌管理" in experience_section
+                        )
+                        if "炸弹与通配牌管理" in experience_section:
+                            self.assertIn("可撤回软假设", experience_section)
+                    else:
+                        self.assertIn("残局规划", experience_section)
 
-                        recommendation = agent.last_strategy_recommendation
-                        self.assertIsNotNone(recommendation)
-                        recommendation_ids = tuple(getattr(recommendation, "action_ids", ()))
-                        self.assertTrue(set(recommendation_ids).issubset(transport.candidate_ids))
-                        self.assertIn("endgame_planning", recommendation.strategy_domains)
-                        self.assertIn("plan_endgame", recommendation.objective_codes)
+                    first_selected_id = selected_id
+                    transport.choice_index = 1
+                    actual_id = agent.select_action(scenario.observation, scenario.legal_actions)
+                    selected_id = transport.returned_id
+                    request_count += 1
 
-                        context = agent.last_strategy_intent
-                        self.assertIsNotNone(context)
-                        if scenario.name == "urgent_teammate":
-                            self.assertEqual(context.reason_codes, ("teammate_urgent",))
-                            self.assertIn("分组少不自动优先", transport.prompt)
-                        elif scenario.name == "urgent_opponent":
-                            self.assertEqual(context.reason_codes, ("opponent_urgent",))
-                            self.assertIn("分组少不自动优先", transport.prompt)
+                    self.assertIsNotNone(selected_id)
+                    self.assertEqual(actual_id, selected_id)
+                    self.assertEqual(agent.last_decision_source, "model")
+                    self.assertEqual(agent.client.last_outcome, "success")
+                    self.assertIn(selected_id, original_ids)
+                    self.assertLessEqual(len(transport.candidate_ids), 80)
+                    self.assertEqual(len(transport.candidate_ids), len(set(transport.candidate_ids)))
+                    self.assertTrue(set(transport.candidate_ids).issubset(original_ids))
+                    self.assertTrue(set(transport.route_ids).issubset(transport.candidate_ids))
+                    self.assertNotEqual(selected_id, first_selected_id)
+
+                    recommendation = agent.last_strategy_recommendation
+                    self.assertIsNotNone(recommendation)
+                    recommendation_ids = tuple(getattr(recommendation, "action_ids", ()))
+                    self.assertTrue(set(recommendation_ids).issubset(transport.candidate_ids))
+                    self.assertIn("endgame_planning", recommendation.strategy_domains)
+                    self.assertIn("plan_endgame", recommendation.objective_codes)
+
+                    context = agent.last_strategy_intent
+                    self.assertIsNotNone(context)
+                    if scenario.name == "urgent_teammate":
+                        self.assertEqual(context.reason_codes, ("teammate_urgent",))
+                        self.assertIn("分组少不自动优先", transport.prompt)
+                    elif scenario.name == "urgent_opponent":
+                        self.assertEqual(context.reason_codes, ("opponent_urgent",))
+                        self.assertIn("分组少不自动优先", transport.prompt)
 
             self.assertEqual(transport.calls, request_count)
             self.assertEqual(request_count, 2 * len(scenarios))
