@@ -233,12 +233,16 @@ def _fresh_follow_game(
     *,
     teammate_leads: bool = False,
     leader_token: str = "5S",
+    own_extra_excluded_ranks: set[str] | None = None,
 ) -> GuanDanGame:
     """Build a complete 108-card deal, then reach a real single-card follow."""
     leader_id = 3 if teammate_leads else 2
     hands = _deal(
         own_tokens=own_tokens,
-        own_excluded_ranks={token[:-1] for token in own_tokens if token not in {"SJ", "BJ"}},
+        own_excluded_ranks=(
+            {token[:-1] for token in own_tokens if token not in {"SJ", "BJ"}}
+            | (own_extra_excluded_ranks or set())
+        ),
         player_two_tokens=[leader_token] if leader_id == 2 else None,
         player_two_excluded_ranks={leader_token[:-1]} if leader_id == 2 else None,
         player_three_tokens=[leader_token] if leader_id == 3 else None,
@@ -288,6 +292,73 @@ def _sequence_follow_game_with_natural_bomb_split() -> GuanDanGame:
     observation = game.observe()
     assert observation["my_info"]["player_id"] == 1
     assert observation["current_round"]["table_action"]["declared_pattern"] == "straight"
+    return game
+
+
+def _sequence_follow_game_with_bomb_and_pair_split() -> GuanDanGame:
+    """Create a legal follow where one straight takes a bomb card and a pair card."""
+    own_tokens = [
+        "9S", "9H", "9C", "9D", "QS", "QH", "QC", "10S", "JH", "KC",
+        "3S", "3H", "3C", "4S", "4H", "4C", "7S", "7H", "7C",
+        "10H", "JS", "KD", "2S", "2C", "5S", "5H", "5C",
+    ]
+    leader_tokens = ["4S", "5H", "6C", "7D", "8H"]
+    deck = list(build_double_deck())
+    hands: dict[int, list[Card]] = {
+        1: _take(deck, own_tokens),
+        2: _take(deck, leader_tokens),
+        3: [],
+        4: [],
+    }
+    for player_id in (2, 3):
+        while len(hands[player_id]) < 27:
+            hands[player_id].append(deck.pop(0))
+    hands[4] = list(deck)
+    assert {player_id: len(hand) for player_id, hand in hands.items()} == {1: 27, 2: 27, 3: 27, 4: 27}
+    game = GuanDanGame(
+        current_level_rank="2",
+        preset_hands={player_id: tuple(hand) for player_id, hand in hands.items()},
+        starting_player_id=2,
+    )
+    game.reset()
+    lead = _action(
+        game,
+        lambda item: item["declared_pattern"] == "straight"
+        and {token[:-1] for token in item["carrier_cards"]} == {token[:-1] for token in leader_tokens}
+        and item["wildcard_count"] == 0,
+    )
+    game.step(int(lead["action_id"]))
+    _step_pass(game)
+    _step_pass(game)
+    observation = game.observe()
+    assert observation["my_info"]["player_id"] == 1
+    assert observation["current_round"]["table_action"]["declared_pattern"] == "straight"
+    return game
+
+
+def _wildcard_bomb_follow_game() -> GuanDanGame:
+    own_tokens = ["7S", "7H", "7C", "7D", "2H"]
+    leader_tokens = ["6S", "6H", "6C", "6D"]
+    hands = _deal(
+        own_tokens=own_tokens,
+        own_excluded_ranks={"2", "6", "7"},
+        player_two_tokens=leader_tokens,
+        player_two_excluded_ranks={"2", "6", "7"},
+    )
+    game = GuanDanGame(
+        current_level_rank="2", preset_hands=hands, starting_player_id=2,
+    )
+    game.reset()
+    lead = _action(
+        game,
+        lambda item: item["declared_pattern"] == "bomb"
+        and item["carrier_cards"] == leader_tokens
+        and item["wildcard_count"] == 0,
+    )
+    game.step(int(lead["action_id"]))
+    _step_pass(game)
+    _step_pass(game)
+    assert game.observe()["my_info"]["player_id"] == 1
     return game
 
 
@@ -591,9 +662,9 @@ class M4TradeoffInputTests(unittest.TestCase):
             {int(item["action_id"]) for item in actions}
         ))
         self.assertIn("应手/让牌对照", prompt)
-        self.assertIn("消耗可识别的控制牌", prompt)
-        self.assertIn("使用逢人配", prompt)
-        self.assertIn("拆动已识别同点组", prompt)
+        self.assertIn("2点逢人配资源1→0", prompt)
+        self.assertRegex(prompt, r"\d+点自然牌\d+→\d+张")
+        self.assertIn("自然组合线索可重叠，不等于互斥可走手数", prompt)
         request_pairs = re.findall(
             r"action_id=(\d+) 为pass，[^\n]*?action_id=(\d+) 是当前合法", prompt,
         )
@@ -677,7 +748,78 @@ class M4TradeoffInputTests(unittest.TestCase):
             or facts_by_id[int(action_id)].uses_wildcard
             for _pass, action_id in request_pairs
         ))
-        self.assertIn("拆动已识别同点组", prompt)
+        self.assertIn("逐点净变化=", prompt)
+
+    def test_control_pair_cost_is_exact_and_singleton_response_has_no_false_group_split(self) -> None:
+        game = _fresh_follow_game(
+            ["8S", "AS", "AH"], leader_token="5S", own_extra_excluded_ranks={"2"},
+        )
+        observation = game.observe()
+        actions = game.legal_actions()
+        facts = summarize_candidate_structures(observation, actions)
+        assert facts is not None
+        facts_by_id = {item.action_id: item for item in facts}
+        pass_fact = next(item for item in facts if item.pattern == "pass")
+        ace = next(
+            action for action in actions
+            if action["declared_pattern"] == "single"
+            and action["wildcard_count"] == 0
+            and any(token.startswith("A") for token in action["carrier_cards"])
+        )
+        eight = next(
+            action for action in actions
+            if action["declared_pattern"] == "single"
+            and action["wildcard_count"] == 0
+            and action["carrier_cards"] == ["8S"]
+        )
+        ace_effect = candidate_response_net_effect(pass_fact, facts_by_id[int(ace["action_id"])])
+        eight_effect = candidate_response_net_effect(pass_fact, facts_by_id[int(eight["action_id"])])
+        assert ace_effect is not None and eight_effect is not None
+        ace_change = next(item for item in ace_effect.rank_resource_changes or () if item.rank == "A")
+        self.assertEqual((ace_change.natural_count_before, ace_change.natural_count_after), (2, 1))
+        self.assertIn("pair", ace_change.lost_group_kinds)
+        self.assertTrue(ace_change.loses_control_resource)
+        self.assertEqual(DeepSeekClient._rank_resource_delta_text(eight_effect), "")
+        self.assertFalse(eight_effect.has_exact_group_loss)
+
+        pass_id = next(int(action["action_id"]) for action in actions if action["declared_pattern"] == "pass")
+        prompt, visible, _raw_count = self._factory_request(game, pass_id)
+        control_line = next(
+            line for line in prompt.splitlines() if "对手单张低/高跟牌成本：" in line
+        )
+        self.assertIn("action_id=", control_line)
+        self.assertIn("A点自然控制牌2→1张", control_line)
+        self.assertIn("相对pass逐点净变化=", control_line)
+        self.assertLessEqual(len(visible), 80)
+
+    def test_wildcard_use_has_physical_resource_delta_and_keeps_m8_routes_distinct(self) -> None:
+        game = _wildcard_bomb_follow_game()
+        observation = game.observe()
+        actions = game.legal_actions()
+        facts = summarize_candidate_structures(observation, actions)
+        assert facts is not None
+        facts_by_id = {item.action_id: item for item in facts}
+        pass_fact = next(item for item in facts if item.pattern == "pass")
+        wildcard_bomb = next(
+            action for action in actions
+            if action["declared_pattern"] == "bomb"
+            and action["wildcard_count"] == 1
+            and "2H" in action["carrier_cards"]
+        )
+        effect = candidate_response_net_effect(pass_fact, facts_by_id[int(wildcard_bomb["action_id"])])
+        assert effect is not None
+        wild_delta = next(item for item in effect.rank_resource_changes or () if item.rank == "2")
+        self.assertEqual((wild_delta.wildcard_count_before, wild_delta.wildcard_count_after), (1, 0))
+        self.assertTrue(wild_delta.spends_wildcard)
+        self.assertIn("2点逢人配资源1→0", DeepSeekClient._rank_resource_delta_text(effect))
+
+        projected = DeepSeekClient._project_prompt_actions(observation, actions)
+        self.assertIn(int(wildcard_bomb["action_id"]), {int(action["action_id"]) for action in projected})
+        sf_game = _sequence_follow_game_with_natural_bomb_split()
+        sf_projected = DeepSeekClient._project_prompt_actions(sf_game.observe(), sf_game.legal_actions())
+        sf_actions = sf_game.legal_actions()
+        self.assertTrue(any(action["declared_pattern"] == "straight_flush" for action in sf_actions))
+        self.assertTrue(any(action["declared_pattern"] == "straight_flush" for action in sf_projected))
 
     def test_urgent_opponent_bomb_response_can_spend_wildcard_for_a_longer_bomb(self) -> None:
         game = _urgent_bomb_follow_game()
@@ -693,6 +835,76 @@ class M4TradeoffInputTests(unittest.TestCase):
         self.assertIn("自然炸/通配加长炸对照", prompt)
         self.assertIn("公开危险对手", prompt)
         self.assertIn("多用一张逢人配", prompt)
+
+    def test_follow_request_shows_exact_bomb_and_pair_cost_against_pass(self) -> None:
+        game = _sequence_follow_game_with_bomb_and_pair_split()
+        observation = game.observe()
+        actions = game.legal_actions()
+        facts = summarize_candidate_structures(observation, actions)
+        assert facts is not None
+        facts_by_id = {item.action_id: item for item in facts}
+        pass_action = next(action for action in actions if action["declared_pattern"] == "pass")
+        straight = next(
+            action for action in actions
+            if action["declared_pattern"] == "straight"
+            and {token[:-1] for token in action["carrier_cards"]} == {"9", "10", "J", "Q", "K"}
+        )
+        bomb = next(
+            action for action in actions
+            if action["declared_pattern"] == "bomb"
+            and action["wildcard_count"] == 0
+            and all(token[:-1] == "9" for token in action["carrier_cards"])
+        )
+        straight_effect = candidate_response_net_effect(
+            facts_by_id[int(pass_action["action_id"])], facts_by_id[int(straight["action_id"])],
+        )
+        bomb_effect = candidate_response_net_effect(
+            facts_by_id[int(pass_action["action_id"])], facts_by_id[int(bomb["action_id"])],
+        )
+        assert straight_effect is not None and bomb_effect is not None
+        straight_changes = {item.rank: item for item in straight_effect.rank_resource_changes or ()}
+        bomb_changes = {item.rank: item for item in bomb_effect.rank_resource_changes or ()}
+        self.assertEqual((straight_changes["9"].natural_count_before, straight_changes["9"].natural_count_after), (4, 3))
+        self.assertIn("bomb", straight_changes["9"].lost_group_kinds)
+        self.assertEqual((straight_changes["Q"].natural_count_before, straight_changes["Q"].natural_count_after), (3, 2))
+        self.assertIn("triple", straight_changes["Q"].lost_group_kinds)
+        self.assertEqual((bomb_changes["9"].natural_count_before, bomb_changes["9"].natural_count_after), (4, 0))
+
+        selected = DeepSeekClient._prompt_candidate_contrasts(observation, actions)
+        selected_net = tuple(
+            item for item in selected or () if item.kind == "follow_response_net_tradeoff"
+        )
+        self.assertEqual(len(selected_net), 2)
+        selected_patterns = {
+            facts_by_id[item.action_ids[1]].pattern for item in selected_net
+        }
+        self.assertEqual(selected_patterns, {"straight", "bomb"})
+
+        projected = DeepSeekClient._project_prompt_actions(observation, actions)
+        request_straight = next(
+            action for action in projected
+            if action["declared_pattern"] == "straight"
+            and {str(card)[:-1] for card in action["carrier_cards"]} == {"9", "10", "J", "Q", "K"}
+        )
+        prompt, visible, _raw_count = self._factory_request(
+            game, int(request_straight["action_id"]),
+        )
+        request_pairs = [
+            (int(first), int(second))
+            for first, second in re.findall(
+                r"action_id=(\d+) 为pass，[^\n]*?action_id=(\d+) 是当前合法", prompt,
+            )
+        ]
+        response_patterns = {
+            next(action["declared_pattern"] for action in actions if int(action["action_id"]) == response_id)
+            for _pass_id, response_id in request_pairs
+        }
+        self.assertEqual(response_patterns, {"straight", "bomb"})
+        self.assertIn("9点自然牌4→3张", prompt)
+        self.assertIn("9点自然牌4→0张", prompt)
+        self.assertIn("Q点自然牌3→2张", prompt)
+        self.assertIn("自然组合线索可重叠，不等于互斥可走手数", prompt)
+        self.assertLessEqual(len(visible), 80)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ from decision_deadline import (
 from agents.action_structure import (
     CANDIDATE_RELATION_KINDS,
     CandidateContrast,
+    CandidateNetEffect,
     CandidateStructure,
     FreeLeadResidualStructure,
     candidate_response_net_effect,
@@ -98,6 +99,15 @@ _PATTERN_FULL: dict[str, str] = {
     "straight_flush": "同花顺",
     "bomb": "炸弹",
     "joker_bomb": "天王炸",
+}
+_RESIDUAL_USE_LABELS: dict[str, str] = {
+    "pair": "对子",
+    "triple": "三张",
+    "bomb": "自然炸弹",
+    "triple_with_pair": "三带二",
+    "straight": "顺子点数结构",
+    "pair_straight": "连对",
+    "steel_plate": "钢板",
 }
 
 _FINISH_LABELS: dict[int, str] = {1: "头游", 2: "二游", 3: "三游", 4: "末游"}
@@ -643,21 +653,12 @@ class DeepSeekClient:
         """Describe only current, potentially overlapping natural-use cues."""
         if fact is None or fact.residual_rank_uses is None or fact.residual_hand_natural_pattern_kinds is None:
             return "未知（通配/声明或公开结构信息不足）"
-        pattern_labels = {
-            "pair": "对子",
-            "triple": "三张",
-            "bomb": "自然炸弹",
-            "triple_with_pair": "三带二",
-            "straight": "顺子点数结构",
-            "pair_straight": "连对点数结构",
-            "steel_plate": "钢板点数结构",
-        }
         rank_parts: list[str] = []
         for item in fact.residual_rank_uses:
             if item.remaining_count == 0 and item.wildcard_count == 0:
                 rank_parts.append(f"{item.rank}点清空")
                 continue
-            uses = "、".join(pattern_labels[kind] for kind in item.natural_pattern_kinds)
+            uses = "、".join(_RESIDUAL_USE_LABELS[kind] for kind in item.natural_pattern_kinds)
             natural_part = (
                 f"{item.rank}点余{item.remaining_count}张自然牌"
                 + (f"可组成{uses}" if uses else "未识别同点组合")
@@ -669,7 +670,7 @@ class DeepSeekClient:
         if rank_parts:
             parts.append("所出点残留=" + "/".join(rank_parts))
         hand_uses = "、".join(
-            pattern_labels[kind] for kind in fact.residual_hand_natural_pattern_kinds
+            _RESIDUAL_USE_LABELS[kind] for kind in fact.residual_hand_natural_pattern_kinds
         )
         if hand_uses:
             parts.append(f"余手结构线索={hand_uses}")
@@ -748,6 +749,61 @@ class DeepSeekClient:
         return "行动顺序/当前压制的公开归属不足；不推断后续牌权。"
 
     @staticmethod
+    def _rank_resource_delta_text(effect: CandidateNetEffect) -> str:
+        """Render only exact per-rank group, control, and wildcard changes."""
+        changes = effect.rank_resource_changes
+        if changes is None:
+            return ""
+        informative = [
+            change for change in changes
+            if change.lost_group_kinds or change.loses_control_resource or change.spends_wildcard
+        ]
+        informative.sort(
+            key=lambda change: (
+                -(
+                    8 * int(change.spends_wildcard)
+                    + 7 * int("bomb" in change.lost_group_kinds)
+                    + 5 * int("triple" in change.lost_group_kinds)
+                    + 3 * int("pair" in change.lost_group_kinds)
+                    + 2 * int(change.loses_control_resource)
+                ),
+                -len(change.lost_group_kinds),
+                -_RANK_ORDER.get(change.rank, 0),
+            )
+        )
+        if not informative:
+            return ""
+        parts: list[str] = []
+        for change in informative[:4]:
+            if change.spends_wildcard:
+                parts.append(
+                    f"{change.rank}点逢人配资源{change.wildcard_count_before}→"
+                    f"{change.wildcard_count_after}"
+                )
+            if change.natural_count_before != change.natural_count_after or change.lost_group_kinds:
+                resource_label = "自然控制牌" if change.loses_control_resource else "自然牌"
+                item = (
+                    f"{change.rank}点{resource_label}{change.natural_count_before}→"
+                    f"{change.natural_count_after}张"
+                )
+                if change.lost_group_kinds:
+                    lost = "、".join(
+                        _RESIDUAL_USE_LABELS[kind] for kind in change.lost_group_kinds
+                    )
+                    retained = "、".join(
+                        _RESIDUAL_USE_LABELS[kind] for kind in change.retained_group_kinds
+                    )
+                    item += f"（失去{lost}线索"
+                    if retained:
+                        item += f"，仍有{retained}线索"
+                    item += "）"
+                parts.append(item)
+        extra_count = len(informative) - 4
+        if extra_count > 0:
+            parts.append(f"另有{extra_count}处")
+        return "逐点净变化=" + ";".join(parts) + "（自然组合线索可重叠，不等于互斥可走手数）"
+
+    @staticmethod
     def _response_net_tradeoff_text(
         contrast: CandidateContrast,
         candidate_facts_by_id: dict[int, CandidateStructure],
@@ -771,25 +827,23 @@ class DeepSeekClient:
         response_name = _PATTERN_FULL.get(response_fact.pattern, "合法牌型")
         pass_count = pass_fact.residual_card_count
         retained = f"保留当前全部{pass_count}张手牌" if pass_count is not None else "不消耗手牌"
+        rank_delta_text = DeepSeekClient._rank_resource_delta_text(effect)
         costs: list[str] = []
-        if effect.spends_control_resource:
+        if effect.spends_control_resource and not (
+            effect.has_exact_control_loss or effect.has_exact_wildcard_loss
+        ):
             costs.append("消耗可识别的控制牌")
-        if effect.uses_wildcard:
+        if effect.uses_wildcard and not effect.has_exact_wildcard_loss:
             costs.append("使用逢人配")
-        if effect.fragments_rank_group:
+        if effect.fragments_rank_group and not effect.has_exact_group_loss:
             costs.append("拆动已识别同点组")
         if effect.singleton_rank_delta > 0:
             costs.append(f"余手孤张点数增加{effect.singleton_rank_delta}")
         elif effect.singleton_rank_delta < 0:
             costs.append(f"余手孤张点数减少{-effect.singleton_rank_delta}")
-        if effect.lost_natural_uses:
-            use_labels = {
-                "pair": "对子", "triple": "三张", "bomb": "炸弹",
-                "triple_with_pair": "三带二", "straight": "顺子",
-                "pair_straight": "连对", "steel_plate": "钢板",
-            }
+        if effect.lost_natural_uses and not effect.has_exact_group_loss:
             lost_labels = "、".join(
-                use_labels.get(kind, "组牌") for kind in effect.lost_natural_uses
+                _RESIDUAL_USE_LABELS.get(kind, "组牌") for kind in effect.lost_natural_uses
             )
             costs.append(f"出后不再保有部分当前可识别的{lost_labels}线索")
         if effect.rank_group_delta > 0:
@@ -798,7 +852,9 @@ class DeepSeekClient:
             costs.append(f"余手点数类减少{-effect.rank_group_delta}")
         if effect.control_resource_delta is not None and effect.control_resource_delta > 0 and not effect.spends_control_resource:
             costs.append(f"余手可识别控制资源减少{effect.control_resource_delta}")
-        cost_text = "；".join(costs) if costs else "未显示上述控制牌或同点组损耗"
+        cost_text = "；".join(costs) if costs else (
+            "具体见逐点净变化" if rank_delta_text else "未显示上述控制牌或同点组损耗"
+        )
         finish_text = "并可立即出完" if effect.finishes_hand else ""
         teammate_route = (
             "当前领出为队友，pass保留其当前领出机会（若后续无人改写桌面）；"
@@ -823,6 +879,7 @@ class DeepSeekClient:
             f"{relation_label}：action_id={contrast.action_ids[0]} 为pass，{retained}且保留当前可识别余手结构，"
             f"但放弃本家这次应手；action_id={contrast.action_ids[1]} 是当前合法{response_name}应手，"
             f"即时以本家这手替换当前桌面并清理{effect.cards_played}张{finish_text}。可见代价：{cost_text}。"
+            f"{rank_delta_text + '。' if rank_delta_text else ''}"
             f"{teammate_route}{opponent_route}{urgency_route}pass不消耗这些资源，但其他行动者仍可能接牌；"
             "后续若有人要改写桌面，需出合法更强牌并消耗实体牌，是否持有未知；"
             "任何一侧都不保证最终控桌。"
@@ -3742,13 +3799,34 @@ class DeepSeekClient:
                         if contrast.table_leader_hand_count is not None
                         else "对手领出后的公开余张未知"
                     )
-                    lines.append(
+                    control_cost_line = (
                         f"对手单张低/高跟牌成本：action_id={first_id} 是自然普通单张{low_rank}，"
                         f"action_id={second_id} 是控制资源自然单张{high_rank}；两者均是当前合法应手。{leader_count}，"
                         "较低应手保留控制牌，较高应手可能提高本轮争取牌权的力度但付出控制资源。"
                         "若对手公开接近走完，可值得花控制牌阻断；下一席顺序和队友状态也要核对，压住当前单张不保证后续牌权。"
                         "队友控桌、余手结构或控制资源另有可见用途时可反向选择。"
                     )
+                    pass_fact = next(
+                        (fact for fact in candidate_facts_by_id.values() if fact.pattern == "pass"),
+                        None,
+                    )
+                    if pass_fact is not None:
+                        exact_costs: list[str] = []
+                        for action_id in contrast.action_ids:
+                            if tuple(sorted((pass_fact.action_id, action_id))) in rendered_response_pairs:
+                                continue
+                            response_fact = candidate_facts_by_id.get(action_id)
+                            if response_fact is None:
+                                continue
+                            effect = candidate_response_net_effect(pass_fact, response_fact)
+                            if effect is None:
+                                continue
+                            exact_text = DeepSeekClient._rank_resource_delta_text(effect)
+                            if exact_text:
+                                exact_costs.append(f"action_id={action_id}相对pass{exact_text}")
+                        if exact_costs:
+                            control_cost_line += " 逐点应手净变化：" + "；".join(exact_costs)
+                    lines.append(control_cost_line)
                 if contrast.kind in {
                     "opponent_single_control_cost",
                 }:

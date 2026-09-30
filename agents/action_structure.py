@@ -49,6 +49,49 @@ class ResidualRankUse:
 
 
 @dataclass(frozen=True, slots=True)
+class ResidualRankResource:
+    """Physical natural-card inventory and overlapping rank-group cues."""
+
+    rank: str
+    natural_count: int
+    natural_pattern_kinds: tuple[str, ...]
+    wildcard_count: int = 0
+    is_control_rank: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RankResourceChange:
+    """A proved per-rank change between pass and one canonical response."""
+
+    rank: str
+    natural_count_before: int
+    natural_count_after: int
+    natural_pattern_kinds_before: tuple[str, ...]
+    natural_pattern_kinds_after: tuple[str, ...]
+    wildcard_count_before: int
+    wildcard_count_after: int
+    is_control_rank: bool
+
+    @property
+    def lost_group_kinds(self) -> tuple[str, ...]:
+        lost = set(self.natural_pattern_kinds_before) - set(self.natural_pattern_kinds_after)
+        return tuple(kind for kind in _RESIDUAL_USE_ORDER if kind in (lost & _RESOURCE_GROUP_KINDS))
+
+    @property
+    def retained_group_kinds(self) -> tuple[str, ...]:
+        retained = set(self.natural_pattern_kinds_before) & set(self.natural_pattern_kinds_after)
+        return tuple(kind for kind in _RESIDUAL_USE_ORDER if kind in (retained & _RESOURCE_GROUP_KINDS))
+
+    @property
+    def loses_control_resource(self) -> bool:
+        return self.is_control_rank and self.natural_count_before > self.natural_count_after
+
+    @property
+    def spends_wildcard(self) -> bool:
+        return self.wildcard_count_before > self.wildcard_count_after
+
+
+@dataclass(frozen=True, slots=True)
 class CandidateStructure:
     """Compact, public-only comparison facts for one canonical action.
 
@@ -78,6 +121,7 @@ class CandidateStructure:
     residual_hand_natural_pattern_kinds: tuple[str, ...] | None = None
     residual_natural_control_resource_count: int | None = None
     residual_card_count: int | None = None
+    residual_rank_resources: tuple[ResidualRankResource, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +165,7 @@ class CandidateNetEffect:
     rank_group_delta: int
     control_resource_delta: int | None
     lost_natural_uses: tuple[str, ...]
+    rank_resource_changes: tuple[RankResourceChange, ...] | None = None
 
     @property
     def comparison_information(self) -> int:
@@ -135,7 +180,25 @@ class CandidateNetEffect:
             + abs(self.rank_group_delta)
             + max(0, self.control_resource_delta or 0) * 2
             + len(self.lost_natural_uses) * 2
+            + sum(
+                2 + 2 * len(change.lost_group_kinds)
+                + int(change.loses_control_resource)
+                for change in self.rank_resource_changes or ()
+                if change.lost_group_kinds or change.loses_control_resource or change.spends_wildcard
+            )
         )
+
+    @property
+    def has_exact_group_loss(self) -> bool:
+        return any(change.lost_group_kinds for change in self.rank_resource_changes or ())
+
+    @property
+    def has_exact_control_loss(self) -> bool:
+        return any(change.loses_control_resource for change in self.rank_resource_changes or ())
+
+    @property
+    def has_exact_wildcard_loss(self) -> bool:
+        return any(change.spends_wildcard for change in self.rank_resource_changes or ())
 
 
 _RANK_VALUES = {
@@ -167,6 +230,9 @@ _RESIDUAL_STEEL_PLATE_WINDOWS = (
 _RESIDUAL_USE_ORDER = (
     "pair", "triple", "bomb", "triple_with_pair", "straight",
     "pair_straight", "steel_plate",
+)
+_RESOURCE_GROUP_KINDS = frozenset(
+    {"pair", "triple", "bomb", "triple_with_pair", "pair_straight", "steel_plate"}
 )
 _TEAM_BY_PLAYER = {1: "team_13", 2: "team_24", 3: "team_13", 4: "team_24"}
 CANDIDATE_RELATION_KINDS = (
@@ -382,8 +448,14 @@ def _residual_use_facts(
     residual_hand: Counter[str],
     level_rank: str,
     played_ranks: set[str],
-) -> tuple[tuple[ResidualRankUse, ...], tuple[str, ...], int] | None:
+) -> tuple[
+    tuple[ResidualRankUse, ...] | None,
+    tuple[str, ...] | None,
+    int | None,
+    tuple[ResidualRankResource, ...] | None,
+] | None:
     """Return public natural-use cues, omitting wildcard/declaration ambiguity."""
+    uses_are_unambiguous = True
     if action.get("declared_pattern") != "pass":
         carrier = action.get("carrier_cards")
         declared = action.get("declared_cards")
@@ -398,18 +470,38 @@ def _residual_use_facts(
             != Counter(_declared_multiset_key(card, pattern) for card in carrier)
             or (pattern == "straight_flush" and Counter(declared) != Counter(carrier))
         ):
-            return None
+            uses_are_unambiguous = False
 
     patterns_by_rank, all_kinds = _residual_natural_pattern_kinds(
         residual_hand,
         wildcard_token=f"{level_rank}H",
     )
-    physical_counts = Counter(_rank_of(card) for card in residual_hand.elements())
     natural_counts = Counter(
         _rank_of(card)
         for card in residual_hand.elements()
         if card != f"{level_rank}H"
     )
+    physical_counts = Counter(_rank_of(card) for card in residual_hand.elements())
+    wildcard_count = residual_hand.get(f"{level_rank}H", 0)
+    control_ranks = {"SJ", "BJ", "A", level_rank}
+    resource_ranks = set(natural_counts)
+    if wildcard_count:
+        resource_ranks.add(level_rank)
+    rank_resources = tuple(
+        ResidualRankResource(
+            rank=rank,
+            natural_count=natural_counts.get(rank, 0),
+            natural_pattern_kinds=patterns_by_rank.get(rank, ()),
+            wildcard_count=(
+                physical_counts.get(rank, 0) - natural_counts.get(rank, 0)
+                if rank == level_rank else 0
+            ),
+            is_control_rank=rank in control_ranks,
+        )
+        for rank in sorted(resource_ranks, key=lambda item: _RANK_VALUES.get(item, 99))
+    )
+    if not uses_are_unambiguous:
+        return None, None, None, rank_resources
     rank_uses = tuple(
         ResidualRankUse(
             rank=rank,
@@ -422,13 +514,12 @@ def _residual_use_facts(
         )
         for rank in sorted(played_ranks, key=lambda item: _RANK_VALUES.get(item, 99))
     )
-    control_ranks = {"SJ", "BJ", "A", level_rank}
     natural_control_count = sum(
         count
         for token, count in residual_hand.items()
         if token != f"{level_rank}H" and _rank_of(token) in control_ranks
     )
-    return rank_uses, all_kinds, natural_control_count
+    return rank_uses, all_kinds, natural_control_count, rank_resources
 
 
 def summarize_free_lead_residual_structures(
@@ -638,6 +729,7 @@ def summarize_candidate_structures(
                 residual_uses[1] if residual_uses is not None else None,
                 residual_uses[2] if residual_uses is not None else None,
                 sum(hand.values()),
+                residual_uses[3] if residual_uses is not None else None,
             ))
             seen.add(action_id)
             continue
@@ -671,6 +763,7 @@ def summarize_candidate_structures(
             residual_uses[1] if residual_uses is not None else None,
             residual_uses[2] if residual_uses is not None else None,
             sum(remaining.values()),
+            residual_uses[3] if residual_uses is not None else None,
         ))
         seen.add(action_id)
     return tuple(results)
@@ -698,6 +791,39 @@ def candidate_response_net_effect(
             passing.residual_natural_control_resource_count
             - response.residual_natural_control_resource_count
         )
+    rank_resource_changes: tuple[RankResourceChange, ...] | None = None
+    if passing.residual_rank_resources is not None and response.residual_rank_resources is not None:
+        before_by_rank = {item.rank: item for item in passing.residual_rank_resources}
+        after_by_rank = {item.rank: item for item in response.residual_rank_resources}
+        all_ranks = set(before_by_rank) | set(after_by_rank)
+        rank_resource_changes = tuple(
+            RankResourceChange(
+                rank=rank,
+                natural_count_before=before_by_rank[rank].natural_count if rank in before_by_rank else 0,
+                natural_count_after=after_by_rank[rank].natural_count if rank in after_by_rank else 0,
+                natural_pattern_kinds_before=(
+                    before_by_rank[rank].natural_pattern_kinds if rank in before_by_rank else ()
+                ),
+                natural_pattern_kinds_after=(
+                    after_by_rank[rank].natural_pattern_kinds if rank in after_by_rank else ()
+                ),
+                wildcard_count_before=before_by_rank[rank].wildcard_count if rank in before_by_rank else 0,
+                wildcard_count_after=after_by_rank[rank].wildcard_count if rank in after_by_rank else 0,
+                is_control_rank=(
+                    before_by_rank[rank].is_control_rank if rank in before_by_rank
+                    else after_by_rank[rank].is_control_rank
+                ),
+            )
+            for rank in sorted(all_ranks, key=lambda item: _RANK_VALUES.get(item, 99))
+            if (
+                (before_by_rank[rank].natural_count if rank in before_by_rank else 0)
+                != (after_by_rank[rank].natural_count if rank in after_by_rank else 0)
+                or (before_by_rank[rank].wildcard_count if rank in before_by_rank else 0)
+                != (after_by_rank[rank].wildcard_count if rank in after_by_rank else 0)
+                or (before_by_rank[rank].natural_pattern_kinds if rank in before_by_rank else ())
+                != (after_by_rank[rank].natural_pattern_kinds if rank in after_by_rank else ())
+            )
+        )
     return CandidateNetEffect(
         cards_played=response.carrier_count,
         finishes_hand=response.finishes_hand,
@@ -714,6 +840,7 @@ def candidate_response_net_effect(
         ),
         control_resource_delta=control_delta,
         lost_natural_uses=tuple(sorted(pass_uses - response_uses)),
+        rank_resource_changes=rank_resource_changes,
     )
 
 
