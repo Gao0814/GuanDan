@@ -517,6 +517,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
     def test_unique_source_supported_natural_straights_are_real_local_opening_routes(self) -> None:
         # These are ordinary full 27-card deals from the frozen development
         # bands, not hand-authored winning hands or production seed rules.
+        direct_count = deferred_count = 0
         for seed in (153, 5087, 5179):
             with self.subTest(seed_band="development", sample=seed):
                 game = GuanDanGame(seed=seed, current_level_rank="2")
@@ -529,6 +530,28 @@ class MultiPatternOpeningTests(unittest.TestCase):
                 analysis = self.strategy.analyze_action(
                     observation, actions, evaluate_hand(observation, actions),
                 )
+                if analysis.action_id is None:
+                    # Full wildcard bindings add a real competing route to
+                    # these unchanged deals. A unique natural cleanup alone
+                    # no longer proves that all relations support local play.
+                    from agents.opening_strategy import _rank_of
+                    facts = summarize_candidate_structures(observation, actions)
+                    contrasts = summarize_candidate_contrasts(observation, actions)
+                    assert facts is not None and contrasts is not None
+                    actions_by_id = {int(item['action_id']): item for item in actions}
+                    routes = self.strategy._eligible_natural_straight_routes(
+                        observation, actions, facts, {fact.action_id: fact for fact in facts},
+                        actions_by_id, Counter(_rank_of(card) for card in observation['my_info']['hand_cards']), '2',
+                    )
+                    self.assertEqual(len(routes), 1)
+                    related = [item for item in contrasts if routes[0].action_id in item.action_ids]
+                    self.assertTrue(any(item.kind == 'wildcard_resource' for item in related))
+                    self.assertFalse(self.strategy._straight_relations_are_source_supported(
+                        routes[0].action_id, contrasts, actions_by_id,
+                    ))
+                    deferred_count += 1
+                    continue
+                direct_count += 1
                 self.assertIsNotNone(analysis.action_id)
                 action = next(item for item in actions if item["action_id"] == analysis.action_id)
                 self.assertEqual(action["declared_pattern"], "straight")
@@ -567,6 +590,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
                         observation, actions, evaluate_hand(observation, actions),
                     )
                 self.assertEqual(reordered_display_analysis.action_id, analysis.action_id)
+        self.assertEqual((direct_count, deferred_count), (1, 2))
 
     def test_source_qualified_opening_routes_reach_factory_request_without_owning_choice(self) -> None:
         natural_straight_game = GuanDanGame(seed=153, current_level_rank="2")
@@ -592,6 +616,22 @@ class MultiPatternOpeningTests(unittest.TestCase):
                     actions,
                     evaluate_hand(observation, actions),
                 )
+                if target_rank is None:
+                    # The original seed remains here; its newly visible
+                    # wildcard-resource relation invalidates the old direct
+                    # straight recommendation, and the model still owns choice.
+                    self.assertIsNone(analysis.action_id)
+                    contrasts = summarize_candidate_contrasts(observation, actions)
+                    self.assertTrue(any(item.kind == 'wildcard_resource' for item in contrasts or ()))
+                    fixture = ProbeFixture(name, observation, actions, game_snapshot=game)
+                    agent, client, transport, chosen = _run_factory_opening_request(fixture)
+                    final_ids = set(transport.candidate_ids)
+                    self.assertEqual(transport.calls, 1)
+                    self.assertEqual(agent.last_decision_source, 'model')
+                    self.assertEqual(chosen, transport.action_id)
+                    self.assertTrue(set(getattr(agent.last_strategy_recommendation, 'action_ids', ())).issubset(final_ids))
+                    self.assertLessEqual(len(final_ids), 80)
+                    continue
                 self.assertEqual(analysis.recommendation_basis, expected_basis)
                 self.assertIsNotNone(analysis.action_id)
                 suggested = next(item for item in actions if item["action_id"] == analysis.action_id)
@@ -1030,9 +1070,9 @@ class MultiPatternOpeningTests(unittest.TestCase):
             )
         )
         expected = {
-            "low_cost_single": (53, 24, 9882, "exp_soft_single_cost_probe_001"),
-            "neutral_soft_pair": (83, 56, 15233, "exp_soft_pair_probe_001"),
-            "seed29": (80, 52, 15680, "exp_soft_pair_probe_001"),
+            "low_cost_single": (211, 24, 9882, "exp_soft_single_cost_probe_001"),
+            "neutral_soft_pair": (378, 40, 15233, "exp_soft_pair_probe_001"),
+            "seed29": (491, 52, 15680, "exp_soft_pair_probe_001"),
         }
         covered_patterns: set[str] = set()
         for fixture in fixtures:
@@ -1244,9 +1284,9 @@ class MultiPatternOpeningTests(unittest.TestCase):
             ProbeFixture("seed29", observation, game.legal_actions(), game_snapshot=game)
         )
         expected = {
-            "low_cost_single": (53, 24, 9340, 16336, "exp_soft_single_cost_probe_001", 4100, 4700, 680, 1520),
-            "neutral_soft_pair": (83, 56, 14500, 23358, "exp_soft_pair_probe_001", 8600, 9200, 650, 1460),
-            "seed29": (80, 52, 15000, 24723, "exp_soft_pair_probe_001", 8550, 9250, 650, 1460),
+            "low_cost_single": (211, 24, 9340, 16336, "exp_soft_single_cost_probe_001", 4100, 4700, 680, 1520),
+            "neutral_soft_pair": (378, 40, 14500, 23358, "exp_soft_pair_probe_001", 8600, 9200, 650, 1460),
+            "seed29": (491, 52, 15000, 24723, "exp_soft_pair_probe_001", 8550, 9250, 650, 1460),
         }
 
         for fixture in fixtures:
@@ -1760,7 +1800,7 @@ class MultiPatternOpeningTests(unittest.TestCase):
 
         self.assertEqual(formula_patterns["single"], 6)
         self.assertEqual(formula_patterns["pair"] + formula_patterns["triple"], 0)
-        self.assertEqual(formula_patterns["straight"], 2)
+        self.assertEqual(formula_patterns["straight"], 1)
         self.assertEqual(sum(formula_patterns.values()) + no_direct, state_count)
 
     def test_untuned_independent_initial_deal_interval_keeps_relationship_fail_closed(self) -> None:

@@ -116,7 +116,7 @@ class ActionQualityProxyTests(unittest.TestCase):
         self.assertTrue(all(sample.phase in {"endgame", "near_open_endgame", "critical_endgame"} for sample in self.samples[4:]))
         self.assertEqual(
             tuple(sample.observation["current_round"]["step_no"] for sample in self.samples),  # type: ignore[index]
-            (0, 0, 16, 24, 40, 48),
+            (0, 0, 16, 28, 44, 44),
         )
         self.assertTrue(
             all(sample.observation["current_round"]["current_level_rank"] == "2" for sample in self.samples)  # type: ignore[index]
@@ -126,7 +126,7 @@ class ActionQualityProxyTests(unittest.TestCase):
         self.assertTrue(all(sample.source_seed is not None and 900 <= sample.source_seed <= 919 for sample in self.samples[2:]))
         self.assertEqual(
             tuple((sample.canonical_candidate_count, sample.final_candidate_count) for sample in self.samples),
-            ((53, 24), (83, 56), (6, 6), (6, 6), (9, 8), (8, 4)),
+            ((211, 24), (378, 40), (22, 6), (8, 6), (5, 3), (9, 8)),
         )
         for sample in self.samples:
             observation = sample.game_snapshot.observe()
@@ -428,7 +428,7 @@ class ActionQualityProxyTests(unittest.TestCase):
         self.assertEqual(report.completed_sample_count, 6)
         self.assertEqual(report.sample_set_stage, SampleSetStage.READY)
         self.assertTrue(all(result.comparison in set(Comparison) - {Comparison.UNEVALUABLE} for result in report.results))
-        self.assertTrue(all(result.reference_action_in_model_candidates for result in report.results))
+        self.assertEqual(tuple(result.reference_action_in_model_candidates for result in report.results), (True, False, True, True, True, True))
         self.assertTrue(all(2 <= result.final_candidate_count <= 80 for result in report.results))
         self.assertEqual(transport.calls, 6)
         self.assertEqual(len(transport.request_candidate_ids), 6)

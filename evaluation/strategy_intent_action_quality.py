@@ -21,6 +21,7 @@ from agents.rule_based_ai import RuleBasedAIAgent
 from agents.strategy_intent_prompt import StrategyIntentPromptPayload, build_strategy_intent_prompt_payload
 from agents.strategy_router import StrategyIntentContext, route_strategy_intent
 from engine.game import GuanDanGame
+from evaluation.terminal import terminal_team_facts
 from evaluation.pass_policy_benchmark import StrategicPassAIAgent
 from evaluation.strategy_intent_action_ablation import (
     SuggestionProvider,
@@ -253,25 +254,9 @@ def _failed(steps: int, code: str) -> RuleRolloutOutcome:
 
 
 def _normalize_terminal(observation: object, winner: object, observer: object, steps: int) -> RuleRolloutOutcome:
-    if winner not in {"team_13", "team_24", "draw"}:
-        return _failed(steps, "invalid_terminal_winner")
-    if not _is_int(observer) or not 1 <= observer <= 4 or not isinstance(observation, Mapping):
-        return _failed(steps, "invalid_finish_order")
-    history = observation.get("history")
-    order = history.get("finish_order") if isinstance(history, Mapping) else None
-    if not isinstance(order, list) or any(not _is_int(player) or not 1 <= player <= 4 for player in order) or len(set(order)) != len(order):
-        return _failed(steps, "invalid_finish_order")
-    if len(order) == 3:
-        missing = [player for player in (1, 2, 3, 4) if player not in order]
-        if len(missing) != 1:
-            return _failed(steps, "invalid_finish_order")
-        order = [*order, missing[0]]
-    if len(order) != 4:
-        return _failed(steps, "invalid_finish_order")
-    outcome = "draw" if winner == "draw" else "win" if winner == _team_for(observer) else "loss"
-    score = {"loss": 0, "draw": 1, "win": 2}[outcome]
-    placement = order.index(observer) + order.index(_partner_for(observer)) + 2
-    return RuleRolloutOutcome(outcome, score, placement, steps, True, ())
+    outcome, score, placement, diagnostic = terminal_team_facts(observation, winner, observer)
+    return RuleRolloutOutcome(outcome, score, placement, steps, diagnostic is None,
+                              (diagnostic,) if diagnostic else ())
 
 
 def _rollout(branch: GuanDanGame, action_id: object, observer: object, max_steps: int) -> RuleRolloutOutcome:

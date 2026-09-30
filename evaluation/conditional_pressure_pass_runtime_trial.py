@@ -13,6 +13,7 @@ from agents.base import BaseAgent, require_legal_action_id
 from agents.conditional_pressure_pass_ai import ConditionalPressurePassAIAgent
 from agents.rule_based_ai import FrozenRuleBasedAIAgent
 from engine.game import GuanDanGame
+from evaluation.terminal import terminal_team_facts
 
 
 _TEAM = {1: "team_13", 2: "team_24", 3: "team_13", 4: "team_24"}
@@ -77,29 +78,19 @@ def _normalize_terminal(
     steps: int,
     candidates: Sequence[ConditionalPressurePassAIAgent],
 ) -> RuntimeTrialGameOutcome:
-    if winner not in {*_TEAMS, "draw"}:
-        return _failed(steps, candidates, "invalid_terminal_winner")
-    history = observation.get("history") if isinstance(observation, Mapping) else None
-    order = history.get("finish_order") if isinstance(history, Mapping) else None
-    if not isinstance(order, list) or any(not _is_int(player) or player not in _TEAM for player in order) or len(set(order)) != len(order):
-        return _failed(steps, candidates, "invalid_finish_order")
-    if len(order) == 3:
-        missing = [player for player in _TEAM if player not in order]
-        if len(missing) != 1:
-            return _failed(steps, candidates, "invalid_finish_order")
-        order = order + missing
-    if len(order) != 4:
-        return _failed(steps, candidates, "invalid_finish_order")
-    baseline_team = _opposing_team(candidate_team)
-    candidate_outcome = "draw" if winner == "draw" else "win" if winner == candidate_team else "loss"
-    baseline_outcome = "draw" if winner == "draw" else "win" if winner == baseline_team else "loss"
-    candidate_placement = sum(order.index(player) + 1 for player in _players_for(candidate_team))
-    baseline_placement = sum(order.index(player) + 1 for player in _players_for(baseline_team))
+    candidate_outcome, candidate_score, candidate_placement, diagnostic = terminal_team_facts(
+        observation, winner, _players_for(candidate_team)[0],
+    )
+    if diagnostic:
+        return _failed(steps, candidates, diagnostic)
+    baseline_outcome, baseline_score, baseline_placement, _ = terminal_team_facts(
+        observation, winner, _players_for(_opposing_team(candidate_team))[0],
+    )
     return RuntimeTrialGameOutcome(
         candidate_outcome,
         baseline_outcome,
-        _score(candidate_outcome),
-        _score(baseline_outcome),
+        candidate_score,
+        baseline_score,
         candidate_placement,
         baseline_placement,
         steps,

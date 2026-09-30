@@ -102,16 +102,16 @@ class H3A9QualityQueueTests(unittest.TestCase):
         )
         self.assertTrue(all(sample.source_seed in H3_A9_SEEDS for sample in self.samples))
         self.assertEqual(len({sample.source_seed for sample in self.samples}), 6)
-        # opening_2 is frozen at the original seed's earliest eligible step,
-        # even though its RuleBased reference is not shown by the bounded
-        # model candidate set. Do not advance to step 4 to hide that loss.
-        self.assertEqual(tuple(sample.observation["current_round"]["step_no"] for sample in self.samples), (0, 0, 8, 8, 64, 64))  # type: ignore[index]
+        # opening_2 keeps the original seed's earliest eligible step and its
+        # frozen counterfactual projection. Recompute actual coverage after
+        # rule expansion instead of advancing to a different snapshot.
+        self.assertEqual(tuple(sample.observation["current_round"]["step_no"] for sample in self.samples), (0, 0, 8, 8, 72, 60))  # type: ignore[index]
         self.assertEqual(tuple(sample.phase for sample in self.samples[:2]), ("opening", "opening"))
         self.assertEqual(tuple(sample.phase for sample in self.samples[2:4]), ("midgame", "midgame"))
-        self.assertEqual(tuple(sample.phase for sample in self.samples[4:]), ("critical_endgame", "near_open_endgame"))
+        self.assertEqual(tuple(sample.phase for sample in self.samples[4:]), ("critical_endgame", "critical_endgame"))
         self.assertEqual(
             tuple((sample.canonical_candidate_count, sample.final_candidate_count) for sample in self.samples),
-            ((77, 58), (74, 49), (25, 13), (11, 11), (8, 7), (9, 6)),
+            ((305, 40), (573, 52), (65, 13), (22, 20), (8, 7), (11, 7)),
         )
 
     def test_every_sample_replays_from_a_complete_seeded_opening(self) -> None:

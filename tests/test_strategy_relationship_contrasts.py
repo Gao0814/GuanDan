@@ -552,8 +552,8 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
             KnowledgeRetriever(KnowledgeBaseLoader(Path("rag")).load_all_documents())
         )
         opening_cases = (
-            ("low_cost_single", 53, 24, 10_000),
-            ("neutral_soft_pair", 83, 56, 16_000),
+            ("low_cost_single", 211, 24, 10_000),
+            ("neutral_soft_pair", 378, 40, 16_000),
         )
         for fixture, expected in zip(build_h3_model_probe_opening_fixtures(), opening_cases):
             name, raw_count, candidate_count, char_budget = expected
@@ -614,7 +614,7 @@ class StrategyRelationshipContrastTests(unittest.TestCase):
         full_contrasts = summarize_candidate_contrasts(observation, actions)
         self.assertIsNotNone(full_contrasts)
         assert full_contrasts is not None
-        self.assertEqual(len(full_contrasts), 64)
+        self.assertEqual(len(full_contrasts), 80)
         self.assertTrue(any(item.kind == "bomb_wildcard_strength" for item in full_contrasts))
         rag_context = client.captured_kwargs.get("rag_context")
         self.assertIsInstance(rag_context, dict)

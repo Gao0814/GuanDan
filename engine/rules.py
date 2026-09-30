@@ -173,6 +173,15 @@ def _can_same_type_beat(candidate: Pattern, candidate_value: int | None, leading
     return candidate_value > leading_value
 
 
+def _can_beat_patterns(candidate: tuple[Pattern, int | None], leading: tuple[Pattern, int | None]) -> bool:
+    candidate_pattern, candidate_value = candidate
+    leading_pattern, leading_value = leading
+    if _can_same_type_beat(candidate_pattern, candidate_value, leading_pattern, leading_value):
+        return True
+    candidate_tier = _bomb_cross_type_tier(candidate_pattern)
+    return candidate_tier > 0 and candidate_tier > _bomb_cross_type_tier(leading_pattern)
+
+
 def _public_declared_cards_for_group(rank: str, count: int) -> tuple[Card, ...]:
     return tuple(Card(rank=rank) for _ in range(count))
 
@@ -305,19 +314,44 @@ def _materialize_declared_actions(
     remains a natural card. Physical multiplicity is preserved by consuming
     each selected carrier before assigning the next declaration.
     """
-    ordered_hand = list(sort_cards(hand_cards))
+    if len(declared_cards) > len(hand_cards):
+        return []
     wildcard = Card(rank=current_level_rank, suit="H")
-    available_wildcards = ordered_hand.count(wildcard)
+    available_wildcards = hand_cards.count(wildcard)
     max_wildcards = min(2, available_wildcards, len(declared_cards))
     actions: dict[tuple[object, ...], Action] = {}
+    # Reject impossible declarations before exploring position assignments.
+    # Suit is part of a flush target; ordinary declarations only require rank.
+    def target_key(card: Card) -> tuple[str, str | None]:
+        return (card.rank, card.suit if pattern == PatternType.STRAIGHT_FLUSH else None)
+
+    supply = Counter(target_key(card) for card in hand_cards)
+    demand = Counter(target_key(card) for card in declared_cards)
+    if sum(max(0, count - supply[key]) for key, count in demand.items()) > max_wildcards:
+        return []
+    ordered_hand = list(sort_cards(hand_cards))
 
     for wildcard_count in range(max_wildcards + 1):
+        seen_targets: set[tuple[Card, ...]] = set()
         for wildcard_positions in combinations(range(len(declared_cards)), wildcard_count):
+            substituted = tuple(declared_cards[index] for index in wildcard_positions)
+            # Equal declared faces give identical metadata and natural demand.
+            # Keep the first position assignment, preserving canonical order.
+            if substituted in seen_targets:
+                continue
+            seen_targets.add(substituted)
             wildcard_position_set = set(wildcard_positions)
             if any(
                 not _can_substitute_for(declared_cards[index], pattern, current_level_rank)
                 for index in wildcard_positions
             ):
+                continue
+
+            natural_demand = demand.copy()
+            natural_demand.subtract(target_key(card) for card in substituted)
+            natural_supply = supply.copy()
+            natural_supply[target_key(wildcard)] -= wildcard_count
+            if any(count > natural_supply[key] for key, count in natural_demand.items()):
                 continue
 
             remaining = ordered_hand.copy()
@@ -524,6 +558,8 @@ def _resource_response_actions(
     carriers: tuple[Card, ...],
     current_level_rank: str,
     extra_patterns: tuple[str, ...] = (),
+    *,
+    include_resource_families: bool = True,
 ) -> tuple[Action, ...]:
     """Generate counted families plus the requested same-shape family."""
     count = len(carriers)
@@ -534,7 +570,7 @@ def _resource_response_actions(
         PatternType.BOMB,
         PatternType.STRAIGHT_FLUSH,
         PatternType.JOKER_BOMB,
-    }
+    } if include_resource_families else set()
     families.update(PatternType(pattern) for pattern in extra_patterns)
     wildcard_face = (current_level_rank, "H")
     natural_ranks = {
@@ -1061,7 +1097,11 @@ class BaseRuleEngine:
                     player_id,
                     cards,
                     current_level_rank,
-                    extra_patterns=leading_patterns_by_player[player_id],
+                    extra_patterns=tuple(
+                        pattern for pattern in leading_patterns_by_player[player_id]
+                        if pattern not in {"single", "pair", "bomb", "straight_flush", "joker_bomb"}
+                    ),
+                    include_resource_families=False,
                 ):
                     if (
                         response.declared_pattern is None
@@ -1087,18 +1127,54 @@ class BaseRuleEngine:
                         continue
                     seen_resource_actions.add(action_key)
                     resource_by_pattern[family].append(response)
+            # Bind declarations once against the full explicit pool instead of
+            # binding every window again against every possible carrier. Keep
+            # the original bounded carrier domain and count classification.
+            resource_generated = [
+                *self._generate_single_actions(player_id, available_cards, current_level_rank),
+                *self._generate_group_actions(player_id, available_cards, current_level_rank),
+                *self._generate_straight_flush_actions(player_id, available_cards, current_level_rank),
+            ]
+            for response in resource_generated:
+                if response.declared_pattern not in {
+                    PatternType.SINGLE, PatternType.PAIR, PatternType.BOMB,
+                    PatternType.STRAIGHT_FLUSH, PatternType.JOKER_BOMB,
+                }:
+                    continue
+                if carrier_key(response.carrier_cards) in visited_carriers:
+                    resource_by_pattern[response.declared_pattern.value].append(response)
             resource_candidates_by_player[player_id] = resource_by_pattern
 
         resource_families = {"single", "pair", "bomb", "straight_flush", "joker_bomb"}
         summaries_by_lead: dict[tuple[object, ...], PublicResponseSummary] = {}
+        signatures: dict[tuple[object, ...], tuple[Pattern, int | None] | None] = {}
+
+        def signature(action: Action) -> tuple[Pattern, int | None] | None:
+            key = (action.declared_pattern, action.declared_cards)
+            if key not in signatures:
+                try:
+                    signatures[key] = _pattern_signature(action, current_level_rank)
+                except ValueError:
+                    signatures[key] = None
+            return signatures[key]
+
+        def beats(candidate: Action, lead: Action) -> bool:
+            candidate_signature, lead_signature = signature(candidate), signature(lead)
+            return (candidate_signature is not None and lead_signature is not None
+                    and _can_beat_patterns(candidate_signature, lead_signature))
 
         def lead_key(lead: Action) -> tuple[object, ...]:
+            # Response feasibility depends on the rule comparison value, not
+            # the lead's physical suit, carrier or wildcard assignment.
+            detected = signature(lead)
+            comparison_key = None
+            if detected is not None:
+                pattern, value = detected
+                comparison_key = (pattern.type, pattern.cards_count, pattern.bomb_length, value)
             return (
                 lead.player_id,
                 lead.action_type,
-                lead.declared_pattern,
-                tuple((card.rank, card.suit) for card in lead.declared_cards),
-                lead.wildcard_count,
+                comparison_key,
             )
 
         def summarize(lead: Action) -> PublicResponseSummary:
@@ -1130,7 +1206,7 @@ class BaseRuleEngine:
 
             for pattern in possible_patterns:
                 for response in by_pattern.get(pattern, ()):
-                    if not self.can_beat(response, lead, current_level_rank):
+                    if not beats(response, lead):
                         continue
                     family = response.declared_pattern.value
                     requirements.add(PublicResponseRequirement(
@@ -1140,7 +1216,7 @@ class BaseRuleEngine:
                     ))
             for pattern in possible_patterns:
                 for response in resource_by_pattern.get(pattern, ()):
-                    if not self.can_beat(response, lead, current_level_rank):
+                    if not beats(response, lead):
                         continue
                     family = response.declared_pattern.value
                     carrier = tuple(
@@ -1198,14 +1274,7 @@ class BaseRuleEngine:
         except ValueError:
             return False
 
-        if _can_same_type_beat(candidate_pattern, candidate_value, leading_pattern, leading_value):
-            return True
-
-        leading_tier = _bomb_cross_type_tier(leading_pattern)
-        candidate_tier = _bomb_cross_type_tier(candidate_pattern)
-        if candidate_tier == 0:
-            return False
-        return candidate_tier > leading_tier
+        return _can_beat_patterns((candidate_pattern, candidate_value), (leading_pattern, leading_value))
 
     def _generate_single_actions(
         self,
@@ -1249,11 +1318,15 @@ class BaseRuleEngine:
         first_carrier_only: bool = False,
     ) -> list[Action]:
         actions: list[Action] = []
+        counts = Counter(card.rank for card in hand_cards)
+        wildcards = min(2, sum(_is_wildcard(card, current_level_rank) for card in hand_cards))
         for rank in _NON_JOKER_RANKS:
             for pattern, count in (
                 (PatternType.PAIR, 2),
                 (PatternType.TRIPLE, 3),
             ):
+                if counts[rank] + wildcards < count:
+                    continue
                 declared = _public_declared_cards_for_group(rank, count)
                 actions.extend(_materialize_declared_actions(
                     player_id=player_id,
@@ -1264,6 +1337,8 @@ class BaseRuleEngine:
                     first_carrier_only=first_carrier_only,
                 ))
             for count in range(4, 11):
+                if counts[rank] + wildcards < count:
+                    continue
                 declared = _public_declared_cards_for_group(rank, count)
                 actions.extend(_materialize_declared_actions(
                     player_id=player_id,
@@ -1310,10 +1385,19 @@ class BaseRuleEngine:
         first_carrier_only: bool = False,
     ) -> list[Action]:
         actions: list[Action] = []
+        counts = Counter(card.rank for card in hand_cards)
+        wildcards = min(2, sum(_is_wildcard(card, current_level_rank) for card in hand_cards))
         pair_ranks = (*_NON_JOKER_RANKS, SMALL_JOKER_RANK, BIG_JOKER_RANK)
         for triple_rank in _NON_JOKER_RANKS:
+            if counts[triple_rank] + wildcards < 3:
+                continue
             for pair_rank in pair_ranks:
                 if pair_rank == triple_rank:
+                    continue
+                allowance = 0 if pair_rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} else wildcards
+                if counts[pair_rank] + allowance < 2:
+                    continue
+                if max(0, 3 - counts[triple_rank]) + max(0, 2 - counts[pair_rank]) > wildcards:
                     continue
                 declared = (
                     Card(rank=triple_rank),

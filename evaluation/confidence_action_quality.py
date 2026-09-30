@@ -16,6 +16,7 @@ from agents.card_confidence_pipeline import build_runtime_card_confidence
 from agents.game_phase import CRITICAL_ENDGAME, GamePhaseContext, classify_game_phase
 from agents.rule_based_ai import RuleBasedAIAgent
 from engine.game import GuanDanGame
+from evaluation.terminal import terminal_team_facts
 from evaluation.confidence_action_ablation import (
     SuggestionProvider, _classify_result, _external_bucket, _is_int, _policy_name,
     _priority, _prompt_actions, _prompt_pair_is_exact, _structured_prompt, _validate_inputs,
@@ -164,28 +165,10 @@ def _team(player_id: int) -> str:
     return "team_13" if player_id in (1, 3) else "team_24"
 
 
-def _normalize_terminal(observation: object, winner: object, observer: int, steps: int) -> RuleRolloutOutcome:
-    if winner not in {"team_13", "team_24", "draw"}:
-        return RuleRolloutOutcome("", 0, 0, steps, False, ("invalid_terminal_winner",))
-    if not isinstance(observation, Mapping):
-        return RuleRolloutOutcome("", 0, 0, steps, False, ("invalid_finish_order",))
-    history = observation.get("history")
-    order = history.get("finish_order") if isinstance(history, Mapping) else None
-    if not isinstance(order, list) or any(not _is_int(item) or not 1 <= item <= 4 for item in order) or len(set(order)) != len(order):
-        return RuleRolloutOutcome("", 0, 0, steps, False, ("invalid_finish_order",))
-    if len(order) == 3:
-        missing = [item for item in (1, 2, 3, 4) if item not in order]
-        if len(missing) != 1:
-            return RuleRolloutOutcome("", 0, 0, steps, False, ("invalid_finish_order",))
-        order = order + missing
-    if len(order) != 4:
-        return RuleRolloutOutcome("", 0, 0, steps, False, ("invalid_finish_order",))
-    team = _team(observer)
-    outcome = "draw" if winner == "draw" else "win" if winner == team else "loss"
-    score = {"loss": 0, "draw": 1, "win": 2}[outcome]
-    partner = 4 - observer if observer in (1, 3) else 6 - observer
-    placement = order.index(observer) + 1 + order.index(partner) + 1
-    return RuleRolloutOutcome(outcome, score, placement, steps, True, ())
+def _normalize_terminal(observation: object, winner: object, observer: object, steps: int) -> RuleRolloutOutcome:
+    outcome, score, placement, diagnostic = terminal_team_facts(observation, winner, observer)
+    return RuleRolloutOutcome(outcome, score, placement, steps, diagnostic is None,
+                              (diagnostic,) if diagnostic else ())
 
 
 def _rollout(snapshot: GuanDanGame, action_id: object, observer: int, max_steps: int) -> RuleRolloutOutcome:

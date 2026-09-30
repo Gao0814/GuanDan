@@ -96,7 +96,7 @@ class M2SameStateEvaluationTests(unittest.TestCase):
         reference_id = RuleBasedAIAgent(player_id=1).select_action(sample.observation, sample.legal_actions)
         self.assertEqual(sample.source_seed, 921)
         self.assertEqual(sample.observation["current_round"]["step_no"], 0)  # type: ignore[index]
-        self.assertEqual((sample.canonical_candidate_count, sample.final_candidate_count), (74, 49))
+        self.assertEqual((sample.canonical_candidate_count, sample.final_candidate_count), (573, 52))
         self.assertFalse(sample.opening_formula_enabled)
         self.assertEqual(sample.candidate_projection, FROZEN_H3_A9_OPENING_2_PROJECTION)
         self.assertIn(reference_id, sample.final_candidate_ids)
@@ -108,7 +108,7 @@ class M2SameStateEvaluationTests(unittest.TestCase):
         qualification = m2.qualification_from_worker(spec.name, "current", first)
         self.assertEqual(qualification.stage, "ready")
         self.assertEqual(qualification.state_phase, "opening")
-        self.assertEqual(qualification.canonical_count, 80)
+        self.assertEqual(qualification.canonical_count, 491)
         self.assertEqual(qualification.final_count, 52)
         self.assertLessEqual(qualification.final_count, 80)
         self.assertEqual(qualification.transport_calls, 1)

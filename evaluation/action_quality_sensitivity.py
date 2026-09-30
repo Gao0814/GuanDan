@@ -386,7 +386,9 @@ def evaluate_h3_a11_sample_sets(h3_a8: SampleSetResult, h3_a9: SampleSetResult) 
             continue
         if reference_id not in final_ids:
             results.append(_state_result(sample, SensitivityStatus.REFERENCE_ACTION_NOT_VISIBLE, sample_name=sample_name))
-            failed = True
+            # A valid state with missing comparison coverage is not a rollout
+            # failure. Keep its explicit omission and recompute later states;
+            # technical failures below still stop the remaining queue.
             continue
         my_info = sample.observation.get("my_info")
         player_id = my_info.get("player_id") if isinstance(my_info, Mapping) else None

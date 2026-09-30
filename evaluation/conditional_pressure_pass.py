@@ -19,6 +19,7 @@ from agents.base import require_legal_action_id
 from agents.conditional_pressure_pass_ai import ConditionalPressurePassAIAgent
 from agents.rule_based_ai import FrozenRuleBasedAIAgent
 from engine.game import GuanDanGame
+from evaluation.terminal import terminal_team_facts
 
 
 _TEAM = {1: "team_13", 2: "team_24", 3: "team_13", 4: "team_24"}
@@ -43,22 +44,9 @@ def _team(player: int) -> str:
 
 
 def _terminal(game: GuanDanGame, winner: object, observer: int, steps: int) -> RolloutOutcome:
-    observation = game.observe()
-    history = observation.get("history") if isinstance(observation, Mapping) else None
-    order = history.get("finish_order") if isinstance(history, Mapping) else None
-    if winner not in {"team_13", "team_24", "draw"} or not isinstance(order, list) or len(order) not in {3, 4}:
-        return RolloutOutcome("", 0, 0, steps, False, ("invalid_terminal",))
-    if any(not _is_int(item) or item not in _TEAM for item in order) or len(set(order)) != len(order):
-        return RolloutOutcome("", 0, 0, steps, False, ("invalid_terminal",))
-    if len(order) == 3:
-        missing = [item for item in _TEAM if item not in order]
-        if len(missing) != 1:
-            return RolloutOutcome("", 0, 0, steps, False, ("invalid_terminal",))
-        order = order + missing
-    outcome = "draw" if winner == "draw" else "win" if winner == _team(observer) else "loss"
-    partner = ((observer + 1) % 4) + 1
-    placement = order.index(observer) + order.index(partner) + 2
-    return RolloutOutcome(outcome, {"loss": 0, "draw": 1, "win": 2}[outcome], placement, steps, True, ())
+    outcome, score, placement, diagnostic = terminal_team_facts(game.observe(), winner, observer)
+    return RolloutOutcome(outcome, score, placement, steps, diagnostic is None,
+                          ("invalid_terminal",) if diagnostic else ())
 
 
 def _rollout(game: GuanDanGame, first_action_id: object, observer: int, max_steps: int) -> RolloutOutcome:

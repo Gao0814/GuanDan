@@ -418,7 +418,12 @@ class BotzoneDecisionDeadlineTests(unittest.TestCase):
             observability=observability,
             decision_trace_enabled=True,
         )
-        context = replace(_context(), decision_deadline=DecisionDeadline(time.monotonic() + 0.6))
+        # This test isolates a late model worker. The contiguous default hand
+        # now has enough canonical bindings to exhaust 0.6s before entering
+        # the client; dense preparation and pre-model expiry have other tests.
+        # Keep 27 distinct physical cards and the original timeout assertions.
+        context = replace(_context(), own_hand=tuple(range(0, 108, 4)),
+                          decision_deadline=DecisionDeadline(time.monotonic() + 0.6))
 
         started = time.monotonic()
         first = handler(context)

@@ -42,7 +42,7 @@ class ActionQualityCalibrationTests(unittest.TestCase):
         cls.report = calibrate_h3_a10_sample_sets(cls.h3_a8, cls.h3_a9)
 
     def test_all_twelve_frozen_engine_states_keep_step_zero_and_report_reference_coverage(self) -> None:
-        self.assertEqual(self.report.status, CalibrationStatus.READY)
+        self.assertEqual(self.report.status, CalibrationStatus.CALIBRATION_INCOMPLETE)
         self.assertEqual(
             tuple(row.sample_name for row in self.report.samples),
             (
@@ -63,23 +63,23 @@ class ActionQualityCalibrationTests(unittest.TestCase):
         self.assertEqual(
             tuple((row.phase, row.canonical_candidate_count, row.final_candidate_count) for row in self.report.samples),
             (
-                ("opening", 53, 24),
-                ("opening", 83, 56),
-                ("midgame", 6, 6),
-                ("midgame", 6, 6),
-                ("endgame", 9, 8),
-                ("near_open_endgame", 8, 4),
-                ("opening", 77, 58),
-                ("opening", 74, 49),
-                ("midgame", 25, 13),
-                ("midgame", 11, 11),
+                ("opening", 211, 24),
+                ("opening", 378, 40),
+                ("midgame", 22, 6),
+                ("midgame", 8, 6),
+                ("endgame", 5, 3),
+                ("near_open_endgame", 9, 8),
+                ("opening", 305, 40),
+                ("opening", 573, 52),
+                ("midgame", 65, 13),
+                ("midgame", 22, 20),
                 ("critical_endgame", 8, 7),
-                ("near_open_endgame", 9, 6),
+                ("critical_endgame", 11, 7),
             ),
         )
-        self.assertEqual(tuple(row.status for row in self.report.samples), (CalibrationStatus.READY,) * 12)
-        self.assertEqual(tuple(row.reference_action_visible for row in self.report.samples), (True,) * 12)
-        self.assertEqual(tuple(row.completed_candidate_count for row in self.report.samples), tuple(row.final_candidate_count for row in self.report.samples))
+        self.assertEqual(tuple(row.status for row in self.report.samples), (CalibrationStatus.READY, CalibrationStatus.REFERENCE_ACTION_NOT_VISIBLE, *(CalibrationStatus.READY,) * 10))
+        self.assertEqual(tuple(row.reference_action_visible for row in self.report.samples), (True, False, *(True,) * 10))
+        self.assertEqual(tuple(row.completed_candidate_count for row in self.report.samples), tuple(0 if index == 1 else row.final_candidate_count for index, row in enumerate(self.report.samples)))
         self.assertEqual(
             tuple(sample.opening_formula_enabled for sample in self.h3_a9.samples),
             (True, False, True, True, True, True),
@@ -89,8 +89,8 @@ class ActionQualityCalibrationTests(unittest.TestCase):
             {
                 "name": "opening_2",
                 "phase": "opening",
-                "canonical_candidate_count": 74,
-                "final_candidate_count": 49,
+                "canonical_candidate_count": 573,
+                "final_candidate_count": 52,
                 "opening_formula_enabled": False,
                 "candidate_projection": "frozen_h3_pre_budget_representatives",
             },
@@ -137,9 +137,9 @@ class ActionQualityCalibrationTests(unittest.TestCase):
             summaries["frozen_h3_pre_budget_representatives"]["completed_candidate_count"],  # type: ignore[index]
             counterfactual_rows[0].completed_candidate_count,
         )
-        self.assertEqual(self.report.completed_sample_count, 12)
+        self.assertEqual(self.report.completed_sample_count, 11)
         self.assertEqual(self.report.completed_candidate_count, completed_candidates)
-        self.assertEqual(completed_candidates, planned_candidates)
+        self.assertEqual(completed_candidates, planned_candidates - self.report.samples[1].final_candidate_count)
         self.assertGreaterEqual(sum(row.tie_with_reference for row in self.report.samples), 12)
 
     def test_public_entrypoint_uses_the_two_frozen_queues(self) -> None:
@@ -272,7 +272,7 @@ class ActionQualityCalibrationTests(unittest.TestCase):
         serialized = self.report.to_json()
         self.assertEqual(serialized.encode("utf-8"), self.report.to_json().encode("utf-8"))
         repeated_report = calibrate_h3_a10_sample_sets(self.h3_a8, self.h3_a9)
-        self.assertEqual(repeated_report.status, CalibrationStatus.READY)
+        self.assertEqual(repeated_report.status, CalibrationStatus.CALIBRATION_INCOMPLETE)
         self.assertEqual(repeated_report.to_json().encode("utf-8"), serialized.encode("utf-8"))
         for forbidden in (
             "action_id",

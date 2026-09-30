@@ -68,28 +68,31 @@ _QUALITY_COMPARISONS = {
     "off_better": "worse_than_reference",
 }
 
+# Rule-expanded metadata recomputed after 5582765, using the same seed queues
+# and earliest eligible-state selection. The soft-pair reference is now absent
+# from the bounded view; it must remain explicitly unevaluable, not replaced.
 # Frozen metadata only. Candidate/action IDs are deliberately not part of this
 # contract: each run takes the actual final IDs emitted by the existing queue.
 _H3_A8_CONTRACT = (
-    ("opening_low_cost_single", "opening", 53, 24),
-    ("opening_neutral_soft_pair", "opening", 83, 56),
-    ("midgame_1", "midgame", 6, 6),
-    ("midgame_2", "midgame", 6, 6),
-    ("endgame_1", "endgame", 9, 8),
-    ("endgame_2", "near_open_endgame", 8, 4),
+    ("opening_low_cost_single", "opening", 211, 24),
+    ("opening_neutral_soft_pair", "opening", 378, 40),
+    ("midgame_1", "midgame", 22, 6),
+    ("midgame_2", "midgame", 8, 6),
+    ("endgame_1", "endgame", 5, 3),
+    ("endgame_2", "near_open_endgame", 9, 8),
 )
 _H3_A9_CONTRACT = (
-    ("opening_1", "opening", 77, 58),
+    ("opening_1", "opening", 305, 40),
     # Preserve seed 921's original step-zero state.  If the local opening
     # formula resolves it, the queue marks and disables that shortcut only
     # for counterfactual model-candidate calibration; it never substitutes a
     # later same-seed snapshot. Reference visibility is reported from the
     # resulting actual request candidate set, not assumed here.
-    ("opening_2", "opening", 74, 49),
-    ("midgame_1", "midgame", 25, 13),
-    ("midgame_2", "midgame", 11, 11),
+    ("opening_2", "opening", 573, 52),
+    ("midgame_1", "midgame", 65, 13),
+    ("midgame_2", "midgame", 22, 20),
     ("endgame_1", "critical_endgame", 8, 7),
-    ("endgame_2", "near_open_endgame", 9, 6),
+    ("endgame_2", "critical_endgame", 11, 7),
 )
 _FIXED_CONTRACTS = {
     **{

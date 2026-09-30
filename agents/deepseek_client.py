@@ -1131,6 +1131,10 @@ class DeepSeekClient:
                 for item in before_resources
             }
             before_keys = tuple(sorted(before_by_key))
+            resource_carriers = {
+                key: Counter(f"{card.rank}{card.suit or ''}" for card in resource.carrier_cards)
+                for key, resource in before_by_key.items()
+            }
             wildcard_token = f"{level}H"
             wildcard_before = hand_counter.get(wildcard_token, 0)
             residual_route_cache: dict[
@@ -1201,19 +1205,14 @@ class DeepSeekClient:
                 residual_key = tuple(sorted(residual.items()))
                 route_keys = residual_route_cache.get(residual_key)
                 if route_keys is None:
-                    residual_cards: list[Card] = []
-                    for token, count in residual.items():
-                        card = DeepSeekClient._physical_card(token)
-                        if card is None:
-                            return legal_actions
-                        residual_cards.extend([card] * count)
-                    after_resources = rule_engine.public_straight_flush_resources(
-                        sort_cards(tuple(residual_cards)), level,
+                    # A route is a complete declared window, wildcard assignment
+                    # and physical multiset. Removing cards cannot create one;
+                    # exactly the payable routes from the full hand survive.
+                    route_keys = tuple(
+                        key for key in before_keys
+                        if all(count <= residual.get(token, 0)
+                               for token, count in resource_carriers[key].items())
                     )
-                    route_keys = tuple(sorted({
-                        DeepSeekClient._public_flush_resource_key(item)
-                        for item in after_resources
-                    }))
                     residual_route_cache[residual_key] = route_keys
 
                 after_key_set = set(route_keys)
@@ -1305,6 +1304,21 @@ class DeepSeekClient:
 
         choices: list[tuple[int, int, tuple[int, int], tuple[object, ...], str]] = []
         for candidates in grouped.values():
+            # The score depends only on resource profiles. For any two
+            # profiles, their lowest IDs give the lexicographically first
+            # pair, including its wildcard-use classification. Keep all
+            # distinct profiles, without comparing equivalent carriers again.
+            representatives: dict[tuple[object, ...], _ProjectedPromptAction] = {}
+            for action in candidates:
+                profile = action.suit_resource_profile
+                previous = representatives.get(profile)
+                if previous is None or int(action["action_id"]) < int(previous["action_id"]):
+                    representatives[profile] = action
+            candidates = list(representatives.values())
+            profile_sets = {
+                profile: (frozenset(profile[0]), frozenset(profile[1]))
+                for profile in representatives
+            }
             best: tuple[int, tuple[int, int]] | None = None
             best_profiles: tuple[object, ...] | None = None
             best_kind = "routes"
@@ -1316,8 +1330,10 @@ class DeepSeekClient:
                     second_lost, second_gained, second_spent, second_remaining = second.suit_resource_profile
                     difference = (
                         5 * abs(int(first_spent) - int(second_spent))
-                        + 3 * len(set(first_lost) ^ set(second_lost))
-                        + 2 * len(set(first_gained) ^ set(second_gained))
+                        + 3 * len(profile_sets[first.suit_resource_profile][0]
+                                  ^ profile_sets[second.suit_resource_profile][0])
+                        + 2 * len(profile_sets[first.suit_resource_profile][1]
+                                  ^ profile_sets[second.suit_resource_profile][1])
                         + abs(int(first_remaining) - int(second_remaining))
                     )
                     if difference <= 0:
