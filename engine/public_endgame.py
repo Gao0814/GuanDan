@@ -218,13 +218,20 @@ def _clockwise_after(player_id: int, active_ids: set[int]) -> tuple[int, ...]:
     return tuple(ordered)
 
 
-def _build_public_game(
+def _rebuild_public_game(
     observation: object,
     legal_actions: object,
-    known_hands_by_player: object,
+    hands_by_player: object,
     *,
     deadline: float,
+    max_cards: int,
+    max_hand: int,
 ) -> GuanDanGame:
+    """Shared rule reconstruction, with no inference or proof semantics.
+
+    M9 supplies its fixed small-position limits through _build_public_game;
+    the separate finite simulation API supplies hypothetical current hands.
+    """
     if not isinstance(observation, dict) or not isinstance(legal_actions, list):
         raise _InvalidPosition
     my_info = observation.get("my_info")
@@ -302,8 +309,8 @@ def _build_public_game(
     if {key for key, row in rows.items() if bool(row.get("finished"))} != finished_ids:
         raise _InvalidPosition
 
-    known_hands = known_hands_by_player
-    if not isinstance(known_hands, Mapping) or set(known_hands) != {1, 2, 3, 4}:
+    supplied_hands = hands_by_player
+    if not isinstance(supplied_hands, Mapping) or set(supplied_hands) != {1, 2, 3, 4}:
         raise _InvalidPosition
     current_hands: dict[int, tuple[Card, ...]] = {}
     played_by_player: Counter[int] = Counter()
@@ -339,7 +346,7 @@ def _build_public_game(
         raise _InvalidPosition
 
     for owner_id in (1, 2, 3, 4):
-        raw_cards = known_hands[owner_id]
+        raw_cards = supplied_hands[owner_id]
         if not isinstance(raw_cards, (list, tuple)):
             raise _InvalidPosition
         cards = tuple(sort_cards(tuple(_card_from_token(token) for token in raw_cards)))
@@ -362,8 +369,8 @@ def _build_public_game(
     if len(active_ids) < 2 or player_id not in active_ids:
         raise _InvalidPosition
     active_card_count = sum(len(current_hands[owner]) for owner in active_ids)
-    if active_card_count > PUBLIC_ENDGAME_MAX_CARDS or any(
-        len(current_hands[owner]) > PUBLIC_ENDGAME_MAX_HAND for owner in active_ids
+    if active_card_count > max_cards or any(
+        len(current_hands[owner]) > max_hand for owner in active_ids
     ):
         raise _InvalidPosition
 
@@ -439,6 +446,15 @@ def _build_public_game(
     if isinstance(observation_actions, list) and generated_actions != observation_actions:
         raise _InvalidPosition
     return game
+
+
+def _build_public_game(observation: object, legal_actions: object,
+                       known_hands_by_player: object, *, deadline: float) -> GuanDanGame:
+    """M9's unchanged confirmed-position size boundary."""
+    return _rebuild_public_game(
+        observation, legal_actions, known_hands_by_player, deadline=deadline,
+        max_cards=PUBLIC_ENDGAME_MAX_CARDS, max_hand=PUBLIC_ENDGAME_MAX_HAND,
+    )
 
 
 def _copy_game(game: GuanDanGame) -> GuanDanGame:

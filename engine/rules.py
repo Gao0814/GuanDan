@@ -1,6 +1,7 @@
 """Rules and legal-action generation for the single-game GuanDan mainline."""
 
 from collections import Counter, defaultdict
+from contextvars import ContextVar
 from dataclasses import dataclass
 from itertools import combinations
 from typing import Iterable
@@ -10,6 +11,11 @@ from .cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card, card_sort_key, is_jok
 from .patterns import Pattern, PatternType, detect_pattern
 from .sequences import PAIR_STRAIGHT_WINDOWS, STEEL_PLATE_WINDOWS, STRAIGHT_WINDOWS
 from .state import GameState
+
+
+# Only the finite simulation API installs this cooperative generation budget.
+# Ordinary engine and M9 calls retain their existing complete generation.
+_simulation_budget: ContextVar[object | None] = ContextVar("simulation_budget", default=None)
 
 
 _NON_JOKER_RANKS: tuple[str, ...] = ("3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2")
@@ -314,6 +320,9 @@ def _materialize_declared_actions(
     remains a natural card. Physical multiplicity is preserved by consuming
     each selected carrier before assigning the next declaration.
     """
+    budget = _simulation_budget.get()
+    if budget is not None:
+        budget.check()
     if len(declared_cards) > len(hand_cards):
         return []
     wildcard = Card(rank=current_level_rank, suit="H")
@@ -375,6 +384,8 @@ def _materialize_declared_actions(
                 last_natural_by_target: dict[tuple[str, str | None], Card],
             ) -> None:
                 nonlocal found_carrier
+                if budget is not None:
+                    budget.check()
                 if first_carrier_only and found_carrier:
                     return
                 if position == len(declared_cards):

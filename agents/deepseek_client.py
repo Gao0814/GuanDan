@@ -377,6 +377,7 @@ class DeepSeekClient:
         timeout_seconds: float = 30.0,
         max_retries: int = 1,
         transport: DeepSeekTransport | None = None,
+        bounded_continuation_enabled: bool = True,
     ) -> None:
         if not api_key:
             raise ValueError("deepseek api key is required")
@@ -386,6 +387,8 @@ class DeepSeekClient:
         self._timeout_seconds = timeout_seconds
         self._max_retries = max(0, max_retries)
         self._transport: DeepSeekTransport = transport or _default_transport
+        self.bounded_continuation_enabled = bounded_continuation_enabled
+        self.last_bounded_continuation = None
 
     @staticmethod
     def _coerce_int(value: object, default: int = 0) -> int:
@@ -3312,6 +3315,7 @@ class DeepSeekClient:
         residual_structure_source_actions: list[dict[str, object]] | None = None,
         opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
         opening_formula_recommendation: OpeningFormulaAnalysis | None = None,
+        bounded_continuation_builder: Callable[[list[dict[str, object]]], str] | None = None,
     ) -> str:
         """Build the final Step-H structured prompt from public payloads."""
         lines: list[str] = []
@@ -3995,6 +3999,11 @@ class DeepSeekClient:
         lines.extend(DeepSeekClient._format_scene_tags(rag_context))
         lines.append("")
 
+        if bounded_continuation_builder is not None:
+            continuation_text = bounded_continuation_builder(prompt_actions)
+            if continuation_text:
+                lines.append(continuation_text)
+                lines.append("")
         lines.append("【候选动作】")
         if residual_structures is not None:
             lines.append(
@@ -4270,6 +4279,7 @@ class DeepSeekClient:
             else opening_formula_contrasts
         )
         projected_legal_actions = self._project_prompt_actions(observation, legal_actions)
+        relation_groups = ()
         if prompt_actions is None:
             pruned_actions = self.prepare_prompt_actions(
                 projected_legal_actions,
@@ -4408,6 +4418,17 @@ class DeepSeekClient:
                 protected_opening_action_ids=opening_route_ids,
             )
 
+        self.last_bounded_continuation = None
+
+        def continuation_builder(displayed_actions):
+            from agents.bounded_continuation import analyze_continuations
+            self.last_bounded_continuation = analyze_continuations(
+                observation, legal_actions, displayed_actions,
+                decision_deadline=decision_deadline,
+                recommendation_ids=getattr(strategy_recommendation, "action_ids", ()),
+                relation_groups=relation_groups,
+            )
+            return self.last_bounded_continuation.text
         user_message = self._build_structured_prompt(
             my_info=my_info,
             current_round=current_round,
@@ -4426,6 +4447,7 @@ class DeepSeekClient:
             residual_structure_source_actions=projected_legal_actions,
             opening_formula_contrasts=formula_contrasts,
             opening_formula_recommendation=validated_opening_recommendation,
+            bounded_continuation_builder=continuation_builder if self.bounded_continuation_enabled else None,
         )
 
         if verbose:
