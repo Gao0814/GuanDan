@@ -87,6 +87,17 @@ _STRATEGY_INTENT_BOUNDARY = "边界：这是公开局面下的策略偏好，不
 
 _SUIT_DISPLAY: dict[str, str] = {"S": "♠", "H": "♥", "C": "♣", "D": "♦"}
 
+
+@dataclass(frozen=True, slots=True)
+class _RankResourceDeltaPresentation:
+    """Exact rank facts that were actually included in the bounded text."""
+
+    text: str
+    rendered_ranks: frozenset[str] = frozenset()
+    rendered_group_losses: frozenset[tuple[str, str]] = frozenset()
+    rendered_control_ranks: frozenset[str] = frozenset()
+    rendered_wildcard_ranks: frozenset[str] = frozenset()
+
 _PATTERN_FULL: dict[str, str] = {
     "pass": "pass",
     "single": "单张",
@@ -751,9 +762,20 @@ class DeepSeekClient:
     @staticmethod
     def _rank_resource_delta_text(effect: CandidateNetEffect) -> str:
         """Render only exact per-rank group, control, and wildcard changes."""
+        return DeepSeekClient._rank_resource_delta_presentation(effect).text
+
+    @staticmethod
+    def _rank_resource_delta_presentation(
+        effect: CandidateNetEffect,
+    ) -> _RankResourceDeltaPresentation:
+        """Render bounded deltas and report the exact facts present in that text.
+
+        Callers use this coverage record to suppress older summary wording only
+        when every fact behind that wording made it through the four-rank cap.
+        """
         changes = effect.rank_resource_changes
         if changes is None:
-            return ""
+            return _RankResourceDeltaPresentation("")
         informative = [
             change for change in changes
             if change.lost_group_kinds or change.loses_control_resource or change.spends_wildcard
@@ -772,14 +794,20 @@ class DeepSeekClient:
             )
         )
         if not informative:
-            return ""
+            return _RankResourceDeltaPresentation("")
         parts: list[str] = []
+        rendered_ranks: set[str] = set()
+        rendered_group_losses: set[tuple[str, str]] = set()
+        rendered_control_ranks: set[str] = set()
+        rendered_wildcard_ranks: set[str] = set()
         for change in informative[:4]:
+            rendered_ranks.add(change.rank)
             if change.spends_wildcard:
                 parts.append(
                     f"{change.rank}点逢人配资源{change.wildcard_count_before}→"
                     f"{change.wildcard_count_after}"
                 )
+                rendered_wildcard_ranks.add(change.rank)
             if change.natural_count_before != change.natural_count_after or change.lost_group_kinds:
                 resource_label = "自然控制牌" if change.loses_control_resource else "自然牌"
                 item = (
@@ -790,6 +818,9 @@ class DeepSeekClient:
                     lost = "、".join(
                         _RESIDUAL_USE_LABELS[kind] for kind in change.lost_group_kinds
                     )
+                    rendered_group_losses.update(
+                        (change.rank, kind) for kind in change.lost_group_kinds
+                    )
                     retained = "、".join(
                         _RESIDUAL_USE_LABELS[kind] for kind in change.retained_group_kinds
                     )
@@ -798,10 +829,18 @@ class DeepSeekClient:
                         item += f"，仍有{retained}线索"
                     item += "）"
                 parts.append(item)
+            if change.loses_control_resource:
+                rendered_control_ranks.add(change.rank)
         extra_count = len(informative) - 4
         if extra_count > 0:
             parts.append(f"另有{extra_count}处")
-        return "逐点净变化=" + ";".join(parts) + "（自然组合线索可重叠，不等于互斥可走手数）"
+        return _RankResourceDeltaPresentation(
+            text="逐点净变化=" + ";".join(parts) + "（自然组合线索可重叠，不等于互斥可走手数）",
+            rendered_ranks=frozenset(rendered_ranks),
+            rendered_group_losses=frozenset(rendered_group_losses),
+            rendered_control_ranks=frozenset(rendered_control_ranks),
+            rendered_wildcard_ranks=frozenset(rendered_wildcard_ranks),
+        )
 
     @staticmethod
     def _response_net_tradeoff_text(
@@ -827,30 +866,69 @@ class DeepSeekClient:
         response_name = _PATTERN_FULL.get(response_fact.pattern, "合法牌型")
         pass_count = pass_fact.residual_card_count
         retained = f"保留当前全部{pass_count}张手牌" if pass_count is not None else "不消耗手牌"
-        rank_delta_text = DeepSeekClient._rank_resource_delta_text(effect)
+        rank_delta = DeepSeekClient._rank_resource_delta_presentation(effect)
+        rank_delta_text = rank_delta.text
         costs: list[str] = []
-        if effect.spends_control_resource and not (
-            effect.has_exact_control_loss or effect.has_exact_wildcard_loss
-        ):
+        changes = effect.rank_resource_changes or ()
+        control_rank_losses = {
+            change.rank for change in changes if change.loses_control_resource
+        }
+        wildcard_control_losses = {
+            change.rank for change in changes
+            if change.is_control_rank and change.spends_wildcard
+        }
+        control_facts = control_rank_losses | wildcard_control_losses
+        control_facts_rendered = bool(control_facts) and (
+            control_rank_losses.issubset(rank_delta.rendered_control_ranks)
+            and wildcard_control_losses.issubset(rank_delta.rendered_wildcard_ranks)
+        )
+        if effect.spends_control_resource and not control_facts_rendered:
             costs.append("消耗可识别的控制牌")
-        if effect.uses_wildcard and not effect.has_exact_wildcard_loss:
+        wildcard_losses = {change.rank for change in changes if change.spends_wildcard}
+        wildcard_facts_rendered = bool(wildcard_losses) and wildcard_losses.issubset(
+            rank_delta.rendered_wildcard_ranks
+        )
+        if effect.uses_wildcard and not wildcard_facts_rendered:
             costs.append("使用逢人配")
-        if effect.fragments_rank_group and not effect.has_exact_group_loss:
+        fragmented_ranks = {
+            change.rank for change in changes
+            if 0 < change.natural_count_after < change.natural_count_before
+        }
+        fragments_rendered = bool(fragmented_ranks) and fragmented_ranks.issubset(
+            rank_delta.rendered_ranks
+        )
+        if effect.fragments_rank_group and not fragments_rendered:
             costs.append("拆动已识别同点组")
         if effect.singleton_rank_delta > 0:
             costs.append(f"余手孤张点数增加{effect.singleton_rank_delta}")
         elif effect.singleton_rank_delta < 0:
             costs.append(f"余手孤张点数减少{-effect.singleton_rank_delta}")
-        if effect.lost_natural_uses and not effect.has_exact_group_loss:
+        exact_losses_by_kind: dict[str, set[tuple[str, str]]] = {}
+        for change in changes:
+            for kind in change.lost_group_kinds:
+                exact_losses_by_kind.setdefault(kind, set()).add((change.rank, kind))
+        represented_loss_kinds = {
+            kind for kind in effect.lost_natural_uses
+            if exact_losses_by_kind.get(kind)
+            and exact_losses_by_kind[kind].issubset(rank_delta.rendered_group_losses)
+        }
+        uncovered_lost_uses = set(effect.lost_natural_uses) - represented_loss_kinds
+        if uncovered_lost_uses:
             lost_labels = "、".join(
-                _RESIDUAL_USE_LABELS.get(kind, "组牌") for kind in effect.lost_natural_uses
+                _RESIDUAL_USE_LABELS.get(kind, "组牌")
+                for kind in effect.lost_natural_uses if kind in uncovered_lost_uses
             )
             costs.append(f"出后不再保有部分当前可识别的{lost_labels}线索")
         if effect.rank_group_delta > 0:
             costs.append(f"余手点数类增加{effect.rank_group_delta}")
         elif effect.rank_group_delta < 0:
             costs.append(f"余手点数类减少{-effect.rank_group_delta}")
-        if effect.control_resource_delta is not None and effect.control_resource_delta > 0 and not effect.spends_control_resource:
+        if (
+            effect.control_resource_delta is not None
+            and effect.control_resource_delta > 0
+            and not effect.spends_control_resource
+            and not control_facts_rendered
+        ):
             costs.append(f"余手可识别控制资源减少{effect.control_resource_delta}")
         cost_text = "；".join(costs) if costs else (
             "具体见逐点净变化" if rank_delta_text else "未显示上述控制牌或同点组损耗"

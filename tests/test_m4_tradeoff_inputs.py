@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from agents.action_structure import (
+    CandidateContrast,
     candidate_response_net_effect,
     summarize_candidate_contrasts,
     summarize_candidate_structures,
@@ -336,6 +337,63 @@ def _sequence_follow_game_with_bomb_and_pair_split() -> GuanDanGame:
     return game
 
 
+def _straight_follow_game_from_own_tokens(
+    own_tokens: list[str],
+    *,
+    leader_tokens: list[str] | None = None,
+) -> GuanDanGame:
+    """Build a complete legal deal and reach player one's straight response."""
+    leader_tokens = leader_tokens or ["4S", "5H", "6C", "7D", "8H"]
+    hands = _deal(
+        own_tokens=own_tokens,
+        own_excluded_ranks={token[:-1] for token in own_tokens if token not in {"SJ", "BJ"}},
+        player_two_tokens=leader_tokens,
+        player_two_excluded_ranks={token[:-1] for token in leader_tokens},
+    )
+    game = GuanDanGame(
+        current_level_rank="2", preset_hands=hands, starting_player_id=2,
+    )
+    game.reset()
+    lead = _action(
+        game,
+        lambda item: item["declared_pattern"] == "straight"
+        and Counter(item["carrier_cards"]) == Counter(leader_tokens)
+        and item["wildcard_count"] == 0,
+    )
+    game.step(int(lead["action_id"]))
+    _step_pass(game)
+    _step_pass(game)
+    assert game.observe()["my_info"]["player_id"] == 1
+    return game
+
+
+def _single_follow_with_unrelated_straight_and_bomb() -> GuanDanGame:
+    own_tokens = [
+        "9S", "9H", "9C", "9D", "3S", "4S", "5S", "6S", "7S",
+        "2S", "2C", "2D", "8S", "8H", "8C", "10S", "10H", "10C",
+        "JS", "JH", "JC", "QS", "QH", "QC", "KS", "KH", "KC",
+    ]
+    hands = _deal(
+        own_tokens=own_tokens,
+        own_excluded_ranks={token[:-1] for token in own_tokens},
+        player_two_tokens=["8S"],
+        player_two_excluded_ranks={"8"},
+    )
+    game = GuanDanGame(
+        current_level_rank="2", preset_hands=hands, starting_player_id=2,
+    )
+    game.reset()
+    lead = _action(
+        game,
+        lambda item: item["declared_pattern"] == "single" and item["carrier_cards"] == ["8S"],
+    )
+    game.step(int(lead["action_id"]))
+    _step_pass(game)
+    _step_pass(game)
+    assert game.observe()["my_info"]["player_id"] == 1
+    return game
+
+
 def _wildcard_bomb_follow_game() -> GuanDanGame:
     own_tokens = ["7S", "7H", "7C", "7D", "2H"]
     leader_tokens = ["6S", "6H", "6C", "6D"]
@@ -430,6 +488,26 @@ class M4TradeoffInputTests(unittest.TestCase):
         contrasts = summarize_candidate_contrasts(observation, game.legal_actions())
         assert contrasts is not None
         return next(item for item in contrasts if item.kind == kind)
+
+    @staticmethod
+    def _response_text(game: GuanDanGame, response_action: dict[str, object]) -> tuple[str, object]:
+        observation = game.observe()
+        actions = game.legal_actions()
+        facts = summarize_candidate_structures(observation, actions)
+        assert facts is not None
+        pass_action = next(item for item in actions if item["declared_pattern"] == "pass")
+        by_id = {item.action_id: item for item in facts}
+        contrast = CandidateContrast(
+            kind="follow_response_net_tradeoff",
+            action_ids=(int(pass_action["action_id"]), int(response_action["action_id"])),
+            teammate_hand_count=None,
+        )
+        text = DeepSeekClient._response_net_tradeoff_text(contrast, by_id)
+        effect = candidate_response_net_effect(
+            by_id[int(pass_action["action_id"])], by_id[int(response_action["action_id"])],
+        )
+        assert effect is not None
+        return text, effect
 
     def test_natural_five_bomb_is_compared_to_three_plus_two_and_request_keeps_both_ids(self) -> None:
         game = _free_bomb_split_game()
@@ -812,6 +890,9 @@ class M4TradeoffInputTests(unittest.TestCase):
         self.assertEqual((wild_delta.wildcard_count_before, wild_delta.wildcard_count_after), (1, 0))
         self.assertTrue(wild_delta.spends_wildcard)
         self.assertIn("2点逢人配资源1→0", DeepSeekClient._rank_resource_delta_text(effect))
+        tradeoff, _wild_effect = self._response_text(game, wildcard_bomb)
+        self.assertIn("2点逢人配资源1→0", tradeoff)
+        self.assertNotIn("使用逢人配", tradeoff)
 
         projected = DeepSeekClient._project_prompt_actions(observation, actions)
         self.assertIn(int(wildcard_bomb["action_id"]), {int(action["action_id"]) for action in projected})
@@ -905,6 +986,102 @@ class M4TradeoffInputTests(unittest.TestCase):
         self.assertIn("Q点自然牌3→2张", prompt)
         self.assertIn("自然组合线索可重叠，不等于互斥可走手数", prompt)
         self.assertLessEqual(len(visible), 80)
+
+    def test_exact_group_cost_does_not_hide_unrepresented_straight_loss_in_request(self) -> None:
+        own_tokens = [
+            "9S", "9H", "9C", "9D", "10S", "JH", "QC", "KD",
+            "2S", "2C", "2D", "3S", "3H", "3C", "4S", "4H", "4C",
+            "6S", "6H", "6C", "7S", "8S", "8H", "8C", "KS", "KH", "KC",
+        ]
+        game = _straight_follow_game_from_own_tokens(
+            own_tokens,
+            leader_tokens=["8D", "9D", "10H", "JS", "QD"],
+        )
+        actions = game.legal_actions()
+        straight = next(
+            action for action in actions
+            if action["declared_pattern"] == "straight"
+            and {str(card)[:-1] for card in action["carrier_cards"]} == {"9", "10", "J", "Q", "K"}
+            and action["wildcard_count"] == 0
+        )
+        tradeoff, effect = self._response_text(game, straight)
+        self.assertIn("bomb", effect.lost_natural_uses)
+        self.assertIn("straight", effect.lost_natural_uses)
+        self.assertIn("9点自然牌4→3张（失去自然炸弹线索", tradeoff)
+        self.assertIn("出后不再保有部分当前可识别的顺子点数结构线索", tradeoff)
+        self.assertNotIn("不再保有部分当前可识别的炸弹线索", tradeoff)
+
+        prompt, visible, _raw_count = self._factory_request(
+            game, int(straight["action_id"]),
+        )
+        self.assertIn("9点自然牌4→3张（失去自然炸弹线索", prompt)
+        self.assertIn("出后不再保有部分当前可识别的顺子点数结构线索", prompt)
+        self.assertIn(int(straight["action_id"]), visible)
+        response_line = next(
+            line for line in prompt.splitlines()
+            if re.search(
+                rf"action_id=\d+ 为pass，.*?action_id={int(straight['action_id'])} 是当前合法",
+                line,
+            )
+        )
+        self.assertIn("自然牌4→3张（失去自然炸弹线索", response_line)
+        self.assertIn("K点自然牌4→3张（失去自然炸弹线索", response_line)
+        self.assertIn("出后不再保有部分当前可识别的顺子点数结构线索", response_line)
+        self.assertNotIn("出后不再保有部分当前可识别的自然炸弹线索", response_line)
+        self.assertLessEqual(len(visible), 80)
+
+    def test_exact_group_only_is_deduplicated_but_straight_only_loss_remains(self) -> None:
+        exact_game = _single_follow_with_unrelated_straight_and_bomb()
+        exact_actions = exact_game.legal_actions()
+        nine = next(
+            action for action in exact_actions
+            if action["declared_pattern"] == "single"
+            and action["wildcard_count"] == 0
+            and str(action["carrier_cards"][0]).startswith("9")
+        )
+        exact_text, exact_effect = self._response_text(exact_game, nine)
+        self.assertEqual(exact_effect.lost_natural_uses, ("bomb",))
+        self.assertIn("9点自然牌4→3张（失去自然炸弹线索", exact_text)
+        self.assertNotIn("出后不再保有部分当前可识别的炸弹线索", exact_text)
+
+        straight_only_tokens = [
+            "9S", "10S", "JH", "QC", "KD",
+            "2S", "2C", "2D", "2H", "3S", "3H", "3C", "3D",
+            "4S", "4H", "4C", "4D", "4C", "4D",
+            "6S", "6H", "6C", "6D", "8S", "8H", "8C", "8D",
+        ]
+        straight_game = _straight_follow_game_from_own_tokens(straight_only_tokens)
+        straight_actions = straight_game.legal_actions()
+        response = next(
+            action for action in straight_actions
+            if action["declared_pattern"] == "straight"
+            and {str(card)[:-1] for card in action["carrier_cards"]} == {"9", "10", "J", "Q", "K"}
+            and action["wildcard_count"] == 0
+        )
+        straight_text, straight_effect = self._response_text(straight_game, response)
+        self.assertEqual(straight_effect.lost_natural_uses, ("straight",))
+        self.assertEqual(DeepSeekClient._rank_resource_delta_text(straight_effect), "")
+        self.assertIn("出后不再保有部分当前可识别的顺子点数结构线索", straight_text)
+
+    def test_four_rank_detail_cap_keeps_unrendered_split_summary(self) -> None:
+        own_tokens = [
+            *(f"{rank}{suit}" for rank in ("5", "6", "7", "8", "9") for suit in "SHCD"),
+            "3S", "4S", "10S", "JS", "QS", "KS", "AS",
+        ]
+        game = _straight_follow_game_from_own_tokens(own_tokens)
+        response = next(
+            action for action in game.legal_actions()
+            if action["declared_pattern"] == "straight"
+            and {str(card)[:-1] for card in action["carrier_cards"]} == {"5", "6", "7", "8", "9"}
+            and action["wildcard_count"] == 0
+        )
+        text, effect = self._response_text(game, response)
+        self.assertEqual(len(effect.rank_resource_changes or ()), 5)
+        self.assertEqual(effect.lost_natural_uses, ("bomb",))
+        exact_text = DeepSeekClient._rank_resource_delta_text(effect)
+        self.assertIn("另有1处", exact_text)
+        self.assertIn("出后不再保有部分当前可识别的自然炸弹线索", text)
+        self.assertIn("拆动已识别同点组", text)
 
 
 if __name__ == "__main__":
