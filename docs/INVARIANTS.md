@@ -5,7 +5,7 @@
 本文件记录当前项目在“单局掼蛋核心规则”范围内必须长期成立的不变量。  
 无论内部实现如何调整，只要系统仍声称符合当前规格，下列不变量就必须成立。
 
-2026-09-30规则对齐调整：以下逢人配数量、低端连续牌型和双下终局条款已按所有者提供的Botzone裁判核准，由5582765落实核心规则及接线；性能与续局评测消费仍未完成整个工作包验收，见[BOTZONE_RULE_FIX_REVIEW.md](BOTZONE_RULE_FIX_REVIEW.md)。胜负保留头末同队规则平，平台积分另列。来源见[BOTZONE_RULE_ALIGNMENT.md](BOTZONE_RULE_ALIGNMENT.md)。
+2026-09-30规则对齐调整：以下逢人配数量、低端连续牌型和双下终局条款已按所有者提供的Botzone裁判核准，由5582765落实核心规则及接线，c80ea27完成性能与双下评测消费修正并通过工作包复审，见[BOTZONE_RULE_FIX_REVIEW.md](BOTZONE_RULE_FIX_REVIEW.md)。胜负保留头末同队规则平，平台积分另列。来源见[BOTZONE_RULE_ALIGNMENT.md](BOTZONE_RULE_ALIGNMENT.md)。
 
 ---
 
