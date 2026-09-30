@@ -91,6 +91,7 @@ python -m cli.run_4ai_debug --agent deepseek --seed 7 --current-level-rank 5
 - 保持引擎层和 AI 层分离：引擎决定动作是否合法，AI 只从合法动作列表中选择。
 - 只改 AI 策略时，优先修改 `agents/`，不要改 `engine/`。
 - 规则、合法性、牌型比较、状态推进或终局判定问题，才修改 `engine/`。
+- 当前已授权M10共同公开假设的有限续局辅助：假设生成与策略比较仍在AI层；必要时可在`engine/`新增或复用狭窄的公开payload推演接口，使重建和推进采用既有规则。不得因此改变规则真值、让AI读取内部状态，或放宽M9确证与保胜接口。
 - `observe()` 必须返回固定公开结构，不要暴露内部 `GameState`、`PlayerState`、`Action` 等对象。
 - `legal_actions()` 必须返回显式展开的 canonical action，每个动作包含 `action_id`、`declared_pattern`、`declared_cards`、`carrier_cards`、`wildcard_count`、`wildcard_info` 和 `display_text`。
 - `step(action_id)` 只接受当前 `legal_actions()` 中存在的动作 ID。
