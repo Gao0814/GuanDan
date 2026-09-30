@@ -1,5 +1,15 @@
 # Clean Project Handoff
 
+## 2026-09-30 当前交接：完成5582765的性能与双下评测闭环
+
+业务基线55827657b730d8efb9dc43e903fb8c4bd232288e。规划diff/实现及独立66项规则/裁判/M9通过。连续窗口、双配和双下已落实，不重做旧任务、不回退覆盖；尚无全量通过，M10暂缓。
+
+确认默认factory禁网组装seed0/1从1.411/0.711秒变9.211/11.305秒（同机单次），有重复投影/同花顺/结构/绑定。完整发牌seed6第83步双下[3,1]被旧终局评测报invalid_finish_order。新版NEXT_PROMPT直接修重复计算及结果消费，保留canonical、公开边界、模型ID与80预算，不虚构剩余个人名次，完整回归后恢复M10。详情见BOTZONE_RULE_FIX_REVIEW.md。
+
+真实请求0，未碰现场workspace/.env或connector。Planning只提交自身docs，Coding只提交自身业务/tests，保留外部修改。
+
+以下为此前阶段快照，当前任务以本节为准。
+
 ## 2026-09-30 当前交接：规则缺口修复Prompt就绪，保留规则平与平台积分分离
 
 所有者进一步明确规则应与Botzone一致。规划暂停未定稿的M10续局Prompt，检查当前官方Wiki、旧接入裁判记录及仓库源码。完整108张、四家27张初局分别证实AA2233、223344、AAA222、222333识别/生成缺失和双逢人配四张7炸缺失；主规则44项仍全通过。结果详见[BOTZONE_RULE_ALIGNMENT.md](BOTZONE_RULE_ALIGNMENT.md)，不能解释为具体败局根因。
