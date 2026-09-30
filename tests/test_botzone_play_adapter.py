@@ -10,6 +10,7 @@ from engine.patterns import PatternType
 from integrations.botzone.cards import ALL_CARDS, card_from_id, card_id_for
 from integrations.botzone.models import ActionClaim, GlobalState, HistoryEntry, PlayRequest
 from integrations.botzone.play_adapter import (
+    _history_entry_to_action,
     botzone_id_to_engine_card,
     encode_action_claim,
     project_decision,
@@ -94,6 +95,67 @@ class BotzonePlayAdapterTests(unittest.TestCase):
         encoded = encode_action_claim(straight, context.own_hand, "2")
         self.assertEqual(len(encoded.action), 5)
         self.assertNotEqual(len({botzone_id_to_engine_card(card_id).suit for card_id in encoded.claim}), 1)
+
+    def test_double_wildcard_claims_roundtrip_and_level_rank_uses_another_suit(self) -> None:
+        hand = (
+            card_id_for("7", "s"), card_id_for("7", "c"), card_id_for("8", "s"),
+            card_id_for("2", "h", 0), card_id_for("2", "h", 1),
+        )
+        context = _context(hand)
+        projection = project_decision(context)
+        split = next(
+            action for action in projection.provenance.values()
+            if action.declared_pattern == PatternType.TRIPLE_WITH_PAIR
+            and action.wildcard_count == 2
+            and {item.declared_as.rank for item in action.wildcard_info} == {"7", "8"}
+        )
+        encoded = encode_action_claim(split, context.own_hand, "2")
+        self.assertEqual(len(encoded.action), 5)
+        self.assertEqual(len(set(encoded.action)), 5)
+        replayed = _history_entry_to_action(HistoryEntry(0, encoded), "2")
+        self.assertEqual(replayed.wildcard_count, 2)
+        self.assertEqual({item.declared_as.rank for item in replayed.wildcard_info}, {"7", "8"})
+
+        level_pair = next(
+            action for action in projection.provenance.values()
+            if action.declared_pattern == PatternType.PAIR
+            and action.wildcard_count == 1
+            and all(card.rank == "2" for card in action.declared_cards)
+        )
+        level_claim = encode_action_claim(level_pair, context.own_hand, "2")
+        self.assertIn(
+            card_id_for("2", "d"),
+            level_claim.claim,
+        )
+        self.assertNotIn(card_id_for("2", "h", 0), level_claim.claim)
+
+    def test_natural_and_substituted_level_heart_roundtrip_without_false_wild_count(self) -> None:
+        hand = (
+            card_id_for("A", "h"), card_id_for("2", "h", 0), card_id_for("2", "h", 1),
+            card_id_for("3", "h"), card_id_for("4", "h"),
+        )
+        context = _context(hand)
+        projection = project_decision(context)
+        action = next(
+            candidate for candidate in projection.provenance.values()
+            if candidate.declared_pattern == PatternType.STRAIGHT_FLUSH
+            and candidate.wildcard_count == 1
+            and sum(card.rank == "2" and card.suit == "H" for card in candidate.carrier_cards) == 2
+            and tuple(card.rank for card in candidate.declared_cards) == ("A", "2", "3", "4", "5")
+        )
+        encoded = encode_action_claim(action, context.own_hand, "2")
+        self.assertEqual(
+            sum(card_from_id(card_id).rank == "2" and card_from_id(card_id).suit == "h" for card_id in encoded.claim),
+            1,
+        )
+        replayed = _history_entry_to_action(HistoryEntry(0, encoded), "2")
+        self.assertEqual(replayed.wildcard_count, 1)
+        self.assertEqual(replayed.wildcard_info[0].carrier_card, Card("2", "H"))
+        self.assertNotEqual(replayed.wildcard_info[0].declared_as, Card("2", "H"))
+        self.assertEqual(
+            sorted((card.rank, card.suit) for card in replayed.declared_cards),
+            sorted((card_from_id(card_id).rank, card_from_id(card_id).suit.upper()) for card_id in encoded.claim),
+        )
 
     def test_public_legal_actions_match_a_constructed_public_engine_fixture(self) -> None:
         hand = (card_id_for("3", "h", 1), card_id_for("3", "h", 0), card_id_for("4", "d", 0))

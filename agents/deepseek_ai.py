@@ -1002,7 +1002,9 @@ class DeepSeekAIAgent(BaseAgent):
         # --- validate and apply suggestion ---
         if suggested is not None:
             try:
-                chosen = require_legal_action_id(int(suggested), legal_actions)
+                if type(suggested) is not int:
+                    raise ValueError("selected action_id must be an integer")
+                chosen = require_legal_action_id(suggested, legal_actions)
             except Exception as exc:
                 chosen = None
                 failure_reason = f"返回 action_id 非法：{exc}"

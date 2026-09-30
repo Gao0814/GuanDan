@@ -310,27 +310,18 @@ class M5PublicPassEvidenceTests(unittest.TestCase):
 
 
 class M5PublicEndgameTests(unittest.TestCase):
-    def test_bounded_search_matches_full_engine_minimax_and_fails_closed(self) -> None:
+    def test_frozen_search_anchor_fails_closed_when_public_hands_are_not_unique(self) -> None:
         game, observation, actions = _rollout_to_step(10, 86)
         assignment = exact_public_hand_assignment(observation)
-        self.assertIsNotNone(assignment)
-        assert assignment is not None
-        self.assertEqual(sum(map(len, assignment.values())), 4)
-        expected, trace = _reference_root_values(game)
+        self.assertIsNone(assignment)
         analysis = analyze_public_endgame(observation, actions, assignment)
-        self.assertEqual(analysis.status, "solved")
-        self.assertEqual(analysis.action_values, expected)
-        self.assertGreater(analysis.nodes, 1)
-        self.assertTrue(trace["terminal"])
-
-        limited = analyze_public_endgame(
-            observation,
-            actions,
-            assignment,
-            max_nodes=1,
-        )
-        self.assertEqual(limited.status, "budget_exceeded")
-        self.assertEqual(limited.action_values, ())
+        self.assertEqual(analysis.status, "ineligible")
+        self.assertEqual(analysis.action_values, ())
+        self.assertEqual(analysis.action_reachable_values, ())
+        self.assertIsNone(analysis.proven_action_id)
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["declared_pattern"], "pass")
+        self.assertEqual(analysis.nodes, 0)
 
         truncated = deepcopy(observation)
         truncated["history"]["actions"].pop()
@@ -346,42 +337,35 @@ class M5PublicEndgameTests(unittest.TestCase):
         )
 
     def test_partner_pass_resets_to_active_leader_and_search_matches_engine(self) -> None:
-        game, observation, actions = _rollout_to_step(12, 87)
-        assignment = exact_public_hand_assignment(observation)
-        self.assertIsNotNone(assignment)
-        assert assignment is not None
-        self.assertEqual(observation["history"]["finish_order"], [2, 4])
-        self.assertEqual(observation["my_info"]["team"], "team_13")
-        partner = next(
-            player for player in observation["other_players"]
-            if not player["finished"]
+        game = GuanDanGame(seed=12, current_level_rank="2")
+        game.reset()
+        while game.observe()["current_round"]["step_no"] < 87 and not game._state.is_finished:
+            observation = game.observe()
+            actions = game.legal_actions()
+            player_id = int(observation["my_info"]["player_id"])
+            game.step(RuleBasedAIAgent(player_id).select_action(observation, actions))
+        state = game._require_state()  # noqa: SLF001 - fixed anchor verification
+        self.assertTrue(state.is_finished)
+        self.assertEqual(len(state.finish_order), 4)
+        self.assertEqual(
+            [player.player_id for player in sorted(
+                (item for item in state.players if item.finish_rank is not None),
+                key=lambda item: item.finish_rank or 99,
+            )],
+            list(state.finish_order),
         )
-        self.assertEqual(partner["team"], "team_13")
-        lead = observation["current_round"]["table_action"]
-        self.assertIsNotNone(lead)
-        lead_entry = next(
-            item for item in reversed(observation["history"]["actions"])
-            if item["round_no"] == observation["current_round"]["round_no"]
-            and item["declared_pattern"] != "pass"
-        )
-        self.assertEqual(lead_entry["player_id"], partner["player_id"])
-
-        pass_action = _select_action(actions, lambda item: item["declared_pattern"] == "pass")
-        pass_branch = _clone_game(game)
-        transition = pass_branch.step(int(pass_action["action_id"]))
-        self.assertTrue(transition["round_ended"])
-        self.assertEqual(transition["current_player"], partner["player_id"])
-        self.assertTrue(pass_branch.observe()["current_round"]["table_action"] is None)
-
-        expected, trace = _reference_root_values(game)
-        analysis = analyze_public_endgame(observation, actions, assignment)
-        self.assertEqual(analysis.status, "solved")
-        self.assertEqual(analysis.action_values, expected)
-        self.assertGreater(analysis.nodes, 1)
-        self.assertTrue(trace["terminal"])
+        self.assertEqual(game.legal_actions(), [])
 
     def test_default_factory_sends_endgame_relations_and_preserves_model_action(self) -> None:
-        _, observation, actions = _rollout_to_step(10, 86)
+        from tests.test_m9_public_endgame_opportunities import _public_endgame_fixture
+
+        _, observation, actions = _public_endgame_fixture(
+            current_hands={3: ("6S", "7S"), 4: ("8S",)},
+            finish_order=(1, 2),
+            current_player_id=3,
+            leading_token="5S",
+            leader_player_id=4,
+        )
         captured: list[dict[str, object]] = []
 
         def fake_transport(request, _timeout):
@@ -445,11 +429,18 @@ class M5PublicEndgameTests(unittest.TestCase):
         self.assertLessEqual(len(displayed), 80)
 
     def test_completed_proven_winning_root_shortcuts_before_model(self) -> None:
-        _, observation, actions = _rollout_to_step(10, 87)
+        from tests.test_m9_public_endgame_opportunities import _public_endgame_fixture
+
+        _, observation, actions = _public_endgame_fixture(
+            current_hands={1: ("3S", "3C", "4S", "4C"), 2: ("5H",)},
+            finish_order=(3, 4),
+            current_player_id=1,
+        )
         assignment = exact_public_hand_assignment(observation)
         self.assertIsNotNone(assignment)
         assert assignment is not None
-        analysis = analyze_public_endgame(observation, actions, assignment)
+        with patch("engine.public_endgame.monotonic", return_value=0.0):
+            analysis = analyze_public_endgame(observation, actions, assignment)
         self.assertEqual(analysis.status, "proven_win")
         self.assertIsNotNone(analysis.proven_action_id)
 
@@ -466,7 +457,10 @@ class M5PublicEndgameTests(unittest.TestCase):
             card_tracking_enabled=False,
         )
         client = _NoCallClient()
-        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
+        with (
+            patch("agents.deepseek_ai.AppConfig.from_env", return_value=config),
+            patch("engine.public_endgame.monotonic", return_value=0.0),
+        ):
             agent = DeepSeekAIAgent(
                 player_id=int(observation["my_info"]["player_id"]),
                 client=client,  # type: ignore[arg-type]

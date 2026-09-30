@@ -459,6 +459,11 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
     def test_existing_json_response_parser_remains_compatible(self) -> None:
         parsed = DeepSeekClient._extract_json('{"action_id": 7, "reason": "简短理由"}')
         self.assertEqual(DeepSeekClient._extract_action_id(parsed), 7)
+        self.assertIsNone(DeepSeekClient._extract_action_id(True))
+        self.assertIsNone(DeepSeekClient._extract_action_id({"action_id": True}))
+        self.assertIsNone(DeepSeekClient._extract_action_id({"suggested_action": {"action_id": True}}))
+        self.assertIsNone(DeepSeekClient._extract_action_id({"action_id": 7.0}))
+        self.assertIsNone(DeepSeekClient._extract_action_id({"suggested_action": {"action_id": 7.0}}))
 
     def test_client_prompt_uses_pruned_candidate_actions(self) -> None:
         captured: dict[str, object] = {}

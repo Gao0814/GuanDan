@@ -54,10 +54,15 @@ class BotzoneActionProvenanceTests(unittest.TestCase):
         self.assertEqual(result.effect.action, tuple(__import__("json").loads(result.response)[0]))
 
     def test_non_integer_stale_and_exceptional_agent_answers_fail_closed(self) -> None:
-        for answer in (True, "1", 1.0, 999):
+        context = _context()
+        invalid_action_id = max(
+            int(action["action_id"])
+            for action in project_decision(context).legal_actions
+        ) + 1
+        for answer in (True, "1", 1.0, invalid_action_id):
             with self.subTest(answer=answer):
                 with self.assertRaisesRegex(AdapterError, "^invalid_agent_action_id$"):
-                    NoTributeRuleBasedHandler(lambda _: _SpyAgent(answer))(_context())
+                    NoTributeRuleBasedHandler(lambda _: _SpyAgent(answer))(context)
 
         class Exploding:
             def select_action(self, observation: dict[str, object], legal_actions: list[dict[str, object]]) -> int:

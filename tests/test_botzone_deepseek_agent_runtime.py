@@ -252,6 +252,13 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
             self.assertEqual(handler._agent_mode, "conditional_pressure_pass")
 
     def test_deepseek_fallback_has_distinct_failure_categories_and_single_attempts(self) -> None:
+        from integrations.botzone.play_adapter import project_decision
+
+        invalid_action_id = max(
+            int(action["action_id"])
+            for action in project_decision(_context()).legal_actions
+        ) + 1
+
         class _Fallback:
             calls = 0
             answer: object = 1
@@ -270,7 +277,7 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
             (RuntimeError("synthetic"), 1, None),
             (RuntimeError("synthetic"), RuntimeError("synthetic"), "rule_fallback_failure"),
             (True, True, "invalid_rule_fallback_action_id"),
-            (True, 999, "invalid_rule_fallback_action_id"),
+            (True, invalid_action_id, "invalid_rule_fallback_action_id"),
         )
         for primary, fallback, expected_error in cases:
             with self.subTest(primary=type(primary).__name__, fallback=type(fallback).__name__):
@@ -542,8 +549,14 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
         self.assertIsNone(suggestion.reasoning)
 
     def test_model_faults_and_invalid_ids_fallback_to_rule_action(self) -> None:
+        from integrations.botzone.play_adapter import project_decision
+
+        invalid_action_id = max(
+            int(action["action_id"])
+            for action in project_decision(_context()).legal_actions
+        ) + 1
         expected = NoTributeRuleBasedHandler()(_context()).response
-        for answer in (RuntimeError("synthetic"), None, True, "1", 1.0, -1, 999):
+        for answer in (RuntimeError("synthetic"), None, True, "1", 1.0, -1, invalid_action_id):
             with self.subTest(answer_type=type(answer).__name__):
                 raw = _RawClient(answer)
                 self.assertEqual(_deepseek_handler(raw)(_context()).response, expected)

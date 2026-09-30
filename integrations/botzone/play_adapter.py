@@ -7,6 +7,7 @@ import json
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import product
 from types import MappingProxyType
 
 from agents.base import require_legal_action_id
@@ -422,11 +423,20 @@ def _encode_wildcard_claim(action: Action, action_ids: tuple[int, ...], own_hand
 def _virtual_suit_assignments(action: Action, claim: Sequence[int | None], positions: Sequence[int]) -> tuple[tuple[str, ...], ...]:
     if not positions:
         return ((),)
-    # The current engine supports exactly one wildcard; retain a tuple API so
-    # the boundary remains explicit if that engine contract changes later.
-    if len(positions) != 1:
+    if len(action.wildcard_info) != len(positions):
         return ()
-    return tuple((suit,) for suit in _VIRTUAL_SUIT_ORDER)
+    choices: list[tuple[str, ...]] = []
+    for item in action.wildcard_info:
+        declared = item.declared_as
+        if declared.suit is not None:
+            choices.append((_ENGINE_TO_BOTZONE_SUIT[declared.suit],))
+        elif declared.rank == item.carrier_card.rank:
+            # A wildcard may declare another suit of the level rank, but the
+            # exact level-heart face is the natural carrier itself.
+            choices.append(tuple(suit for suit in _VIRTUAL_SUIT_ORDER if suit != "h"))
+        else:
+            choices.append(_VIRTUAL_SUIT_ORDER)
+    return tuple(product(*choices))
 
 
 def _history_entry_to_action(entry: HistoryEntry, level: str) -> Action:
@@ -563,23 +573,42 @@ def _rebuild_wildcard_info(
 ) -> tuple[object, ...]:
     from engine.actions import WildcardInfo
 
-    wildcards = tuple(card for card in carrier_cards if card.rank == level and card.suit == "H")
-    if not wildcards:
-        return ()
-    natural_faces = Counter((card.rank, card.suit) for card in carrier_cards if card not in wildcards)
+    wildcard_face = (level, "H")
+    wildcards = tuple(card for card in carrier_cards if (card.rank, card.suit) == wildcard_face)
     declared_faces = Counter((card.rank, card.suit) for card in declared_cards)
-    if any(declared_faces[face] < count for face, count in natural_faces.items()):
-        raise AdapterError("wildcard_claim_alignment_failed")
-    declared_faces.subtract(natural_faces)
+    for carrier in carrier_cards:
+        face = (carrier.rank, carrier.suit)
+        if face == wildcard_face:
+            continue
+        if declared_faces[face] <= 0:
+            raise AdapterError("wildcard_claim_alignment_failed")
+        declared_faces[face] -= 1
+
+    # A level-heart carrier may be played naturally or substituted.  Matching
+    # exact physical 2H claims first preserves mixed natural/substitute uses
+    # when the hand contains both copies.
+    natural_wildcards = min(len(wildcards), declared_faces[wildcard_face])
+    declared_faces[wildcard_face] -= natural_wildcards
+    substitution_count = len(wildcards) - natural_wildcards
     remainders = [
         Card(rank=rank, suit=suit if pattern == PatternType.STRAIGHT_FLUSH else None)
         for (rank, suit), count in declared_faces.items()
         for _ in range(count)
         if count > 0
     ]
-    if len(remainders) != len(wildcards) or any(card.rank in {"SJ", "BJ"} for card in remainders):
+    if (
+        len(remainders) != substitution_count
+        or any(card.rank in {"SJ", "BJ"} for card in remainders)
+        or (
+            pattern == PatternType.STRAIGHT_FLUSH
+            and any((card.rank, card.suit) == (level, "H") for card in remainders)
+        )
+    ):
         raise AdapterError("wildcard_claim_alignment_failed")
-    return tuple(WildcardInfo(carrier_card=carrier, declared_as=declared) for carrier, declared in zip(wildcards, remainders))
+    return tuple(
+        WildcardInfo(carrier_card=carrier, declared_as=declared)
+        for carrier, declared in zip(wildcards[natural_wildcards:], remainders)
+    )
 
 
 def _display_text(pattern: PatternType, cards: Sequence[Card]) -> str:
@@ -624,6 +653,11 @@ def _validate_context(context: HandlerContext, request: DealRequest | PlayReques
         if context.local_player_id != request.your_id:
             raise AdapterError("context_local_player_mismatch")
         return
+    if (
+        len(request.done) >= 2
+        and (request.done[1] - request.done[0]) % 2 == 0
+    ):
+        raise AdapterError("terminal_double_down_context")
     if context.latest_window != request.history:
         raise AdapterError("context_latest_window_mismatch")
     if bool(context.history) != bool(context.latest_window):

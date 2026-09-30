@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from agents.game_phase import OPENING, classify_game_phase
+from engine.sequences import PAIR_STRAIGHT_WINDOWS, STEEL_PLATE_WINDOWS, STRAIGHT_WINDOWS
 
 
 _NORMAL_RANKS = frozenset({"3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"})
@@ -209,24 +210,9 @@ _RANK_VALUES = {
 # These rank windows describe possible natural structures in the visible
 # residual hand. They neither construct nor validate actions; overlapping
 # windows are not counted as guaranteed future plays.
-_RESIDUAL_STRAIGHT_WINDOWS = (
-    ("A", "2", "3", "4", "5"), ("2", "3", "4", "5", "6"),
-    ("3", "4", "5", "6", "7"), ("4", "5", "6", "7", "8"),
-    ("5", "6", "7", "8", "9"), ("6", "7", "8", "9", "10"),
-    ("7", "8", "9", "10", "J"), ("8", "9", "10", "J", "Q"),
-    ("9", "10", "J", "Q", "K"), ("10", "J", "Q", "K", "A"),
-)
-_RESIDUAL_PAIR_STRAIGHT_WINDOWS = (
-    ("3", "4", "5"), ("4", "5", "6"), ("5", "6", "7"),
-    ("6", "7", "8"), ("7", "8", "9"), ("8", "9", "10"),
-    ("9", "10", "J"), ("10", "J", "Q"), ("J", "Q", "K"),
-    ("Q", "K", "A"),
-)
-_RESIDUAL_STEEL_PLATE_WINDOWS = (
-    ("3", "4"), ("4", "5"), ("5", "6"), ("6", "7"), ("7", "8"),
-    ("8", "9"), ("9", "10"), ("10", "J"), ("J", "Q"),
-    ("Q", "K"), ("K", "A"),
-)
+_RESIDUAL_STRAIGHT_WINDOWS = STRAIGHT_WINDOWS
+_RESIDUAL_PAIR_STRAIGHT_WINDOWS = PAIR_STRAIGHT_WINDOWS
+_RESIDUAL_STEEL_PLATE_WINDOWS = STEEL_PLATE_WINDOWS
 _RESIDUAL_USE_ORDER = (
     "pair", "triple", "bomb", "triple_with_pair", "straight",
     "pair_straight", "steel_plate",
@@ -869,8 +855,8 @@ def _natural_same_rank(action: Mapping[str, object], *, count: int) -> str | Non
     return rank if rank in _NORMAL_RANKS else None
 
 
-def _natural_sequence_high_rank(action: Mapping[str, object], *, pattern: str) -> str | None:
-    """Return a public high rank for one unmodified natural sequence action."""
+def _natural_sequence_window_index(action: Mapping[str, object], *, pattern: str) -> int | None:
+    """Return the engine's public window order for a natural sequence action."""
 
     carrier = action.get("carrier_cards")
     declared = action.get("declared_cards")
@@ -900,15 +886,9 @@ def _natural_sequence_high_rank(action: Mapping[str, object], *, pattern: str) -
         for rank, count in carrier_ranks.items()
     ):
         return None
-    if pattern == "steel_plate":
-        ordered_ranks = sorted((_RANK_VALUES[rank] for rank in carrier_ranks))
-        if ordered_ranks[-1] > _RANK_VALUES["A"] or ordered_ranks[1] - ordered_ranks[0] != 1:
-            return None
-    if pattern == "straight" and set(carrier_ranks) == {"A", "2", "3", "4", "5"}:
-        # A2345 is the engine's weakest straight window; treating its ace as
-        # high would incorrectly rank it above 23456 in a public comparison.
-        return "5"
-    return max(carrier_ranks, key=lambda rank: _RANK_VALUES[rank])
+    windows = STRAIGHT_WINDOWS if pattern == "straight" else STEEL_PLATE_WINDOWS
+    ranks = set(carrier_ranks)
+    return next((index for index, window in enumerate(windows) if ranks == set(window)), None)
 
 
 def _natural_triple_pair_kicker(action: Mapping[str, object]) -> tuple[str, str] | None:
@@ -941,7 +921,7 @@ def _natural_triple_pair_kicker(action: Mapping[str, object]) -> tuple[str, str]
 
 
 def _wildcard_bomb_rank(action: Mapping[str, object], *, level_rank: str) -> str | None:
-    """Return the declared rank for a canonical bomb using one wildcard.
+    """Return the declared rank for a canonical bomb using one or two wilds.
 
     The caller has already passed the shared public action schema validator.
     This helper still checks the physical wildcard carrier and the same-rank
@@ -952,16 +932,18 @@ def _wildcard_bomb_rank(action: Mapping[str, object], *, level_rank: str) -> str
     declared = action.get("declared_cards")
     if (
         action.get("declared_pattern") != "bomb"
-        or action.get("wildcard_count") != 1
+        or not _is_int(action.get("wildcard_count"))
+        or not 1 <= action.get("wildcard_count", 0) <= 2
         or not isinstance(carrier, list)
         or not isinstance(declared, list)
-        or len(carrier) < 5
+        or not 4 <= len(carrier) <= 10
         or len(declared) != len(carrier)
         or any(not isinstance(card, str) for card in carrier + declared)
     ):
         return None
     wildcard_token = f"{level_rank}H"
-    if carrier.count(wildcard_token) != 1:
+    wildcard_count = int(action["wildcard_count"])
+    if carrier.count(wildcard_token) != wildcard_count:
         return None
     natural_carriers = [card for card in carrier if card != wildcard_token]
     carrier_ranks = {_rank_of(card) for card in natural_carriers}
@@ -1533,17 +1515,17 @@ def summarize_candidate_contrasts(
         ("straight", "straight_strength"),
         ("steel_plate", "steel_plate_strength"),
     ):
-        by_high_rank: dict[str, CandidateStructure] = {}
+        by_window_index: dict[int, CandidateStructure] = {}
         for fact in facts:
             if not fact.is_free_lead or fact.pattern != pattern or fact.finishes_hand:
                 continue
             action = actions_by_id[fact.action_id]
-            high_rank = _natural_sequence_high_rank(action, pattern=pattern)
-            if high_rank is not None:
-                by_high_rank.setdefault(high_rank, fact)
-        if len(by_high_rank) >= 2:
-            ordered_ranks = sorted(by_high_rank, key=lambda rank: _RANK_VALUES[rank])
-            lower, higher = by_high_rank[ordered_ranks[0]], by_high_rank[ordered_ranks[-1]]
+            window_index = _natural_sequence_window_index(action, pattern=pattern)
+            if window_index is not None:
+                by_window_index.setdefault(window_index, fact)
+        if len(by_window_index) >= 2:
+            ordered_indices = sorted(by_window_index)
+            lower, higher = by_window_index[ordered_indices[0]], by_window_index[ordered_indices[-1]]
             contrasts.append(
                 CandidateContrast(
                     relation_kind,

@@ -63,6 +63,39 @@ class PublicRuleResponseSummaryTests(unittest.TestCase):
 
         self.assertEqual(result, ())
 
+    def test_resource_query_accepts_a_public_pool_without_level_heart(self) -> None:
+        leading = Action(
+            player_id=1,
+            action_type=ActionType.PLAY,
+            declared_pattern=PatternType.STRAIGHT,
+            declared_cards=tuple(Card(rank) for rank in ("3", "4", "5", "6", "7")),
+            carrier_cards=(Card("3", "S"), Card("4", "H"), Card("5", "C"), Card("6", "D"), Card("7", "S")),
+        )
+        available = tuple(Card(rank, "S") for rank in ("6", "7", "8", "9", "10"))
+
+        rules = BaseRuleEngine()
+        result = rules.public_beating_response_resource_counts(
+            available,
+            leading,
+            "2",
+            max_cards=5,
+        )
+        batched = rules.public_beating_response_summaries(
+            available,
+            (leading,),
+            "2",
+            max_cards=5,
+        )[0]
+
+        self.assertIn(
+            "straight_flush",
+            {item.pattern_type for item in result},
+        )
+        self.assertIn(
+            "straight_flush",
+            {item.pattern_type for item in batched.resource_counts},
+        )
+
     def test_pass_has_no_beating_pattern_and_level_is_validated(self) -> None:
         self.assertEqual(
             BaseRuleEngine().public_beating_pattern_types((), Action.make_pass(1), "2"),

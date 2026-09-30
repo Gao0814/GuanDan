@@ -139,6 +139,36 @@ class BotzoneHistoryTests(unittest.TestCase):
         self.assertIn("==== 对局结束时的手牌 ====", text)
         self.assertIn("history_completeness: terminal_history_complete", text)
 
+    def test_double_down_history_keeps_only_actual_top_two_and_unknown_hands(self) -> None:
+        events: list[HistoryEntry] = []
+        for card_id in range(27):
+            events.append(HistoryEntry(0, ActionClaim((card_id,), (card_id,))))
+            if card_id < 26:
+                events.extend(HistoryEntry(player, ActionClaim.pass_action()) for player in (1, 2, 3))
+        events.append(HistoryEntry(1, ActionClaim.pass_action()))
+        for index, card_id in enumerate(range(27, 54)):
+            events.append(HistoryEntry(2, ActionClaim((card_id,), (card_id,))))
+            if index < 26:
+                events.extend(HistoryEntry(player, ActionClaim.pass_action()) for player in (3, 1))
+        history = tuple(events)
+        with TemporaryDirectory() as root:
+            path = Path(root) / "history.txt"
+            ConnectorObservedHistory(path).finish(
+                _record(history=history, own_hand=(), local=0),
+                FinishedRow("synthetic-match", 0, 4, (0, 1, 0, 1)),
+            )
+            text = path.read_text(encoding="utf-8")
+        self.assertIn("==== 双下结束时的公开手牌 ====", text)
+        self.assertIn("头游：玩家1", text)
+        self.assertIn("二游：玩家3", text)
+        self.assertIn("三游：未知", text)
+        self.assertIn("四游：未知", text)
+        self.assertIn("公开动作显示同队头二游后终局", text)
+        self.assertIn("history_completeness: double_down_terminal_two_ranks_observed", text)
+        self.assertIn("玩家2手牌：未知（剩余27张）", text)
+        self.assertIn("玩家4手牌：未知（剩余27张）", text)
+        self.assertNotIn("推导手牌", text)
+
     def test_incomplete_terminal_never_claims_hidden_hands_or_ranks(self) -> None:
         history = (HistoryEntry(0, ActionClaim((0,), (0,))),)
         with TemporaryDirectory() as root:

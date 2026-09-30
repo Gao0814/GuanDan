@@ -405,7 +405,7 @@ class DeepSeekClient:
 
     @staticmethod
     def _extract_action_id(payload: object) -> int | None:
-        if isinstance(payload, int):
+        if type(payload) is int:
             return payload
         if isinstance(payload, str):
             try:
@@ -419,17 +419,26 @@ class DeepSeekClient:
         for key in direct_keys:
             if key in payload:
                 value = payload.get(key)
-                try:
-                    return int(value)  # type: ignore[arg-type]
-                except (TypeError, ValueError):
-                    return None
+                if type(value) is int:
+                    return value
+                if isinstance(value, str):
+                    try:
+                        return int(value)
+                    except ValueError:
+                        return None
+                return None
 
         suggested = payload.get("suggested_action")
         if isinstance(suggested, dict) and "action_id" in suggested:
-            try:
-                return int(suggested.get("action_id"))  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                return None
+            value = suggested.get("action_id")
+            if type(value) is int:
+                return value
+            if isinstance(value, str):
+                try:
+                    return int(value)
+                except ValueError:
+                    return None
+            return None
 
         return None
 

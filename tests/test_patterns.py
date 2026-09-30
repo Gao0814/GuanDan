@@ -76,6 +76,18 @@ class TestPatterns(unittest.TestCase):
         )
         self.assertEqual(
             detect_pattern(_cards("AS", "AH", "2S", "2H", "3S", "3H")).type,
+            PatternType.PAIR_STRAIGHT,
+        )
+        self.assertEqual(
+            detect_pattern(_cards("2S", "2H", "3S", "3H", "4S", "4H")).type,
+            PatternType.PAIR_STRAIGHT,
+        )
+        self.assertEqual(
+            detect_pattern(_cards("QS", "QH", "KS", "KH", "AS", "AH")).type,
+            PatternType.PAIR_STRAIGHT,
+        )
+        self.assertEqual(
+            detect_pattern(_cards("KS", "KH", "AS", "AH", "2S", "2H")).type,
             PatternType.UNKNOWN,
         )
         self.assertEqual(
@@ -84,8 +96,24 @@ class TestPatterns(unittest.TestCase):
         )
         self.assertEqual(
             detect_pattern(_cards("AS", "AH", "AC", "2S", "2H", "2C")).type,
+            PatternType.STEEL_PLATE,
+        )
+        self.assertEqual(
+            detect_pattern(_cards("2S", "2H", "2C", "3S", "3H", "3C")).type,
+            PatternType.STEEL_PLATE,
+        )
+        self.assertEqual(
+            detect_pattern(_cards("KS", "KH", "KC", "AS", "AH", "AC")).type,
+            PatternType.STEEL_PLATE,
+        )
+        self.assertEqual(
+            detect_pattern(_cards("KS", "KH", "KC", "2S", "2H", "2C")).type,
             PatternType.UNKNOWN,
         )
+
+    def test_bombs_stop_at_the_referee_ten_card_limit(self) -> None:
+        self.assertEqual(detect_pattern(tuple(Card("7") for _ in range(10))).type, PatternType.BOMB)
+        self.assertEqual(detect_pattern(tuple(Card("7") for _ in range(11))).type, PatternType.UNKNOWN)
 
     def test_straight_flush_uses_the_same_sequence_boundary(self) -> None:
         self.assertEqual(

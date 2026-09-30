@@ -173,16 +173,27 @@ def _terminal_inference(history: tuple[HistoryEntry, ...]) -> tuple[bool, tuple[
         counts = _played_counts(history)
     except HistoryWriteError:
         return False, (None, None, None, None)
-    finished = [player_id for player_id in range(4) if counts[player_id] == 27]
-    remaining = [player_id for player_id in range(4) if counts[player_id] < 27]
-    if len(finished) != 3 or len(remaining) != 1 or sum(counts.values()) > TOTAL_CARDS:
+    if sum(counts.values()) > TOTAL_CARDS or any(count > 27 for count in counts.values()):
         return False, (None, None, None, None)
     reached: list[int] = []
     running: Counter[int] = Counter()
-    for entry in history:
+    for index, entry in enumerate(history):
         running[entry.player_id] += len(entry.response.action)
         if running[entry.player_id] == 27:
             reached.append(entry.player_id)
+            if (
+                len(reached) == 2
+                and (reached[1] - reached[0]) % 2 == 0
+            ):
+                if index == len(history) - 1:
+                    # The referee ends on this action.  Only the actual top two
+                    # are ranks; the other hands are not separately inferable.
+                    return False, (reached[0], reached[1], None, None)
+                return False, (None, None, None, None)
+    finished = [player_id for player_id in range(4) if counts[player_id] == 27]
+    remaining = [player_id for player_id in range(4) if counts[player_id] < 27]
+    if len(finished) != 3 or len(remaining) != 1:
+        return False, (None, None, None, None)
     if len(reached) != 3 or len(set(reached)) != 3 or set(reached) != set(finished):
         return False, (None, None, None, None)
     return True, tuple(reached + remaining)
@@ -291,6 +302,10 @@ class ConnectorObservedHistory:
         initial = _initial_hand(record, history)
         _played_counts(history)
         complete, ranks = _terminal_inference(history) if row is not None else (False, (None, None, None, None))
+        double_down = (
+            ranks[0] is not None and ranks[1] is not None
+            and (ranks[1] - ranks[0]) % 2 == 0
+        )
         inferred_initials = _inferred_initial_hands(history) if complete else None
         lines = ["==== Connector Observed History ===="]
         lines.extend(_hands_block(initial, (), record.local_player_id, inferred_initials))
@@ -321,7 +336,11 @@ class ConnectorObservedHistory:
                 lines.extend(("", f"==== 第{round_no}轮结束后的手牌 ===="))
                 lines.extend(_hands_block(initial, history[:consumed], record.local_player_id, inferred_initials))
             elif row is not None:
-                hand_heading = "==== 对局结束时的手牌 ====" if complete else "==== 最后一次观测后的手牌（该牌权段可能尚未结束） ===="
+                hand_heading = (
+                    "==== 双下结束时的公开手牌 ====" if double_down
+                    else "==== 对局结束时的手牌 ====" if complete
+                    else "==== 最后一次观测后的手牌（该牌权段可能尚未结束） ===="
+                )
                 lines.extend(("", hand_heading))
                 lines.extend(_hands_block(initial, history[:consumed], record.local_player_id, inferred_initials))
             lines.append("")
@@ -334,13 +353,18 @@ class ConnectorObservedHistory:
             for label, player_id in zip(labels, ranks):
                 lines.append(f"{label}：{_player(player_id) if player_id is not None else '未知'}")
             if not complete:
-                local_played = _played_counts(history)[record.local_player_id]
-                if local_played == 27:
-                    lines.append("说明：平台已通知对局结束；本家出完后至终局的公开动作可能未被 connector 观察到。")
+                if double_down:
+                    lines.append("说明：公开动作显示同队头二游后终局；其余两家没有真实出完名次，也未推导分开的手牌。")
                 else:
-                    lines.append("说明：平台已通知对局结束；最后一次观测后至终局的公开动作可能未被 connector 观察到。")
-            lines.append(
-                "history_completeness: terminal_history_complete" if complete
-                else "history_completeness: terminal_tail_may_be_unobserved"
+                    local_played = _played_counts(history)[record.local_player_id]
+                    if local_played == 27:
+                        lines.append("说明：平台已通知对局结束；本家出完后至终局的公开动作可能未被 connector 观察到。")
+                    else:
+                        lines.append("说明：平台已通知对局结束；最后一次观测后至终局的公开动作可能未被 connector 观察到。")
+            completeness = (
+                "terminal_history_complete" if complete
+                else "double_down_terminal_two_ranks_observed" if double_down
+                else "terminal_tail_may_be_unobserved"
             )
+            lines.append(f"history_completeness: {completeness}")
         return "\n".join(lines).rstrip() + "\n"

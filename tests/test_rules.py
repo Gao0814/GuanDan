@@ -132,13 +132,56 @@ class TestRules(unittest.TestCase):
                     all(card.rank not in {SMALL_JOKER_RANK, BIG_JOKER_RANK} for card in action.declared_cards)
                 )
 
-    def test_no_action_uses_more_than_one_wildcard_substitution(self) -> None:
+    def test_up_to_two_wildcards_can_fill_distinct_declared_positions(self) -> None:
         state = _state(hand_tokens=("2H", "2H", "7S", "7C", "8S", "8C"))
 
         actions = self.rules.generate_legal_actions(state)
-        for action in actions:
-            with self.subTest(action=action):
-                self.assertIn(action.wildcard_count, {0, 1})
+        self.assertTrue(actions)
+        self.assertTrue(all(action.wildcard_count <= 2 for action in actions))
+        two_wild_bomb = next(
+            action for action in actions
+            if action.declared_pattern == PatternType.BOMB
+            and action.wildcard_count == 2
+            and len(action.carrier_cards) == 4
+            and {card.rank for card in action.declared_cards} == {"7"}
+        )
+        self.assertEqual(len(two_wild_bomb.wildcard_info), 2)
+        self.assertEqual(Counter(two_wild_bomb.carrier_cards)[_card("2H")], 2)
+
+    def test_double_wildcards_can_complete_different_groups_and_level_rank_faces(self) -> None:
+        split = _state(hand_tokens=("2H", "2H", "7S", "7C", "8S"))
+        actions = self.rules.generate_legal_actions(split)
+        split_action = next(
+            action for action in actions
+            if action.declared_pattern == PatternType.TRIPLE_WITH_PAIR
+            and action.wildcard_count == 2
+            and tuple(card.rank for card in action.declared_cards) == ("7", "7", "7", "8", "8")
+        )
+        self.assertEqual(
+            {item.declared_as.rank for item in split_action.wildcard_info},
+            {"7", "8"},
+        )
+
+        level_pair = _state(hand_tokens=("2H", "2S"))
+        level_pair_actions = self.rules.generate_legal_actions(level_pair)
+        self.assertTrue(any(
+            action.declared_pattern == PatternType.PAIR
+            and action.wildcard_count == 1
+            and all(card.rank == "2" for card in action.declared_cards)
+            for action in level_pair_actions
+        ))
+
+    def test_natural_and_substituted_level_heart_can_share_a_carrier(self) -> None:
+        state = _state(hand_tokens=("AH", "2H", "2H", "3H", "4H"))
+        actions = self.rules.generate_legal_actions(state)
+        route = next(
+            action for action in actions
+            if action.declared_pattern == PatternType.STRAIGHT_FLUSH
+            and action.wildcard_count == 1
+            and Counter(action.carrier_cards)[_card("2H")] == 2
+            and tuple(card.rank for card in action.declared_cards) == ("A", "2", "3", "4", "5")
+        )
+        self.assertEqual(route.wildcard_info[0].declared_as.rank, "5")
 
     def test_same_type_pressure_requires_a_stronger_action(self) -> None:
         weaker = _action(2, PatternType.SINGLE, ("9",), ("9S",))

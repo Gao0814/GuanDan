@@ -431,7 +431,7 @@ class TestGameFlow(unittest.TestCase):
             preset_hands=_hands(
                 {
                     1: ("3S",),
-                    2: ("4S",),
+                    2: ("4S", "8S"),
                     3: ("5S",),
                     4: (BIG_JOKER_RANK,),
                 }
@@ -444,11 +444,13 @@ class TestGameFlow(unittest.TestCase):
         game.step(_pass_id(game))
         game.step(_pass_id(game))
         game.step(_action_id_by_pattern(game, "single", ("4",)))
-        result = game.step(_action_id_by_pattern(game, "single", ("5",)))
+        game.step(_action_id_by_pattern(game, "single", ("5",)))
+        game.step(_pass_id(game))
+        result = game.step(_action_id_by_pattern(game, "single", ("8",)))
 
         self.assertTrue(result["game_over"])
         self.assertEqual(result["winner"], "team_24")
-        self.assertEqual(game.observe()["history"]["finish_order"], [4, 2, 3, 1])
+        self.assertEqual(game.observe()["history"]["finish_order"], [4, 3, 2, 1])
         self.assertIsNone(game._state.table_constraint.leading_action)
         self.assertEqual(game._state.table_constraint.pending_player_ids, ())
         self.assertIsNone(game.observe()["current_round"]["table_action"])
@@ -460,7 +462,7 @@ class TestGameFlow(unittest.TestCase):
             preset_hands=_hands(
                 {
                     1: ("3S",),
-                    2: ("4S",),
+                    2: ("4S", "8S"),
                     3: ("5S",),
                     4: (BIG_JOKER_RANK,),
                 }
@@ -473,7 +475,9 @@ class TestGameFlow(unittest.TestCase):
         game.step(_pass_id(game))
         game.step(_pass_id(game))
         game.step(_action_id_by_pattern(game, "single", ("4",)))
-        result = game.step(_action_id_by_pattern(game, "single", ("5",)))
+        game.step(_action_id_by_pattern(game, "single", ("5",)))
+        game.step(_pass_id(game))
+        result = game.step(_action_id_by_pattern(game, "single", ("8",)))
 
         self.assertTrue(result["game_over"])
         with self.assertRaisesRegex(ValueError, "already over"):
@@ -546,6 +550,44 @@ class TestGameFlow(unittest.TestCase):
         self.assertTrue(result["game_over"])
         self.assertEqual(result["winner"], "draw")
         self.assertEqual(game.observe()["history"]["finish_order"], [1, 4, 2, 3])
+
+    def test_double_down_ends_immediately_without_inventing_remaining_places(self) -> None:
+        for head in range(1, 5):
+            partner = (head + 1) % 4 + 1
+            winning_team = "team_13" if head in {1, 3} else "team_24"
+            with self.subTest(head=head):
+                first_responder = head % 4 + 1
+                last_player = next(
+                    player for player in range(1, 5)
+                    if player not in {head, partner, first_responder}
+                )
+                game = GuanDanGame(
+                    current_level_rank="2",
+                    starting_player_id=head,
+                    preset_hands=_hands({
+                        head: ("3S",),
+                        first_responder: ("8S",),
+                        partner: ("4S",),
+                        last_player: ("9S",),
+                    }),
+                )
+                game.reset()
+                game.step(_action_id_by_pattern(game, "single", ("3",)))
+                game.step(_pass_id(game))
+                result = game.step(_action_id_by_pattern(game, "single", ("4",)))
+
+                self.assertTrue(result["game_over"])
+                self.assertEqual(result["winner"], winning_team)
+                self.assertEqual(game.observe()["history"]["finish_order"], [head, partner])
+                self.assertEqual(game.legal_actions(), [])
+                for player_id in (first_responder, last_player):
+                    self.assertIsNone(game._state.get_player(player_id).finish_rank)
+
+    def test_head_and_third_same_team_is_a_win_while_head_and_last_is_a_draw(self) -> None:
+        from engine.game import _resolve_winner
+
+        self.assertEqual(_resolve_winner((1, 3, 2, 4)), "team_13")
+        self.assertEqual(_resolve_winner((1, 4, 2, 3)), "draw")
 
     def test_cli_debug_output_contains_replay_fields(self) -> None:
         buffer = io.StringIO()

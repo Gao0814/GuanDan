@@ -65,7 +65,7 @@ def _valid_play_card_count(pattern: str, card_count: int) -> bool:
     if pattern == "steel_plate":
         return card_count == 6
     if pattern == "bomb":
-        return card_count >= 4
+        return 4 <= card_count <= 10
     if pattern == "joker_bomb":
         return card_count == 4
     return False
@@ -234,7 +234,7 @@ def _action_record(raw: object, hand_counts: Counter[str]) -> dict[str, object] 
         or pattern not in _PATTERN_ORDER or not isinstance(declared, list)
         or not isinstance(carriers, list) or not carriers
         or type(raw.get("wildcard_count", 0)) is not int
-        or raw.get("wildcard_count", 0) < 0
+        or not 0 <= raw.get("wildcard_count", 0) <= 2
         or len(declared) != len(carriers)
         or not _valid_play_card_count(pattern, len(carriers))
     ):
@@ -989,8 +989,12 @@ def _public_pass_evidence(
         remaining[player_id] -= carrier_count
         if remaining[player_id] == 0:
             finished_order.append(player_id)
-            # A live observation cannot follow the third finisher.
-            if len(finished_order) >= 3:
+            # A live observation cannot follow a double-down or the third finisher.
+            if len(finished_order) >= 3 or (
+                len(finished_order) == 2
+                and state.player_rows[finished_order[0]].get("team")
+                == state.player_rows[finished_order[1]].get("team")
+            ):
                 return ()
         parsed_plays.append((item_step, player_id, action))
         lead = action

@@ -458,7 +458,28 @@ class SuitResourceProjectionTests(unittest.TestCase):
         visible_patterns = {dense_by_id[action_id]["declared_pattern"] for action_id in dense_transport.candidate_ids}
         self.assertIn("bomb", visible_patterns)
         self.assertIn("straight_flush", visible_patterns)
-        self.assertEqual(len(dense_actions), 224)
+        self.assertEqual(len(dense_actions), len(dense_by_id))
+        self.assertTrue(dense_actions)
+
+    def test_default_factory_request_preserves_double_wild_bomb_id(self) -> None:
+        game = _complete_game(["7S", "7C", "2H", "2H"])
+        legal_actions = game.legal_actions()
+        double_wild_bomb = next(
+            action for action in legal_actions
+            if action["declared_pattern"] == "bomb"
+            and action["wildcard_count"] == 2
+            and len(action["declared_cards"]) == 4
+            and set(action["declared_cards"]) == {"7"}
+            and action["carrier_cards"].count("2H") == 2
+        )
+        target_id = int(double_wild_bomb["action_id"])
+
+        selected, agent, transport = _capture_default_factory_request(game, target_id)
+
+        self.assertIn(target_id, transport.candidate_ids)
+        self.assertEqual(selected, target_id)
+        self.assertEqual(agent.last_decision_source, "model")
+        self.assertLessEqual(len(transport.candidate_ids), 80)
 
     def test_follow_request_compresses_equivalent_rank_only_suit_aliases(self) -> None:
         game = _complete_game(

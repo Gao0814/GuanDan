@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from .cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card, is_joker
+from .sequences import PAIR_STRAIGHT_WINDOWS, STEEL_PLATE_WINDOWS, STRAIGHT_WINDOWS
 
 
 class PatternType(str, Enum):
@@ -20,45 +21,6 @@ class PatternType(str, Enum):
     JOKER_BOMB = "joker_bomb"
     PASS = "pass"
     UNKNOWN = "unknown"
-
-
-_STRAIGHT_WINDOWS: tuple[tuple[str, ...], ...] = (
-    ("A", "2", "3", "4", "5"),
-    ("2", "3", "4", "5", "6"),
-    ("3", "4", "5", "6", "7"),
-    ("4", "5", "6", "7", "8"),
-    ("5", "6", "7", "8", "9"),
-    ("6", "7", "8", "9", "10"),
-    ("7", "8", "9", "10", "J"),
-    ("8", "9", "10", "J", "Q"),
-    ("9", "10", "J", "Q", "K"),
-    ("10", "J", "Q", "K", "A"),
-)
-_PAIR_STRAIGHT_WINDOWS: tuple[tuple[str, ...], ...] = (
-    ("3", "4", "5"),
-    ("4", "5", "6"),
-    ("5", "6", "7"),
-    ("6", "7", "8"),
-    ("7", "8", "9"),
-    ("8", "9", "10"),
-    ("9", "10", "J"),
-    ("10", "J", "Q"),
-    ("J", "Q", "K"),
-    ("Q", "K", "A"),
-)
-_STEEL_PLATE_WINDOWS: tuple[tuple[str, ...], ...] = (
-    ("3", "4"),
-    ("4", "5"),
-    ("5", "6"),
-    ("6", "7"),
-    ("7", "8"),
-    ("8", "9"),
-    ("9", "10"),
-    ("10", "J"),
-    ("J", "Q"),
-    ("Q", "K"),
-    ("K", "A"),
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +95,11 @@ def detect_pattern(cards: tuple[Card, ...]) -> Pattern:
             )
         return _unknown(cards_count, "unsupported_four_card_pattern")
 
-    if cards_count >= 5 and _all_same_rank(cards) and not any(is_joker(card) for card in cards):
+    if (
+        5 <= cards_count <= 10
+        and _all_same_rank(cards)
+        and not any(is_joker(card) for card in cards)
+    ):
         return Pattern(
             type=PatternType.BOMB,
             cards_count=cards_count,
@@ -163,7 +129,7 @@ def detect_pattern(cards: tuple[Card, ...]) -> Pattern:
         if any(is_joker(card) for card in cards):
             return _unknown(cards_count, "jokers_not_allowed_in_straights")
 
-        straight_index = _match_window(tuple(rank_counts.keys()), _STRAIGHT_WINDOWS)
+        straight_index = _match_window(tuple(rank_counts.keys()), STRAIGHT_WINDOWS)
         if straight_index is not None:
             suits = {card.suit for card in cards}
             if len(suits) == 1 and None not in suits:
@@ -185,7 +151,7 @@ def detect_pattern(cards: tuple[Card, ...]) -> Pattern:
         if any(is_joker(card) for card in cards):
             return _unknown(cards_count, "jokers_not_allowed_in_sequence_family")
         if sorted(rank_counts.values()) == [2, 2, 2]:
-            sequence_index = _match_window(tuple(rank_counts.keys()), _PAIR_STRAIGHT_WINDOWS)
+            sequence_index = _match_window(tuple(rank_counts.keys()), PAIR_STRAIGHT_WINDOWS)
             if sequence_index is not None:
                 return Pattern(
                     type=PatternType.PAIR_STRAIGHT,
@@ -193,9 +159,9 @@ def detect_pattern(cards: tuple[Card, ...]) -> Pattern:
                     sequence_index=sequence_index,
                 )
         if sorted(rank_counts.values()) == [3, 3]:
-            sequence_index = _match_window(tuple(rank_counts.keys()), _STEEL_PLATE_WINDOWS)
+            sequence_index = _match_window(tuple(rank_counts.keys()), STEEL_PLATE_WINDOWS)
             if sequence_index is not None:
-                high_rank = _STEEL_PLATE_WINDOWS[sequence_index][-1]
+                high_rank = STEEL_PLATE_WINDOWS[sequence_index][-1]
                 return Pattern(
                     type=PatternType.STEEL_PLATE,
                     cards_count=6,

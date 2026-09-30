@@ -332,18 +332,22 @@ class TestCardTracker(unittest.TestCase):
         game = GuanDanGame(seed=0, current_level_rank="2")
         observation = game.reset()
         legal_actions = game.legal_actions()
-        by_id = {int(action["action_id"]): action for action in legal_actions}
-        low_single, high_single = by_id[5], by_id[34]
-        self.assertEqual((low_single["declared_pattern"], low_single["declared_cards"]), ("single", ["3"]))
-        self.assertEqual((high_single["declared_pattern"], high_single["declared_cards"]), ("single", ["A"]))
+        low_single = next(
+            action for action in legal_actions
+            if action["declared_pattern"] == "single" and action["declared_cards"] == ["3"]
+        )
+        high_single = next(
+            action for action in legal_actions
+            if action["declared_pattern"] == "single" and action["declared_cards"] == ["A"]
+        )
 
         # Restrict to these two real legal actions so the summary must explain
         # their same-type route difference without special-casing either ID.
         summary = build_card_tracking_summary(observation, [low_single, high_single])
 
         comparison = next(line for line in summary.splitlines() if line.startswith("M3候选对照"))
-        self.assertIn("action_id=5(single 3)", comparison)
-        self.assertIn("action_id=34(single A)", comparison)
+        self.assertIn(f"action_id={low_single['action_id']}(single 3)", comparison)
+        self.assertIn(f"action_id={high_single['action_id']}(single A)", comparison)
         self.assertRegex(comparison, r"单16\+")
         self.assertRegex(comparison, r"单4-7")
         self.assertIn("上界", comparison)

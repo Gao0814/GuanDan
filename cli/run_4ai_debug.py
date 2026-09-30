@@ -122,14 +122,20 @@ def _pattern_label_cn(action: dict[str, object]) -> str:
 def _wildcard_suffix_cn(action: dict[str, object]) -> str:
     wildcard_count = int(action.get("wildcard_count", 0))
     wildcard_info = list(action.get("wildcard_info", []))
-    if wildcard_count != 1 or not wildcard_info:
+    if wildcard_count not in {1, 2} or len(wildcard_info) != wildcard_count:
         return ""
 
     declared_cards = [str(token) for token in action.get("declared_cards", [])]
     declared_text = _compact_declared_cards_cn(declared_cards)
-    declared_as = str(wildcard_info[0]["declared_as"])
-    declared_as_text = _card_token_to_cn(declared_as)
-    return f"（声明：{declared_text}，逢人配当{declared_as_text}）"
+    substitutions = "、".join(
+        _card_token_to_cn(str(item["declared_as"]))
+        for item in wildcard_info
+        if isinstance(item, dict) and isinstance(item.get("declared_as"), str)
+    )
+    if not substitutions:
+        return ""
+    assignment_label = "当" if wildcard_count == 1 else "分别当"
+    return f"（声明：{declared_text}，逢人配{assignment_label}{substitutions}）"
 
 
 def _format_action_cn(action: dict[str, object]) -> str:

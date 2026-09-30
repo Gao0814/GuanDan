@@ -63,6 +63,8 @@ def _state_counts(state: GameState) -> dict[int, int]:
 
 def _resolve_winner(finish_order: tuple[int, ...]) -> str:
     head_player_id = finish_order[0]
+    if len(finish_order) == 2 and finish_order[1] == _partner_id(head_player_id):
+        return "team_13" if head_player_id in {1, 3} else "team_24"
     if finish_order[-1] == _partner_id(head_player_id):
         return "draw"
     return "team_13" if head_player_id in {1, 3} else "team_24"
@@ -255,8 +257,20 @@ class GuanDanGame:
         return tuple(players), finished_now
 
     def _apply_game_over_if_needed(self, state: GameState, players: tuple[PlayerState, ...], finish_order: tuple[int, ...]) -> GameState | None:
-        if len(finish_order) < 3:
+        double_down = (
+            len(finish_order) == 2
+            and finish_order[1] == _partner_id(finish_order[0])
+        )
+        if not double_down and len(finish_order) < 3:
             return None
+        if double_down:
+            return replace(
+                state,
+                finish_order=finish_order,
+                is_finished=True,
+                table_constraint=TableConstraint(),
+                winner=_resolve_winner(finish_order),
+            )
         remaining_player_id = next(player.player_id for player in players if player.finish_rank is None)
         final_players = tuple(
             player.with_finish_rank(4) if player.player_id == remaining_player_id else player

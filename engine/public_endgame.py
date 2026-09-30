@@ -24,7 +24,8 @@ from .cards import (
     sort_cards,
 )
 from .game import GuanDanGame, _action_to_public_dict
-from .patterns import PatternType
+from .patterns import PatternType, detect_pattern
+from .rules import BaseRuleEngine
 from .state import GameState, HistoryEntry, PlayerState, TableConstraint
 
 
@@ -89,7 +90,7 @@ def _card_from_token(value: object, *, declared: bool = False) -> Card:
     raise _InvalidPosition
 
 
-def _action_from_public(raw: object, player_id: int) -> Action:
+def _action_from_public(raw: object, player_id: int, level: str) -> Action:
     if not isinstance(raw, dict):
         raise _InvalidPosition
     pattern_value = raw.get("declared_pattern")
@@ -113,34 +114,81 @@ def _action_from_public(raw: object, player_id: int) -> Action:
         raise _InvalidPosition
     declared = tuple(_card_from_token(token, declared=True) for token in declared_raw)
     carriers = tuple(_card_from_token(token) for token in carrier_raw)
-    wildcard_count = raw.get("wildcard_count", 0)
-    if type(wildcard_count) is not int or wildcard_count < 0:
+    metadata_count_present = "wildcard_count" in raw
+    metadata_info_present = "wildcard_info" in raw
+    if metadata_count_present != metadata_info_present:
         raise _InvalidPosition
-    wildcard_raw = raw.get("wildcard_info", [])
-    if not isinstance(wildcard_raw, (list, tuple)):
-        raise _InvalidPosition
-    wildcard_info = []
-    from .actions import WildcardInfo
-
-    for item in wildcard_raw:
-        if not isinstance(item, dict):
+    wildcard_token = f"{level}H"
+    if (
+        not metadata_count_present
+        and all(card_to_token(card) != wildcard_token for card in carriers)
+    ):
+        if detect_pattern(declared).type != pattern:
             raise _InvalidPosition
-        wildcard_info.append(
-            WildcardInfo(
-                carrier_card=_card_from_token(item.get("carrier_card")),
-                declared_as=_card_from_token(item.get("declared_as"), declared=True),
-            )
+        face_key = lambda card: (
+            card.rank,
+            card.suit if pattern == PatternType.STRAIGHT_FLUSH else None,
         )
-    if wildcard_count != len(wildcard_info):
+        if Counter(map(face_key, declared)) != Counter(map(face_key, carriers)):
+            raise _InvalidPosition
+        binding = Action(
+            player_id=player_id,
+            action_type=ActionType.PLAY,
+            declared_pattern=pattern,
+            declared_cards=declared,
+            carrier_cards=carriers,
+            display_text=str(raw.get("display_text", pattern_value)),
+        )
+        return binding
+    bindings = BaseRuleEngine().public_action_bindings(
+        player_id,
+        pattern,
+        declared,
+        carriers,
+        level,
+        first_carrier_only=not metadata_count_present,
+        first_binding_only=not metadata_count_present,
+    )
+    if not bindings:
         raise _InvalidPosition
+    if metadata_count_present:
+        wildcard_count = raw.get("wildcard_count")
+        wildcard_raw = raw.get("wildcard_info")
+        if (
+            type(wildcard_count) is not int or not 0 <= wildcard_count <= 2
+            or not isinstance(wildcard_raw, (list, tuple))
+        ):
+            raise _InvalidPosition
+        supplied_info = []
+        for item in wildcard_raw:
+            if not isinstance(item, dict):
+                raise _InvalidPosition
+            supplied_info.append((
+                _card_from_token(item.get("carrier_card")),
+                _card_from_token(item.get("declared_as"), declared=True),
+            ))
+        binding = next((
+            candidate for candidate in bindings
+            if candidate.wildcard_count == wildcard_count
+            and tuple((item.carrier_card, item.declared_as) for item in candidate.wildcard_info)
+            == tuple(supplied_info)
+        ), None)
+        if binding is None:
+            raise _InvalidPosition
+    else:
+        # Observation history intentionally carries only canonical pattern,
+        # claim and physical carriers. Reconstruct an accepted binding through
+        # the engine rather than treating those carriers as an ordinary natural
+        # action or duplicating wildcard legality here.
+        binding = bindings[0]
     return Action(
         player_id=player_id,
         action_type=ActionType.PLAY,
         declared_pattern=pattern,
         declared_cards=declared,
         carrier_cards=carriers,
-        wildcard_count=wildcard_count,
-        wildcard_info=tuple(wildcard_info),
+        wildcard_count=binding.wildcard_count,
+        wildcard_info=binding.wildcard_info,
         display_text=str(raw.get("display_text", pattern_value)),
     )
 
@@ -243,6 +291,13 @@ def _build_public_game(
     ):
         raise _InvalidPosition
     finish_order = tuple(raw_finish_order)
+    if (
+        len(finish_order) == 2
+        and rows[finish_order[0]].get("team") == rows[finish_order[1]].get("team")
+    ):
+        # A same-team top two is terminal.  It has no legal continuation for
+        # the endgame search, even though the remaining hands are still hidden.
+        raise _InvalidPosition
     finished_ids = set(finish_order)
     if {key for key, row in rows.items() if bool(row.get("finished"))} != finished_ids:
         raise _InvalidPosition
@@ -272,7 +327,7 @@ def _build_public_game(
         ):
             raise _InvalidPosition
         previous_round = raw_round
-        action = _action_from_public(raw_action, history_player)
+        action = _action_from_public(raw_action, history_player, level)
         history_entries.append(
             HistoryEntry(step_no=raw_step, round_no=raw_round, player_id=history_player, action=action)
         )
@@ -337,7 +392,7 @@ def _build_public_game(
             raise _InvalidPosition
         lead_raw = raw_history[lead_index]
         leader_id = int(lead_raw["player_id"])
-        lead_action = _action_from_public(table_action_raw, leader_id)
+        lead_action = _action_from_public(table_action_raw, leader_id, level)
         if _action_signature(table_action_raw)[:3] != _action_signature(lead_raw)[:3]:
             raise _InvalidPosition
         if (

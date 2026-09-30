@@ -141,7 +141,7 @@ def _validated_free_lead_actions(
             or any(not _valid_declared_card(card) for card in declared)
             or any(not _valid_card_token(card) for card in carriers)
             or not _is_int(wildcard_count)
-            or not 0 <= wildcard_count <= 1
+            or not 0 <= wildcard_count <= 2
             or wildcard_count > len(carriers)
             or not isinstance(wildcard_info, list)
             or len(wildcard_info) != wildcard_count

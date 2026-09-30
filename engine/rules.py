@@ -8,47 +8,11 @@ from typing import Iterable
 from .actions import Action, ActionType, WildcardInfo
 from .cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card, card_sort_key, is_joker, sort_cards
 from .patterns import Pattern, PatternType, detect_pattern
+from .sequences import PAIR_STRAIGHT_WINDOWS, STEEL_PLATE_WINDOWS, STRAIGHT_WINDOWS
 from .state import GameState
 
 
 _NON_JOKER_RANKS: tuple[str, ...] = ("3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2")
-_STRAIGHT_WINDOWS: tuple[tuple[str, ...], ...] = (
-    ("A", "2", "3", "4", "5"),
-    ("2", "3", "4", "5", "6"),
-    ("3", "4", "5", "6", "7"),
-    ("4", "5", "6", "7", "8"),
-    ("5", "6", "7", "8", "9"),
-    ("6", "7", "8", "9", "10"),
-    ("7", "8", "9", "10", "J"),
-    ("8", "9", "10", "J", "Q"),
-    ("9", "10", "J", "Q", "K"),
-    ("10", "J", "Q", "K", "A"),
-)
-_PAIR_STRAIGHT_WINDOWS: tuple[tuple[str, ...], ...] = (
-    ("3", "4", "5"),
-    ("4", "5", "6"),
-    ("5", "6", "7"),
-    ("6", "7", "8"),
-    ("7", "8", "9"),
-    ("8", "9", "10"),
-    ("9", "10", "J"),
-    ("10", "J", "Q"),
-    ("J", "Q", "K"),
-    ("Q", "K", "A"),
-)
-_STEEL_PLATE_WINDOWS: tuple[tuple[str, ...], ...] = (
-    ("3", "4"),
-    ("4", "5"),
-    ("5", "6"),
-    ("6", "7"),
-    ("7", "8"),
-    ("8", "9"),
-    ("9", "10"),
-    ("10", "J"),
-    ("J", "Q"),
-    ("Q", "K"),
-    ("K", "A"),
-)
 _SUIT_ORDER: tuple[str, ...] = ("S", "H", "C", "D")
 _PATTERN_SORT_ORDER: dict[str, int] = {
     "single": 0,
@@ -268,6 +232,14 @@ def _action_dedupe_key(action: Action) -> tuple[object, ...]:
         action.declared_pattern.value if action.declared_pattern else None,
         tuple((card.rank, card.suit) for card in action.declared_cards),
         tuple((card.rank, card.suit) for card in action.carrier_cards),
+        action.wildcard_count,
+        tuple(
+            (
+                (item.carrier_card.rank, item.carrier_card.suit),
+                (item.declared_as.rank, item.declared_as.suit),
+            )
+            for item in action.wildcard_info
+        ),
     )
 
 
@@ -292,6 +264,148 @@ def _first_wildcard(cards: tuple[Card, ...], current_level_rank: str) -> Card | 
     return wildcards[0] if wildcards else None
 
 
+def _declared_card_matches_carrier(
+    carrier: Card,
+    declared: Card,
+    pattern: PatternType,
+) -> bool:
+    if pattern == PatternType.STRAIGHT_FLUSH:
+        return (carrier.rank, carrier.suit) == (declared.rank, declared.suit)
+    return carrier.rank == declared.rank
+
+
+def _can_substitute_for(
+    declared: Card,
+    pattern: PatternType,
+    current_level_rank: str,
+) -> bool:
+    if declared.rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK}:
+        return False
+    if pattern == PatternType.STRAIGHT_FLUSH:
+        return (declared.rank, declared.suit) != (current_level_rank, "H")
+    # The official claim permits a level-heart carrier to name another suit
+    # of the same level rank; the adapter binds that virtual face away from H.
+    return True
+
+
+def _materialize_declared_actions(
+    *,
+    player_id: int,
+    pattern: PatternType,
+    declared_cards: tuple[Card, ...],
+    hand_cards: tuple[Card, ...],
+    current_level_rank: str,
+    first_carrier_only: bool = False,
+    stop_after_first: bool = False,
+) -> list[Action]:
+    """Bind one declared pattern to physical carriers with zero to two wilds.
+
+    Natural matches and substitutions share the same position assignment, so
+    two wildcards can fill different positions while another level-heart copy
+    remains a natural card. Physical multiplicity is preserved by consuming
+    each selected carrier before assigning the next declaration.
+    """
+    ordered_hand = list(sort_cards(hand_cards))
+    wildcard = Card(rank=current_level_rank, suit="H")
+    available_wildcards = ordered_hand.count(wildcard)
+    max_wildcards = min(2, available_wildcards, len(declared_cards))
+    actions: dict[tuple[object, ...], Action] = {}
+
+    for wildcard_count in range(max_wildcards + 1):
+        for wildcard_positions in combinations(range(len(declared_cards)), wildcard_count):
+            wildcard_position_set = set(wildcard_positions)
+            if any(
+                not _can_substitute_for(declared_cards[index], pattern, current_level_rank)
+                for index in wildcard_positions
+            ):
+                continue
+
+            remaining = ordered_hand.copy()
+            selected_wildcards: list[Card] = []
+            for _ in range(wildcard_count):
+                try:
+                    remaining.remove(wildcard)
+                except ValueError:
+                    selected_wildcards = []
+                    break
+                selected_wildcards.append(wildcard)
+            if len(selected_wildcards) != wildcard_count:
+                continue
+            found_carrier = False
+
+            def bind(
+                position: int,
+                available: list[Card],
+                carriers: list[Card],
+                wildcard_info: list[WildcardInfo],
+                last_natural_by_target: dict[tuple[str, str | None], Card],
+            ) -> None:
+                nonlocal found_carrier
+                if first_carrier_only and found_carrier:
+                    return
+                if position == len(declared_cards):
+                    if (
+                        pattern == PatternType.STRAIGHT
+                        and wildcard_count == 0
+                        and len({card.suit for card in carriers}) == 1
+                    ):
+                        # Those exact physical faces are a straight flush and
+                        # are emitted by its own canonical pattern generator.
+                        return
+                    action = _make_action(
+                        player_id=player_id,
+                        declared_pattern=pattern,
+                        declared_cards=declared_cards,
+                        carrier_cards=tuple(carriers),
+                        wildcard_info=tuple(wildcard_info),
+                    )
+                    actions[_action_dedupe_key(action)] = action
+                    found_carrier = True
+                    return
+
+                declared = declared_cards[position]
+                if position in wildcard_position_set:
+                    bind(
+                        position + 1,
+                        available,
+                        carriers + [wildcard],
+                        wildcard_info + [WildcardInfo(wildcard, declared)],
+                        last_natural_by_target,
+                    )
+                    return
+
+                target = (
+                    declared.rank,
+                    declared.suit if pattern == PatternType.STRAIGHT_FLUSH else None,
+                )
+                last = last_natural_by_target.get(target)
+                matches = sorted(
+                    {
+                        card for card in available
+                        if _declared_card_matches_carrier(card, declared, pattern)
+                        and (last is None or card_sort_key(card) >= card_sort_key(last))
+                    },
+                    key=card_sort_key,
+                )
+                for match in matches:
+                    next_available = available.copy()
+                    next_available.remove(match)
+                    next_last = last_natural_by_target.copy()
+                    next_last[target] = match
+                    bind(
+                        position + 1,
+                        next_available,
+                        carriers + [match],
+                        wildcard_info,
+                        next_last,
+                    )
+
+            bind(0, remaining, [], [], {})
+            if stop_after_first and actions:
+                return list(actions.values())
+    return list(actions.values())
+
+
 def _pick_cards(cards: list[Card], count: int) -> tuple[Card, ...]:
     return tuple(sorted(cards[:count], key=card_sort_key))
 
@@ -308,9 +422,266 @@ def _carrier_is_payable(action: Action, hand_cards: tuple[Card, ...]) -> bool:
     return all(count <= hand_counter.get(key, 0) for key, count in carrier_counter.items())
 
 
+def _public_resource_carriers(
+    token_counts: Counter[tuple[str, str | None]],
+    capacity: int,
+    current_level_rank: str,
+) -> Iterable[tuple[Card, ...]]:
+    """Enumerate bounded carrier multisets for response resource families."""
+    card_by_key = {
+        key: Card(rank=key[0], suit=key[1])
+        for key in token_counts
+    }
+    token_keys = tuple(sorted(
+        card_by_key,
+        key=lambda key: card_sort_key(card_by_key[key]),
+    ))
+    if capacity >= 1:
+        for key in token_keys:
+            yield (card_by_key[key],)
+    if capacity >= 2:
+        for first_index, first in enumerate(token_keys):
+            for second in token_keys[first_index:]:
+                if first == second and token_counts[first] < 2:
+                    continue
+                yield (card_by_key[first], card_by_key[second])
+
+    by_rank: dict[str, list[Card]] = defaultdict(list)
+    for key, count in token_counts.items():
+        by_rank[key[0]].extend(card_by_key[key] for _ in range(count))
+    if capacity >= 4:
+        for rank in _NON_JOKER_RANKS:
+            ranked_cards = tuple(sorted(by_rank.get(rank, ()), key=card_sort_key))
+            for size in range(4, min(8, capacity, len(ranked_cards)) + 1):
+                for subset in combinations(ranked_cards, size):
+                    yield tuple(subset)
+
+        wildcard_key = (current_level_rank, "H")
+        wildcard = card_by_key.get(wildcard_key)
+        if wildcard is not None:
+            for rank in _NON_JOKER_RANKS:
+                natural_cards = tuple(
+                    card for card in by_rank.get(rank, ())
+                    if not _is_wildcard(card, current_level_rank)
+                )
+                for wildcard_count in (1, 2):
+                    if token_counts[wildcard_key] < wildcard_count:
+                        continue
+                    max_size = min(10, capacity, len(natural_cards) + wildcard_count)
+                    for size in range(4, max_size + 1):
+                        natural_count = size - wildcard_count
+                        if natural_count < 1:
+                            continue
+                        for subset in combinations(natural_cards, natural_count):
+                            yield tuple(subset) + (wildcard,) * wildcard_count
+
+        if (
+            token_counts.get((SMALL_JOKER_RANK, None), 0) >= 2
+            and token_counts.get((BIG_JOKER_RANK, None), 0) >= 2
+        ):
+            yield (
+                Card(rank=SMALL_JOKER_RANK), Card(rank=SMALL_JOKER_RANK),
+                Card(rank=BIG_JOKER_RANK), Card(rank=BIG_JOKER_RANK),
+            )
+
+    if capacity >= 5:
+        wildcard_key = (current_level_rank, "H")
+        wildcard_card = card_by_key.get(wildcard_key)
+        for suit in _SUIT_ORDER:
+            for window in STRAIGHT_WINDOWS:
+                target_keys = tuple((rank, suit) for rank in window)
+                for wildcard_count in range(3):
+                    if wildcard_count > token_counts.get(wildcard_key, 0):
+                        continue
+                    if wildcard_count and wildcard_card is None:
+                        continue
+                    for positions in combinations(range(5), wildcard_count):
+                        if any(target_keys[position] == wildcard_key for position in positions):
+                            continue
+                        needed = Counter(
+                            target_keys[position]
+                            for position in range(5)
+                            if position not in positions
+                        )
+                        if any(count > token_counts.get(key, 0) for key, count in needed.items()):
+                            continue
+                        if needed.get(wildcard_key, 0) + wildcard_count > token_counts.get(wildcard_key, 0):
+                            continue
+                        carrier = tuple(
+                            card_by_key[key]
+                            for key, count in sorted(
+                                needed.items(),
+                                key=lambda item: card_sort_key(card_by_key[item[0]]),
+                            )
+                            for _ in range(count)
+                        ) + ((wildcard_card,) * wildcard_count if wildcard_count else ())
+                        yield carrier
+
+
+def _resource_response_actions(
+    engine: "BaseRuleEngine",
+    player_id: int,
+    carriers: tuple[Card, ...],
+    current_level_rank: str,
+    extra_patterns: tuple[str, ...] = (),
+) -> tuple[Action, ...]:
+    """Generate counted families plus the requested same-shape family."""
+    count = len(carriers)
+    generated: list[Action] = []
+    families = {
+        PatternType.SINGLE,
+        PatternType.PAIR,
+        PatternType.BOMB,
+        PatternType.STRAIGHT_FLUSH,
+        PatternType.JOKER_BOMB,
+    }
+    families.update(PatternType(pattern) for pattern in extra_patterns)
+    wildcard_face = (current_level_rank, "H")
+    natural_ranks = {
+        card.rank for card in carriers
+        if card.rank not in {SMALL_JOKER_RANK, BIG_JOKER_RANK}
+        and (card.rank, card.suit) != wildcard_face
+    }
+    group_ranks = (
+        tuple(natural_ranks) if len(natural_ranks) == 1
+        else _NON_JOKER_RANKS if not natural_ranks
+        else ()
+    )
+
+    if PatternType.SINGLE in families and count == 1:
+        generated.extend(engine._generate_single_actions(
+            player_id, carriers, current_level_rank, first_carrier_only=True,
+        ))
+    for family in (PatternType.PAIR, PatternType.TRIPLE):
+        if family not in families or count != {PatternType.PAIR: 2, PatternType.TRIPLE: 3}[family]:
+            continue
+        for rank in group_ranks:
+            declared = _public_declared_cards_for_group(rank, count)
+            generated.extend(_materialize_declared_actions(
+                player_id=player_id,
+                pattern=family,
+                declared_cards=declared,
+                hand_cards=carriers,
+                current_level_rank=current_level_rank,
+                first_carrier_only=True,
+            ))
+        if family == PatternType.PAIR:
+            for rank in (SMALL_JOKER_RANK, BIG_JOKER_RANK):
+                declared = _public_declared_cards_for_group(rank, count)
+                generated.extend(_materialize_declared_actions(
+                    player_id=player_id,
+                    pattern=family,
+                    declared_cards=declared,
+                    hand_cards=carriers,
+                    current_level_rank=current_level_rank,
+                    first_carrier_only=True,
+                ))
+    if PatternType.BOMB in families and 4 <= count <= 10:
+        for rank in group_ranks:
+            declared = _public_declared_cards_for_group(rank, count)
+            generated.extend(_materialize_declared_actions(
+                player_id=player_id,
+                pattern=PatternType.BOMB,
+                declared_cards=declared,
+                hand_cards=carriers,
+                current_level_rank=current_level_rank,
+                first_carrier_only=True,
+            ))
+    if PatternType.JOKER_BOMB in families and count == 4:
+        declared = (
+            Card(rank=SMALL_JOKER_RANK), Card(rank=SMALL_JOKER_RANK),
+            Card(rank=BIG_JOKER_RANK), Card(rank=BIG_JOKER_RANK),
+        )
+        generated.extend(_materialize_declared_actions(
+            player_id=player_id,
+            pattern=PatternType.JOKER_BOMB,
+            declared_cards=declared,
+            hand_cards=carriers,
+            current_level_rank=current_level_rank,
+            first_carrier_only=True,
+        ))
+
+    if PatternType.TRIPLE_WITH_PAIR in families and count == 5:
+        generated.extend(engine._generate_triple_with_pair_actions(
+            player_id, carriers, current_level_rank, first_carrier_only=True,
+        ))
+    if PatternType.STRAIGHT in families and count == 5:
+        generated.extend(engine._generate_straight_actions(
+            player_id, carriers, current_level_rank, first_carrier_only=True,
+        ))
+    if PatternType.PAIR_STRAIGHT in families and count == 6:
+        generated.extend(engine._generate_pair_straight_actions(
+            player_id, carriers, current_level_rank, first_carrier_only=True,
+        ))
+    if PatternType.STEEL_PLATE in families and count == 6:
+        generated.extend(engine._generate_steel_plate_actions(
+            player_id, carriers, current_level_rank, first_carrier_only=True,
+        ))
+    if PatternType.STRAIGHT_FLUSH in families and count == 5:
+        generated.extend(engine._generate_straight_flush_actions(
+            player_id, carriers, current_level_rank, first_carrier_only=True,
+        ))
+    expected = Counter(_card_key(card) for card in carriers)
+    return tuple(
+        action for action in generated
+        if action.declared_pattern is not None
+        and Counter(_card_key(card) for card in action.carrier_cards) == expected
+    )
+
+
 class BaseRuleEngine:
     def detect_pattern(self, cards: tuple[Card, ...]) -> Pattern:
         return detect_pattern(cards)
+
+    def public_action_bindings(
+        self,
+        player_id: int,
+        declared_pattern: PatternType,
+        declared_cards: tuple[Card, ...],
+        carrier_cards: tuple[Card, ...],
+        current_level_rank: str,
+        *,
+        first_carrier_only: bool = False,
+        first_binding_only: bool = False,
+    ) -> tuple[Action, ...]:
+        """Return rule-generated bindings for one public action description.
+
+        Histories may expose the declared faces and physical carriers without
+        wildcard metadata. This read-only query reconstructs only bindings the
+        same canonical generator can produce; it does not create a playable
+        action ID or consult hidden state.
+        """
+        _validate_current_level_rank(current_level_rank)
+        if (
+            declared_pattern in {PatternType.PASS, PatternType.UNKNOWN}
+            or not declared_cards
+            or len(declared_cards) != len(carrier_cards)
+            or detect_pattern(declared_cards).type != declared_pattern
+        ):
+            return ()
+        physical_counts: Counter[tuple[str, str | None]] = Counter()
+        for card in carrier_cards:
+            normal = card.rank in _NON_JOKER_RANKS and card.suit in _SUIT_ORDER
+            joker = card.rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} and card.suit is None
+            if not (normal or joker):
+                return ()
+            physical_counts[_card_key(card)] += 1
+            if physical_counts[_card_key(card)] > 2:
+                return ()
+        bindings = _materialize_declared_actions(
+            player_id=player_id,
+            pattern=declared_pattern,
+            declared_cards=declared_cards,
+            hand_cards=carrier_cards,
+            current_level_rank=current_level_rank,
+            first_carrier_only=first_carrier_only,
+            stop_after_first=first_binding_only,
+        )
+        requested = Counter(_card_key(card) for card in carrier_cards)
+        return tuple(
+            action for action in bindings
+            if Counter(_card_key(card) for card in action.carrier_cards) == requested
+        )
 
     def public_straight_flush_resources(
         self,
@@ -426,13 +797,27 @@ class BaseRuleEngine:
 
         player_id = leading_action.player_id
         candidates: list[Action] = []
-        candidates.extend(self._generate_single_actions(player_id, available_cards, current_level_rank))
-        candidates.extend(self._generate_group_actions(player_id, available_cards, current_level_rank))
-        candidates.extend(self._generate_triple_with_pair_actions(player_id, available_cards, current_level_rank))
-        candidates.extend(self._generate_straight_actions(player_id, available_cards, current_level_rank))
-        candidates.extend(self._generate_pair_straight_actions(player_id, available_cards, current_level_rank))
-        candidates.extend(self._generate_steel_plate_actions(player_id, available_cards, current_level_rank))
-        candidates.extend(self._generate_straight_flush_actions(player_id, available_cards, current_level_rank))
+        candidates.extend(self._generate_single_actions(
+            player_id, available_cards, current_level_rank, first_carrier_only=True,
+        ))
+        candidates.extend(self._generate_group_actions(
+            player_id, available_cards, current_level_rank, first_carrier_only=True,
+        ))
+        candidates.extend(self._generate_triple_with_pair_actions(
+            player_id, available_cards, current_level_rank, first_carrier_only=True,
+        ))
+        candidates.extend(self._generate_straight_actions(
+            player_id, available_cards, current_level_rank, first_carrier_only=True,
+        ))
+        candidates.extend(self._generate_pair_straight_actions(
+            player_id, available_cards, current_level_rank, first_carrier_only=True,
+        ))
+        candidates.extend(self._generate_steel_plate_actions(
+            player_id, available_cards, current_level_rank, first_carrier_only=True,
+        ))
+        candidates.extend(self._generate_straight_flush_actions(
+            player_id, available_cards, current_level_rank, first_carrier_only=True,
+        ))
 
         requirements = {
             PublicResponseRequirement(
@@ -462,14 +847,11 @@ class BaseRuleEngine:
         *,
         max_cards: int | None = None,
     ) -> tuple[PublicResponseResourceCount, ...]:
-        """Count rule-verified, de-duplicated carrier resources in a card domain.
+        """Count distinct rule-valid response carriers within the card capacity.
 
-        If ``available_cards`` is a player's confirmed hand, the counts are exact.
-        If it is a public possible-card domain, ``max_cards`` filters resources by
-        that player's remaining capacity and the counts are only a feasible upper
-        bound.  A carrier multiset is counted once even when multiple wildcard
-        declarations or straight windows use the same physical cards.  This
-        summary deliberately exposes no card identities, actions, or action IDs.
+        For a public possible-card domain, counts are feasible upper bounds.
+        Each physical face multiset is counted once even when it supports
+        multiple wildcard declarations or straight-flush windows.
         """
         _validate_current_level_rank(current_level_rank)
         if leading_action.action_type != ActionType.PLAY:
@@ -477,12 +859,13 @@ class BaseRuleEngine:
         capacity = len(available_cards) if max_cards is None else max_cards
         if type(capacity) is not int or capacity < 0:
             raise ValueError("max_cards must be a non-negative integer")
+        capacity = min(capacity, len(available_cards))
         if capacity == 0:
             return ()
 
         counts: Counter[tuple[str, str | None]] = Counter()
         for card in available_cards:
-            is_normal = card.rank in _NON_JOKER_RANKS and card.suit in {"S", "H", "C", "D"}
+            is_normal = card.rank in _NON_JOKER_RANKS and card.suit in _SUIT_ORDER
             is_joker_card = card.rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} and card.suit is None
             if not (is_normal or is_joker_card):
                 raise ValueError("available_cards must contain physical cards")
@@ -490,46 +873,29 @@ class BaseRuleEngine:
             if counts[(card.rank, card.suit)] > 2:
                 raise ValueError("available_cards exceeds the double-deck token pool")
 
-        capacity = min(capacity, len(available_cards))
-        if capacity == 0:
-            return ()
-
-        def card_key(card: Card) -> tuple[str, str | None]:
-            return (card.rank, card.suit)
-
         def carrier_key(cards: tuple[Card, ...]) -> tuple[tuple[str, str | None], ...]:
-            return tuple(card_key(card) for card in sort_cards(cards))
+            return tuple((card.rank, card.suit) for card in sort_cards(cards))
 
-        player_id = leading_action.player_id
-        leading_pattern = (
-            leading_action.declared_pattern.value
-            if leading_action.declared_pattern is not None else ""
-        )
-        families_by_carrier: dict[
-            tuple[tuple[str, str | None], ...], set[str]
-        ] = defaultdict(set)
-        wildcard_families_by_carrier: dict[
-            tuple[tuple[str, str | None], ...], set[str]
-        ] = defaultdict(set)
+        families_by_carrier: dict[tuple[tuple[str, str | None], ...], set[str]] = defaultdict(set)
+        wildcard_families_by_carrier: dict[tuple[tuple[str, str | None], ...], set[str]] = defaultdict(set)
         visited: set[tuple[tuple[str, str | None], ...]] = set()
+        player_id = leading_action.player_id
 
-        def record_resource(cards: tuple[Card, ...]) -> None:
+        for cards in _public_resource_carriers(counts, capacity, current_level_rank):
             if len(cards) > capacity:
-                return
+                continue
             key = carrier_key(cards)
             if key in visited:
-                return
+                continue
             visited.add(key)
 
-            actions: list[Action] = []
-            if len(cards) == 1:
-                actions.extend(self._generate_single_actions(player_id, cards, current_level_rank))
-            if len(cards) == 2 or 4 <= len(cards) <= 8:
-                actions.extend(self._generate_group_actions(player_id, cards, current_level_rank))
-            if len(cards) == 5:
-                actions.extend(self._generate_straight_flush_actions(player_id, cards, current_level_rank))
-
-            for response in actions:
+            for response in _resource_response_actions(
+                self,
+                player_id,
+                cards,
+                current_level_rank,
+                extra_patterns=(leading_action.declared_pattern.value,),
+            ):
                 if (
                     response.declared_pattern is None
                     or carrier_key(response.carrier_cards) != key
@@ -537,97 +903,32 @@ class BaseRuleEngine:
                 ):
                     continue
                 family = response.declared_pattern.value
-                if family not in {"single", "pair", "bomb", "straight_flush", "joker_bomb"}:
+                if family not in {
+                    "single", "pair", "bomb", "straight_flush", "joker_bomb",
+                    leading_action.declared_pattern.value,
+                }:
                     continue
                 families_by_carrier[key].add(family)
                 if response.wildcard_count:
                     wildcard_families_by_carrier[key].add(family)
 
-        card_by_key = {
-            key: Card(rank=key[0], suit=key[1])
-            for key in counts
-        }
-        token_keys = tuple(sorted(
-            card_by_key,
-            key=lambda key: card_sort_key(card_by_key[key]),
-        ))
-
-        if capacity >= 1:
-            for key in token_keys:
-                record_resource((card_by_key[key],))
-
-        if capacity >= 2:
-            for first_index, first_key in enumerate(token_keys):
-                for second_key in token_keys[first_index:]:
-                    if first_key == second_key and counts[first_key] < 2:
-                        continue
-                    record_resource((card_by_key[first_key], card_by_key[second_key]))
-
-        by_rank: dict[str, list[Card]] = defaultdict(list)
-        for key, count in counts.items():
-            by_rank[key[0]].extend(card_by_key[key] for _ in range(count))
-
-        if capacity >= 4:
-            # Natural bombs: enumerate each distinct multiset within a rank.
-            for rank in _NON_JOKER_RANKS:
-                ranked_cards = tuple(sorted(by_rank.get(rank, ()), key=card_sort_key))
-                for size in range(4, min(8, capacity, len(ranked_cards)) + 1):
-                    for subset in combinations(ranked_cards, size):
-                        record_resource(tuple(subset))
-
-            # A single red-heart level card may complete a same-rank bomb.
-            wildcard = Card(rank=current_level_rank, suit="H")
-            if counts.get(card_key(wildcard), 0):
-                for rank in _NON_JOKER_RANKS:
-                    non_wild = tuple(
-                        card for card in by_rank.get(rank, ())
-                        if not _is_wildcard(card, current_level_rank)
-                    )
-                    max_size = min(8, capacity, len(non_wild) + 1)
-                    for size in range(4, max_size + 1):
-                        for subset in combinations(non_wild, size - 1):
-                            record_resource(tuple(subset) + (wildcard,))
-
-            if counts.get((SMALL_JOKER_RANK, None), 0) >= 2 and counts.get((BIG_JOKER_RANK, None), 0) >= 2:
-                record_resource((
-                    Card(rank=SMALL_JOKER_RANK), Card(rank=SMALL_JOKER_RANK),
-                    Card(rank=BIG_JOKER_RANK), Card(rank=BIG_JOKER_RANK),
-                ))
-
-        if capacity >= 5:
-            # Straight flush windows are few; each physical carrier multiset is
-            # recorded once even when a wildcard fits more than one window.
-            available_tokens = set(token_keys)
-            wildcard_key = (current_level_rank, "H")
-            for suit in _SUIT_ORDER:
-                for window in _STRAIGHT_WINDOWS:
-                    for missing_rank in (None, *window):
-                        if missing_rank is None:
-                            keys = tuple((rank, suit) for rank in window)
-                            if not all(key in available_tokens for key in keys):
-                                continue
-                            record_resource(tuple(card_by_key[key] for key in keys))
-                            continue
-                        if wildcard_key not in available_tokens:
-                            continue
-                        keys = tuple((rank, suit) for rank in window if rank != missing_rank)
-                        if not all(
-                            key in available_tokens and key != wildcard_key
-                            for key in keys
-                        ):
-                            continue
-                        record_resource(tuple(card_by_key[key] for key in keys) + (card_by_key[wildcard_key],))
-
-        # Categories are made disjoint by assigning a carrier that supports
-        # multiple legal declarations to its strongest applicable bomb family.
+        leading_pattern = (
+            leading_action.declared_pattern.value
+            if leading_action.declared_pattern is not None else ""
+        )
         category_sets: dict[str, set[tuple[tuple[str, str | None], ...]]] = defaultdict(set)
         wildcard_sets: dict[str, set[tuple[tuple[str, str | None], ...]]] = defaultdict(set)
         for key, families in families_by_carrier.items():
             category = next((
-                family for family in ("joker_bomb", "straight_flush", "bomb", leading_pattern, "single", "pair")
+                family for family in (
+                    "joker_bomb", "straight_flush", "bomb", leading_pattern, "single", "pair",
+                )
                 if family in families
             ), None)
-            if category is None or category not in {"single", "pair", "bomb", "straight_flush", "joker_bomb"}:
+            if category not in {
+                "single", "pair", "bomb", "straight_flush", "joker_bomb",
+                leading_pattern,
+            }:
                 continue
             category_sets[category].add(key)
             if wildcard_families_by_carrier.get(key):
@@ -689,15 +990,36 @@ class BaseRuleEngine:
         # player also makes this read-only API safe for mixed-player callers.
         candidates_by_player: dict[int, dict[str, list[Action]]] = {}
         resource_candidates_by_player: dict[int, dict[str, list[Action]]] = {}
+        leading_patterns_by_player: dict[int, tuple[str, ...]] = {}
         for player_id in player_ids:
+            leading_patterns_by_player[player_id] = tuple(sorted({
+                lead.declared_pattern.value for lead in leads
+                if lead.player_id == player_id
+                and lead.action_type == ActionType.PLAY
+                and lead.declared_pattern is not None
+            }))
             generated: list[Action] = []
-            generated.extend(self._generate_single_actions(player_id, available_cards, current_level_rank))
-            generated.extend(self._generate_group_actions(player_id, available_cards, current_level_rank))
-            generated.extend(self._generate_triple_with_pair_actions(player_id, available_cards, current_level_rank))
-            generated.extend(self._generate_straight_actions(player_id, available_cards, current_level_rank))
-            generated.extend(self._generate_pair_straight_actions(player_id, available_cards, current_level_rank))
-            generated.extend(self._generate_steel_plate_actions(player_id, available_cards, current_level_rank))
-            generated.extend(self._generate_straight_flush_actions(player_id, available_cards, current_level_rank))
+            generated.extend(self._generate_single_actions(
+                player_id, available_cards, current_level_rank, first_carrier_only=True,
+            ))
+            generated.extend(self._generate_group_actions(
+                player_id, available_cards, current_level_rank, first_carrier_only=True,
+            ))
+            generated.extend(self._generate_triple_with_pair_actions(
+                player_id, available_cards, current_level_rank, first_carrier_only=True,
+            ))
+            generated.extend(self._generate_straight_actions(
+                player_id, available_cards, current_level_rank, first_carrier_only=True,
+            ))
+            generated.extend(self._generate_pair_straight_actions(
+                player_id, available_cards, current_level_rank, first_carrier_only=True,
+            ))
+            generated.extend(self._generate_steel_plate_actions(
+                player_id, available_cards, current_level_rank, first_carrier_only=True,
+            ))
+            generated.extend(self._generate_straight_flush_actions(
+                player_id, available_cards, current_level_rank, first_carrier_only=True,
+            ))
 
             by_pattern: dict[str, list[Action]] = defaultdict(list)
             seen_actions: set[tuple[object, ...]] = set()
@@ -720,117 +1042,51 @@ class BaseRuleEngine:
                 by_pattern[response.declared_pattern.value].append(response)
             candidates_by_player[player_id] = by_pattern
 
-            # The ordinary full-hand generators choose a representative carrier
-            # for each declared group. M3c resource counts instead enumerate all
-            # distinct physical carriers, so build that exact domain once here
-            # and reuse it for each candidate lead.
+            # Enumerate one bounded carrier catalog from the public pool; all
+            # lead summaries below reuse these rule-generated response routes.
             resource_by_pattern: dict[str, list[Action]] = defaultdict(list)
             visited_carriers: set[tuple[tuple[str, str | None], ...]] = set()
             seen_resource_actions: set[tuple[object, ...]] = set()
 
-            def record_resource(cards: tuple[Card, ...]) -> None:
+            for cards in _public_resource_carriers(token_counts, capacity, current_level_rank):
                 if len(cards) > capacity:
-                    return
+                    continue
                 carrier = carrier_key(cards)
                 if carrier in visited_carriers:
-                    return
+                    continue
                 visited_carriers.add(carrier)
 
-                responses: list[Action] = []
-                if len(cards) == 1:
-                    responses.extend(self._generate_single_actions(player_id, cards, current_level_rank))
-                if len(cards) == 2 or 4 <= len(cards) <= 8:
-                    responses.extend(self._generate_group_actions(player_id, cards, current_level_rank))
-                if len(cards) == 5:
-                    responses.extend(self._generate_straight_flush_actions(player_id, cards, current_level_rank))
-
-                for response in responses:
+                for response in _resource_response_actions(
+                    self,
+                    player_id,
+                    cards,
+                    current_level_rank,
+                    extra_patterns=leading_patterns_by_player[player_id],
+                ):
                     if (
                         response.declared_pattern is None
                         or carrier_key(response.carrier_cards) != carrier
                     ):
                         continue
                     family = response.declared_pattern.value
-                    if family not in {"single", "pair", "bomb", "straight_flush", "joker_bomb"}:
+                    if family not in {
+                        "single", "pair", "bomb", "straight_flush", "joker_bomb",
+                        *leading_patterns_by_player[player_id],
+                    }:
                         continue
                     declared = tuple((card.rank, card.suit) for card in response.declared_cards)
-                    action_key = (family, carrier, declared, response.wildcard_count)
+                    wildcard_info = tuple(
+                        (
+                            (item.carrier_card.rank, item.carrier_card.suit),
+                            (item.declared_as.rank, item.declared_as.suit),
+                        )
+                        for item in response.wildcard_info
+                    )
+                    action_key = (family, carrier, declared, response.wildcard_count, wildcard_info)
                     if action_key in seen_resource_actions:
                         continue
                     seen_resource_actions.add(action_key)
                     resource_by_pattern[family].append(response)
-
-            card_by_key = {
-                key: Card(rank=key[0], suit=key[1])
-                for key in token_counts
-            }
-            token_keys = tuple(sorted(
-                card_by_key,
-                key=lambda key: card_sort_key(card_by_key[key]),
-            ))
-            if capacity >= 1:
-                for token in token_keys:
-                    record_resource((card_by_key[token],))
-            if capacity >= 2:
-                for first_index, first in enumerate(token_keys):
-                    for second in token_keys[first_index:]:
-                        if first == second and token_counts[first] < 2:
-                            continue
-                        record_resource((card_by_key[first], card_by_key[second]))
-
-            by_rank: dict[str, list[Card]] = defaultdict(list)
-            for token, count in token_counts.items():
-                by_rank[token[0]].extend(card_by_key[token] for _ in range(count))
-            if capacity >= 4:
-                for rank in _NON_JOKER_RANKS:
-                    ranked_cards = tuple(sorted(by_rank.get(rank, ()), key=card_sort_key))
-                    for size in range(4, min(8, capacity, len(ranked_cards)) + 1):
-                        for subset in combinations(ranked_cards, size):
-                            record_resource(tuple(subset))
-
-                wildcard = Card(rank=current_level_rank, suit="H")
-                if token_counts.get((current_level_rank, "H"), 0):
-                    for rank in _NON_JOKER_RANKS:
-                        non_wild = tuple(
-                            card for card in by_rank.get(rank, ())
-                            if not _is_wildcard(card, current_level_rank)
-                        )
-                        max_size = min(8, capacity, len(non_wild) + 1)
-                        for size in range(4, max_size + 1):
-                            for subset in combinations(non_wild, size - 1):
-                                record_resource(tuple(subset) + (wildcard,))
-
-                if (
-                    token_counts.get((SMALL_JOKER_RANK, None), 0) >= 2
-                    and token_counts.get((BIG_JOKER_RANK, None), 0) >= 2
-                ):
-                    record_resource((
-                        Card(rank=SMALL_JOKER_RANK), Card(rank=SMALL_JOKER_RANK),
-                        Card(rank=BIG_JOKER_RANK), Card(rank=BIG_JOKER_RANK),
-                    ))
-
-            if capacity >= 5:
-                available_tokens = set(token_keys)
-                wildcard_key = (current_level_rank, "H")
-                for suit in _SUIT_ORDER:
-                    for window in _STRAIGHT_WINDOWS:
-                        for missing_rank in (None, *window):
-                            if missing_rank is None:
-                                keys = tuple((rank, suit) for rank in window)
-                                if all(key in available_tokens for key in keys):
-                                    record_resource(tuple(card_by_key[key] for key in keys))
-                                continue
-                            if wildcard_key not in available_tokens:
-                                continue
-                            keys = tuple((rank, suit) for rank in window if rank != missing_rank)
-                            if all(
-                                key in available_tokens and key != wildcard_key
-                                for key in keys
-                            ):
-                                record_resource(
-                                    tuple(card_by_key[key] for key in keys)
-                                    + (card_by_key[wildcard_key],)
-                                )
             resource_candidates_by_player[player_id] = resource_by_pattern
 
         resource_families = {"single", "pair", "bomb", "straight_flush", "joker_bomb"}
@@ -911,7 +1167,7 @@ class BaseRuleEngine:
                     )
                     if family in families
                 ), None)
-                if category not in resource_families:
+                if category not in resource_families | {leading_pattern}:
                     continue
                 category_sets[category].add(carrier)
                 if wildcard_families_by_carrier.get(carrier):
@@ -956,35 +1212,31 @@ class BaseRuleEngine:
         player_id: int,
         hand_cards: tuple[Card, ...],
         current_level_rank: str,
+        *,
+        first_carrier_only: bool = False,
     ) -> list[Action]:
-        actions: list[Action] = []
-        wildcard = _first_wildcard(hand_cards, current_level_rank)
-        for card in sort_cards(hand_cards):
-            if is_joker(card):
-                declared_cards = (Card(rank=card.rank),)
-            else:
-                declared_cards = (Card(rank=card.rank),)
-            actions.append(
-                _make_action(
-                    player_id=player_id,
-                    declared_pattern=PatternType.SINGLE,
-                    declared_cards=declared_cards,
-                    carrier_cards=(card,),
-                )
+        actions = [
+            _make_action(
+                player_id=player_id,
+                declared_pattern=PatternType.SINGLE,
+                declared_cards=(Card(rank=card.rank),),
+                carrier_cards=(card,),
             )
-
-        if wildcard is not None:
+            for card in sort_cards(hand_cards)
+        ]
+        if any(_is_wildcard(card, current_level_rank) for card in hand_cards):
             for rank in _NON_JOKER_RANKS:
-                if rank == current_level_rank:
-                    continue
-                actions.append(
-                    _make_action(
+                actions.extend(
+                    action
+                    for action in _materialize_declared_actions(
                         player_id=player_id,
-                        declared_pattern=PatternType.SINGLE,
+                        pattern=PatternType.SINGLE,
                         declared_cards=(Card(rank=rank),),
-                        carrier_cards=(wildcard,),
-                        wildcard_info=(WildcardInfo(carrier_card=wildcard, declared_as=Card(rank=rank)),),
+                        hand_cards=hand_cards,
+                        current_level_rank=current_level_rank,
+                        first_carrier_only=first_carrier_only,
                     )
+                    if action.wildcard_count
                 )
         return actions
 
@@ -993,103 +1245,60 @@ class BaseRuleEngine:
         player_id: int,
         hand_cards: tuple[Card, ...],
         current_level_rank: str,
+        *,
+        first_carrier_only: bool = False,
     ) -> list[Action]:
         actions: list[Action] = []
-        all_by_rank = _group_cards_by_rank(hand_cards)
-        non_wild_cards = tuple(card for card in hand_cards if not _is_wildcard(card, current_level_rank))
-        non_wild_by_rank = _group_cards_by_rank(non_wild_cards)
-        wildcard = _first_wildcard(hand_cards, current_level_rank)
-
-        for rank, cards in all_by_rank.items():
-            if len(cards) >= 2:
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.PAIR,
-                        declared_cards=_public_declared_cards_for_group(rank, 2),
-                        carrier_cards=_pick_cards(cards, 2),
-                    )
-                )
-            if rank not in {SMALL_JOKER_RANK, BIG_JOKER_RANK} and len(cards) >= 3:
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.TRIPLE,
-                        declared_cards=_public_declared_cards_for_group(rank, 3),
-                        carrier_cards=_pick_cards(cards, 3),
-                    )
-                )
-            if rank not in {SMALL_JOKER_RANK, BIG_JOKER_RANK} and len(cards) >= 4:
-                for length in range(4, len(cards) + 1):
-                    actions.append(
-                        _make_action(
-                            player_id=player_id,
-                            declared_pattern=PatternType.BOMB,
-                            declared_cards=_public_declared_cards_for_group(rank, length),
-                            carrier_cards=_pick_cards(cards, length),
-                        )
-                    )
-
-        if (
-            len(all_by_rank.get(SMALL_JOKER_RANK, [])) >= 2
-            and len(all_by_rank.get(BIG_JOKER_RANK, [])) >= 2
-        ):
-            actions.append(
-                _make_action(
+        for rank in _NON_JOKER_RANKS:
+            for pattern, count in (
+                (PatternType.PAIR, 2),
+                (PatternType.TRIPLE, 3),
+            ):
+                declared = _public_declared_cards_for_group(rank, count)
+                actions.extend(_materialize_declared_actions(
                     player_id=player_id,
-                    declared_pattern=PatternType.JOKER_BOMB,
-                    declared_cards=(
-                        Card(rank=SMALL_JOKER_RANK),
-                        Card(rank=SMALL_JOKER_RANK),
-                        Card(rank=BIG_JOKER_RANK),
-                        Card(rank=BIG_JOKER_RANK),
-                    ),
-                    carrier_cards=(
-                        all_by_rank[SMALL_JOKER_RANK][0],
-                        all_by_rank[SMALL_JOKER_RANK][1],
-                        all_by_rank[BIG_JOKER_RANK][0],
-                        all_by_rank[BIG_JOKER_RANK][1],
-                    ),
-                )
-            )
+                    pattern=pattern,
+                    declared_cards=declared,
+                    hand_cards=hand_cards,
+                    current_level_rank=current_level_rank,
+                    first_carrier_only=first_carrier_only,
+                ))
+            for count in range(4, 11):
+                declared = _public_declared_cards_for_group(rank, count)
+                actions.extend(_materialize_declared_actions(
+                    player_id=player_id,
+                    pattern=PatternType.BOMB,
+                    declared_cards=declared,
+                    hand_cards=hand_cards,
+                    current_level_rank=current_level_rank,
+                    first_carrier_only=first_carrier_only,
+                ))
 
-        if wildcard is None:
-            return actions
+        for joker_rank in (SMALL_JOKER_RANK, BIG_JOKER_RANK):
+            declared = _public_declared_cards_for_group(joker_rank, 2)
+            actions.extend(_materialize_declared_actions(
+                player_id=player_id,
+                pattern=PatternType.PAIR,
+                declared_cards=declared,
+                hand_cards=hand_cards,
+                current_level_rank=current_level_rank,
+                first_carrier_only=first_carrier_only,
+            ))
 
-        for rank, cards in non_wild_by_rank.items():
-            if rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK}:
-                continue
-            if len(cards) >= 1:
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.PAIR,
-                        declared_cards=_public_declared_cards_for_group(rank, 2),
-                        carrier_cards=_pick_cards(cards, 1) + (wildcard,),
-                        wildcard_info=(WildcardInfo(carrier_card=wildcard, declared_as=Card(rank=rank)),),
-                    )
-                )
-            if len(cards) >= 2:
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.TRIPLE,
-                        declared_cards=_public_declared_cards_for_group(rank, 3),
-                        carrier_cards=_pick_cards(cards, 2) + (wildcard,),
-                        wildcard_info=(WildcardInfo(carrier_card=wildcard, declared_as=Card(rank=rank)),),
-                    )
-                )
-            if len(cards) >= 3:
-                for length in range(4, len(cards) + 2):
-                    actions.append(
-                        _make_action(
-                            player_id=player_id,
-                            declared_pattern=PatternType.BOMB,
-                            declared_cards=_public_declared_cards_for_group(rank, length),
-                            carrier_cards=_pick_cards(cards, length - 1) + (wildcard,),
-                            wildcard_info=(WildcardInfo(carrier_card=wildcard, declared_as=Card(rank=rank)),),
-                        )
-                    )
+        joker_bomb = (
+            Card(rank=SMALL_JOKER_RANK),
+            Card(rank=SMALL_JOKER_RANK),
+            Card(rank=BIG_JOKER_RANK),
+            Card(rank=BIG_JOKER_RANK),
+        )
+        actions.extend(_materialize_declared_actions(
+            player_id=player_id,
+            pattern=PatternType.JOKER_BOMB,
+            declared_cards=joker_bomb,
+            hand_cards=hand_cards,
+            current_level_rank=current_level_rank,
+            first_carrier_only=first_carrier_only,
+        ))
         return actions
 
     def _generate_triple_with_pair_actions(
@@ -1097,92 +1306,30 @@ class BaseRuleEngine:
         player_id: int,
         hand_cards: tuple[Card, ...],
         current_level_rank: str,
+        *,
+        first_carrier_only: bool = False,
     ) -> list[Action]:
         actions: list[Action] = []
-        all_by_rank = _group_cards_by_rank(hand_cards)
-        non_wild_cards = tuple(card for card in hand_cards if not _is_wildcard(card, current_level_rank))
-        non_wild_by_rank = _group_cards_by_rank(non_wild_cards)
-        wildcard = _first_wildcard(hand_cards, current_level_rank)
-
-        def natural_pair_ranks() -> list[str]:
-            result: list[str] = []
-            for rank, cards in all_by_rank.items():
-                if len(cards) < 2:
-                    continue
-                if rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} or rank in _NON_JOKER_RANKS:
-                    result.append(rank)
-            return result
-
-        for triple_rank, triple_cards in all_by_rank.items():
-            if triple_rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} or len(triple_cards) < 3:
-                continue
-            for pair_rank in natural_pair_ranks():
+        pair_ranks = (*_NON_JOKER_RANKS, SMALL_JOKER_RANK, BIG_JOKER_RANK)
+        for triple_rank in _NON_JOKER_RANKS:
+            for pair_rank in pair_ranks:
                 if pair_rank == triple_rank:
                     continue
-                pair_cards = all_by_rank[pair_rank]
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.TRIPLE_WITH_PAIR,
-                        declared_cards=(
-                            Card(rank=triple_rank),
-                            Card(rank=triple_rank),
-                            Card(rank=triple_rank),
-                            Card(rank=pair_rank),
-                            Card(rank=pair_rank),
-                        ),
-                        carrier_cards=_pick_cards(triple_cards, 3) + _pick_cards(pair_cards, 2),
-                    )
+                declared = (
+                    Card(rank=triple_rank),
+                    Card(rank=triple_rank),
+                    Card(rank=triple_rank),
+                    Card(rank=pair_rank),
+                    Card(rank=pair_rank),
                 )
-
-        if wildcard is None:
-            return actions
-
-        for triple_rank, triple_cards in non_wild_by_rank.items():
-            if triple_rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} or len(triple_cards) < 2:
-                continue
-            # When wildcard is used to complete the triple, the pair must not consume any wildcard card.
-            for pair_rank, pair_cards in non_wild_by_rank.items():
-                if pair_rank == triple_rank or len(pair_cards) < 2:
-                    continue
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.TRIPLE_WITH_PAIR,
-                        declared_cards=(
-                            Card(rank=triple_rank),
-                            Card(rank=triple_rank),
-                            Card(rank=triple_rank),
-                            Card(rank=pair_rank),
-                            Card(rank=pair_rank),
-                        ),
-                        carrier_cards=_pick_cards(triple_cards, 2) + _pick_cards(pair_cards, 2) + (wildcard,),
-                        wildcard_info=(WildcardInfo(carrier_card=wildcard, declared_as=Card(rank=triple_rank)),),
-                    )
-                )
-
-        for triple_rank, triple_cards in non_wild_by_rank.items():
-            # When wildcard is used to complete the pair, the triple must not consume any wildcard card.
-            if triple_rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} or len(triple_cards) < 3:
-                continue
-            for pair_rank, pair_cards in non_wild_by_rank.items():
-                if pair_rank == triple_rank or pair_rank in {SMALL_JOKER_RANK, BIG_JOKER_RANK} or len(pair_cards) < 1:
-                    continue
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.TRIPLE_WITH_PAIR,
-                        declared_cards=(
-                            Card(rank=triple_rank),
-                            Card(rank=triple_rank),
-                            Card(rank=triple_rank),
-                            Card(rank=pair_rank),
-                            Card(rank=pair_rank),
-                        ),
-                        carrier_cards=_pick_cards(triple_cards, 3) + _pick_cards(pair_cards, 1) + (wildcard,),
-                        wildcard_info=(WildcardInfo(carrier_card=wildcard, declared_as=Card(rank=pair_rank)),),
-                    )
-                )
+                actions.extend(_materialize_declared_actions(
+                    player_id=player_id,
+                    pattern=PatternType.TRIPLE_WITH_PAIR,
+                    declared_cards=declared,
+                    hand_cards=hand_cards,
+                    current_level_rank=current_level_rank,
+                    first_carrier_only=first_carrier_only,
+                ))
         return actions
 
     def _generate_straight_actions(
@@ -1190,42 +1337,20 @@ class BaseRuleEngine:
         player_id: int,
         hand_cards: tuple[Card, ...],
         current_level_rank: str,
+        *,
+        first_carrier_only: bool = False,
     ) -> list[Action]:
         actions: list[Action] = []
-        all_by_rank = _group_cards_by_rank(tuple(card for card in hand_cards if not is_joker(card)))
-        non_wild_cards = tuple(
-            card for card in hand_cards if not is_joker(card) and not _is_wildcard(card, current_level_rank)
-        )
-        non_wild_by_rank = _group_cards_by_rank(non_wild_cards)
-        wildcard = _first_wildcard(hand_cards, current_level_rank)
-
-        for window in _STRAIGHT_WINDOWS:
-            if all(all_by_rank.get(rank) for rank in window):
-                carrier_cards = tuple(all_by_rank[rank][0] for rank in window)
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.STRAIGHT,
-                        declared_cards=_public_declared_cards_for_window(window),
-                        carrier_cards=carrier_cards,
-                    )
-                )
-            if wildcard is not None:
-                missing = [rank for rank in window if not non_wild_by_rank.get(rank)]
-                if len(missing) != 1:
-                    continue
-                if any(not non_wild_by_rank.get(rank) for rank in window if rank != missing[0]):
-                    continue
-                carrier_cards = tuple(non_wild_by_rank[rank][0] for rank in window if rank != missing[0]) + (wildcard,)
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.STRAIGHT,
-                        declared_cards=_public_declared_cards_for_window(window),
-                        carrier_cards=carrier_cards,
-                        wildcard_info=(WildcardInfo(carrier_card=wildcard, declared_as=Card(rank=missing[0])),),
-                    )
-                )
+        for window in STRAIGHT_WINDOWS:
+            declared = _public_declared_cards_for_window(window)
+            actions.extend(_materialize_declared_actions(
+                player_id=player_id,
+                pattern=PatternType.STRAIGHT,
+                declared_cards=declared,
+                hand_cards=hand_cards,
+                current_level_rank=current_level_rank,
+                first_carrier_only=first_carrier_only,
+            ))
         return actions
 
     def _generate_pair_straight_actions(
@@ -1233,47 +1358,20 @@ class BaseRuleEngine:
         player_id: int,
         hand_cards: tuple[Card, ...],
         current_level_rank: str,
+        *,
+        first_carrier_only: bool = False,
     ) -> list[Action]:
         actions: list[Action] = []
-        all_by_rank = _group_cards_by_rank(tuple(card for card in hand_cards if not is_joker(card)))
-        non_wild_cards = tuple(
-            card for card in hand_cards if not is_joker(card) and not _is_wildcard(card, current_level_rank)
-        )
-        non_wild_by_rank = _group_cards_by_rank(non_wild_cards)
-        wildcard = _first_wildcard(hand_cards, current_level_rank)
-
-        for window in _PAIR_STRAIGHT_WINDOWS:
-            if all(len(all_by_rank.get(rank, [])) >= 2 for rank in window):
-                carrier_cards = tuple(card for rank in window for card in all_by_rank[rank][:2])
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.PAIR_STRAIGHT,
-                        declared_cards=_public_declared_cards_for_pair_window(window),
-                        carrier_cards=carrier_cards,
-                    )
-                )
-            if wildcard is None:
-                continue
-            missing = [rank for rank in window if len(non_wild_by_rank.get(rank, [])) < 2]
-            if len(missing) != 1:
-                continue
-            shortage_rank = missing[0]
-            if len(non_wild_by_rank.get(shortage_rank, [])) != 1:
-                continue
-            if any(len(non_wild_by_rank.get(rank, [])) < 2 for rank in window if rank != shortage_rank):
-                continue
-            carrier_cards = tuple(card for rank in window if rank != shortage_rank for card in non_wild_by_rank[rank][:2])
-            carrier_cards += (non_wild_by_rank[shortage_rank][0], wildcard)
-            actions.append(
-                _make_action(
-                    player_id=player_id,
-                    declared_pattern=PatternType.PAIR_STRAIGHT,
-                    declared_cards=_public_declared_cards_for_pair_window(window),
-                    carrier_cards=carrier_cards,
-                    wildcard_info=(WildcardInfo(carrier_card=wildcard, declared_as=Card(rank=shortage_rank)),),
-                )
-            )
+        for window in PAIR_STRAIGHT_WINDOWS:
+            declared = _public_declared_cards_for_pair_window(window)
+            actions.extend(_materialize_declared_actions(
+                player_id=player_id,
+                pattern=PatternType.PAIR_STRAIGHT,
+                declared_cards=declared,
+                hand_cards=hand_cards,
+                current_level_rank=current_level_rank,
+                first_carrier_only=first_carrier_only,
+            ))
         return actions
 
     def _generate_steel_plate_actions(
@@ -1281,47 +1379,20 @@ class BaseRuleEngine:
         player_id: int,
         hand_cards: tuple[Card, ...],
         current_level_rank: str,
+        *,
+        first_carrier_only: bool = False,
     ) -> list[Action]:
         actions: list[Action] = []
-        all_by_rank = _group_cards_by_rank(tuple(card for card in hand_cards if not is_joker(card)))
-        non_wild_cards = tuple(
-            card for card in hand_cards if not is_joker(card) and not _is_wildcard(card, current_level_rank)
-        )
-        non_wild_by_rank = _group_cards_by_rank(non_wild_cards)
-        wildcard = _first_wildcard(hand_cards, current_level_rank)
-
-        for window in _STEEL_PLATE_WINDOWS:
-            if all(len(all_by_rank.get(rank, [])) >= 3 for rank in window):
-                carrier_cards = tuple(card for rank in window for card in all_by_rank[rank][:3])
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.STEEL_PLATE,
-                        declared_cards=_public_declared_cards_for_steel_window(window),
-                        carrier_cards=carrier_cards,
-                    )
-                )
-            if wildcard is None:
-                continue
-            missing = [rank for rank in window if len(non_wild_by_rank.get(rank, [])) < 3]
-            if len(missing) != 1:
-                continue
-            shortage_rank = missing[0]
-            if len(non_wild_by_rank.get(shortage_rank, [])) != 2:
-                continue
-            if any(len(non_wild_by_rank.get(rank, [])) < 3 for rank in window if rank != shortage_rank):
-                continue
-            carrier_cards = tuple(card for rank in window if rank != shortage_rank for card in non_wild_by_rank[rank][:3])
-            carrier_cards += tuple(non_wild_by_rank[shortage_rank][:2]) + (wildcard,)
-            actions.append(
-                _make_action(
-                    player_id=player_id,
-                    declared_pattern=PatternType.STEEL_PLATE,
-                    declared_cards=_public_declared_cards_for_steel_window(window),
-                    carrier_cards=carrier_cards,
-                    wildcard_info=(WildcardInfo(carrier_card=wildcard, declared_as=Card(rank=shortage_rank)),),
-                )
-            )
+        for window in STEEL_PLATE_WINDOWS:
+            declared = _public_declared_cards_for_steel_window(window)
+            actions.extend(_materialize_declared_actions(
+                player_id=player_id,
+                pattern=PatternType.STEEL_PLATE,
+                declared_cards=declared,
+                hand_cards=hand_cards,
+                current_level_rank=current_level_rank,
+                first_carrier_only=first_carrier_only,
+            ))
         return actions
 
     def _generate_straight_flush_actions(
@@ -1329,49 +1400,21 @@ class BaseRuleEngine:
         player_id: int,
         hand_cards: tuple[Card, ...],
         current_level_rank: str,
+        *,
+        first_carrier_only: bool = False,
     ) -> list[Action]:
         actions: list[Action] = []
-        non_jokers = tuple(card for card in hand_cards if not is_joker(card))
-        all_by_rank_suit = _group_cards_by_rank_and_suit(non_jokers)
-        non_wild_cards = tuple(
-            card for card in non_jokers if not _is_wildcard(card, current_level_rank)
-        )
-        non_wild_by_rank_suit = _group_cards_by_rank_and_suit(non_wild_cards)
-        wildcard = _first_wildcard(hand_cards, current_level_rank)
-
         for suit in _SUIT_ORDER:
-            for window in _STRAIGHT_WINDOWS:
-                if all(all_by_rank_suit.get((rank, suit)) for rank in window):
-                    carrier_cards = tuple(all_by_rank_suit[(rank, suit)][0] for rank in window)
-                    declared_cards = tuple(Card(rank=rank, suit=suit) for rank in window)
-                    actions.append(
-                        _make_action(
-                            player_id=player_id,
-                            declared_pattern=PatternType.STRAIGHT_FLUSH,
-                            declared_cards=declared_cards,
-                            carrier_cards=carrier_cards,
-                        )
-                    )
-                if wildcard is None:
-                    continue
-                missing = [rank for rank in window if not non_wild_by_rank_suit.get((rank, suit))]
-                if len(missing) != 1:
-                    continue
-                if any(not non_wild_by_rank_suit.get((rank, suit)) for rank in window if rank != missing[0]):
-                    continue
-                carrier_cards = tuple(
-                    non_wild_by_rank_suit[(rank, suit)][0] for rank in window if rank != missing[0]
-                ) + (wildcard,)
-                declared_cards = tuple(Card(rank=rank, suit=suit) for rank in window)
-                actions.append(
-                    _make_action(
-                        player_id=player_id,
-                        declared_pattern=PatternType.STRAIGHT_FLUSH,
-                        declared_cards=declared_cards,
-                        carrier_cards=carrier_cards,
-                        wildcard_info=(WildcardInfo(carrier_card=wildcard, declared_as=Card(rank=missing[0], suit=suit)),),
-                    )
-                )
+            for window in STRAIGHT_WINDOWS:
+                declared = tuple(Card(rank=rank, suit=suit) for rank in window)
+                actions.extend(_materialize_declared_actions(
+                    player_id=player_id,
+                    pattern=PatternType.STRAIGHT_FLUSH,
+                    declared_cards=declared,
+                    hand_cards=hand_cards,
+                    current_level_rank=current_level_rank,
+                    first_carrier_only=first_carrier_only,
+                ))
         return actions
 
     def generate_legal_actions(self, state: GameState) -> tuple[Action, ...]:
