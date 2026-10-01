@@ -10,6 +10,8 @@
 
 原请求重放诊断已完成并通过方法/输入/资源变化复审，未改业务。所有者指出队友控桌时拆炸三带二不合理，现已重新安排[NEXT_PROMPT.md](NEXT_PROMPT.md)：先统一修正拆炸与队友控桌的收益/代价表达，并最多8次Flash请求、重试0做四对真实before/after；短解释直接在诊断内存读取，完整调试透传设施后置，不作为策略修正前置。游戏复盘使用[botzone-game-audit Skill](../.agents/skills/botzone-game-audit/SKILL.md)；先按描述匹配，再读取命中的Skill，不全读或逐轮重读。
 
+所有者进一步要求落实到RAG，当前Prompt已明确修改既有协同条目exp_midgame_teammate_001及直接来源定位，验证现有关系检索与默认factory实际消费。通用目标为本队走牌/有利名次，主动争权、提高对手投入门槛、让队友继续及后续送牌均按公开条件和实体成本比较；保留紧急阻断/立即出完等例外。RAG与候选表达联合评估，预算仍8请求、重试0，未新增业务修改或真实请求。
+
 ## 已完成的主线
 
 - 规则与性能工作包c80ea279：牌型/双配/双下已按官方裁判对齐；canonical与资源语义保持，终局消费者不虚构双下中的未知个人名次。机制和性能复审见[BOTZONE_RULE_FIX_REVIEW.md](BOTZONE_RULE_FIX_REVIEW.md)。
