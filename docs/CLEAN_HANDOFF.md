@@ -4,7 +4,7 @@
 
 ## 当前任务与工作区
 
-工作目录D:\VsCodeProject\GuanDan，继续cao；本轮原目录去重融合与退役回收已完成，业务bf712a956f9ca173b018739c56a978dab1592129通过规划独立复审；完成的NEXT_PROMPT已回收，当前无下一项Coding任务。Coding修改业务/tests/直接相关非docs；Planning维护AGENTS/Skills/docs及自有外部交付物，分别按明确路径提交，不混入彼此或用户修改。
+工作目录D:\VsCodeProject\GuanDan，继续cao；原目录去重融合与退役回收已完成，业务bf712a956f9ca173b018739c56a978dab1592129通过规划独立复审。当前[NEXT_PROMPT.md](NEXT_PROMPT.md)为真实Flash原请求重放诊断：最多5次、重试0，先核对选择和实际解释再决定修正，不先改业务策略；私有输入与输出边界按该Prompt。Coding修改业务/tests/直接相关非docs；Planning维护AGENTS/Skills/docs及自有外部交付物，分别按明确路径提交，不混入彼此或用户修改。
 
 GuanDanMerged_10-1副本已回收；其16edb6b历史（含fbdfa7e业务）保存在原仓库codex/merge-teammate。不要再创建常驻副本或从该分支的旧Prompt重复合并。原记牌/应手/资源输入已有核心能力，本轮没有搬入重复统计和单独辅助块；仅在既有局面段补头游争双下目标，并同步RAG双下/三游终局事实。
 
