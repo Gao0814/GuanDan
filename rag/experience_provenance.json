@@ -216,7 +216,7 @@
       "title": "掼蛋赢牌技巧100条，快速收藏",
       "publication": "什么值得买，2024-08-19",
       "url_or_bibliography": "https://post.smzdm.com/p/a5xk3dpl/",
-      "locator": "仅激活已核对的公开可见#3、#4、#51、#55、#58、#73、#77条件化片段；新增#63/65定位依据所有者本轮提供的条文摘要，网页本轮读取不可用，仅作可撤回pass竞争解释，不确证拆牌；不推断原作者资质或全篇证据",
+      "locator": "仅激活已核对的公开可见#3、#4、#51、#55、#58、#73、#77条件化片段；新增#63/65由Planning上一轮核对该URL公开检索返回内容后条件化转述，所有者采纳；Coding该轮直接网页读取不可用，未独立核验。仅作可撤回pass竞争解释，不确证拆牌，项目推导不冒称原文；不推断原作者资质或全篇证据",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]},
       "evidence_status": "active"
     },

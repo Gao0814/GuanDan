@@ -1081,13 +1081,29 @@ def relevant_public_passes(observation: dict[str, object]) -> tuple[_PublicPassE
     if current is None:
         return ()
     engine = BaseRuleEngine()
+    valid_bindings: dict[Action, bool] = {}
+
+    def valid(action: Action) -> bool:
+        if action not in valid_bindings:
+            valid_bindings[action] = bool(engine.public_action_bindings(
+                action.player_id, action.declared_pattern,
+                action.declared_cards, action.carrier_cards, state.level,
+                first_carrier_only=True, first_binding_only=True,
+            ))
+        return valid_bindings[action]
+
+    if not valid(current):
+        return ()
     latest = {}
     for event in _public_pass_evidence(observation, state, engine):
         if event.player_id == state.my_player_id or state.player_rows[event.player_id].get('finished'):
             continue
-        if (event.lead_pattern == raw.get('declared_pattern')
-                and (engine.can_beat(current, event.lead_action, state.level)
-                     or current.declared_cards == event.lead_action.declared_cards)):
+        # Valid same-type actions have an engine ordering even when their
+        # kickers, suits or physical wildcard bindings differ. Neither an
+        # invalid action nor a different ordinary type may imply equality.
+        if (event.lead_action.declared_pattern == current.declared_pattern
+                and valid(event.lead_action)
+                and not engine.can_beat(event.lead_action, current, state.level)):
             latest[event.player_id] = event
     return tuple(sorted(latest.values(), key=lambda item: -item.step_no))
 

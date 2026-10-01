@@ -19,11 +19,12 @@ from agents.card_tracker import (
     relevant_public_passes,
     terminal_pass_signal,
     _pass_behavior_text,
+    _pattern_action,
 )
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient
 from agents.rule_based_ai import RuleBasedAIAgent, FrozenRuleBasedAIAgent
-from engine.cards import build_double_deck
+from engine.cards import Card, build_double_deck
 from engine.game import GuanDanGame
 from engine.public_endgame import PublicEndgameAnalysis, analyze_public_endgame
 from engine.rules import BaseRuleEngine
@@ -118,6 +119,104 @@ def _select_action(
 
 
 class M5PublicPassEvidenceTests(unittest.TestCase):
+    @staticmethod
+    def _repeated_lead_fixture(first, second, pattern, starting=1, second_pattern=None):
+        """Two free leads and actual passes from a complete physical deal."""
+        cards = lambda tokens: tuple(Card(t) if t in ('SJ', 'BJ') else Card(t[:-1], t[-1]) for t in tokens)
+        deck = build_double_deck()
+        reserved = cards(first + second)
+        replies = cards(('SJ', 'SJ', 'BJ', 'BJ'))
+        for card in reserved + replies:
+            deck.remove(card)
+        random.Random(121).shuffle(deck)
+        next_player = starting % 4 + 1
+        hands = {starting: reserved + tuple(deck[:17]), next_player: replies + tuple(deck[17:40])}
+        rest = [player for player in range(1, 5) if player not in hands]
+        hands.update({rest[0]: tuple(deck[40:67]), rest[1]: tuple(deck[67:94])})
+        assert all(len(hand) == 27 for hand in hands.values())
+        assert Counter(card for hand in hands.values() for card in hand) == Counter(build_double_deck())
+        game = GuanDanGame(preset_hands=hands, current_level_rank='2', starting_player_id=starting)
+        game.reset()
+        def play(tokens, kind):
+            action = _select_action(game.legal_actions(), lambda item:
+                item['declared_pattern'] == kind and Counter(item['carrier_cards']) == Counter(tokens)
+                and (kind != 'triple_with_pair' or item['declared_cards'].count(tokens[0][:-1]) == 3))
+            game.step(action['action_id'])
+        play(first, pattern)
+        for _ in range(3):
+            game.step(_select_action(game.legal_actions(), lambda item: item['declared_pattern'] == 'pass')['action_id'])
+        play(second, second_pattern or pattern)
+        return game, game.observe(), game.legal_actions()
+
+    def test_rule_strength_pass_matching_preserves_distinct_declarations_and_bindings(self) -> None:
+        triple = ('9S', '9H', '9C', '7S', '7C')
+        equal = ('9S', '9H', '9D', '8S', '8C')
+        cases = (
+            (triple, equal, 'triple_with_pair', 1, None, 2),
+            (triple, ('JS', 'JH', 'JC', '8S', '8C'), 'triple_with_pair', 1, None, 2),
+            (triple, ('8S', '8H', '8C', 'JS', 'JC'), 'triple_with_pair', 1, None, 0),
+            (('3S', '4S', '5S', '6S', '7S'), ('3C', '4C', '5C', '6C', '7C'), 'straight_flush', 1, None, 2),
+            (('QS', 'QH', 'QC', '5S', '5C'), ('QS', 'QH', 'QD', '6S', '6C'), 'triple_with_pair', 3, None, 2),
+            (triple, ('9S', '9H', '2H', '8S', '8C'), 'triple_with_pair', 1, None, 2),
+            (('9S', '9H', '2H', '7S', '7C'), equal, 'triple_with_pair', 1, None, 2),
+            (triple, ('3S', '4C', '5S', '6D', '7H'), 'triple_with_pair', 1, 'straight', 0),
+        )
+        for first, second, pattern, starting, second_pattern, count in cases:
+            with self.subTest(pattern=pattern, starting=starting, second=second):
+                _, observation, actions = self._repeated_lead_fixture(first, second, pattern, starting, second_pattern)
+                state = _validated_public_state(observation)
+                self.assertIsNotNone(state)
+                engine = BaseRuleEngine()
+                evidence = _public_pass_evidence(observation, state, engine)
+                self.assertEqual(len(evidence), 3)
+                current = _pattern_action(observation['current_round']['table_action'], state.my_player_id)
+                old = evidence[0].lead_action
+                if count and first[0][:-1] == second[0][:-1]:
+                    self.assertNotEqual(current.declared_cards, old.declared_cards)
+                    self.assertFalse(engine.can_beat(current, old, '2'))
+                    self.assertFalse(engine.can_beat(old, current, '2'))
+                elif current.declared_pattern == old.declared_pattern:
+                    self.assertEqual(engine.can_beat(current, old, '2'), count == 2)
+                    self.assertEqual(engine.can_beat(old, current, '2'), count == 0)
+                else:
+                    self.assertFalse(engine.can_beat(current, old, '2'))
+                    self.assertFalse(engine.can_beat(old, current, '2'))
+                constraints = state.constraints.to_dict()
+                original = deepcopy((observation, actions))
+                self.assertEqual(len(relevant_public_passes(observation)), count)
+                self.assertEqual(_validated_public_state(observation).constraints.to_dict(), constraints)
+                self.assertEqual((observation, actions), original)
+                for field, value in (('declared_pattern', 'unknown'), ('carrier_cards', [])):
+                    invalid = deepcopy(observation)
+                    invalid['current_round']['table_action'][field] = value
+                    self.assertEqual(relevant_public_passes(invalid), ())
+                incomplete = deepcopy(observation)
+                incomplete['history']['actions'].pop(0)
+                self.assertEqual(relevant_public_passes(incomplete), ())
+
+    def test_equal_strength_pass_reaches_default_factory_with_original_model_id(self) -> None:
+        from tests.test_m9_public_endgame_opportunities import _config, _fake_response_transport
+        _, observation, actions = self._repeated_lead_fixture(
+            ('QS', 'QH', 'QC', '5S', '5C'), ('QS', 'QH', 'QD', '6S', '6C'), 'triple_with_pair', 3)
+        original = deepcopy((observation, actions))
+        captured = []
+        agent = build_agent_factory('deepseek', config_loader=_config,
+            client_factory=lambda **kwargs: DeepSeekClient(**kwargs, transport=_fake_response_transport(captured)))(4)
+        chosen = agent.select_action(observation, actions)
+        prompt = captured[0]['messages'][1]['content']
+        self.assertIn('历史软pass：P2友 step4', prompt)
+        self.assertIn('P1敌 step3', prompt)
+        self.assertIn('不确定信息与试探成本', prompt)
+        self.assertNotIn('公开检索返回', prompt)
+        section = prompt.split('【候选动作】', 1)[1].split('【规则库依据】', 1)[0]
+        visible = [int(item) for item in re.findall(r'#(\d+)\s+action_id=', section)]
+        self.assertEqual(chosen, visible[-1])
+        self.assertIn(chosen, [action['action_id'] for action in actions])
+        self.assertEqual(agent.last_decision_source, 'model')
+        self.assertLessEqual(len(visible), 80)
+        self.assertLessEqual(len(build_card_tracking_summary(observation, actions)), 1350)
+        self.assertEqual((observation, actions), original)
+
     def test_single_response_behavior_reaches_factory_for_both_roles_without_rewriting_choice(self) -> None:
         from tests.test_m9_public_endgame_opportunities import _config, _fake_response_transport
         for seed, step, role in ((1, 62, 'opponent'), (4, 74, 'teammate')):
