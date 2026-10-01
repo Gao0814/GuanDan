@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from copy import deepcopy
 import json
 from pathlib import Path
 import re
@@ -579,8 +580,56 @@ class M4TradeoffInputTests(unittest.TestCase):
         self.assertIn("但放弃本家这次应手", prompt)
         self.assertIn("下一名仍在局玩家为玩家2（对手", prompt)
         self.assertIn("队友协同与让牌", prompt)
+        document = next(doc for doc in self.rag_advisor._retriever.documents
+                        if doc.doc_id == "exp_midgame_teammate_001")
+        self.assertEqual(RAGAdvisor._clip(document.content), document.content)
+        _title, body = DeepSeekClient._rag_title_and_body({"snippet": document.content})
+        self.assertEqual(body, document.content.split("\n\n", 1)[1])
+        self.assertIn(body, prompt)
+        self.assertIn("紧急阻断、可核对控制/重组收益可推翻", prompt)
+        for governance in ("王春国", "news.bjd.com.cn", "source_tier"):
+            self.assertNotIn(governance, prompt)
         _pass_prompt, pass_visible, _raw_count = self._factory_request(game, table_choice.action_ids[0])
         self.assertTrue(set(table_choice.action_ids).issubset(pass_visible))
+
+    def test_ordinary_bomb_cost_and_teammate_tendency_generalize(self) -> None:
+        for rank, count in (("7", 4), ("J", 4), ("7", 5)):
+            tokens = [rank + suit for suit in "SHCD"]
+            if count == 5:
+                tokens.append(rank + "S")
+            game = _fresh_follow_game(tokens, teammate_leads=True,
+                                      own_extra_excluded_ranks={"2"})
+            actions = game.legal_actions()
+            single = _action(game, lambda a: a["declared_pattern"] == "single"
+                             and a["carrier_cards"] == [rank + "S"])
+            for rotation in (0, 1):
+                obs = deepcopy(game.observe())
+                if rotation:
+                    rotate = lambda p: p % 4 + 1
+                    for row in [obs["my_info"], *obs["other_players"]]:
+                        row["player_id"] = rotate(row["player_id"])
+                        row["team"] = "team_13" if row["player_id"] % 2 else "team_24"
+                    obs["current_round"]["current_player_id"] = obs["my_info"]["player_id"]
+                    for row in obs["history"]["actions"]:
+                        row["player_id"] = rotate(row["player_id"])
+                facts = summarize_candidate_structures(obs, actions)
+                contrasts = summarize_candidate_contrasts(obs, actions)
+                self.assertIsNotNone(facts)
+                self.assertIsNotNone(contrasts)
+                contrast = next(c for c in contrasts if c.kind == "follow_response_net_tradeoff"
+                                and c.action_ids[1] == single["action_id"])
+                text = DeepSeekClient._response_net_tradeoff_text(
+                    contrast, {f.action_id: f for f in facts})
+                self.assertIn(f"{rank}点自然牌{count}→{count - 1}张", text)
+                self.assertIn("不能因未出炸弹就称保炸或低成本", text)
+                self.assertIn("pass后本家是否再次行动、能否压回均不保证", text)
+                if count == 4:
+                    self.assertIn("1组完整自然炸弹丧失", text)
+                    self.assertIn("倾向pass保留队友机会与完整资源", text)
+                else:
+                    self.assertIn("最大长度减弱但仍保有炸弹", text)
+                    self.assertNotIn("完整自然炸弹丧失", text)
+                    self.assertNotIn("倾向pass保留队友机会与完整资源", text)
 
     def test_ambiguous_history_or_unknown_team_omits_follow_relationship(self) -> None:
         game = _follow_game(teammate_leads=True)

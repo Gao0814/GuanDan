@@ -777,6 +777,25 @@ class DeepSeekClient:
         return DeepSeekClient._rank_resource_delta_presentation(effect).text
 
     @staticmethod
+    def _natural_bomb_cost_text(effect: CandidateNetEffect, pattern: str) -> str:
+        """Interpret existing physical deltas, independently of the played type."""
+        changes = [change for change in effect.rank_resource_changes or ()
+                   if "bomb" in change.natural_pattern_kinds_before
+                   and change.natural_count_after < change.natural_count_before]
+        if not changes:
+            return ""
+        lost = sum("bomb" in change.lost_group_kinds for change in changes)
+        weakened = len(changes) - lost
+        parts = []
+        if pattern not in {"bomb", "straight_flush", "joker_bomb"}:
+            parts.append("普通牌型也按实体扣牌消耗跨型控制资源，不能因未出炸弹就称保炸或低成本")
+        if lost:
+            parts.append(f"本手使{lost}组完整自然炸弹丧失")
+        if weakened:
+            parts.append(f"另有{weakened}组自然炸弹最大长度减弱但仍保有炸弹")
+        return "；".join(parts) + "。"
+
+    @staticmethod
     def _rank_resource_delta_presentation(
         effect: CandidateNetEffect,
     ) -> _RankResourceDeltaPresentation:
@@ -791,6 +810,8 @@ class DeepSeekClient:
         informative = [
             change for change in changes
             if change.lost_group_kinds or change.loses_control_resource or change.spends_wildcard
+            or ("bomb" in change.natural_pattern_kinds_before
+                and change.natural_count_before != change.natural_count_after)
         ]
         informative.sort(
             key=lambda change: (
@@ -946,11 +967,27 @@ class DeepSeekClient:
             "具体见逐点净变化" if rank_delta_text else "未显示上述控制牌或同点组损耗"
         )
         finish_text = "并可立即出完" if effect.finishes_hand else ""
+        bomb_cost = DeepSeekClient._natural_bomb_cost_text(effect, response_fact.pattern)
+        loses_bomb = any("bomb" in change.lost_group_kinds for change in changes)
+        urgent_opponent = (
+            response_fact.minimum_opponent_hand_count is not None
+            and response_fact.minimum_opponent_hand_count <= 2
+        )
         teammate_route = (
-            "当前领出为队友，pass保留其当前领出机会（若后续无人改写桌面）；"
+            "当前领出为队友，pass保留其当前领出机会（若后续无人改写桌面）；主动盖队友或仅减张不自动等于协同收益。"
             if contrast.table_leader_relation == "teammate"
             else ""
         )
+        if teammate_route and loses_bomb and not effect.finishes_hand and not urgent_opponent:
+            teammate_route += (
+                "本手不能立即出完，未见公开余1/2张的紧迫对手；若无可核对的控制/重组收益抵偿拆炸，"
+                "倾向pass保留队友机会与完整资源。"
+            )
+        if teammate_route:
+            teammate_route += (
+                "对手接队友需投入合法更强同型或跨型资源；若随后被合法压回，投入未换得最终牌权，"
+                "不能只按对手清牌张数比较，但是否持有、能否反压均未知。"
+            )
         opponent_route = (
             "当前领出为对手，pass后由后续玩家继续应对；若无人再接，对手可能保持本轮领出优势；"
             if contrast.table_leader_relation == "opponent"
@@ -958,11 +995,7 @@ class DeepSeekClient:
         )
         urgency_route = (
             "公开紧迫对手或本家立即出完可能使当前应手收益高于保留资源；"
-            if (
-                contrast.table_leader_relation == "opponent"
-                and contrast.table_leader_hand_count is not None
-                and contrast.table_leader_hand_count <= 2
-            ) or effect.finishes_hand
+            if urgent_opponent or effect.finishes_hand
             else ""
         )
         return (
@@ -970,8 +1003,10 @@ class DeepSeekClient:
             f"但放弃本家这次应手；action_id={contrast.action_ids[1]} 是当前合法{response_name}应手，"
             f"即时以本家这手替换当前桌面并清理{effect.cards_played}张{finish_text}。可见代价：{cost_text}。"
             f"{rank_delta_text + '。' if rank_delta_text else ''}"
+            f"{bomb_cost}"
             f"{teammate_route}{opponent_route}{urgency_route}pass不消耗这些资源，但其他行动者仍可能接牌；"
             "后续若有人要改写桌面，需出合法更强牌并消耗实体牌，是否持有未知；"
+            "pass后本家是否再次行动、能否压回均不保证；清牌进度、争牌权与本局名次分别衡量。"
             "任何一侧都不保证最终控桌。"
         )
 
@@ -3926,7 +3961,8 @@ class DeepSeekClient:
                     control_cost_line = (
                         f"对手单张低/高跟牌成本：action_id={first_id} 是自然普通单张{low_rank}，"
                         f"action_id={second_id} 是控制资源自然单张{high_rank}；两者均是当前合法应手。{leader_count}，"
-                        "较低应手保留控制牌，较高应手可能提高本轮争取牌权的力度但付出控制资源。"
+                        "较低应手保留A/级牌/王等高单张，但若拆完整自然炸弹，是两类控制资源的交换，不能直接称低成本；"
+                        "较高应手付出高单张，是否保住炸弹及余组仍按实体变化核对。"
                         "若对手公开接近走完，可值得花控制牌阻断；下一席顺序和队友状态也要核对，压住当前单张不保证后续牌权。"
                         "队友控桌、余手结构或控制资源另有可见用途时可反向选择。"
                     )
@@ -3947,7 +3983,10 @@ class DeepSeekClient:
                                 continue
                             exact_text = DeepSeekClient._rank_resource_delta_text(effect)
                             if exact_text:
-                                exact_costs.append(f"action_id={action_id}相对pass{exact_text}")
+                                exact_costs.append(
+                                    f"action_id={action_id}相对pass{exact_text}。"
+                                    + DeepSeekClient._natural_bomb_cost_text(effect, response_fact.pattern)
+                                )
                         if exact_costs:
                             control_cost_line += " 逐点应手净变化：" + "；".join(exact_costs)
                     lines.append(control_cost_line)

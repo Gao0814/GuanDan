@@ -105,8 +105,8 @@
     {
       "entry_id": "exp_midgame_teammate_001",
       "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
-      "title": "如何打好一把掼蛋的前半程", "publication": "京报体育, 2024-02-22",
-      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/22/10706291.shtml", "locator": "正文关于搭档协同与让牌的段落",
+      "title": "如何打好一把掼蛋的后半程", "publication": "京报体育, 2024-02-25",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/25/10708459.shtml", "locator": "正文首段难以走完时不轻易顺接搭档、留牌送搭档；后文以记牌判断限制绝对化。实体成本与争权收益条件为项目据此推导，并非原文逐项主张",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response"]},
       "corroborating_source_ids": ["source_guandanmaster_partner_001"], "evidence_status": "active"
     },
