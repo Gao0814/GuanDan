@@ -30,7 +30,7 @@
 - `rag/`：本地知识库加载、检索与语料，包含 `rule_corpus/` 和 `experience_corpus/`。
 - `tests/`：当前主线测试，覆盖牌型、规则、状态流转、CLI 输出、DeepSeek 降级、手牌评估和记牌等。
 - `docs/`：规格、边界、不变量、测试说明、RAG 知识库说明和计划文档。
-- `archive_legacy/`：历史链路和旧测试，默认不属于当前主线修改范围。
+- 已退役的历史链路和专属旧测试在Git历史保留；2026-10-01已核对引用并回收archive_legacy及部分旧阶段评测，当前清单见docs/MAINTENANCE_REPORT.md。
 - `logs/`：本地日志目录。不要提交运行日志。
 - `.venv/`：本地虚拟环境目录，不属于源码。
 
@@ -99,7 +99,7 @@ python -m cli.run_4ai_debug --agent deepseek --seed 7 --current-level-rank 5
 - 状态模型使用 `@dataclass(frozen=True, slots=True)` 的不可变风格；修改状态时优先沿用现有 `replace()` 和 `with_*` 方法。
 - 测试使用 `unittest`，测试辅助函数常见命名为 `_card()`、`_cards()`、`_hands()`、`_pass_id()` 等。
 - 中文 CLI 输出是测试契约的一部分，修改 `cli/run_4ai_debug.py` 时要同步检查 `tests/test_cli_debug_output.py`。
-- `archive_legacy/` 是历史代码，除非任务明确要求，不要主动迁移、扩展或修复。
+- 已退役历史代码不从Git历史主动重新迁入或修复；只有具体新任务确有需要时再恢复必要部分。
 
 ## 测试要求
 
@@ -128,7 +128,7 @@ python -m unittest tests.test_cli_debug_output -q
 - DeepSeek API Key、Base URL、模型名、超时、重试次数等配置必须经由 `config.py` 和环境变量读取。
 - 项目所有者长期授权：单个明确诊断或评测任务中，预注册的真实 DeepSeek API 外部请求总数严格少于 10 次时无需另行申请；达到 10 次或更多仍须事先取得明确授权。该授权只免除请求次数审批，不放宽任务范围、重试上限、密钥保密、低敏报告或禁止持久化模型自由文本等约束。
 - 不要在业务代码中硬编码 API Key、生产 URL 或本地绝对路径。
-- 不要删除 `.venv/`、`logs/`、`archive_legacy/` 或用户未明确要求处理的文件。
+- 不要删除 `.venv/`、`logs/`、在用私有配置/现场证据或用户未明确要求处理的文件；旧代码/评测回收按当前明确任务核对路径与引用。
 - 本项目当前没有数据库、迁移脚本或生产部署配置；如未来出现，除非用户明确要求，不要修改迁移、生产配置或密钥相关文件。
 
 ## Botzone 现场执行与仓库外工作目录
@@ -159,6 +159,8 @@ python -m unittest tests.test_cli_debug_output -q
 - 执行报告必须区分“项目既定适用范围”和“剩余风险”。固定级牌 `2`、无需进贡、单局以及不做跨级牌/贡还/多局升级属于已接受的项目范围，不得写成剩余风险、缺陷或未完成项。只有当前范围内仍可能导致错误、回归或验收失败的事项才能列为剩余风险；如果没有已知范围内风险，应明确写“当前范围内无已知剩余风险”。
 - 修改前先阅读相关文件、测试和文档，尤其是 `README.md`、`CLAUDE.md`、`docs/INVARIANTS.md`、`docs/CODING_BOUNDARY.md` 与相关测试。
 - 只做与当前任务相关的最小必要修改。
+- 普通迭代与合并默认在当前GuanDan原仓库继续，用Git分支/tag和一份已验证完整bundle保留恢复点；不为普通任务创建常驻工程副本。明确需要隔离时再安排临时工作区。
+- PROJECT_STATUS、PLAN、CLEAN_HANDOFF和TESTS只维护当前事实、有效任务/边界与必要入口；不逐轮追加已完成阶段快照、旧Prompt或全部测试日志。旧过程由Git历史恢复，完成的NEXT_PROMPT撤下，不另造历史文件堆。
 - 不要做无关重构、格式化、迁移或目录清理。
 - 不要覆盖用户已有改动；遇到工作区中无关修改时保持不动。
 - 新增依赖前先说明理由，并确认确实不能用标准库或现有依赖解决。
