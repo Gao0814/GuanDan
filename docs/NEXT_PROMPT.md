@@ -1,26 +1,31 @@
-# Coding任务：将实际模型短reason接入固定批次逐局证据
+# Coding任务：明牌搜索效率与完整同值结论的简洁模型前表达
 
-工作目录D:\VsCodeProject\GuanDan，继续cao。先读适用AGENTS、CLEAN_HANDOFF、本Prompt，核对Git及相关代码/tests。9646c2f策略/RAG与8次Flash对照已验收，不重做。当前任务是短解释接线，不修改策略，不使用真实网络或操作正在运行的connector。按描述判断Skill；普通接线开发不自动加载live/回收Skill。
+工作目录D:\VsCodeProject\GuanDan，继续cao。先读适用AGENTS、CLEAN_HANDOFF、本Prompt及相关源码/tests，核对Git。369e873短reason接线及9646c2f拆炸/协同表达已验收，不重做旧任务。当前全程禁网、真实请求0，不操作connector、网页或在用证据，没有人工前置操作。按任务匹配Skill，仅需读取旧局私有证据时完整读取botzone-game-audit，不继承live或清理流程。
 
-## 目标与授权
+## 已确认事实与目标
 
-所有者要求先确保reason能写入，方便之后实际试局调试。根AGENTS已新增2026-10-01局部例外：仅允许固定D:\VsCodeProject\BotzoneWorkspace现有私有逐局证据保存同次有效模型动作返回的短JSON reason，单行、最多120个Unicode字符，截断须标记。仍不保存完整content、reasoning_content、异常正文或凭据/URL/Headers，不进入普通日志、stdout、聚合audit、通用trace、个人轻量workspace或仓库。共享报告只给必要脱敏摘要，不复制私有解释。
+旧诊断见M10_REVIEW与PROJECT_STATUS：14:47试局决策23/24/25公开确证对手当前手牌，现行M9预算离线重放均budget_exceeded。隔离进程较宽诊断预算下，决策25约343毫秒、决策24约781毫秒完成，决策23仍超预算；两处完成分析的所有原始首手均保底-1、可达{-1,0}，现有格式器返回None。原现场搜索状态未落盘，这些不是原现场状态或纯模型推理耗时。
 
-先实现此最小接线并交Planning复审，再由所有者在当前对局结束后重启原scripts/run_manual_botzone_batch.cmd进行自然试局。当前任务无人工前置操作，不改旧/在用证据，不回收目录。旧局没有reason就写未知，禁止用重放补造原局解释。
+当前engine/public_endgame.py默认35毫秒、5000节点、总余牌12/单家8，重建核验与搜索共用时间预算。_search_profile缓存位置结果，计算队伍minimax保底及所有合法续局可达集。_copy_game后step的合法动作/状态处理是否重复，重建/生成/推进/缓存的成本比例，都须实际定位，不把检查建议当根因。agents/known_endgame.py的format_public_endgame_comparisons忽略保底与可达集相同的动作对，无剩余比较对便返回None；agents/deepseek_ai.py仅把solved分析投影给模型。
 
-## 已确认缺口与实现边界
+本轮统一工作包：在现有边界内定位并减少明牌搜索实际重复计算；完整分析的所有原始首手确实同值时，简洁告诉模型已完成当前胜平负目标的比较。效率与表达分别验证、复用同一结果，不重做M9/M10，不提前承诺减少模型等待或提升胜率。
 
-- agents/deepseek_client.py已要求20字以内JSON reason，但DeepSeekSuggestion只有action_id/reasoning；suggest_action_id解析动作后丢掉reason。应从同一次解析后的JSON读取短字段，和SSE长reasoning明确分离。兼容既有两字段构造和测试stub；reason缺失、非字符串、空白不使有效ID失败，也不从长推理/content/异常或本地策略补造。
-- integrations/botzone/agent_runtime.py的_StrictDeepSeekClient在无deadline及有deadline两个成功路径重建Suggestion并丢自由文本。仅让归一化后的短reason随有效ID通过，继续丢弃长reasoning；超时、异常、无效ID及晚到worker不产生成功短解释。优先从本次返回值在调用线程消费，不增加后台解释回调或缓存队友/跨局画像。
-- agents/deepseek_ai.py现有evidence_sink已绑定固定批次，成功选择经过原legal校验后返回；integrations/botzone/game_evidence.py的ManualGameEvidenceRecorder接收model_complete等事件并写已有逐局文件，decisions与timeline已有pending/ACK语义。复用此链，不开独立解释设施、响应副本或并行日志。实现可选择在已有逐局决策记录或绑定编号的模型事件中增加窄字段；须使读者能明确匹配该解释的决策编号、成功模型原ID及最终动作/ACK，且无sink路径不落盘。
-- 优先用当前开关已开启的固定批次逐局留证消费此字段，不增加每局操作或要求用户改.env。归一化规则统一、最小必要，不在多个层次复制mapping；单行化/有界截断后仍是模型原短解释，不能用关键词标签替代原意或声称完全脱敏。不把未知附加JSON字段整体保存。不要扩大通用decision trace结构来承载短解释。
-- 缓存agent每次决策必须清除旧解释，局部直接出完/规则快捷路径/回退不冒充模型reason；解释与返回ID若不对应就不挂到最终动作。核对真实成功outcome与所选ID，不单凭既有last_decision_source=model判断成功。deadline晚到、跨决策/跨match、retry后的失败不得污染后续成功或回退记录。必要的最小状态要绑定当前决策，不另造通用状态机。
-- 留证失败沿用evidence不完整/固定错误类别，动作、source、响应和ACK不受影响。现有旧格式仍可读取和续局，新增字段有窄验证，不因升级拒绝旧目录或重写历史。不要为此改变轮换容量、目录归属/白名单、候选、模型、temperature、请求提示、超时/重试、M9/M10或engine。
+## 实现与硬边界
 
-## 必要验证与交付
+- 先做有限成本对照，区分公开重建/核验、合法动作生成、step推进和递归/缓存。只提交有证据、能泛化的最小优化，不绑定牌点、ID、seed、seat或历史步号；优先正确复用已有计算，不另造规则、并行搜索平台或跨局状态。没有实测收益的猜测不提交；若未找到值得提交的优化，报告已定位成本与依据，仍完成有证据的同值投影，不写成性能成功。
+- 保持默认35毫秒/5000节点/12总牌/8单家上限与原公开确证条件，不靠加预算、减少核验、删根候选或降低证明要求制造完成率。隔离诊断可用较宽预算获取完整基线，生产常量不得改变，诊断结果不能算默认预算完成。保持首条完整保胜证明早返；超预算/不完整仍整块撤回，不输出部分结果或同值结论。
+- 必须保留精确保底值与完整可达集。普通alpha-beta/只找最优子节点可能漏掉非最优分支的可达终局，不能直接替代双指标搜索。缓存/等价复用须保留影响合法性、轮转、接风、双下/三游及队伍胜平负的状态；花色、实体承载、逢人配声明差异未经证明不能合并。复用当前引擎，不让AI读取内部GameState或真实暗牌。
+- 同值结论仅来自完整solved分析并核对覆盖范围/原始合法ID，不能因未选出对照、仅保底相等、部分展示或解析缺项而宣称所有路线同值。优先扩现有格式器/summary参数，保留不同值对照，不新增平行prompt块、RAG条目或日志设施；必要时用当前legal_actions作窄范围核对。
+- 一至两句说明实际保底与可达集、当前胜平负指标未区分首手优劣。可达平/胜仅表示存在合法路径，不表示对手配合或保证；不得说所有牌权/资源/策略价值相同、已经选出最优动作或无需模型判断其他因素。例如保底负/可达负与平时明确没有可达胜，但不能泛化到所有明牌局；局部同值只能描述已核对范围。
+- 摘要须经默认factory进入最终Request，在现有长度上限内完整保留证据限定，兼容M8等价展示与最终ID重映射。无需列所有ID的结论优先不增加ID关联负担；带ID须属于最终展示且可追溯。canonical候选、source链不变，成功模型原ID仍原样返回。
+- 不改select_proven_endgame_action策略、本地动作范围、规则终局目标、M10假设/预算、Flash配置、超时重试或已验收reason链。首选engine/public_endgame.py、agents/known_endgame.py及必要已有接线；若需公共游戏/规则计算层调整，说明直接调用依据，仅改狭窄语义保持路径，不扩大到全引擎重构。
 
-全程禁网，以合成配置、临时目录和fake SSE验证真实factory→Strict→agent→recorder→ACK的必要链路。优先扩现有tests/test_deepseek_step_e.py、tests/test_botzone_deepseek_agent_runtime.py、tests/test_botzone_game_evidence.py等直接相关方法，不新建大设施、不跑全量、不重跑原策略9项或8次模型对照。
+## 有限验证与交付
 
-最重要的覆盖：有效ID与短reason贯通两个Strict路径，默认固定批次留证实际可读且对应ACK；缺失/类型错误/空白/超长reason处理不改变选择；长reasoning和其他响应字段/异常不写出；关闭留证及其他路径无落盘；超时晚到/连续两次决策及跨match不串解释；本地路径和失败回退无伪模型理由；旧记录仍能读取，新写盘失败只标证据不完整。每项按实际改动选少量有价值断言，复用当前协议/事务测试，不把全部文件当固定门槛。fake模型成功原始ID必须保留，即便短解释与实际资源变化矛盾，也仅用于后续审计，不强制改牌。
+优先复用tests/test_m9_public_endgame_opportunities.py、tests/test_m5_public_inference_endgame.py及既有fixture/reference，只选受影响方法，不新建大测试平台、不跑全量、不重复reason或旧策略检查。一次性profiling/性能表用临时检查完成，无持续价值的脚本不进入discover或永久提交。
 
-最终报告已确认机制、最小实现与字段/存储位置、反补丁自检、实际定向命令及结果、commit/Git状态和真实剩余风险；说明owner重启原入口后如何定位同一次选择的reason与ACK。只明确路径提交自有业务/tests及直接相关文件，不提交Planning的AGENTS/Skills/docs；除本任务已授权私有短reason字段外，不持久化模型自由文本，不在报告展示私有原请求、手牌或模型原文。真实请求预算0，不发解释追问或追加成功样本。Planning复审通过后再提示所有者试局。
+1. 原三处输入供离线诊断；若证据已不在则明确缺失、用同类合法fixture，不从报告补造手牌/现场状态。已知私有目录D:\VsCodeProject\BotzoneWorkspace\games\2026_10_1_14-47-19_000045，只读内存解析并核对合法与确证，不输出/复制原body、手牌或解释，不改旧证据。对同一输入/配置/预算测before/after总耗时、状态及必要分段/工作计数；需要稳定性能结论时用少量重复中位数，临时仪表开销另列。补一个能区分真值复用与特例的相似合法局面，不固定大批场景。35毫秒未完成也如实报告，不拿宽预算充数。
+2. 小型合法局面对既有独立引擎参考核对所有原始首手保底/可达集、保胜早返、预算失败不输出部分结论。按本次复用选择花色/通配/轮转边界，不机械扩大规则测试。至少区分完整双指标同值、保底相同但可达集不同、超预算/不完整三类，不反向放宽有效断言。
+3. 合成配置与fake SSE经默认factory核对同值结论完整进入最终请求、不同值仍有对照、未完成不冒称算完，候选/原ID保持。fake模型选择另一展示原ID仍返回它，不因同值改成固定动作，不读取.env或使用真实网络。
+
+报告已确认成本机制、统一实现/未提交猜测的原因、反补丁自检、实际定向命令与结果、默认与诊断预算分别标明的before/after、commit/Git状态及范围内风险。只明确路径提交自有业务/tests，不混入Planning的AGENTS/Skills/docs。禁网结果只支持搜索机制/成本与投影证据，不能推出模型减时、选择或胜率收益。Planning验收后再决定是否需小规模真实Flash配对，不提前发请求或新增下一阶段设施。
