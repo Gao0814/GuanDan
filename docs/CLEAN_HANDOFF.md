@@ -4,7 +4,7 @@
 
 ## 当前任务与工作区
 
-工作目录D:\VsCodeProject\GuanDan，继续cao；原目录融合/回收bf712a9、5次原请求重放、拆炸/协同表达9646c2fabff04172fc799ac0b373d0cc11b8209f及短reason接线369e8737f7ef532cff9f9250cbc8fabcb44afcf5均已通过规划复审，不重跑已完成任务。当前[NEXT_PROMPT.md](NEXT_PROMPT.md)安排M9公开确证明牌搜索成本定位/优化与完整同值结果的简洁模型前表达，禁网、真实请求0，不提高默认预算、不改本地选择器或M10。该方向由原试局诊断提出，仅因更紧急的策略/留证工作而延后；PLAN明确顺序，后续插队不得默默丢弃未完成项。Coding负责业务/tests，Planning负责AGENTS/Skills/docs，分别提交，不混入彼此或用户修改。Skills先按描述匹配，只读实际使用者全文；读取原局私有证据时使用botzone-game-audit，普通源码复审不加载live/回收Skill。
+工作目录D:\VsCodeProject\GuanDan，继续cao；融合/回收bf712a9、5次原请求重放、拆炸/协同9646c2f、短reason369e873及搜索缓存/完整同值投影00d5a5e8ffb2785da10ca12987d68fcbcd399895均已通过Planning复审，不重跑已完成任务。已完成NEXT_PROMPT撤下，当前由所有者结束在用局后重启原入口、自然试局确认reason写盘和新提示消费，再交只读复盘；无需先开发其他设施。默认明牌搜索完成率仍待优化，原三处35毫秒仍不完成，PLAN保留此方向与继续位置，不能误写成整条性能主线已解决。尚无确定的新实现Prompt，不从旧Prompt猜任务。Coding负责业务/tests，Planning负责AGENTS/Skills/docs，分别提交，不混入彼此或用户修改。Skills先按描述匹配，仅实际使用者读全文；原局私有证据复盘使用game-audit，普通源码复审不加载live/回收Skill。
 
 GuanDanMerged_10-1副本已回收；其16edb6b历史（含fbdfa7e业务）保存在原仓库codex/merge-teammate。不要再创建常驻副本或从该分支的旧Prompt重复合并。原记牌/应手/资源输入已有核心能力，本轮没有搬入重复统计和单独辅助块；仅在既有局面段补头游争双下目标，并同步RAG双下/三游终局事实。
 
@@ -12,7 +12,9 @@ GuanDanMerged_10-1副本已回收；其16edb6b历史（含fbdfa7e业务）保存
 
 369e873短reason接线已验收：固定私有逐局timeline.jsonl的成功model_complete.data按decision_no/selected_action_id记录reason（缺失null）及reason_truncated，单行最多120个Unicode字符；通过decisions.jsonl的evidence_decision_no和pending/ACK顺序核对同次最终动作，不能只按可能重复的ID跨决策匹配。长reasoning、附加响应字段及异常正文不写出，晚到/失败/本地路径不挂成功理由；旧记录不追填、写盘失败不改牌。Coding10项禁网检查与Planning追加的取消deadline/绑定编号/关闭回调/混合格式重开检查支持接线验收，真实请求0。所有者结束当前局后可重启原scripts/run_manual_botzone_batch.cmd确认新局写盘；该自然试局不是离线搜索任务的前置条件。Codex不启停connector或清理在用证据。
 
-原搜索线索：14:47试局决策23/24/25在现行35毫秒预算离线重放超预算；较宽诊断预算完成的两处全部原始首手均保底负、可达负/平，而格式器返回None。原现场搜索状态未留存，不能冒充现场已完成；从旧完整证据复原或使用同类合法fixture定位，私有正文仅在内存使用，不复制输出。完整保底与可达结果集必须同时保持，搜索未完成不能写已算完/同值。
+00d5a5e只复用绑定同一个不可变状态的合法动作缓存，step继续原校验/推进并替换缓存，未合并实体/花色/声明。完整solved且全部原始ID/双指标同值时，既有formatter向默认Request简洁传入结果；没有部分结果、预算提高或模型后替选。Coding9项定向检查及Planning旧缓存/非法ID/兄弟隔离、换点合法fixture的参考真值和默认factory检查支持验收，真实请求0。宽诊断预算原决策24/25约807.2→186.6、320.9→75.5毫秒，中位数来自Coding测量；默认原三处仍超预算，决策23宽预算也超，不给它们同值摘要。
+
+原搜索线索仍有效：14:47试局原现场搜索状态未留存，离线结果不能冒充现场。Planning单次带仪表检查原决策24：重建约2毫秒，搜索69节点，合法生成累计约29毫秒，总约47毫秒；排除该次重建先耗尽预算假设。后续性能方向是默认完成率与递归合法生成/单次操作成本，不能不测便提高预算。原私有证据只读内存，不复制输出；完整保底与可达结果集必须同时保持，搜索未完成不能写已算完/同值。当前接线无已知语义回归，模型取舍及真实收益仍待观察。
 
 10-1.v1对应8d6a2579ea4eca0917d8a0ce49aaf8c8545c22fc。D:\VsCodeProject\GuanDan_10-1.v1.bundle是保留的完整历史恢复备份；恢复说明及SHA文件同目录。Git只恢复已跟踪内容；私有配置、虚拟环境、运行日志与在用现场目录保持原样。
 
