@@ -1,5 +1,9 @@
 # 项目状态看板
 
+## 2026-10-01 当前任务：回到原目录、去重融合与回收退役内容
+
+所有者要求只维护D:\VsCodeProject\GuanDan，10-1.v1保留可恢复；不再维持独立融合副本。此前统计/提示重复既有记牌与牌权能力，当前Coding任务见NEXT_PROMPT：只吸收可确认增量，回收无现役依赖的历史代码/评测/一次性测试。Planning负责精简docs与外部自有副本/多余备份；Git只保护已跟踪内容，私有配置/环境/现场证据保持原样。真实请求0，不跑全量。旧合并验收仅证明接线，不代表独立能力或收益；当前安排覆盖下方历史快照。
+
 ## 当前阶段：独立融合版A_merged已验收（2026-10-01）
 
 业务提交fbdfa7eec91c3501b43da68b6326616075351afd位于D:\VsCodeProject\GuanDanMerged_10-1、分支codex/merge-teammate，五文件通过规划复审。默认Request已融合队友条件性经验与本局事实统计，开关关闭恢复原请求；规则、M9/M10、候选和模型原ID保持。原目录业务及队友输入未修改，10-1.v1/tag/bundle/zip保留可恢复。验收与使用说明见[TEAMMATE_MERGE_REVIEW.md](TEAMMATE_MERGE_REVIEW.md)。
