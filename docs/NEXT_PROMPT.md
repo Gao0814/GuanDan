@@ -1,0 +1,26 @@
+# Coding任务：将实际模型短reason接入固定批次逐局证据
+
+工作目录D:\VsCodeProject\GuanDan，继续cao。先读适用AGENTS、CLEAN_HANDOFF、本Prompt，核对Git及相关代码/tests。9646c2f策略/RAG与8次Flash对照已验收，不重做。当前任务是短解释接线，不修改策略，不使用真实网络或操作正在运行的connector。按描述判断Skill；普通接线开发不自动加载live/回收Skill。
+
+## 目标与授权
+
+所有者要求先确保reason能写入，方便之后实际试局调试。根AGENTS已新增2026-10-01局部例外：仅允许固定D:\VsCodeProject\BotzoneWorkspace现有私有逐局证据保存同次有效模型动作返回的短JSON reason，单行、最多120个Unicode字符，截断须标记。仍不保存完整content、reasoning_content、异常正文或凭据/URL/Headers，不进入普通日志、stdout、聚合audit、通用trace、个人轻量workspace或仓库。共享报告只给必要脱敏摘要，不复制私有解释。
+
+先实现此最小接线并交Planning复审，再由所有者在当前对局结束后重启原scripts/run_manual_botzone_batch.cmd进行自然试局。当前任务无人工前置操作，不改旧/在用证据，不回收目录。旧局没有reason就写未知，禁止用重放补造原局解释。
+
+## 已确认缺口与实现边界
+
+- agents/deepseek_client.py已要求20字以内JSON reason，但DeepSeekSuggestion只有action_id/reasoning；suggest_action_id解析动作后丢掉reason。应从同一次解析后的JSON读取短字段，和SSE长reasoning明确分离。兼容既有两字段构造和测试stub；reason缺失、非字符串、空白不使有效ID失败，也不从长推理/content/异常或本地策略补造。
+- integrations/botzone/agent_runtime.py的_StrictDeepSeekClient在无deadline及有deadline两个成功路径重建Suggestion并丢自由文本。仅让归一化后的短reason随有效ID通过，继续丢弃长reasoning；超时、异常、无效ID及晚到worker不产生成功短解释。优先从本次返回值在调用线程消费，不增加后台解释回调或缓存队友/跨局画像。
+- agents/deepseek_ai.py现有evidence_sink已绑定固定批次，成功选择经过原legal校验后返回；integrations/botzone/game_evidence.py的ManualGameEvidenceRecorder接收model_complete等事件并写已有逐局文件，decisions与timeline已有pending/ACK语义。复用此链，不开独立解释设施、响应副本或并行日志。实现可选择在已有逐局决策记录或绑定编号的模型事件中增加窄字段；须使读者能明确匹配该解释的决策编号、成功模型原ID及最终动作/ACK，且无sink路径不落盘。
+- 优先用当前开关已开启的固定批次逐局留证消费此字段，不增加每局操作或要求用户改.env。归一化规则统一、最小必要，不在多个层次复制mapping；单行化/有界截断后仍是模型原短解释，不能用关键词标签替代原意或声称完全脱敏。不把未知附加JSON字段整体保存。不要扩大通用decision trace结构来承载短解释。
+- 缓存agent每次决策必须清除旧解释，局部直接出完/规则快捷路径/回退不冒充模型reason；解释与返回ID若不对应就不挂到最终动作。核对真实成功outcome与所选ID，不单凭既有last_decision_source=model判断成功。deadline晚到、跨决策/跨match、retry后的失败不得污染后续成功或回退记录。必要的最小状态要绑定当前决策，不另造通用状态机。
+- 留证失败沿用evidence不完整/固定错误类别，动作、source、响应和ACK不受影响。现有旧格式仍可读取和续局，新增字段有窄验证，不因升级拒绝旧目录或重写历史。不要为此改变轮换容量、目录归属/白名单、候选、模型、temperature、请求提示、超时/重试、M9/M10或engine。
+
+## 必要验证与交付
+
+全程禁网，以合成配置、临时目录和fake SSE验证真实factory→Strict→agent→recorder→ACK的必要链路。优先扩现有tests/test_deepseek_step_e.py、tests/test_botzone_deepseek_agent_runtime.py、tests/test_botzone_game_evidence.py等直接相关方法，不新建大设施、不跑全量、不重跑原策略9项或8次模型对照。
+
+最重要的覆盖：有效ID与短reason贯通两个Strict路径，默认固定批次留证实际可读且对应ACK；缺失/类型错误/空白/超长reason处理不改变选择；长reasoning和其他响应字段/异常不写出；关闭留证及其他路径无落盘；超时晚到/连续两次决策及跨match不串解释；本地路径和失败回退无伪模型理由；旧记录仍能读取，新写盘失败只标证据不完整。每项按实际改动选少量有价值断言，复用当前协议/事务测试，不把全部文件当固定门槛。fake模型成功原始ID必须保留，即便短解释与实际资源变化矛盾，也仅用于后续审计，不强制改牌。
+
+最终报告已确认机制、最小实现与字段/存储位置、反补丁自检、实际定向命令及结果、commit/Git状态和真实剩余风险；说明owner重启原入口后如何定位同一次选择的reason与ACK。只明确路径提交自有业务/tests及直接相关文件，不提交Planning的AGENTS/Skills/docs；除本任务已授权私有短reason字段外，不持久化模型自由文本，不在报告展示私有原请求、手牌或模型原文。真实请求预算0，不发解释追问或追加成功样本。Planning复审通过后再提示所有者试局。
