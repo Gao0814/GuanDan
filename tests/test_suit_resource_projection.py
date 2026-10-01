@@ -195,6 +195,37 @@ def _capture_default_factory_request(
 
 
 class SuitResourceProjectionTests(unittest.TestCase):
+    def test_teammate_head_double_down_context_reaches_request_without_changing_model_choice(self) -> None:
+        from tests.test_m9_public_endgame_opportunities import _rollout_to_step
+
+        game, observation, actions = _rollout_to_step(13, 74)
+        original = deepcopy((observation, actions))
+        cue = "本家成为下一位出完者可形成双下并立即结束"
+        selected, agent, first = _capture_default_factory_request(game, actions[0]["action_id"])
+        self.assertIn(cue, first.prompt)
+        alternate = next(aid for aid in reversed(first.candidate_ids) if aid != selected)
+        chosen, other_agent, second = _capture_default_factory_request(game, alternate)
+        self.assertEqual(chosen, alternate)
+        self.assertEqual(other_agent.last_decision_source, "model")
+        self.assertEqual(agent.last_decision_source, "model")
+        self.assertEqual(first.candidate_ids, second.candidate_ids)
+        self.assertLessEqual(len(first.candidate_ids), 80)
+        self.assertTrue(set(first.candidate_ids).issubset({a["action_id"] for a in actions}))
+        self.assertEqual((game.observe(), game.legal_actions()), original)
+
+        # A finished partner who was second cannot produce a double-down now.
+        game, _, actions = _rollout_to_step(13, 94)
+        _, _, nonhead = _capture_default_factory_request(game, actions[0]["action_id"])
+        self.assertNotIn(cue, nonhead.prompt)
+        for field, value in (("finish_rank", 2), ("hand_count", False)):
+            broken = deepcopy(observation)
+            next(p for p in broken["other_players"] if p["player_id"] == 3)[field] = value
+            prompt = DeepSeekClient._build_structured_prompt(
+                my_info=broken["my_info"], current_round=broken["current_round"],
+                other_players=broken["other_players"], history=broken["history"], legal_actions=original[1],
+            )
+            self.assertNotIn(cue, prompt)
+
     def _action_id(self, actions: list[dict[str, object]], carrier: str) -> int:
         action = next(
             item for item in actions

@@ -183,9 +183,9 @@ hand_strength: [any]
 action_context: [endgame]
 topic: [endgame, run_out, finish_order]
 priority: high
-keywords_cn: [三游, 终局, 末游, 名次, 结束]
+keywords_cn: [双下, 头游, 二游, 三游, 终局, 末游, 名次, 结束]
 ---
 
-# 三游终局
+# 双下与三游终局
 
-当第三个玩家出完手牌并成为三游时，整局结束；唯一仍未出完牌的玩家自动判定为末游。终局与名次判定由 engine/ 推进，RAG 只能说明该规则口径。
+同队取得头游和二游（双下）时立即结束，不为另外两家虚构个人完赛名次。未双下时，当第三个玩家出完手牌并成为三游，整局结束；唯一仍未出完牌的玩家自动判定为末游。终局与名次判定由 engine/ 推进，RAG 只能说明该规则口径。

@@ -104,8 +104,8 @@ Every action is pre-expanded with explicit wildcard declarations:
 
 - **Never modify `engine/`** when only changing AI behavior — AI should only consume public payloads.
 - **Never modify `tests/` or `docs/`** unless explicitly asked.
-- Changes to `engine/` require running the full test suite (`test_patterns`, `test_rules`, `test_game_flow`, `test_cli_debug_output`).
-- Legacy code (multi-game, old evaluation pipeline, old DeepSeek experiments) lives in `archive_legacy/` and is out of scope.
+- Select targeted tests for the changed module and its directly affected callers; full-suite testing is optional under the current `AGENTS.md` rules.
+- Retired multi-game code and old evaluation stages are recoverable from Git history; retain the current single-game runtime and reusable regression fixtures.
 
 ### DeepSeek agent details
 

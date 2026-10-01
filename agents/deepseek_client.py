@@ -3581,6 +3581,8 @@ class DeepSeekClient:
                 )
         my_team = str(my_info.get("team", ""))
         player_parts: list[str] = []
+        teammate_head_id: int | None = None
+        finish_order = history.get("finish_order")
         for p in other_players:
             pid = p.get("player_id", "?")
             team = str(p.get("team", ""))
@@ -3594,10 +3596,25 @@ class DeepSeekClient:
                 rank_int = int(finish_rank) if finish_rank is not None else 0
                 label = _FINISH_LABELS.get(rank_int, str(finish_rank))
                 player_parts.append(f"玩家{pid}（{relation}）已完赛-{label}")
+                # Adapt guandan_strategy.py's race for second place using
+                # public finish order, rather than merely "partner finished".
+                if (
+                    relation == "队友" and my_team and type(pid) is int
+                    and p.get("finished") is True and type(hand_cnt) is int and hand_cnt == 0
+                    and type(finish_rank) is int and finish_rank == 1
+                    and isinstance(finish_order, list) and len(finish_order) == 1
+                    and type(finish_order[0]) is int and finish_order[0] == pid
+                ):
+                    teammate_head_id = pid
             else:
                 player_parts.append(f"玩家{pid}（{relation}）剩余{hand_cnt}张")
         if player_parts:
             lines.append(f"队友/对手状态：{'；'.join(player_parts)}")
+        if teammate_head_id is not None:
+            lines.append(
+                f"队友玩家{teammate_head_id}已为头游；本家成为下一位出完者可形成双下并立即结束。"
+                "比较现有候选的清理速度、控制资源与回手机会，由模型选择。"
+            )
         lines.append("")
 
         lines.append("【手牌评估】")
