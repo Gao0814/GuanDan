@@ -1,16 +1,16 @@
 # 当前项目交接
 
-更新：2026-10-01。新对话先读根AGENTS、适用项目Skills、本文件、PROJECT_STATUS/PLAN顶部、INVARIANTS/CODING_BOUNDARY及当前存在的NEXT_PROMPT，再核对真实Git status/diff/HEAD；历史报告只是线索。
+更新：2026-10-02。新对话先读根AGENTS、适用项目Skills、本文件、PROJECT_STATUS/PLAN顶部、INVARIANTS/CODING_BOUNDARY及当前存在的NEXT_PROMPT，再核对真实Git status/diff/HEAD；历史报告只是线索。
 
 ## 当前任务与工作区
 
-当前任务已推进B，执行docs/NEXT_PROMPT.md，不重做A。A业务3c81f66及修复c02db616e02727bbbd2e0ebb001822510d7492a9已通过Planning复审：具体pass、末手/普通行为、既有RAG/应手与M10解释接线；等强声明/花色/承载不再依赖声明列表相等，而由引擎验证绑定后比较同型强度。#63/65证据链已纠正。Coding定向检查通过，A真实6 POST全成功/重试0，修复轮0；模型效果只作诊断信号。
+当前任务为M9默认完成率与递归成本，执行docs/NEXT_PROMPT.md。B业务81ab389f9c463866a27a616609dcad606e613c78已通过Planning复审：共享A历史验证、引擎承载绑定、实际对子取舍最多一条线索、后续撤回/较小对子反证、末手pass与确证优先；仅RAG格式化消费，不改硬域、候选或模型选择。本家梯度经验保留。A业务3c81f66及修复c02db61已验收，不重做。
 
-Planning独立证据：此前原决策20/21禁网factory原ID、step75线索与M10根路线数值一致；本轮换点数/座位的完整108实体合法回放（888＋44→888＋66及换花色678910同花顺）均保留2条外部pass，三带二factory保留合成成功模型原pass/source=model，无效承载被拒绝，输入不变；未机械重跑Coding套件或联网验证。该修复范围内无已知剩余代码风险，模型选择波动与实际收益另行观察。
+Planning独立核对完整6文件diff和一条新108实体合法回放：P4三J带对5被三Q带对6接住，队友视角factory投影线索；其后对8使线索撤下，再出对3只保留反证，对手视角factory不再推留大对。两次合成成功模型原ID/source=model、输入/硬域和展示闭环保持，无效历史绑定被拒绝。未机械重跑Coding套件，真实请求0、未读改旧私有证据或操作现场。
 
-B只做局内外部携带对子事实、条件化余牌解释与后续更新。区分清小对、带中间对留回手、仅此一个对子等解释，不把其当最小已证，不改硬牌域/canonical/共同场景或模型选择；当前本家梯度条目不能冒充他家反推。B最多6真实POST、重试0，三个合法输入各before/after，具体约束见Prompt。B后继续M9默认完成率与递归成本。Planning本轮真实0，未读改旧证据或启停现场。
+Coding B报告6次Flash/重试0全部成功、三组before/after原ID相同；调用为收缩前版本，最终版本仅禁网验证，不冒称稳定收益或最终模型效果。接线范围内无已知剩余代码风险；习惯未校准与模型过度解读仍待观察。未证选择收益后已按Prompt收缩默认消费；较早可见信号是备选未知/多种竞争解释及配对同选，不证明习惯永远无用。当前M9任务真实POST0，不追加B对照，不提高默认预算、不削弱完整可达集；完整同值投影和短reason已完成。
 
-工作目录D:\VsCodeProject\GuanDan，继续cao；融合/回收bf712a9、5次原请求重放、拆炸/协同9646c2f、短reason369e873及搜索缓存/完整同值投影00d5a5e8ffb2785da10ca12987d68fcbcd399895均已通过Planning复审，不重跑已完成任务。18:57新局已确认reason现场写盘，无需为此再次重启或先开发其他设施。该局不满足M9/M10模型路径的牌量条件，不能评价新推演提示的实际消费；19:22新局的两处M10消费与当前疑点见上段。默认明牌搜索完成率仍待优化，原三处35毫秒仍不完成，PLAN保留此方向与继续位置，不能误写成整条性能主线已解决。不从旧Prompt猜任务。Coding负责业务/tests，Planning负责AGENTS/Skills/docs，分别提交，不混入彼此或用户修改。Skills先按描述匹配，仅实际使用者读全文；原局私有证据复盘使用game-audit，普通源码复审不加载live/回收Skill。
+工作目录D:\VsCodeProject\GuanDan，继续cao；融合/回收bf712a9、5次原请求重放、拆炸/协同9646c2f、短reason369e873及搜索缓存/完整同值投影00d5a5e8ffb2785da10ca12987d68fcbcd399895均已通过Planning复审，不重跑已完成任务。18:57新局已确认reason现场写盘，无需为此再次重启或先开发其他设施。该局不满足M9/M10模型路径的牌量条件，不能评价新推演提示的实际消费；19:22新局的两处M10消费与已处理的pass疑点见PROJECT_STATUS。默认明牌搜索完成率仍待优化，原三处35毫秒仍不完成，PLAN保留此方向与继续位置，不能误写成整条性能主线已解决。不从旧Prompt猜任务。Coding负责业务/tests，Planning负责AGENTS/Skills/docs，分别提交，不混入彼此或用户修改。Skills先按描述匹配，仅实际使用者读全文；原局私有证据复盘使用game-audit，普通源码复审不加载live/回收Skill。
 
 GuanDanMerged_10-1副本已回收；其16edb6b历史（含fbdfa7e业务）保存在原仓库codex/merge-teammate。不要再创建常驻副本或从该分支的旧Prompt重复合并。原记牌/应手/资源输入已有核心能力，本轮没有搬入重复统计和单独辅助块；仅在既有局面段补头游争双下目标，并同步RAG双下/三游终局事实。
 
