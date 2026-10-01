@@ -460,7 +460,13 @@ def _build_public_game(observation: object, legal_actions: object,
 def _copy_game(game: GuanDanGame) -> GuanDanGame:
     clone = GuanDanGame(current_level_rank=game._current_level_rank)
     clone._state = game._require_state()
-    clone._invalidate_legal_actions_cache()
+    # The parent already generated these actions for this exact immutable
+    # state. step() validates against that same cache; its invalidation replaces
+    # the containers rather than mutating them, so siblings remain isolated.
+    if game._legal_actions_state is clone._state:
+        clone._legal_actions_state = game._legal_actions_state
+        clone._legal_action_map = game._legal_action_map
+        clone._ordered_legal_actions = game._ordered_legal_actions
     return clone
 
 

@@ -825,6 +825,7 @@ class DeepSeekAIAgent(BaseAgent):
                 public_endgame_summary = format_public_endgame_comparisons(
                     analysis,
                     pruned,
+                    legal_actions=legal_actions,
                     preferred_action_ids=tuple(
                         action_id for action_id in getattr(strategy_recommendation, "action_ids", ())
                         if type(action_id) is int

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import unittest
+from dataclasses import replace
 from collections import defaultdict
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from engine.actions import Action, ActionType
 from engine.cards import Card, build_double_deck, card_to_token, sort_cards
 from agents.rule_based_ai import RuleBasedAIAgent
 from engine.game import GuanDanGame
+from engine.rules import BaseRuleEngine
 from engine.patterns import PatternType
 from engine.public_endgame import (
     PublicEndgameAnalysis,
@@ -261,6 +263,79 @@ def _factory_agent(captured: list[dict[str, object]]):
 
 
 class M9PublicEndgameOpportunityTests(unittest.TestCase):
+    def test_search_branch_reuses_only_current_cache_and_matches_engine_step(self) -> None:
+        from engine.public_endgame import _copy_game
+
+        game, _, actions = _public_endgame_fixture(
+            current_hands={3: ("2H", "9C", "10D"), 4: ("JS",)},
+            finish_order=(1, 2), current_player_id=3,
+            leading_token="8S", leader_player_id=4,
+        )
+        original = game.observe()
+        cached_map = game._legal_action_map
+        for action in actions:
+            child = _copy_game(game)
+            reference = _clone_game(game)
+            with patch.object(BaseRuleEngine, "generate_legal_actions",
+                              side_effect=AssertionError("same-state regeneration")):
+                result = child.step(action["action_id"])
+            self.assertEqual(result, reference.step(action["action_id"]))
+            self.assertEqual(child.observe(), reference.observe())
+            self.assertIs(game._legal_action_map, cached_map)
+            self.assertEqual(game.observe(), original)
+
+    def test_complete_equal_profiles_reach_factory_without_selecting_for_model(self) -> None:
+        from agents.known_endgame import format_public_endgame_comparisons
+
+        game, observation, actions = _public_endgame_fixture(
+            current_hands={4: ("3S", "3C", "4D", "5S"), 3: ("6C", "7S")},
+            finish_order=(1, 2), current_player_id=4,
+        )
+        expected, reachable = _reference_root_profiles(game)
+        with patch("engine.public_endgame.monotonic", return_value=0.0):
+            solved = analyze_public_endgame(observation, actions, exact_public_hand_assignment(observation))
+        self.assertEqual(solved.status, "solved")
+        self.assertEqual((solved.action_values, solved.action_reachable_values), (expected, reachable))
+        summary = format_public_endgame_comparisons(solved, actions, legal_actions=actions)
+        self.assertIn("全部原始合法首手", summary)
+        self.assertIn("均保底负局、可达{负局,规则平}，无可达本队胜局", summary)
+        self.assertNotIn("action_id=", summary)
+        self.assertIsNone(format_public_endgame_comparisons(solved, actions))
+        incomplete = replace(solved, action_values=solved.action_values[:-1])
+        duplicate = replace(solved, action_values=solved.action_values[:-1] + (solved.action_values[0],))
+        differing = replace(solved, action_reachable_values=(
+            (actions[0]["action_id"], (-1,)), *solved.action_reachable_values[1:]))
+        self.assertIsNone(format_public_endgame_comparisons(incomplete, actions, legal_actions=actions))
+        self.assertIsNone(format_public_endgame_comparisons(duplicate, actions, legal_actions=actions))
+        different_text = format_public_endgame_comparisons(differing, actions, legal_actions=actions)
+        self.assertIn("M5公开残局对照", different_text)
+        self.assertNotIn("全部原始合法首手", different_text)
+        for analysis, same in ((solved, True), (differing, False),
+                               (PublicEndgameAnalysis(status="budget_exceeded"), False)):
+            captured = []
+            config, factory = _factory_agent(captured)
+            with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config), \
+                    patch("engine.public_endgame.analyze_public_endgame", return_value=analysis):
+                agent = factory(4)
+                chosen = agent.select_action(observation, actions)
+            prompt = captured[0]["messages"][1]["content"]
+            self.assertEqual(agent.last_decision_source, "model")
+            if same:
+                self.assertIn(summary, prompt)
+                self.assertIn("牌权、资源与其他策略价值仍需判断", prompt)
+            elif analysis.status == "solved":
+                self.assertIn("M5公开残局对照", prompt)
+            else:
+                self.assertNotIn("全部原始合法首手", prompt)
+                self.assertNotIn("M5公开残局对照", prompt)
+            section = prompt.split("【候选动作】", 1)[1].split("【规则库依据】", 1)[0]
+            visible = [int(i) for i in re.findall(r"#(\d+)\s+action_id=", section)]
+            self.assertEqual(chosen, visible[-1])
+            self.assertLessEqual(len(visible), 80)
+            if same:
+                self.assertLess(len(visible), len(actions))
+            self.assertIn(chosen, [a["action_id"] for a in actions])
+
     def test_corrected_canonical_double_wild_response_is_in_full_m9_position(self) -> None:
         game, observation, actions = _public_endgame_fixture(
             current_hands={

@@ -221,10 +221,11 @@ def format_public_endgame_comparisons(
     analysis: PublicEndgameAnalysis,
     displayed_actions: list[dict[str, object]],
     *,
+    legal_actions: list[dict[str, object]] | None = None,
     preferred_action_ids: tuple[int, ...] = (),
     max_pairs: int = 2,
 ) -> str | None:
-    """Format distinct proven guarantees or reachable outcomes for visible IDs."""
+    """Compare visible profiles, or report equality after full raw-ID coverage."""
     if analysis.status != "solved" or type(max_pairs) is not int or max_pairs <= 0:
         return None
     guarantees = dict(analysis.action_values)
@@ -234,6 +235,33 @@ def format_public_endgame_comparisons(
         or any(not _valid_reachable_values(values) for values in reachable.values())
     ):
         return None
+    if legal_actions is not None:
+        legal_ids = [a.get("action_id") for a in legal_actions if isinstance(a, dict)]
+        complete = (
+            bool(legal_ids) and len(legal_ids) == len(legal_actions)
+            and all(type(i) is int for i in legal_ids)
+            and len(set(legal_ids)) == len(legal_ids)
+            and len(analysis.action_values) == len(legal_ids)
+            and len(analysis.action_reachable_values) == len(legal_ids)
+            and all(type(i) is int for i, _ in analysis.action_values)
+            and all(type(i) is int for i, _ in analysis.action_reachable_values)
+            and set(guarantees) == set(reachable) == set(legal_ids)
+            and all(guarantees[i] in reachable[i] for i in legal_ids)
+            and bool(displayed_actions)
+            and all(isinstance(a, dict) and a in legal_actions for a in displayed_actions)
+        )
+        if not complete:
+            return None
+        if len(set(guarantees.values())) == len(set(reachable.values())) == 1:
+            floor = guarantees[legal_ids[0]]
+            outcomes = reachable[legal_ids[0]]
+            no_win = "无可达本队胜局" if 1 not in outcomes else ""
+            return (
+                "【公开残局推演】已用公开确证手牌与引擎完整核对全部原始合法首手："
+                f"均保底{_OUTCOME_TEXT[floor]}、可达{{{','.join(_OUTCOME_TEXT[v] for v in outcomes)}}}"
+                f"{'，' + no_win if no_win else ''}；当前队伍胜平负指标未区分首手优劣。"
+                "可达仅表示存在合法路径，不表示对手配合或保证；牌权、资源与其他策略价值仍需判断。"
+            )
     visible = [
         action for action in displayed_actions
         if type(action.get("action_id")) is int
