@@ -4,7 +4,7 @@
 
 ## 当前任务与工作区
 
-工作目录D:\VsCodeProject\GuanDan，继续cao；原目录融合/回收业务bf712a956f9ca173b018739c56a978dab1592129已通过规划复审，5次原请求重放诊断亦已完成，不重跑旧计划。当前[NEXT_PROMPT.md](NEXT_PROMPT.md)为接通已有短reason的显式调试入口，不改策略/请求或现行自由文本落盘边界，真实请求0；复审结论见PROJECT_STATUS。Coding修改业务/tests/直接相关非docs；Planning维护AGENTS/Skills/docs及自有外部交付物，分别按明确路径提交，不混入彼此或用户修改。Skills先按名称/description匹配，只读实际使用者全文；游戏疑点复盘主用botzone-game-audit，现场托管/清理仅各自任务适用。
+工作目录D:\VsCodeProject\GuanDan，继续cao；原目录融合/回收业务bf712a956f9ca173b018739c56a978dab1592129已通过规划复审，5次原请求重放诊断亦已完成，不重跑旧计划。所有者要求优先处理队友控桌拆炸取舍，当前[NEXT_PROMPT.md](NEXT_PROMPT.md)已替换尚未执行的完整短reason入口任务：统一模型前资源/协同表达，并最多8次Flash、重试0作四对真实对照；诊断内存读解释，长期调试设施后置。复审结论见PROJECT_STATUS。Coding负责业务/tests，Planning负责AGENTS/Skills/docs，分别提交，不混入彼此或用户修改。Skills先按描述匹配，只读实际使用者全文；游戏疑点复盘主用botzone-game-audit，现场托管/清理仅各自任务适用。
 
 GuanDanMerged_10-1副本已回收；其16edb6b历史（含fbdfa7e业务）保存在原仓库codex/merge-teammate。不要再创建常驻副本或从该分支的旧Prompt重复合并。原记牌/应手/资源输入已有核心能力，本轮没有搬入重复统计和单独辅助块；仅在既有局面段补头游争双下目标，并同步RAG双下/三游终局事实。
 
