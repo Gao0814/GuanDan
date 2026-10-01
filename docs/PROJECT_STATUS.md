@@ -1,5 +1,13 @@
 # 项目状态看板
 
+## 当前阶段：独立融合版A_merged已验收（2026-10-01）
+
+业务提交fbdfa7eec91c3501b43da68b6326616075351afd位于D:\VsCodeProject\GuanDanMerged_10-1、分支codex/merge-teammate，五文件通过规划复审。默认Request已融合队友条件性经验与本局事实统计，开关关闭恢复原请求；规则、M9/M10、候选和模型原ID保持。原目录业务及队友输入未修改，10-1.v1/tag/bundle/zip保留可恢复。验收与使用说明见[TEAMMATE_MERGE_REVIEW.md](TEAMMATE_MERGE_REVIEW.md)。
+
+Coding定向验证通过，规划额外四状态原始请求摘要/统计/pass证据对照和最终队友控桌factory检查通过，未机械重跑全量；真实请求0。当前范围内无已知剩余风险，真实选择与胜率收益尚无证据。A_original/A_merged已具备，B_merged尚待队友完成，不宣称四版本已齐或比较已开始。已撤下完成的NEXT_PROMPT，当前无新Coding任务。
+
+以下为此前阶段快照，当前安排以本节为准。
+
 ## 当前阶段：队友能力融合执行中，10-1.v1原始版保留（2026-10-01）
 
 所有者要求把D:\VsCodeProject\掼蛋程序与本项目融合。原版10-1.v1已保存至8d6a257，bundle独立恢复与258文件快照核对通过。输入目录已只读核对，队友座位/实体编码与本项目不同，不是同名文件覆盖；其README声称的测试、延迟和收益尚未实际验证。
