@@ -7,7 +7,10 @@ import json
 import random
 from time import monotonic
 
-from agents.card_tracker import _validated_public_state, _history_clock_is_complete
+from agents.card_tracker import (
+    _validated_public_state, _history_clock_is_complete,
+    relevant_public_passes, terminal_pass_signal,
+)
 from agents.rule_based_ai import FrozenRuleBasedAIAgent
 from decision_deadline import DecisionDeadline, MODEL_RESPONSE_RESERVE_SECONDS
 from engine.public_simulation import SimulationBudget, rebuild_hypothetical_position
@@ -230,6 +233,23 @@ def analyze_continuations(observation: dict, canonical: list[dict], displayed: l
                     steps += value[9]
         lines = ['【共同假设有界续局】',
                  f'公开条件支持的假设续局，依赖所用后续策略与有限深度：{len(worlds)}个共同场景×清组/协同留控，两策略每路线最多{DEPTH}步。不是确证、保胜或真实胜率；未算候选不更差。']
+        signals = tuple(event for event in relevant_public_passes(observation) if terminal_pass_signal(event))
+        budget.check()
+        if signals:
+            conflicts = []
+            for scenario, hands in enumerate(hypotheses):
+                for event in signals:
+                    budget.check()
+                    hand = tuple(Card(t) if t in ('SJ', 'BJ') else Card(t[:-1], t[-1])
+                                 for t in hands[event.player_id])
+                    with budget.scope():
+                        responses = BaseRuleEngine().public_beating_response_requirements(hand, event.lead_action, '2')
+                    if any(item.card_count == len(hand) for item in responses):
+                        conflicts.append(f'场景{scenario + 1}/P{event.player_id}')
+            lines.append('规则可行场景未按pass筛选或赋概率；历史末手能接即走行为不相称=' +
+                         ('、'.join(conflicts) if conflicts else '本组未发现') +
+                         '，不相称场景的收尾不能同等依赖，但仍保留全部共同场景；不是暗牌反证或概率。')
+        lines.append('根后再走不含根动作，总清牌须加根出张。')
         disagreement = False
         for root in roots:
             rows = list(values[root].values())
@@ -255,6 +275,7 @@ def analyze_continuations(observation: dict, canonical: list[dict], displayed: l
                     disagreement = True
         lines.append('场景/策略间比较方向分歧：' + ('存在，勿据单一路径取舍。' if disagreement else '未观察到反向；有限样本不代表稳健结论。'))
         text = '\n'.join(lines)
+        budget.check()
         if len(text) > MAX_TEXT:
             return report('text_budget', work=budget.work)
         return report('ready', text=text, root_ids=roots, scenarios=len(worlds), depth=DEPTH,

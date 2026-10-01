@@ -99,6 +99,10 @@ class _PublicPassEvidence:
     lead_action: Action
     lead_pattern: str
     response_confirmed_step_no: int | None
+    leader_id: int
+    hand_count: int
+    cards_played_since: int
+    opponent_led: bool
 
 
 def _validated_public_state(observation: object) -> _ValidatedPublicState | None:
@@ -900,7 +904,7 @@ def _public_pass_evidence(
     lead_raw: dict[str, object] | None = None
     leader_id: int | None = None
     pending: tuple[int, ...] = ()
-    passes: list[tuple[int, int, int, Action]] = []
+    passes: list[tuple[int, int, int, Action, int, int]] = []
     parsed_plays: list[tuple[int, int, Action]] = []
 
     def active_players() -> set[int]:
@@ -960,7 +964,7 @@ def _public_pass_evidence(
                 or raw.get("declared_cards") != []
             ):
                 return ()
-            passes.append((item_step, round_no, player_id, lead))
+            passes.append((item_step, round_no, player_id, lead, leader_id, remaining[player_id]))
             pending = tuple(item for item in pending if item != player_id)
             if pending:
                 expected_player = pending[0]
@@ -1038,7 +1042,7 @@ def _public_pass_evidence(
         return ()
 
     evidence: list[_PublicPassEvidence] = []
-    for step, _pass_round, player_id, passed_lead in passes:
+    for step, _pass_round, player_id, passed_lead, passed_leader, count in passes:
         proving_step: int | None = None
         for later_step, later_player, later in parsed_plays:
             if later_step <= step or later_player != player_id:
@@ -1056,9 +1060,57 @@ def _public_pass_evidence(
                     if passed_lead.declared_pattern is not None else ""
                 ),
                 response_confirmed_step_no=proving_step,
+                leader_id=passed_leader,
+                hand_count=count,
+                cards_played_since=count - remaining[player_id],
+                opponent_led=state.player_rows[player_id].get('team') != state.player_rows[passed_leader].get('team'),
             )
         )
     return tuple(evidence)
+
+
+def relevant_public_passes(observation: dict[str, object]) -> tuple[_PublicPassEvidence, ...]:
+    """Latest same-family evidence per seat, validated against the full public ledger."""
+    state = _validated_public_state(observation)
+    if state is None:
+        return ()
+    raw = observation['current_round'].get('table_action')
+    if not isinstance(raw, dict):
+        return ()
+    current = _pattern_action(raw, state.my_player_id)
+    if current is None:
+        return ()
+    engine = BaseRuleEngine()
+    latest = {}
+    for event in _public_pass_evidence(observation, state, engine):
+        if event.player_id == state.my_player_id or state.player_rows[event.player_id].get('finished'):
+            continue
+        if (event.lead_pattern == raw.get('declared_pattern')
+                and (engine.can_beat(current, event.lead_action, state.level)
+                     or current.declared_cards == event.lead_action.declared_cards)):
+            latest[event.player_id] = event
+    return tuple(sorted(latest.values(), key=lambda item: -item.step_no))
+
+
+def _pass_behavior_text(event: _PublicPassEvidence, state: _ValidatedPublicState) -> str:
+    role = '友' if state.player_rows[event.player_id].get('team') == state.my_team else '敌'
+    opponent_led = event.opponent_led
+    strength = '/'.join(dict.fromkeys(card.rank for card in event.lead_action.declared_cards))
+    text = (f"P{event.player_id}{role} step{event.step_no}余{event.hand_count}，"
+            f"对P{event.leader_id}{'对手' if opponent_led else '队友'}的"
+            f"{_SHORT_PATTERN.get(event.lead_pattern, event.lead_pattern)}{strength} pass；"
+            f"此后已出{event.cards_played_since}张。")
+    if event.response_confirmed_step_no is not None:
+        return text + f"step{event.response_confirmed_step_no}后接证实此前能接仍让；不确证拆牌，当前牌已变化。"
+    if terminal_pass_signal(event):
+        return text + "末手若能同型接即可出完却让，当前同型不弱且未换牌：降低依赖其接牌收尾；不是缺牌确证。"
+    return text + "当时无应手或策略让牌无法区分；可能护组合，后接也不必然拆牌；变化后旧线索减弱。"
+
+
+def terminal_pass_signal(event: _PublicPassEvidence) -> bool:
+    return (event.opponent_led and event.response_confirmed_step_no is None
+            and event.hand_count == len(event.lead_action.carrier_cards)
+            and event.cards_played_since == 0)
 
 
 def _candidate_response_profiles(
@@ -1146,14 +1198,21 @@ def _candidate_response_profiles(
             )
             if matching_passes:
                 latest = max(matching_passes, key=lambda item: item.step_no)
+                terminal_relevant = (
+                    terminal_pass_signal(latest)
+                    and action['declared_pattern'] == latest.lead_pattern
+                )
                 pass_state = (
                     "confirmed_selective"
                     if latest.response_confirmed_step_no is not None
+                    else "terminal_pass" if terminal_relevant
                     else "ambiguous"
                 )
                 profile["pass_signature"] = ((latest.lead_pattern, pass_state),)
                 lead_name = _SHORT_PATTERN.get(latest.lead_pattern, "牌型")
-                if latest.response_confirmed_step_no is None:
+                if terminal_relevant:
+                    pass_text = "历史软pass：" + _pass_behavior_text(latest, state)
+                elif latest.response_confirmed_step_no is None:
                     pass_text = (
                         f"历史软pass：曾对本候选可压的{lead_name}领出选择pass，"
                         "当时无应手或策略让牌无法区分"
@@ -1301,6 +1360,10 @@ def build_card_tracking_summary(
         pass_evidence=pass_evidence,
         level=state.level,
     )
+    relevant = relevant_public_passes(observation)
+    if relevant:
+        lines.insert(1, '历史软pass：' + ' '.join(_pass_behavior_text(item, state) for item in relevant[:3]))
+        lines.insert(2, '应手取舍：队友少牌不证明能接；对手控桌时，本家低成本压制也可服务协同，比较其清牌/余组与让后对手续领代价，不默认支援=pass。')
     for first, second in comparisons:
         lines.append(_candidate_comparison_line(
             first, second, profile_cache, facts_cache,

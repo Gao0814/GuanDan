@@ -656,6 +656,15 @@ class RAGAdvisor:
 
         candidates.sort(key=lambda item: (item[0], item[1], item[2]))
         selected_candidates = candidates[:top_k]
+        if layer == 'experience' and scene_tags.get('public_pass_behavior'):
+            # The single experience slot must explain the actual behavior being
+            # compared, rather than urgency alone. Reuse the uncertainty source
+            # principle, without numeric bonuses or provenance in retrieval.
+            behavior = next((item for item in candidates
+                             if item[3].metadata.get('guidance_mode') == 'source_principle'
+                             and 'uncertainty_probe' in self._metadata_values(item[3].metadata, 'strategy_domain')), None)
+            if behavior is not None:
+                selected_candidates = [behavior] + [item for item in selected_candidates if item != behavior][:top_k - 1]
         if opening_free_lead:
             source_index = next(
                 (index for index, item in enumerate(candidates) if item[4]),
@@ -817,6 +826,8 @@ class RAGAdvisor:
         scene_tags = self._scene_tags(
             observation, legal_actions, hand_eval, phase_context, relation_kinds
         )
+        from agents.card_tracker import relevant_public_passes
+        scene_tags['public_pass_behavior'] = bool(relevant_public_passes(observation))
         candidate_applicability = self._candidate_applicability(observation, legal_actions)
         intent = getattr(strategy_context, "intent", None)
         if isinstance(intent, str) and intent in {"run_out", "control", "support_teammate", "block_opponent"}:

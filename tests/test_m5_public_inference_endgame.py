@@ -16,10 +16,13 @@ from agents.card_tracker import (
     _validated_public_state,
     build_card_tracking_summary,
     exact_public_hand_assignment,
+    relevant_public_passes,
+    terminal_pass_signal,
+    _pass_behavior_text,
 )
 from agents.deepseek_ai import DeepSeekAIAgent
 from agents.deepseek_client import DeepSeekClient
-from agents.rule_based_ai import RuleBasedAIAgent
+from agents.rule_based_ai import RuleBasedAIAgent, FrozenRuleBasedAIAgent
 from engine.cards import build_double_deck
 from engine.game import GuanDanGame
 from engine.public_endgame import PublicEndgameAnalysis, analyze_public_endgame
@@ -115,6 +118,58 @@ def _select_action(
 
 
 class M5PublicPassEvidenceTests(unittest.TestCase):
+    def test_single_response_behavior_reaches_factory_for_both_roles_without_rewriting_choice(self) -> None:
+        from tests.test_m9_public_endgame_opportunities import _config, _fake_response_transport
+        for seed, step, role in ((1, 62, 'opponent'), (4, 74, 'teammate')):
+            with self.subTest(role=role):
+                game = GuanDanGame(seed=seed, current_level_rank='2')
+                game.reset()
+                for _ in range(step):
+                    obs = game.observe()
+                    game.step(FrozenRuleBasedAIAgent(obs['my_info']['player_id']).select_action(obs, game.legal_actions()))
+                observation, actions = game.observe(), game.legal_actions()
+                self.assertEqual(len(actions), 2)
+                events = relevant_public_passes(observation)
+                strong = next(item for item in events if terminal_pass_signal(item))
+                same_team = strong.player_id % 2 == observation['my_info']['player_id'] % 2
+                self.assertEqual(same_team, role == 'teammate')
+                leader = next(item['player_id'] for item in reversed(observation['history']['actions'])
+                              if item['declared_pattern'] != 'pass')
+                if role == 'opponent':
+                    # Teammate controls the table: an opponent's terminal pass
+                    # does not turn support into a mandatory response.
+                    self.assertEqual(leader % 2, observation['my_info']['player_id'] % 2)
+                state = _validated_public_state(observation)
+                before = state.constraints.to_dict()
+                original = deepcopy((observation, actions))
+                summary = build_card_tracking_summary(observation, actions)
+                self.assertIn('末手若能同型接即可出完却让', summary)
+                self.assertLessEqual(len(summary), 1350)
+                captured = []
+                agent = build_agent_factory('deepseek', config_loader=_config,
+                    client_factory=lambda **kwargs: DeepSeekClient(**kwargs, transport=_fake_response_transport(captured)))(observation['my_info']['player_id'])
+                chosen = agent.select_action(observation, actions)
+                prompt = captured[0]['messages'][1]['content']
+                self.assertIn('末手若能同型接即可出完却让', prompt)
+                self.assertIn('不默认支援=pass', prompt)
+                self.assertIn('不确定信息与试探成本', prompt)
+                self.assertIn('行为不改硬牌域、不赋概率、不保证胜负。', prompt)
+                self.assertNotIn('corroborating_source_ids', prompt)
+                self.assertNotIn('10706126', prompt)
+                self.assertEqual(chosen, actions[-1]['action_id'])
+                self.assertEqual(agent.last_decision_source, 'model')
+                report = agent.client._delegate.last_bounded_continuation
+                self.assertEqual(report.status, 'ready')
+                self.assertEqual(report.scenarios, 2)
+                self.assertEqual(report.steps, 2 * 2 * len(actions) * 8)
+                self.assertIn('历史末手能接即走行为不相称=', prompt)
+                self.assertIn('仍保留全部共同场景', prompt)
+                self.assertEqual((observation, actions), original)
+                self.assertEqual(_validated_public_state(observation).constraints.to_dict(), before)
+                incomplete = deepcopy(observation)
+                incomplete['history']['actions'].pop(0)
+                self.assertEqual(relevant_public_passes(incomplete), ())
+
     def _pass_observation(self) -> tuple[GuanDanGame, dict[str, object], list[dict[str, object]], dict[int, bool]]:
         game = GuanDanGame(
             preset_hands=_shuffled_hands(694),
@@ -169,6 +224,11 @@ class M5PublicPassEvidenceTests(unittest.TestCase):
         self.assertIsNone(pass_by_player[3].response_confirmed_step_no)
         self.assertTrue(actual_had_response[2])
         self.assertFalse(actual_had_response[3])
+        self.assertTrue(pass_by_player[2].opponent_led)
+        self.assertFalse(terminal_pass_signal(pass_by_player[2]))
+        self.assertFalse(terminal_pass_signal(pass_by_player[3]))
+        self.assertFalse(pass_by_player[3].opponent_led)
+        self.assertIn('护组合', _pass_behavior_text(pass_by_player[3], state))
 
         low_single = _select_action(
             actions,
@@ -239,6 +299,9 @@ class M5PublicPassEvidenceTests(unittest.TestCase):
             for item in _public_pass_evidence(later_observation, later_state, BaseRuleEngine())
         }
         self.assertEqual(later_events[2].response_confirmed_step_no, 6)
+        self.assertGreater(later_events[2].cards_played_since, 0)
+        self.assertFalse(terminal_pass_signal(later_events[2]))
+        self.assertIn('不确证拆牌', _pass_behavior_text(later_events[2], later_state))
         self.assertIsNone(later_events[3].response_confirmed_step_no)
         self.assertFalse(actual_had_response[3])
 

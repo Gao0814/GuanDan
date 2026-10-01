@@ -102,6 +102,9 @@ class BoundedContinuationTests(unittest.TestCase):
         with patch('agents.bounded_continuation._advance', side_effect=TimeoutError):
             report = analyze_continuations(obs, actions, actions)
         self.assertEqual((report.status, report.text, report.root_ids), ('budget_exhausted', '', ()))
+        with patch('agents.bounded_continuation.relevant_public_passes', side_effect=TimeoutError):
+            report = analyze_continuations(obs, actions, actions)
+        self.assertEqual((report.status, report.text, report.root_ids), ('budget_exhausted', '', ()))
 
 
 if __name__ == '__main__':

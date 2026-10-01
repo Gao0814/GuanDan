@@ -1008,6 +1008,7 @@ class DeepSeekClient:
             )
         opponent_route = (
             "当前领出为对手，pass后由后续玩家继续应对；若无人再接，对手可能保持本轮领出优势；"
+            "队友少牌不证明能接收尾，结合具体历史pass与后续实体变化；本家应手也可能服务协同，比较实际清牌与资源成本；"
             if contrast.table_leader_relation == "opponent"
             else ""
         )

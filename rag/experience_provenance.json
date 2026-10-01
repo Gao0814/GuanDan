@@ -133,8 +133,8 @@
       "entry_id": "exp_card_memory_001",
       "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
       "title": "掼蛋需记牌", "publication": "京报体育, 2024-02-21",
-      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/21/10706126.shtml", "locator": "正文关于王、级牌、A、10、5与断张的段落",
-      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]}, "evidence_status": "active"
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/21/10706126.shtml", "locator": "正文关于王、级牌、A、10、5与断张及观察各家行牌走势的段落；末手pass对接完依赖的影响为项目条件化推导",
+      "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]}, "corroborating_source_ids": ["candidate_smzdm_strategy_100_001", "exp_endgame_run_out_001"], "evidence_status": "active"
     },
     {
       "entry_id": "exp_soft_single_cost_probe_001",
@@ -216,7 +216,7 @@
       "title": "掼蛋赢牌技巧100条，快速收藏",
       "publication": "什么值得买，2024-08-19",
       "url_or_bibliography": "https://post.smzdm.com/p/a5xk3dpl/",
-      "locator": "仅激活已核对的公开可见#3、#4、#51、#55、#58、#73、#77条件化片段；不推断原作者资质或全篇证据",
+      "locator": "仅激活已核对的公开可见#3、#4、#51、#55、#58、#73、#77条件化片段；新增#63/65定位依据所有者本轮提供的条文摘要，网页本轮读取不可用，仅作可撤回pass竞争解释，不确证拆牌；不推断原作者资质或全篇证据",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]},
       "evidence_status": "active"
     },
