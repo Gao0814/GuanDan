@@ -1,6 +1,6 @@
 ---
 name: botzone-manual-live
-description: Codex-supervise one manually configured Botzone GuanDan live game with the fixed audited workspace. Use for Codex-run single-game smoke or history/decision-trace sampling; not owner self-operated quick tests, batch capacity runs, or workspace cleanup.
+description: Supervise one live Botzone GuanDan game only when the owner explicitly asks Codex to manage or monitor the live run. Do not use for owner-operated games, postgame decision audits, replay diagnostics, or workspace cleanup.
 ---
 
 # Botzone Manual Live

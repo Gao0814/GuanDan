@@ -138,7 +138,7 @@ python -m unittest tests.test_cli_debug_output -q
 - 普通 Botzone 算法 smoke 固定使用级牌 `2`、无需进贡；不得为了“泛化”自行扩展为其他级牌、贡还或多局升级测试。
 - 必须区分“普通开发/算法诊断运行”和“正式预注册实验”。除非项目所有者在当前任务中明确要求正式实验，普通运行不得继承 manifest 不可变、逐字节 preflight、progress 状态机、seed 永久作废或任一准备错误整批 invalid 等正式实验门槛。
 - 在任何外部建桌提交或 live 对局开始前，shell、参数、路径、preflight、日志配置和其他准备阶段错误都属于可原地修正的编排问题；不得把这类零外部副作用的小错误升级为不可恢复的实验失败。正式实验若需要更早的不可重试边界，必须在专门 Prompt 中显式预注册。
-- 普通人工 Botzone 单局执行必须读取并遵守项目 Skill `.agents/skills/botzone-manual-live/SKILL.md`。网页建桌、配置和开始默认由项目所有者手工完成；除非当前任务明确授权，否则 Codex 只做 best-effort 只读监督，不点击、输入或提交。
+- 只有当前任务明确要求Codex托管/监督实时单局时，才读取并遵守 `.agents/skills/botzone-manual-live/SKILL.md`；所有者自行试局后的证据复盘使用 `.agents/skills/botzone-game-audit/SKILL.md`，不继承托管live流程。网页建桌、配置和开始默认由项目所有者手工完成；除非当前任务明确授权，否则 Codex 不点击、输入或提交。
 - 人工 live 的硬顺序是：workspace/preflight 就绪 → 唯一 connector 持续运行 → 页面确认“已连接” → 才提示 seed 和建桌配置 → 核对后开始并持续监测。页面不可读时接受项目所有者明确确认；页面明确显示配置不匹配时必须等待修正。seed 从执行 Codex 首次向项目所有者发送含该 seed 的建桌配置时起视为已使用。
 - Codex 执行的 Botzone 运行产生的 state、audit、manifest、progress 和其他 evidence 统一放在仓库外固定根目录 `D:\VsCodeProject\BotzoneWorkspace`。项目所有者亲自进行的轻量试局默认使用独立的 `D:\VsCodeProject\GuanDanManualWorkspace`，不得写入或覆盖 Codex workspace；个人目录不进入正式评测或 Codex 自动清理清单。
 - 当前项目所有者自行完成所有真实 Botzone 页面和 connector 启停操作；Codex 仅在所有者交付结果或保留的 evidence 后做只读审计。连续试局脚本已经交付，默认持续轮询、不逐局等按键，`--games N` 表示最近 N 局证据容量而非自动停机局数；网页建桌和开始仍由所有者操作。上文 Codex 托管 live 的顺序和项目 Skill 不强加给所有者的自操作试局。所有者当前选用固定 `D:\VsCodeProject\BotzoneWorkspace` 留证；正在运行的旧批次和此前目录必须原样保留，新版写盘只在所有者下次亲自重启脚本后生效。个人轻量试局仍默认使用 `GuanDanManualWorkspace`。人工约十局的胜负比例可作方向性观察，须列明有效局数、对手/条件差异和异常局；有前后两组时直接比较胜局/有效完局，不设正式实验门槛，也不把小样本比例写成已证明的算法增益。
@@ -154,7 +154,8 @@ python -m unittest tests.test_cli_debug_output -q
 
 ## Codex 工作规则
 
-- 开始任务时先读取适用范围内的 `AGENTS.md`，再检查 `.agents/skills` 中是否有与任务匹配的项目 Skill；命中时必须完整读取并遵守。AGENTS 的项目硬约束优先于 Skill，当前任务的明确特殊要求只覆盖与其直接冲突的流程细节。
+- 开始新任务先读取适用范围内的 `AGENTS.md`；根据已提供的Skill名称/description或目录元数据判断任务是否匹配，只有实际使用时才完整读取对应 `SKILL.md`。不得为了判断适用性先通读全部Skills，也不因换一轮消息重复读取已完整读过且未变更的Skill；上下文缺失或Skill变更时再读取。所有者可显式指定Skill，明确匹配的任务也可自动使用。AGENTS硬约束优先于Skill，当前任务的明确特殊要求只覆盖直接冲突的流程细节。
+- 项目Skill按任务分工：`botzone-game-audit`负责最近已留证游戏、可疑单次出牌、模型输入/选择/ACK与必要重放的分析；`botzone-manual-live`仅用于明确要求Codex实时托管单局；`botzone-workspace-recycle`仅用于单独回收已审计的固定workspace清单。普通代码复审、文档维护或技能维护不自动加载现场/清理Skill。
 - Coding Codex 负责业务源代码、tests 及任务直接相关文件的修改、验证和提交；项目规划 Codex 负责复审执行结果，并只提交其自己产生的 `AGENTS.md`、项目 Skills 和 docs 上下文修改。双方不得把用户、其他 Agent、来源不明或对方未完成的修改混入自己的 commit。
 - 项目规划 Codex 不是主要业务代码执行者；除 `AGENTS.md`、`.agents/skills/**` 及 `docs/**/*.md` 外不得主动修改项目文件。发现业务问题时应分析、规划并交给 Coding Codex 实现。
 - 写入前后检查 Git 状态和 diff；只按明确路径暂存本轮自有修改，禁止使用 `git add .`。未经项目所有者明确授权，不得用 reset、clean、restore、checkout、stash、history rewrite 或 force push 处理未知修改。提交后再次检查 Git 状态，并报告 commit 及任何保留的外部修改。
