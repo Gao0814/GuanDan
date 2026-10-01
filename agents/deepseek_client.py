@@ -4196,6 +4196,14 @@ class DeepSeekClient:
 
         rule_hits = DeepSeekClient._rag_items(rag_context, "rule_hits")
         experience_hits = DeepSeekClient._rag_items(rag_context, "experience_hits")
+        # Behavior RAG changes this existing text slot only, after the same
+        # canonical candidates and relation budgets have been established.
+        if len(legal_actions) >= 2 and any(
+            item.get('declared_pattern') == 'pair' for item in legal_actions
+        ):
+            behavior_hits = DeepSeekClient._rag_items(rag_context, "behavior_experience_hits")
+            if behavior_hits:
+                experience_hits = behavior_hits
         lines.append("【规则库依据】")
         lines.append("仅用于解释本项目规则口径，不能替代 legal_actions 或扩展候选动作。")
         lines.extend(DeepSeekClient._format_rag_hits(rule_hits))

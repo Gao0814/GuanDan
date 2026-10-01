@@ -565,6 +565,7 @@ class RAGAdvisor:
         query: str,
         top_k: int,
         candidate_applicability: dict[str, bool] | None,
+        behavior_projection: list[RAGEvidence] | None = None,
     ) -> tuple[RAGEvidence, ...]:
         if top_k <= 0:
             return ()
@@ -656,13 +657,13 @@ class RAGAdvisor:
 
         candidates.sort(key=lambda item: (item[0], item[1], item[2]))
         selected_candidates = candidates[:top_k]
+        behavior = next((item for item in candidates
+                         if item[3].metadata.get('guidance_mode') == 'source_principle'
+                         and 'uncertainty_probe' in self._metadata_values(item[3].metadata, 'strategy_domain')), None)
         if layer == 'experience' and scene_tags.get('public_pass_behavior'):
             # The single experience slot must explain the actual behavior being
             # compared, rather than urgency alone. Reuse the uncertainty source
             # principle, without numeric bonuses or provenance in retrieval.
-            behavior = next((item for item in candidates
-                             if item[3].metadata.get('guidance_mode') == 'source_principle'
-                             and 'uncertainty_probe' in self._metadata_values(item[3].metadata, 'strategy_domain')), None)
             if behavior is not None:
                 selected_candidates = [behavior] + [item for item in selected_candidates if item != behavior][:top_k - 1]
         if opening_free_lead:
@@ -693,26 +694,25 @@ class RAGAdvisor:
                 )
                 selected_candidates = selected_candidates[:desired_count]
 
-        evidence: list[RAGEvidence] = []
-        for _, negative_score, _, doc, _, _ in selected_candidates:
-            score = -negative_score
+        # Reuse the same eligibility/ranking pass for a text-only projection;
+        # the ordinary source IDs used by candidate selection stay unchanged.
+        projected = (
+            [behavior] + [item for item in selected_candidates if item != behavior][:top_k - 1]
+            if behavior_projection is not None and behavior is not None else []
+        )
+        evidence_by_index: dict[int, RAGEvidence] = {}
+        for _, negative_score, index, doc, _, _ in selected_candidates + projected:
+            if index in evidence_by_index:
+                continue
             metadata = dict(doc.metadata)
-            metadata.update(
-                {
-                    "source_path": doc.source_path,
-                    "status": "accepted",
-                    "score": f"{score:.2f}",
-                }
+            metadata.update({"source_path": doc.source_path, "status": "accepted",
+                             "score": f"{-negative_score:.2f}"})
+            evidence_by_index[index] = RAGEvidence(
+                source_id=doc.doc_id, layer=doc.layer, snippet=doc.content, metadata=metadata,
             )
-            evidence.append(
-                RAGEvidence(
-                    source_id=doc.doc_id,
-                    layer=doc.layer,
-                    snippet=doc.content,
-                    metadata=metadata,
-                )
-            )
-        return tuple(evidence)
+        if projected:
+            behavior_projection.extend(evidence_by_index[item[2]] for item in projected)
+        return tuple(evidence_by_index[item[2]] for item in selected_candidates)
 
     @staticmethod
     def _pack(evidence: RAGEvidence) -> dict[str, object]:
@@ -826,8 +826,9 @@ class RAGAdvisor:
         scene_tags = self._scene_tags(
             observation, legal_actions, hand_eval, phase_context, relation_kinds
         )
-        from agents.card_tracker import relevant_public_passes
+        from agents.card_tracker import relevant_public_passes, relevant_public_carried_pairs
         scene_tags['public_pass_behavior'] = bool(relevant_public_passes(observation))
+        carried_pair_behavior = bool(relevant_public_carried_pairs(observation, legal_actions))
         candidate_applicability = self._candidate_applicability(observation, legal_actions)
         intent = getattr(strategy_context, "intent", None)
         if isinstance(intent, str) and intent in {"run_out", "control", "support_teammate", "block_opponent"}:
@@ -850,6 +851,7 @@ class RAGAdvisor:
         except Exception:
             rule_evidence = ()
 
+        behavior_evidence: list[RAGEvidence] = []
         try:
             experience_evidence = self._retrieve_tagged(
                 layer="experience",
@@ -857,6 +859,7 @@ class RAGAdvisor:
                 query=query,
                 top_k=top_k,
                 candidate_applicability=candidate_applicability,
+                behavior_projection=behavior_evidence if carried_pair_behavior else None,
             )
         except Exception:
             experience_evidence = ()
@@ -865,5 +868,6 @@ class RAGAdvisor:
             "scene_tags": scene_tags,
             "rule_hits": self._accepted(rule_evidence),
             "experience_hits": self._accepted(experience_evidence),
+            "behavior_experience_hits": self._accepted(tuple(behavior_evidence)),
             "query": query,
         }

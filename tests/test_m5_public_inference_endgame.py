@@ -17,6 +17,7 @@ from agents.card_tracker import (
     build_card_tracking_summary,
     exact_public_hand_assignment,
     relevant_public_passes,
+    relevant_public_carried_pairs,
     terminal_pass_signal,
     _pass_behavior_text,
     _pattern_action,
@@ -130,9 +131,13 @@ class M5PublicPassEvidenceTests(unittest.TestCase):
             deck.remove(card)
         random.Random(121).shuffle(deck)
         next_player = starting % 4 + 1
-        hands = {starting: reserved + tuple(deck[:17]), next_player: replies + tuple(deck[17:40])}
-        rest = [player for player in range(1, 5) if player not in hands]
-        hands.update({rest[0]: tuple(deck[40:67]), rest[1]: tuple(deck[67:94])})
+        hands = {}
+        cursor = 0
+        for player in (starting, next_player, *[p for p in range(1, 5) if p not in (starting, next_player)]):
+            base = reserved if player == starting else replies if player == next_player else ()
+            needed = 27 - len(base)
+            hands[player] = base + tuple(deck[cursor:cursor + needed])
+            cursor += needed
         assert all(len(hand) == 27 for hand in hands.values())
         assert Counter(card for hand in hands.values() for card in hand) == Counter(build_double_deck())
         game = GuanDanGame(preset_hands=hands, current_level_rank='2', starting_player_id=starting)
@@ -147,6 +152,145 @@ class M5PublicPassEvidenceTests(unittest.TestCase):
             game.step(_select_action(game.legal_actions(), lambda item: item['declared_pattern'] == 'pass')['action_id'])
         play(second, second_pattern or pattern)
         return game, game.observe(), game.legal_actions()
+
+    @staticmethod
+    def _carried_pair_choice_fixture(starting=1, triple='9', carried='7', reply_triple='J', reply_pair='6', lead='8', wildcard=False):
+        """A real deal: a teammate's triple lead is overtaken, then a pair lead."""
+        groups = (
+            (triple+'S', triple+'H', triple+'C', *(('BJ', 'BJ') if carried == 'BJ' else (carried+'S', '2H' if wildcard else carried+'C'))),
+            (reply_triple+'S', reply_triple+'H', reply_triple+'C', reply_pair+'S', reply_pair+'C', lead+'S', lead+'C'),
+            ('AS', 'AC', 'SJ', 'SJ', *(() if carried == 'BJ' else ('BJ', 'BJ'))),
+            (),
+        )
+        deck = build_double_deck()
+        reserved = [tuple(Card(t) if t in ('SJ', 'BJ') else Card(t[:-1], t[-1]) for t in group) for group in groups]
+        for group in reserved:
+            for card in group:
+                deck.remove(card)
+        random.Random(121).shuffle(deck)
+        hands = {}
+        for offset, group in enumerate(reserved):
+            needed = 27 - len(group)
+            hands[(starting + offset - 1) % 4 + 1] = group + tuple(deck[:needed])
+            del deck[:needed]
+        assert not deck
+        assert Counter(card for hand in hands.values() for card in hand) == Counter(build_double_deck())
+        game = GuanDanGame(preset_hands=hands, current_level_rank='2', starting_player_id=starting)
+        game.reset()
+        def play(pattern, tokens):
+            action = _select_action(game.legal_actions(), lambda item: item['declared_pattern'] == pattern
+                and Counter(item['carrier_cards']) == Counter(tokens))
+            game.step(action['action_id'])
+        play('triple_with_pair', groups[0])
+        play('triple_with_pair', groups[1][:5])
+        for _ in range(3):
+            play('pass', ())
+        play('pair', groups[1][5:])
+        return game, game.observe(), game.legal_actions()
+
+    def test_external_carried_pairs_update_without_hard_inference(self) -> None:
+        for first, second, expected in (
+            (('9S', '9H', '9C', '7S', '7C'), ('5S', '5C'), '后出更小对子'),
+            (('9S', '9H', '9C', '7S', '2H'), ('8S', '8C'), '后续实体已扣除'),
+        ):
+            game, observation, actions = self._repeated_lead_fixture(first, second, 'triple_with_pair', second_pattern='pair')
+            original = deepcopy((observation, actions))
+            constraints = _validated_public_state(observation).constraints.to_dict()
+            evidence = relevant_public_carried_pairs(observation, actions)
+            if '2H' in first:
+                self.assertEqual(evidence, ())
+                self.assertNotIn('历史携带软线索', build_card_tracking_summary(observation, actions))
+                self.assertEqual((observation, actions), original)
+                self.assertEqual(_validated_public_state(observation).constraints.to_dict(), constraints)
+                continue
+            self.assertEqual(len(evidence), 1)
+            self.assertNotEqual(evidence[0].player_id % 2, observation['my_info']['player_id'] % 2)
+            self.assertEqual(evidence[0].later_carriers, tuple(Card(t[:-1], t[-1]) for t in second))
+            summary = build_card_tracking_summary(observation, actions)
+            self.assertIn(expected, summary)
+            self.assertNotIn('可弱支持留较大对路线', summary)
+            self.assertEqual((observation, actions), original)
+            self.assertEqual(_validated_public_state(observation).constraints.to_dict(), constraints)
+            incomplete = deepcopy(observation)
+            incomplete['history']['actions'].pop(0)
+            self.assertEqual(relevant_public_carried_pairs(incomplete, actions), ())
+            self.assertEqual(relevant_public_carried_pairs(observation, [actions[-1]]), ())
+
+    def test_carried_pair_wildcard_and_terminal_pass_priority(self) -> None:
+        _, observation, actions = self._carried_pair_choice_fixture(wildcard=True)
+        evidence = relevant_public_carried_pairs(observation, actions)
+        event = next(item for item in evidence if item.player_id == 1)
+        self.assertEqual(event.binding_kind, '通配参与携带')
+        summary = build_card_tracking_summary(observation, actions)
+        self.assertIn('声明不等于自然实体对子', summary)
+        self.assertNotIn('可弱支持留较大对路线', summary)
+        _, observation, actions = self._carried_pair_choice_fixture(carried='BJ')
+        event = relevant_public_carried_pairs(observation, actions)[0]
+        self.assertEqual(event.pair_rank, 'BJ')
+        self.assertFalse(event.larger_pair_possible)
+        summary = build_card_tracking_summary(observation, actions)
+        self.assertIn('当前牌池/容量无可行更大对子', summary)
+        self.assertNotIn('可弱支持留较大对路线', summary)
+        # Reuse a live legal replay with a terminal pass, without treating the
+        # earlier carried pair as an independent reason to expect a response.
+        game = GuanDanGame(seed=4, current_level_rank='2')
+        game.reset()
+        for _ in range(74):
+            obs = game.observe()
+            game.step(FrozenRuleBasedAIAgent(obs['my_info']['player_id']).select_action(obs, game.legal_actions()))
+        observation, actions = game.observe(), game.legal_actions()
+        strong = {item.player_id for item in relevant_public_passes(observation) if terminal_pass_signal(item)}
+        self.assertTrue(strong)
+        self.assertFalse(strong & {item.player_id for item in relevant_public_carried_pairs(observation, actions)})
+
+    def test_external_carried_pair_choices_reach_factory_for_both_roles(self) -> None:
+        from tests.test_m9_public_endgame_opportunities import _config, _fake_response_transport
+        for params in ({}, dict(starting=2, triple='Q', carried='4', reply_triple='K', reply_pair='5', lead='6'), {'later_lower': True}):
+            if params.get('later_lower'):
+                _, observation, actions = self._repeated_lead_fixture(
+                    ('9S', '9H', '9C', '7S', '7C'), ('5S', '5C'), 'triple_with_pair', second_pattern='pair')
+            else:
+                _, observation, actions = self._carried_pair_choice_fixture(**params)
+            original = deepcopy((observation, actions))
+            constraints = _validated_public_state(observation).constraints.to_dict()
+            evidence = relevant_public_carried_pairs(observation, actions)
+            self.assertEqual(len(evidence), 1)
+            self.assertEqual(evidence[0].player_id % 2 == observation['my_info']['player_id'] % 2, not params.get('later_lower', False))
+            captured = []
+            agent = build_agent_factory('deepseek', config_loader=_config,
+                client_factory=lambda **kwargs: DeepSeekClient(**kwargs, transport=_fake_response_transport(captured)))(observation['my_info']['player_id'])
+            chosen = agent.select_action(observation, actions)
+            prompt = captured[0]['messages'][1]['content']
+            for phrase in ('历史携带软线索', '备选未知', '确证与末手pass优先', '不保证胜负。'):
+                self.assertIn(phrase, prompt)
+            if params.get('later_lower'):
+                self.assertIn('后出更小对子，否定此前必带最小对', prompt)
+                self.assertNotIn('可弱支持留较大对路线', prompt)
+            else:
+                self.assertIn('可弱支持留较大对路线', prompt)
+            self.assertNotIn('url_or_bibliography', prompt)
+            self.assertNotIn('a5xk3dpl', prompt)
+            section = prompt.split('【候选动作】', 1)[1].split('【规则库依据】', 1)[0]
+            visible = [int(item) for item in re.findall(r'#(\d+)\s+action_id=', section)]
+            self.assertEqual(chosen, visible[-1])
+            self.assertIn(chosen, [item['action_id'] for item in actions])
+            self.assertEqual(agent.last_decision_source, 'model')
+            self.assertLessEqual(len(visible), 80)
+            self.assertLessEqual(len(build_card_tracking_summary(observation, actions)), 1350)
+            self.assertEqual((observation, actions), original)
+            self.assertEqual(_validated_public_state(observation).constraints.to_dict(), constraints)
+            get_context = agent.rag_advisor.get_rag_context
+            def without_behavior(**kwargs):
+                context = get_context(**kwargs)
+                self.assertTrue(context['behavior_experience_hits'])
+                self.assertNotIn('exp_soft_triple_pair_gradient_001',
+                    [item['source_id'] for item in context['behavior_experience_hits']])
+                context.pop('behavior_experience_hits')
+                return context
+            agent.rag_advisor.get_rag_context = without_behavior
+            self.assertEqual(agent.select_action(observation, actions), chosen)
+            second = captured[1]['messages'][1]['content'].split('【候选动作】', 1)[1].split('【规则库依据】', 1)[0]
+            self.assertEqual([int(item) for item in re.findall(r'#(\d+)\s+action_id=', second)], visible)
 
     def test_rule_strength_pass_matching_preserves_distinct_declarations_and_bindings(self) -> None:
         triple = ('9S', '9H', '9C', '7S', '7C')

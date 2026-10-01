@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from itertools import combinations
 
 from agents.card_belief import (
     CardBeliefState,
@@ -103,6 +104,29 @@ class _PublicPassEvidence:
     hand_count: int
     cards_played_since: int
     opponent_led: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _PublicPlayEvidence:
+    step_no: int
+    player_id: int
+    action: Action
+    hand_count_after: int
+    urgent_response: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PublicCarriedPairEvidence:
+    player_id: int
+    step_no: int
+    triple_rank: str
+    pair_rank: str
+    hand_count_after: int
+    later_carriers: tuple[Card, ...]
+    binding_kind: str
+    later_lower_pair: bool
+    urgent_response: bool
+    larger_pair_possible: bool | None
 
 
 def _validated_public_state(observation: object) -> _ValidatedPublicState | None:
@@ -870,12 +894,12 @@ def _player_response_profile(
     }
 
 
-def _public_pass_evidence(
+def _validated_public_history(
     observation: dict[str, object],
     state: _ValidatedPublicState,
     engine: BaseRuleEngine,
-) -> tuple[_PublicPassEvidence, ...]:
-    """Extract complete-history pass opportunities without treating them as absence.
+) -> tuple[tuple[_PublicPassEvidence, ...], tuple[_PublicPlayEvidence, ...]] | None:
+    """Validate the shared public clock/turn/count history for behavior evidence.
 
     A later public action that beats the passed-over lead proves its carrier
     cards were in that player's hand at the earlier pass. Otherwise the event
@@ -885,7 +909,7 @@ def _public_pass_evidence(
     history = observation.get("history")
     current_round = observation.get("current_round")
     if not isinstance(history, dict) or not isinstance(current_round, dict):
-        return ()
+        return None
     actions = history.get("actions")
     step_no = current_round.get("step_no")
     current_round_no = current_round.get("round_no")
@@ -894,7 +918,7 @@ def _public_pass_evidence(
         or type(step_no) is not int or step_no != len(actions)
         or type(current_round_no) is not int or current_round_no < 1
     ):
-        return ()
+        return None
 
     remaining = {player_id: 27 for player_id in state.player_rows}
     finished_order: list[int] = []
@@ -905,7 +929,7 @@ def _public_pass_evidence(
     leader_id: int | None = None
     pending: tuple[int, ...] = ()
     passes: list[tuple[int, int, int, Action, int, int]] = []
-    parsed_plays: list[tuple[int, int, Action]] = []
+    parsed_plays: list[_PublicPlayEvidence] = []
 
     def active_players() -> set[int]:
         return {player_id for player_id, count in remaining.items() if count > 0}
@@ -942,7 +966,7 @@ def _public_pass_evidence(
 
     for index, raw in enumerate(actions):
         if not isinstance(raw, dict):
-            return ()
+            return None
         item_step = raw.get("step_no")
         item_round = raw.get("round_no")
         player_id = raw.get("player_id")
@@ -955,7 +979,7 @@ def _public_pass_evidence(
             or remaining.get(player_id, 0) <= 0
             or (expected_player is not None and player_id != expected_player)
         ):
-            return ()
+            return None
 
         if pattern == "pass":
             if (
@@ -963,13 +987,13 @@ def _public_pass_evidence(
                 or raw.get("carrier_cards") != []
                 or raw.get("declared_cards") != []
             ):
-                return ()
+                return None
             passes.append((item_step, round_no, player_id, lead, leader_id, remaining[player_id]))
             pending = tuple(item for item in pending if item != player_id)
             if pending:
                 expected_player = pending[0]
             elif not reset_after_round(leader_id):
-                return ()
+                return None
             continue
 
         action = _pattern_action(raw, player_id)
@@ -978,18 +1002,18 @@ def _public_pass_evidence(
             or len(action.declared_cards) != len(action.carrier_cards)
             or not action.carrier_cards
         ):
-            return ()
+            return None
         try:
             detected = engine.detect_pattern(action.declared_cards)
         except (TypeError, ValueError):
-            return ()
+            return None
         if detected.type != action.declared_pattern:
-            return ()
+            return None
         if lead is not None and not engine.can_beat(action, lead, state.level):
-            return ()
+            return None
         carrier_count = len(action.carrier_cards)
         if carrier_count > remaining[player_id]:
-            return ()
+            return None
         remaining[player_id] -= carrier_count
         if remaining[player_id] == 0:
             finished_order.append(player_id)
@@ -999,8 +1023,11 @@ def _public_pass_evidence(
                 and state.player_rows[finished_order[0]].get("team")
                 == state.player_rows[finished_order[1]].get("team")
             ):
-                return ()
-        parsed_plays.append((item_step, player_id, action))
+                return None
+        urgent_response = (lead is not None and leader_id is not None
+            and state.player_rows[player_id].get('team') != state.player_rows[leader_id].get('team')
+            and 0 < remaining[leader_id] <= 2)
+        parsed_plays.append(_PublicPlayEvidence(item_step, player_id, action, remaining[player_id], urgent_response))
         lead = action
         lead_raw = raw
         leader_id = player_id
@@ -1008,47 +1035,47 @@ def _public_pass_evidence(
         if pending:
             expected_player = pending[0]
         elif not reset_after_round(player_id):
-            return ()
+            return None
 
     if current_round_no != round_no:
-        return ()
+        return None
     if not actions and (
         current_round_no != 1
         or current_round.get("table_action") is not None
     ):
-        return ()
+        return None
     if expected_player is None:
         # The initial observation has not recorded an action yet.
         expected_player = state.my_player_id
     if current_round.get("current_player_id") != expected_player:
-        return ()
+        return None
     if any(
         int(state.player_rows[player_id].get("hand_count", -1)) != count
         for player_id, count in remaining.items()
     ):
-        return ()
+        return None
     if history.get("finish_order") != finished_order:
-        return ()
+        return None
     current_table = current_round.get("table_action")
     if lead is None:
         if current_table is not None:
-            return ()
+            return None
     elif (
         not isinstance(current_table, dict)
         or lead_raw is None
         or _response_signature(current_table) != _response_signature(lead_raw)
         or pending[:1] != (expected_player,)
     ):
-        return ()
+        return None
 
     evidence: list[_PublicPassEvidence] = []
     for step, _pass_round, player_id, passed_lead, passed_leader, count in passes:
         proving_step: int | None = None
-        for later_step, later_player, later in parsed_plays:
-            if later_step <= step or later_player != player_id:
+        for play in parsed_plays:
+            if play.step_no <= step or play.player_id != player_id:
                 continue
-            if engine.can_beat(later, passed_lead, state.level):
-                proving_step = later_step
+            if engine.can_beat(play.action, passed_lead, state.level):
+                proving_step = play.step_no
                 break
         evidence.append(
             _PublicPassEvidence(
@@ -1066,7 +1093,159 @@ def _public_pass_evidence(
                 opponent_led=state.player_rows[player_id].get('team') != state.player_rows[passed_leader].get('team'),
             )
         )
-    return tuple(evidence)
+    return tuple(evidence), tuple(parsed_plays)
+
+
+def _public_pass_evidence(
+    observation: dict[str, object], state: _ValidatedPublicState, engine: BaseRuleEngine,
+) -> tuple[_PublicPassEvidence, ...]:
+    history = _validated_public_history(observation, state, engine)
+    return history[0] if history is not None else ()
+
+
+def _has_public_pair_choice(legal_actions: list[dict[str, object]]) -> bool:
+    return len(legal_actions) >= 2 and any(item.get('declared_pattern') == 'pair' for item in legal_actions)
+
+
+def relevant_public_carried_pairs(
+    observation: dict[str, object], legal_actions: list[dict[str, object]],
+) -> tuple[PublicCarriedPairEvidence, ...]:
+    """Rule-bound public behavior, only for an actual pair-related choice.
+
+    No inferred pair is assigned to a hand or removed from a hard domain.
+    The same complete clock/turn/count validation as pass evidence is reused.
+    """
+    if not _has_public_pair_choice(legal_actions):
+        return ()
+    state = _validated_public_state(observation)
+    if state is None or _exact_single_owner(state) is not None:
+        return ()
+    engine = BaseRuleEngine()
+    history = _validated_public_history(observation, state, engine)
+    if history is None:
+        return ()
+    return _relevant_public_carried_pairs(state, engine, history)
+
+
+def _public_carried_pair_action(action: Action, engine: BaseRuleEngine, level: str) -> Action | None:
+    ranks = Counter(card.rank for card in action.declared_cards)
+    pair_cards = tuple(card for card in action.declared_cards if ranks[card.rank] == 2)
+    for carriers in combinations(action.carrier_cards, 2):
+        bindings = engine.public_action_bindings(action.player_id, PatternType.PAIR, pair_cards,
+            carriers, level, first_carrier_only=True, first_binding_only=True)
+        if bindings:
+            return bindings[0]
+    return None
+
+
+def _larger_public_pair_possible(
+    state: _ValidatedPublicState, player_id: int, lead: Action, engine: BaseRuleEngine,
+) -> bool | None:
+    constraint = next(item for item in state.constraints.players if item.player_id == player_id)
+    possible = _possible_cards_for_player(state, constraint.possible_tokens)
+    if possible is None:
+        return None
+    # At most 15 ranks and 45 two-card bindings per rank; no wide pressure
+    # resource query. These are feasibility queries, never executable IDs.
+    for rank in _RANKS:
+        carriers = tuple(card for card in possible if card.rank == rank
+                         or (card.rank == state.level and card.suit == 'H'))
+        for pair in combinations(carriers, 2):
+            bindings = engine.public_action_bindings(player_id, PatternType.PAIR,
+                (Card(rank), Card(rank)), pair, state.level,
+                first_carrier_only=True, first_binding_only=True)
+            if bindings:
+                if engine.can_beat(bindings[0], lead, state.level):
+                    return True
+                # All valid bindings of this same two-card declaration have
+                # the same comparison strength; costs remain separate facts.
+                break
+    return False
+
+
+def _relevant_public_carried_pairs(
+    state: _ValidatedPublicState, engine: BaseRuleEngine,
+    history: tuple[tuple[_PublicPassEvidence, ...], tuple[_PublicPlayEvidence, ...]],
+) -> tuple[PublicCarriedPairEvidence, ...]:
+    passes, plays = history
+    latest_plays = {play.player_id: play for play in plays
+                    if play.action.declared_pattern == PatternType.TRIPLE_WITH_PAIR}
+    latest: dict[int, PublicCarriedPairEvidence] = {}
+    for play in latest_plays.values():
+        player_id, action = play.player_id, play.action
+        row = state.player_rows[player_id]
+        if (player_id == state.my_player_id or row.get('finished')
+                or int(row['hand_count']) < 2
+                or action.declared_pattern != PatternType.TRIPLE_WITH_PAIR
+                or play.hand_count_after <= 2):
+            continue
+        # A terminal response signal outranks a weak historical habit.
+        if any(event.player_id == player_id and terminal_pass_signal(event) for event in passes):
+            continue
+        bindings = engine.public_action_bindings(
+            player_id, action.declared_pattern, action.declared_cards,
+            action.carrier_cards, state.level,
+        )
+        if not bindings:
+            continue
+        ranks = Counter(card.rank for card in action.declared_cards)
+        triple = next(rank for rank, count in ranks.items() if count == 3)
+        pair = next(rank for rank, count in ranks.items() if count == 2)
+        # Binding membership, not a physical-rank guess, determines whether
+        # the publicly declared pair includes a wildcard substitute.
+        pair_substitutions = {
+            tuple(sorted((item.carrier_card.rank, item.carrier_card.suit,
+                          item.declared_as.rank, item.declared_as.suit)
+                         for item in binding.wildcard_info if item.declared_as.rank == pair))
+            for binding in bindings
+        }
+        kind = ('承载解释不唯一' if len(pair_substitutions) != 1
+                else '通配参与携带' if any(pair_substitutions)
+                else '自然携带（主组用配）' if any(binding.wildcard_count for binding in bindings) else '自然携带')
+        pair_action = _public_carried_pair_action(action, engine, state.level)
+        if pair_action is None:
+            continue
+        later = tuple(item for item in plays if item.player_id == player_id and item.step_no > play.step_no)
+        lower = any(
+            item.action.declared_pattern == PatternType.PAIR
+            and engine.public_action_bindings(player_id, item.action.declared_pattern,
+                item.action.declared_cards, item.action.carrier_cards, state.level,
+                first_binding_only=True)
+            and engine.can_beat(pair_action, item.action, state.level)
+            for item in later
+        )
+        # Ordinary subsequent plays make this weak habit stale. Keep only
+        # an explicit counterexample; do not accumulate old clues as samples.
+        if later and not lower:
+            continue
+        larger_possible = (
+            _larger_public_pair_possible(state, player_id, pair_action, engine)
+            if not later and kind == '自然携带' and not play.urgent_response else None
+        )
+        latest[player_id] = PublicCarriedPairEvidence(player_id, play.step_no, triple, pair,
+            play.hand_count_after, tuple(card for item in later for card in item.action.carrier_cards),
+            kind, lower, play.urgent_response, larger_possible)
+    return tuple(sorted(latest.values(), key=lambda item: (not item.later_lower_pair, -item.step_no)))[:1]
+
+
+def _carried_pair_behavior_text(event: PublicCarriedPairEvidence, state: _ValidatedPublicState) -> str:
+    role = '友' if state.player_rows[event.player_id].get('team') == state.my_team else '敌'
+    fact = (f'P{event.player_id}{role} step{event.step_no}三{event.triple_rank}带对{event.pair_rank}'
+            f'（{event.binding_kind}），出后余{event.hand_count_after}、后出{len(event.later_carriers)}张'
+            f'、现余{state.player_rows[event.player_id]["hand_count"]}；')
+    if event.later_lower_pair:
+        return fact + '后出更小对子，否定此前必带最小对；已出实体已扣除，不证当前仍有对子。'
+    if event.urgent_response:
+        return fact + '当时应手阻断公开少牌对手，紧急争权可解释携带，不按清小对习惯推剩余对子。'
+    if event.binding_kind == '自然携带（主组用配）':
+        return fact + '主组有通配成本，不按清小对习惯推剩余对子大小。'
+    if event.binding_kind != '自然携带':
+        return fact + '声明不等于自然实体对子，通配/拆组成本可解释，不据此推剩余对子大小。'
+    if event.larger_pair_possible is False:
+        return fact + '当前牌池/容量无可行更大对子，旧习惯不支持该回手路线。'
+    if event.larger_pair_possible is None:
+        return fact + '更大对子路线未核验，不据旧习惯判断剩余对子。'
+    return fact + '若按清小对习惯，可弱支持留较大对路线；仅此一对/带中间对留大小回手/拆组亦可解释，备选未知。'
 
 
 def relevant_public_passes(observation: dict[str, object]) -> tuple[_PublicPassEvidence, ...]:
@@ -1356,7 +1535,8 @@ def build_card_tracking_summary(
         lines.append(f"公开紧迫对手最少余{min(urgent_opponents)}张；这不是具体持牌事实。")
 
     engine = BaseRuleEngine()
-    pass_evidence = _public_pass_evidence(observation, state, engine)
+    public_history = _validated_public_history(observation, state, engine)
+    pass_evidence = public_history[0] if public_history is not None else ()
     if pass_evidence:
         lines.append(
             f"公开软线索={len(pass_evidence)}次可还原pass；只描述候选相关的历史持牌/让牌，"
@@ -1380,6 +1560,15 @@ def build_card_tracking_summary(
     if relevant:
         lines.insert(1, '历史软pass：' + ' '.join(_pass_behavior_text(item, state) for item in relevant[:3]))
         lines.insert(2, '应手取舍：队友少牌不证明能接；对手控桌时，本家低成本压制也可服务协同，比较其清牌/余组与让后对手续领代价，不默认支援=pass。')
+    carried_pairs = (
+        _relevant_public_carried_pairs(state, engine, public_history)
+        if public_history is not None and owner is None and _has_public_pair_choice(legal_actions)
+        else ()
+    )
+    if carried_pairs:
+        index = 3 if relevant else 1
+        lines.insert(index, '历史携带软线索：' + ' '.join(_carried_pair_behavior_text(item, state) for item in carried_pairs))
+        lines.insert(index + 1, '对子取舍：先看逐家容量/可行应手与本家清牌、资源成本；行为不证仍有大对，不承诺送达或回手，末手pass/确证优先。')
     for first, second in comparisons:
         lines.append(_candidate_comparison_line(
             first, second, profile_cache, facts_cache,

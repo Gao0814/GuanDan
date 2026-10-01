@@ -133,7 +133,7 @@
       "entry_id": "exp_card_memory_001",
       "source_tier": "B", "claim_type": "strategy", "author_or_institution": "王春国",
       "title": "掼蛋需记牌", "publication": "京报体育, 2024-02-21",
-      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/21/10706126.shtml", "locator": "正文关于王、级牌、A、10、5与断张及观察各家行牌走势的段落；末手pass对接完依赖的影响为项目条件化推导",
+      "url_or_bibliography": "https://news.bjd.com.cn/2024/02/21/10706126.shtml", "locator": "正文关于王、级牌、A、10、5与断张及观察各家行牌走势的段落；末手pass对接完依赖及外部携带对子余牌解释为项目条件化推导；携带备选未知，清小对为所有者待检验倾向，#73带中间对留大小回手为既有公开组牌例子，不证明他家实持",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["any"]}, "corroborating_source_ids": ["candidate_smzdm_strategy_100_001", "exp_endgame_run_out_001"], "evidence_status": "active"
     },
     {
