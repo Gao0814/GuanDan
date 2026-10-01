@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 import json
 import re
 import time
@@ -267,12 +267,30 @@ def _cards_for_ai(
     )
 
 
+def normalize_model_reason(value: object) -> tuple[str | None, bool]:
+    """Bound only the JSON short reason; never derive it from other text."""
+    if not isinstance(value, str):
+        return None, False
+    text = " ".join(value.split())
+    if not text:
+        return None, False
+    return text[:120], len(text) > 120
+
+
 @dataclass(slots=True)
 class DeepSeekSuggestion:
-    """Result from DeepSeek API: action_id and optional reasoning trace."""
+    """One parsed choice, with separate long reasoning and bounded JSON reason."""
 
     action_id: int | None
     reasoning: str | None
+    reason: str | None = field(default=None, repr=False)
+    reason_truncated: bool = False
+
+    def __post_init__(self) -> None:
+        self.reason, truncated = normalize_model_reason(self.reason)
+        self.reason_truncated = self.reason is not None and (
+            truncated or self.reason_truncated is True
+        )
 
 
 class _ProjectedPromptAction(dict[str, object]):
@@ -4675,7 +4693,8 @@ class DeepSeekClient:
 
         if verbose:
             print(f"{debug_prefix} 解析得到 action_id={int(action_id)} (合法)", flush=True)
-        return DeepSeekSuggestion(action_id=int(action_id), reasoning=reasoning_text)
+        return DeepSeekSuggestion(action_id=int(action_id), reasoning=reasoning_text,
+                                  reason=parsed.get("reason") if isinstance(parsed, dict) else None)
 
     @staticmethod
     def _prompt_relation_references(

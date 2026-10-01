@@ -990,11 +990,11 @@ class DeepSeekAIAgent(BaseAgent):
             suggestion = DeepSeekSuggestion(action_id=None, reasoning=None)
             failure_reason = f"请求异常：{exc.__class__.__name__}: {exc}"
 
-        if self.evidence_sink is not None:
-            outcome = getattr(self.client, "last_outcome", None)
-            if outcome not in {"success", "timeout", "exception", "invalid_suggestion"}:
-                outcome = "success" if suggestion.action_id is not None else "invalid_suggestion"
-            self._emit_evidence("model_complete", {"outcome": outcome})
+        outcome = getattr(self.client, "last_outcome", None)
+        if failure_reason is not None:
+            outcome = "exception"
+        elif outcome not in {"success", "timeout", "exception", "invalid_suggestion"}:
+            outcome = "success" if suggestion.action_id is not None else "invalid_suggestion"
 
         reasoning = suggestion.reasoning
         suggested = suggestion.action_id
@@ -1009,6 +1009,16 @@ class DeepSeekAIAgent(BaseAgent):
                 chosen = None
                 failure_reason = f"返回 action_id 非法：{exc}"
             else:
+                if outcome == "success":
+                    short = DeepSeekSuggestion(chosen, None,
+                                              reason=getattr(suggestion, "reason", None),
+                                              reason_truncated=getattr(suggestion, "reason_truncated", False))
+                    self._emit_evidence("model_complete", {
+                        "outcome": "success", "selected_action_id": chosen,
+                        "reason": short.reason, "reason_truncated": short.reason_truncated,
+                    })
+                else:
+                    self._emit_evidence("model_complete", {"outcome": outcome})
                 if verbose:
                     action = _action_by_id(legal_actions, chosen)
                     display = _action_display_cn(action) if action is not None else "(unknown)"
@@ -1021,6 +1031,9 @@ class DeepSeekAIAgent(BaseAgent):
                 return chosen
 
         # --- fallback to rule-based AI ---
+        self._emit_evidence("model_complete", {
+            "outcome": outcome if outcome in {"timeout", "exception"} else "invalid_suggestion",
+        })
         if failure_reason is None:
             failure_reason = "未返回有效 action_id"
 

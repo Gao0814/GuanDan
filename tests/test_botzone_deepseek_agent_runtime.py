@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import io
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -547,6 +548,57 @@ class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(suggestion.action_id, 1)
         self.assertIsNone(suggestion.reasoning)
+
+    def test_strict_short_reason_passes_only_with_current_valid_id_in_both_paths(self) -> None:
+        for with_deadline in (False, True):
+            raw = SimpleNamespace(suggest_action_id=lambda **_: SimpleNamespace(
+                action_id=1, reasoning="long-forbidden", reason="短\n" + "🙂" * 121))
+            client = _StrictDeepSeekClient(raw)
+            if with_deadline:
+                client.set_decision_deadline(time.monotonic() + 20)
+            result = client.suggest_action_id(legal_actions=[{"action_id": 1}])
+            self.assertEqual(result.action_id, 1)
+            self.assertEqual(result.reason, "短 " + "🙂" * 118)
+            self.assertTrue(result.reason_truncated)
+            self.assertIsNone(result.reasoning)
+            raw.suggest_action_id = lambda **_: DeepSeekSuggestion(999, None, reason="invalid-short")
+            invalid = client.suggest_action_id(legal_actions=[{"action_id": 1}])
+            self.assertIsNone(invalid.reason)
+            self.assertEqual(client.last_outcome, "invalid_suggestion")
+
+    def test_cached_agent_does_not_reuse_reason_on_failure_local_or_disabled_sink(self) -> None:
+        answer = DeepSeekSuggestion(1, None, reason="synthetic-contradictory-finish-claim")
+
+        def suggest(**_):
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        raw = SimpleNamespace(suggest_action_id=suggest)
+        events = []
+        with patch("agents.deepseek_ai.AppConfig.from_env", return_value=_config()):
+            agent = build_agent_factory("deepseek", config_loader=_config,
+                client_factory=lambda **_: raw, rag_factory=lambda: None)(4)
+            agent.set_evidence_sink(lambda event, data: events.append((event, data)))
+            self.assertEqual(agent.select_action(_teammate_joker_observation(), _teammate_joker_legal_actions()), 1)
+            self.assertEqual(events[-1][1]["reason"], answer.reason)
+            answer = DeepSeekSuggestion(999, None, reason="invalid-forbidden-reason")
+            agent.select_action(_teammate_joker_observation(), _teammate_joker_legal_actions())
+            self.assertEqual(events[-1], ("model_complete", {"outcome": "invalid_suggestion"}))
+            answer = RuntimeError("exception-forbidden-body")
+            agent.select_action(_teammate_joker_observation(), _teammate_joker_legal_actions())
+            self.assertEqual(events[-1], ("model_complete", {"outcome": "exception"}))
+            previous = len(events)
+            self.assertEqual(agent.select_action(_teammate_joker_observation(own_count=1),
+                                                _teammate_joker_legal_actions()), 2)
+            self.assertEqual(len(events), previous)
+            agent.set_evidence_sink(None)
+            answer = DeepSeekSuggestion(1, None, reason="disabled-forbidden-reason")
+            self.assertEqual(agent.select_action(_teammate_joker_observation(), _teammate_joker_legal_actions()), 1)
+            self.assertEqual(len(events), previous)
+            agent.set_evidence_sink(lambda *_: (_ for _ in ()).throw(OSError("write-failure")))
+            self.assertEqual(agent.select_action(_teammate_joker_observation(), _teammate_joker_legal_actions()), 1)
+
 
     def test_model_faults_and_invalid_ids_fallback_to_rule_action(self) -> None:
         from integrations.botzone.play_adapter import project_decision

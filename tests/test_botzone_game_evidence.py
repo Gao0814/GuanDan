@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import io
 import os
+import re
+from random import Random
+from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -23,6 +27,8 @@ from integrations.botzone.models import GlobalState
 from integrations.botzone.play_adapter import NoTributeRuleBasedHandler
 from integrations.botzone.runner import ForegroundRunner
 from integrations.botzone.session import SessionStore
+from integrations.botzone.agent_runtime import build_agent_factory
+from tests.test_botzone_deepseek_agent_runtime import _config
 
 
 def _deal_inner() -> dict[str, object]:
@@ -96,6 +102,113 @@ def _polls_for(first: int, count: int, *, trailing_idle: bool) -> list[bytes]:
 
 
 class BotzoneGameEvidenceTests(unittest.TestCase):
+    def test_short_reason_schema_rejects_unbounded_or_failure_fields(self) -> None:
+        for override in (
+            {"reason": "synthetic-invalid\nreason"}, {"reason": "x" * 121},
+            {"reason": ["not-text"]}, {"reason_truncated": "false"},
+            {"outcome": "timeout"}, {"content": "forbidden-response-body"},
+        ):
+            with self.subTest(fields=tuple(override)), TemporaryDirectory() as temporary:
+                games = Path(temporary) / "games"
+                prepare_game_evidence(games, 10)
+                recorder = ManualGameEvidenceRecorder(games)
+                recorder.begin_game("synthetic-match", own_hand=(1,), player_id=0,
+                    global_state=GlobalState("2", 0, None, None))
+                number = recorder.begin_decision("synthetic-match")
+                recorder.record_agent_event("synthetic-match", number, "model_complete", {
+                    "outcome": "success", "selected_action_id": 1, "reason": "bounded",
+                    "reason_truncated": False, **override})
+                self.assertEqual(recorder.error_category, "evidence_schema_invalid")
+                game_dir = next(p for p in games.iterdir() if p.is_dir())
+                timeline = (game_dir / "timeline.jsonl").read_text()
+                self.assertNotIn('"event":"model_complete"', timeline)
+
+    def test_factory_short_reason_is_private_bound_to_decision_and_ack(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            games = root / "games"
+            prepare_game_evidence(games, 10)
+            evidence = ManualGameEvidenceRecorder(games)
+            calls = []
+            short = "synthetic-short\n" + "🙂" * 121
+            deal = _deal_inner()
+            deal["deliver"] = Random(17).sample(range(108), 27)
+
+            def dealt_payload(payload):
+                value = json.loads(payload)
+                value["requests"][0] = deal
+                return json.dumps(value)
+
+            def fake_sse(request, _timeout):
+                body = json.loads(request.data)
+                chosen = int(re.search(r"#(\d+)\s+action_id=", body["messages"][1]["content"]).group(1))
+                content = {"action_id": chosen, "extra": "forbidden-extra"}
+                if not calls:
+                    content["reason"] = short
+                calls.append(chosen)
+                delta = json.dumps({"choices": [{"delta": {
+                    "content": json.dumps(content), "reasoning_content": "forbidden-long-reasoning"}}]})
+                return f"data: {delta}\ndata: [DONE]\n"
+
+            class Polls:
+                call = 0
+
+                def poll(self, headers):
+                    self.call += 1
+                    if self.call == 1:
+                        return f"1 0\nreason-match\n{dealt_payload(_deal())}".encode()
+                    if self.call == 2:
+                        return f"1 0\nreason-match\n{dealt_payload(_play())}".encode()
+                    if self.call == 3:
+                        response = json.loads(next(iter(dict(headers).values())))['response']
+                        return f"1 0\nreason-match\n{dealt_payload(_play_after_action(response))}".encode()
+                    if self.call == 4:
+                        return f"1 0\nother-reason-match\n{dealt_payload(_deal())}".encode()
+                    return f"1 0\nother-reason-match\n{dealt_payload(_play())}".encode()
+
+            output = io.StringIO()
+            with patch("agents.deepseek_ai.AppConfig.from_env", return_value=_config()), \
+                    redirect_stdout(output), redirect_stderr(output):
+                factory = build_agent_factory("deepseek", config_loader=_config,
+                    client_factory=lambda **kwargs: DeepSeekClient(**kwargs, transport=fake_sse))
+                handler = NoTributeRuleBasedHandler(agent_mode="deepseek", agent_factory=factory,
+                    decision_trace_enabled=True, game_evidence_recorder=evidence)
+                state = SessionStore(root / "state", decision_trace_enabled=True)
+                connector = MockConnector(state, Polls(), handler, game_evidence_recorder=evidence)
+                for _ in range(5):
+                    connector.cycle()
+                # An old per-decision callback cannot attach a reason to a newer turn.
+                evidence.agent_sink("reason-match", 1)("model_complete", {
+                    "outcome": "success", "selected_action_id": calls[0],
+                    "reason": "stale-forbidden", "reason_truncated": False})
+                connector.close_game_evidence("interrupted")
+            directories = sorted(p for p in games.iterdir() if p.is_dir())
+            first = directories[0]
+            events = [json.loads(line) for line in (first / "timeline.jsonl").read_text().splitlines()]
+            completed = [row["data"] for row in events if row["event"] == "model_complete"]
+            decisions = [json.loads(line)["data"] for line in (first / "decisions.jsonl").read_text().splitlines()]
+            self.assertEqual(len(completed), 2)
+            self.assertEqual(completed[0]["reason"], "synthetic-short " + "🙂" * 104)
+            self.assertTrue(completed[0]["reason_truncated"])
+            self.assertIsNone(completed[1]["reason"])
+            for result, decision in zip(completed, decisions):
+                self.assertEqual(result["decision_no"], decision["evidence_decision_no"])
+                self.assertEqual(result["selected_action_id"], decision["selected_action_id"])
+                self.assertEqual(decision["decision_source"], "model")
+            ack = next(row["data"] for row in events if row["event"] == "ack_confirmed"
+                       and "selected_action_id" in row["data"])
+            self.assertEqual(ack["selected_action_id"], completed[0]["selected_action_id"])
+            second_events = [json.loads(line) for line in (directories[1] / "timeline.jsonl").read_text().splitlines()]
+            self.assertIsNone(next(row["data"]["reason"] for row in second_events if row["event"] == "model_complete"))
+            all_evidence = b"".join(p.read_bytes() for p in games.rglob("*") if p.is_file())
+            for forbidden in (b"forbidden-long-reasoning", b"forbidden-extra", b"stale-forbidden"):
+                self.assertNotIn(forbidden, all_evidence)
+            state_bytes = b"".join(p.read_bytes() for p in (root / "state").rglob("*") if p.is_file())
+            self.assertNotIn(b"synthetic-short", state_bytes)
+            self.assertNotIn("synthetic-short", output.getvalue())
+            # Reopening accepts new optional fields alongside all existing rows.
+            prepare_game_evidence(games, 10)
+
     def _run_fake_batch_segment(self, root: Path, games_root: Path, first: int, count: int) -> None:
         store = ManualGameEvidenceRecorder(games_root)
         state = SessionStore(root / "state", decision_trace_enabled=True)
@@ -424,13 +537,16 @@ class BotzoneGameEvidenceTests(unittest.TestCase):
             prepare_game_evidence(games, 10)
             recorder = ManualGameEvidenceRecorder(games)
             recorder.begin_game("private-match", own_hand=(1,), player_id=0, global_state=GlobalState("2", 0, None, None))
+            decision_no = recorder.begin_decision("private-match")
             game_directory = next(path for path in games.iterdir() if path.is_dir())
             with patch.object(
                 ManualGameEvidenceRecorder,
                 "_event",
                 side_effect=GameEvidenceError("evidence_write_failed"),
             ):
-                recorder.record_poll("idle")
+                recorder.record_agent_event("private-match", decision_no, "model_complete", {
+                    "outcome": "success", "selected_action_id": 1,
+                    "reason": "synthetic-short", "reason_truncated": False})
             manifest = json.loads((game_directory / "manifest.json").read_text(encoding="utf-8"))
             self.assertTrue(recorder.failed)
             self.assertEqual(recorder.error_category, "evidence_write_failed")

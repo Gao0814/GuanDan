@@ -75,11 +75,13 @@ class _StrictDeepSeekClient:
             self.last_outcome = "invalid_suggestion"
             record_stage(self._stage_trace, "model_complete", "invalid_suggestion")
             return DeepSeekSuggestion(action_id=None, reasoning=None)
-        # The connector only needs the canonical public action ID.  Dropping
-        # free-form model text keeps it out of the match-scoped agent cache.
+        # Only the bounded JSON reason may accompany a valid ID. Long reasoning
+        # is discarded, and no explanation is cached on the shared wrapper.
         self.last_outcome = "success"
         record_stage(self._stage_trace, "model_complete", "success")
-        return DeepSeekSuggestion(action_id=action_id, reasoning=None)
+        return DeepSeekSuggestion(action_id=action_id, reasoning=None,
+                                  reason=getattr(suggestion, "reason", None),
+                                  reason_truncated=getattr(suggestion, "reason_truncated", False))
 
     def _suggest_with_deadline(
         self,
@@ -159,7 +161,9 @@ class _StrictDeepSeekClient:
             return DeepSeekSuggestion(action_id=None, reasoning=None)
         self.last_outcome = "success"
         record_stage(self._stage_trace, "model_complete", "success")
-        return DeepSeekSuggestion(action_id=action_id, reasoning=None)
+        return DeepSeekSuggestion(action_id=action_id, reasoning=None,
+                                  reason=getattr(suggestion, "reason", None),
+                                  reason_truncated=getattr(suggestion, "reason_truncated", False))
 
 
 def build_agent_factory(

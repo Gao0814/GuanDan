@@ -2,8 +2,8 @@
 
 This module is only enabled by the continuous manual batch entry point. It
 stores connector-observed decision evidence under a managed ``games`` folder;
-it never stores platform identifiers, response headers, model responses, or
-credentials.
+it never stores platform identifiers, response headers, full model responses, or
+credentials. Only the authorized bounded JSON reason accompanies a model ID.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ _GAME_EVENTS = {
     "decision_started": {"decision_no"},
     "request_prepared": {"request_no", "decision_no", "sha256"},
     "model_enter": {"decision_no", "outcome"},
-    "model_complete": {"decision_no", "outcome"},
+    "model_complete": {"decision_no", "outcome", "selected_action_id", "reason", "reason_truncated"},
     "action_computed": {"selected_action_id", "source"},
     "header_pending": {"selected_action_id", "source"},
     "ack_confirmed": {"ack", "selected_action_id", "source"},
@@ -414,6 +414,22 @@ def _valid_decision_row(data: object) -> bool:
     return decision_no is None or (type(decision_no) is int and decision_no > 0)
 
 
+def _valid_model_complete(data: Mapping[str, object]) -> bool:
+    fields = {"selected_action_id", "reason", "reason_truncated"}
+    if not fields.intersection(data):
+        return True  # Existing records have no short explanation: unknown.
+    if not fields.issubset(data) or data.get("outcome") != "success":
+        return False
+    if type(data.get("selected_action_id")) is not int or type(data.get("reason_truncated")) is not bool:
+        return False
+    from agents.deepseek_client import normalize_model_reason
+
+    reason = data.get("reason")
+    if reason is None:
+        return data["reason_truncated"] is False
+    return isinstance(reason, str) and normalize_model_reason(reason) == (reason, False)
+
+
 def _parse_jsonl(path: Path, schema: str) -> None:
     _ordinary(path, "file")
     try:
@@ -433,6 +449,7 @@ def _parse_jsonl(path: Path, schema: str) -> None:
                     or event not in _GAME_EVENTS
                     or not isinstance(data, dict)
                     or not set(data).issubset(_GAME_EVENTS[event])
+                    or (event == "model_complete" and not _valid_model_complete(data))
                 ):
                     raise ValueError
             else:
@@ -865,6 +882,10 @@ class ManualGameEvidenceRecorder:
             raise GameEvidenceError("evidence_write_failed") from None
 
     def _event(self, entry: Mapping[str, object], name: str, data: dict[str, object]) -> None:
+        if name == "model_complete" and (
+            not set(data).issubset(_GAME_EVENTS[name]) or not _valid_model_complete(data)
+        ):
+            raise GameEvidenceError("evidence_schema_invalid")
         path = self.root / str(entry["directory"]) / "timeline.jsonl"
         _ordinary(path, "file")
         row = {"schema": GAME_EVIDENCE_EVENT_SCHEMA, "version": GAME_EVIDENCE_EVENT_VERSION,
@@ -1039,6 +1060,8 @@ class ManualGameEvidenceRecorder:
                 entry = self._entry_for(state, match_key)
                 if entry is None:
                     return None
+                if self._active_decisions.get(match_key) != decision_no or entry["status"] != "in_progress":
+                    return None
                 if event == "request_prepared":
                     body = data.get("body")
                     metadata = data.get("metadata")
@@ -1076,7 +1099,7 @@ class ManualGameEvidenceRecorder:
                     return request_no
                 if event not in {"model_enter", "model_complete"}:
                     raise GameEvidenceError("evidence_schema_invalid")
-                self._event(entry, event, {"decision_no": decision_no, **data})
+                self._event(entry, event, {**data, "decision_no": decision_no})
                 return None
             finally:
                 lock.__exit__(None, None, None)

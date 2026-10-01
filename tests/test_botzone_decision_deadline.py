@@ -99,7 +99,8 @@ class BotzoneDecisionDeadlineTests(unittest.TestCase):
                 calls += 1
                 entered.set()
                 release.wait(2.0)
-                return DeepSeekSuggestion(action_id=1, reasoning=None)
+                return DeepSeekSuggestion(action_id=1, reasoning=None,
+                                          reason="late-short-reason" if calls == 1 else None)
 
         trace_output = StringIO()
         client = _StrictDeepSeekClient(
@@ -113,6 +114,7 @@ class BotzoneDecisionDeadlineTests(unittest.TestCase):
         elapsed = time.monotonic() - started
         self.assertTrue(entered.is_set())
         self.assertIsNone(result.action_id)
+        self.assertIsNone(result.reason)
         self.assertEqual(client.last_outcome, "timeout")
         self.assertIn('"stage":"model_complete"', trace_output.getvalue())
         self.assertIn('"outcome":"timeout"', trace_output.getvalue())
@@ -124,6 +126,7 @@ class BotzoneDecisionDeadlineTests(unittest.TestCase):
         client.set_decision_deadline(second_deadline)
         second = client.suggest_action_id(legal_actions=[{"action_id": 1}])
         self.assertIsNone(second.action_id)
+        self.assertIsNone(second.reason)
         self.assertEqual(client.last_outcome, "timeout")
         self.assertEqual(calls, 1)
 
@@ -135,6 +138,14 @@ class BotzoneDecisionDeadlineTests(unittest.TestCase):
         self.assertFalse(client._worker_active)
         self.assertEqual(client.last_outcome, "timeout")
         client.set_decision_deadline(None)
+        self.assertIsNone(result.reason)
+        self.assertIsNone(second.reason)
+
+        current = client.suggest_action_id(legal_actions=[{"action_id": 1}])
+        self.assertEqual(current.action_id, 1)
+        self.assertIsNone(current.reason)
+        self.assertEqual(client.last_outcome, "success")
+        self.assertEqual(calls, 2)
 
     def test_deepseek_retry_does_not_start_after_the_total_budget_expires(self) -> None:
         calls = 0

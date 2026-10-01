@@ -234,6 +234,27 @@ def _agent_with_counting_dependencies() -> tuple[DeepSeekAIAgent, CountingClient
 
 
 class TestDeepSeekStepE(unittest.TestCase):
+    def test_json_short_reason_is_optional_bounded_and_separate_from_reasoning(self) -> None:
+        for value, expected, truncated in (
+            (None, None, False), (7, None, False), (" \n\t", None, False),
+            ("保留\n控制\t牌", "保留 控制 牌", False),
+            ("🙂" * 121, "🙂" * 120, True),
+        ):
+            with self.subTest(value_type=type(value).__name__, truncated=truncated):
+                def transport(_request, _timeout):
+                    content = json.dumps({"action_id": 2, "reason": value, "extra": "not-a-reason"})
+                    delta = json.dumps({"choices": [{"delta": {
+                        "content": content, "reasoning_content": "long-reasoning-only"}}]})
+                    return f"data: {delta}\ndata: [DONE]\n"
+
+                client = DeepSeekClient("synthetic", "https://offline.invalid", "deepseek-flash",
+                                        max_retries=0, transport=transport)
+                suggestion = client.suggest_action_id(observation=_observation(), legal_actions=_legal_actions())
+                self.assertEqual(suggestion.action_id, 2)
+                self.assertEqual((suggestion.reason, suggestion.reason_truncated), (expected, truncated))
+                self.assertEqual(suggestion.reasoning, "long-reasoning-only")
+        self.assertIsNone(DeepSeekSuggestion(2, None).reason)
+
     def test_teammate_joker_fixture_matches_engine_follow_legality(self) -> None:
         rules = BaseRuleEngine()
         small_joker = Action(2, ActionType.PLAY, PatternType.SINGLE, (Card("SJ"),), (Card("SJ"),), display_text="single:SJ")
