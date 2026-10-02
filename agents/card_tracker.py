@@ -1662,6 +1662,19 @@ class CardTracker:
         return self._summary
 
 
+def _public_binding_classes(engine, pattern, declared, carrier, level, budget):
+    """Consume every binding of this fixed payment; retain both legal classes.
+
+    A red level card can have natural or wildcard metadata even when declared
+    as the level rank. The first binding alone cannot establish either ceiling.
+    """
+    classes = {}
+    for action in engine.public_action_bindings(0, pattern, declared, carrier, level):
+        budget.check()
+        classes.setdefault(bool(action.wildcard_count), action)
+    return tuple(classes.values())
+
+
 def _public_triple_pair_ceilings(engine, cards, capacity, level, budget):
     """Joint payments, with one engine-bound maximum per wildcard class.
 
@@ -1687,13 +1700,13 @@ def _public_triple_pair_ceilings(engine, cards, capacity, level, budget):
                     carrier = (natural[main][:3-triple_wild] + wild[:triple_wild]
                                + natural[kicker][:2-pair_wild]
                                + wild[triple_wild:triple_wild+pair_wild])
-                    bindings = engine.public_action_bindings(
-                        0, PatternType.TRIPLE_WITH_PAIR,
+                    bindings = _public_binding_classes(
+                        engine, PatternType.TRIPLE_WITH_PAIR,
                         (Card(main),) * 3 + (Card(kicker),) * 2,
-                        carrier, level, first_binding_only=True,
+                        carrier, level, budget,
                     )
-                    if bindings:
-                        found.setdefault(bool(bindings[0].wildcard_count), bindings[0])
+                    for binding in bindings:
+                        found.setdefault(bool(binding.wildcard_count), binding)
                     # Both maxima are now proved by descending main strength.
                     if len(found) == 2:
                         return tuple(found.values())
@@ -1758,11 +1771,8 @@ def final_follow_tracking(observation: dict, displayed: list[dict], previous: st
                                 if len(own) < size - used:
                                     continue
                                 carrier = own[:size-used] + wild[:used]
-                                bindings = engine.public_action_bindings(
-                                    0, pattern, (Card(rank),) * size, carrier, state.level,
-                                    first_binding_only=True)
-                                if bindings:
-                                    routes.append(bindings[0])
+                                routes.extend(_public_binding_classes(
+                                    engine, pattern, (Card(rank),) * size, carrier, state.level, budget))
                     if capacity >= 5 and table["declared_pattern"] == "triple_with_pair":
                         routes.extend(_public_triple_pair_ceilings(engine, cards, capacity, state.level, budget))
                     kings = tuple(c for c in cards if c.rank in JOKER_RANKS)

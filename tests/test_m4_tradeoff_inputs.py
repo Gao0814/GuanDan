@@ -496,6 +496,8 @@ class M4TradeoffInputTests(unittest.TestCase):
              {False: "9", True: "A"}),
             (("KS", "KC", "KD", "AS", "QS"), 5, {}),
             (("2C", "2D", "2H", "2S", "AS", "4S"), 4, {}),
+            (("2H", "2H", "2S", "AS", "AC"), 5, {False: "2", True: "2"}),
+            (("2H", "2S", "2C", "SJ", "SJ", "6S"), 5, {False: "2", True: "2"}),
         )
         for tokens, capacity, expected in cases:
             for order in (tokens, tuple(reversed(tokens))):
@@ -530,6 +532,39 @@ class M4TradeoffInputTests(unittest.TestCase):
             tuple(_card(t) for t in ("QS", "QC", "KS", "2H", "2H")), "2",
         )
         self.assertTrue(any(a.wildcard_count == 2 for a in split))
+
+    def test_public_fixed_carrier_binding_classes_include_natural_level_metadata(self) -> None:
+        from time import monotonic
+        from agents.card_tracker import _public_binding_classes
+        from engine.rules import BaseRuleEngine
+        from engine.patterns import PatternType
+        from engine.public_simulation import SimulationBudget
+
+        engine = BaseRuleEngine()
+        cases = (
+            (PatternType.SINGLE, ("2",), ("2H",), {0, 1}),
+            (PatternType.PAIR, ("2",)*2, ("2H", "2S"), {0, 1}),
+            (PatternType.TRIPLE, ("2",)*3, ("2H", "2H", "2S"), {0, 1, 2}),
+            (PatternType.BOMB, ("2",)*4, ("2H", "2H", "2S", "2C"), {0, 1, 2}),
+            (PatternType.TRIPLE_WITH_PAIR, ("2",)*3 + ("A",)*2,
+             ("2H", "2H", "2S", "AS", "AC"), {0, 1, 2}),
+            (PatternType.TRIPLE_WITH_PAIR, ("2",)*3 + ("SJ",)*2,
+             ("2H", "2S", "2C", "SJ", "SJ"), {0, 1}),
+            (PatternType.PAIR, ("SJ",)*2, ("SJ", "2H"), set()),
+            (PatternType.TRIPLE, ("8",)*3, ("8S", "8C", "2H"), {1}),
+        )
+        for pattern, ranks, tokens, counts in cases:
+            for order in (tokens, tuple(reversed(tokens))):
+                with self.subTest(pattern=pattern, tokens=order):
+                    carrier = tuple(_card(t) for t in order)
+                    declared = tuple(Card(r) for r in ranks)
+                    reference = engine.public_action_bindings(0, pattern, declared, carrier, "2")
+                    self.assertEqual({a.wildcard_count for a in reference}, counts)
+                    actual = _public_binding_classes(
+                        engine, pattern, declared, carrier, "2", SimulationBudget(monotonic()+0.25),
+                    )
+                    self.assertEqual({bool(a.wildcard_count) for a in actual}, {bool(n) for n in counts})
+                    self.assertEqual(len(actual), len({bool(n) for n in counts}))
 
     def test_joint_triple_pair_ceiling_reaches_factory_without_changing_ids(self) -> None:
         from agents.card_tracker import final_follow_tracking
@@ -568,6 +603,45 @@ class M4TradeoffInputTests(unittest.TestCase):
             with patch("agents.card_tracker._TRACKING_LIMIT", 1):
                 self.assertEqual(final_follow_tracking(observation, actions, "prior"), "prior")
 
+    def test_public_binding_class_ceilings_reach_factory(self) -> None:
+        from agents.card_tracker import final_follow_tracking
+        from tests.test_m9_public_endgame_opportunities import _public_endgame_fixture
+        from tests.test_suit_resource_projection import _capture_default_factory_request
+
+        for seat, external in ((4, ("2H", "2H", "2S", "AS", "AC")),
+                               (2, ("2H", "2S", "2C", "2D", "AS", "AC"))):
+            leader = 3 if seat == 4 else 1
+            other = 2 if seat == 4 else 4
+            finished = 1 if seat == 4 else 3
+            game, observation, actions = _public_endgame_fixture(
+                current_hands={other: ("4S",), leader: external,
+                               seat: ("6S", "6C", "6D", "7S", "7C", "7D", "KS")},
+                finish_order=(finished,), current_player_id=seat, leader_player_id=leader,
+                leading_token=("5S", "5C", "5D", "3S", "3C"),
+            )
+            original = deepcopy((observation, actions))
+            shown = None
+            for pattern in ("pass", "triple_with_pair"):
+                desired = next(a for a in actions if a["declared_pattern"] == pattern)
+                chosen, agent, transport = _capture_default_factory_request(game, desired["action_id"])
+                self.assertEqual(chosen, desired["action_id"])
+                self.assertEqual(agent.last_decision_source, "model")
+                self.assertEqual((game.observe(), game.legal_actions()), original)
+                for group in ("单", "对", "三", "三带二"):
+                    self.assertIn(f"外部{group}资源上限=自然2/含配2", transport.prompt)
+                if len(external) == 6:
+                    self.assertIn("2×4配", transport.prompt)
+                    self.assertIn("2×4自然", transport.prompt)
+                ids = set(transport.candidate_ids)
+                self.assertTrue(ids <= {a["action_id"] for a in actions})
+                self.assertTrue(set(int(i) for i in re.findall(r"action_id=(\d+)", transport.prompt)) <= ids)
+                if shown is not None:
+                    self.assertEqual(ids, shown)
+                shown = ids
+            for exc in (TimeoutError("budget"), ValueError("invalid")):
+                with patch("agents.card_tracker._public_binding_classes", side_effect=exc):
+                    self.assertEqual(final_follow_tracking(observation, actions, "prior"), "prior")
+
     def test_follow_group_control_reaches_factory_and_keeps_model_choice(self) -> None:
         from agents.card_tracker import final_follow_tracking
         from agents.action_structure import ordinary_follow_pairs
@@ -592,7 +666,9 @@ class M4TradeoffInputTests(unittest.TestCase):
                     self.assertEqual(agent.last_decision_source, "model")
                     self.assertEqual((game.observe(), game.legal_actions()), original)
                     self.assertIn("外部点数实体=", transport.prompt)
-                    self.assertIn("自然2/含配Q", transport.prompt)
+                    # The red level card also has a legal wildcard-to-level
+                    # binding; its triple ceiling exceeds the wildcard Q.
+                    self.assertIn("自然2/含配2", transport.prompt)
                     self.assertIn("保留三"+low+"更强同型上界", transport.prompt)
                     self.assertIn("保留三"+high+"更强同型上界", transport.prompt)
                     self.assertIn("P2:无更强三张", transport.prompt)
