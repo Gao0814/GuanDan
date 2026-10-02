@@ -60,6 +60,52 @@ def _table_action(
 
 
 class TestGameFlow(unittest.TestCase):
+    def test_search_advance_shares_step_transitions_without_response_data(self) -> None:
+        from engine.game import _action_to_public_dict
+
+        # Ordinary play/pass/last pass, double-down, catch wind/third finish,
+        # and a declared combination paid with a wildcard carrier.
+        cases = (
+            ({1: ("BJ", "3S"), 2: ("4S",), 3: ("5S",), 4: ("6S",)}, 1, None,
+             (("single", ("BJ",)), None, None, None)),
+            ({1: ("3S",), 2: ("8S",), 3: ("4S",), 4: ("9S",)}, 1, None,
+             (("single", ("3",)), None, ("single", ("4",)))),
+            ({1: ("3S",), 2: ("4S", "8S"), 3: ("5S",), 4: ("BJ",)}, 4, None,
+             (("single", ("BJ",)), None, None, None, ("single", ("4",)),
+              ("single", ("5",)), None, ("single", ("8",)))),
+            ({1: ("2H", "7S", "7C", "8S", "8C"),
+              2: ("3S",), 3: ("4S",), 4: ("5S",)}, 1,
+             _table_action(2, PatternType.TRIPLE_WITH_PAIR, ("7", "7", "7", "9", "9"),
+                           ("7S", "7H", "7D", "9S", "9H")),
+             (("triple_with_pair", ("8", "8", "8", "7", "7")),)),
+        )
+        for hands, seat, table, moves in cases:
+            with self.subTest(seat=seat, moves=moves):
+                public = GuanDanGame(current_level_rank="2", starting_player_id=seat,
+                                     preset_hands=_hands(hands), preset_table_action=table)
+                public.reset()
+                core = GuanDanGame(current_level_rank="2")
+                core._state = public._require_state()
+                for game, advance in ((public, public.step), (core, core._advance)):
+                    state = game._require_state()
+                    with self.assertRaisesRegex(ValueError, "action_id is not in current legal_actions"):
+                        advance(-1)
+                    self.assertIs(game._require_state(), state)
+                for move in moves:
+                    action_id = _pass_id(public) if move is None else _action_id_by_pattern(public, *move)
+                    result = public.step(action_id)
+                    with patch("engine.game._state_counts", side_effect=AssertionError("unused counts")), \
+                            patch("engine.game._action_to_public_dict", side_effect=AssertionError("unused action")):
+                        selected, round_ended = core._advance(action_id)
+                    self.assertEqual(core._require_state(), public._require_state())
+                    self.assertEqual(_action_to_public_dict(selected, action_id=action_id), result["chosen_action"])
+                    self.assertEqual(round_ended, result["round_ended"])
+                    self.assertEqual(core.observe(), public.observe())
+                if public._require_state().is_finished:
+                    for advance in (public.step, core._advance):
+                        with self.assertRaisesRegex(ValueError, "game is already over"):
+                            advance(-1)
+
     def test_reset_observe_legal_actions_and_step_follow_the_contract(self) -> None:
         game = GuanDanGame(
             current_level_rank="2",

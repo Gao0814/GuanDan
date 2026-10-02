@@ -298,7 +298,13 @@ class GuanDanGame:
             return leader_player_id
         return ordered[0]
 
-    def step(self, action_id: int) -> dict[str, object]:
+    def _advance(self, action_id: int) -> tuple[Action, bool]:
+        """Validate and advance once; shared by public step and engine search.
+
+        Return only the selected action and round boundary. Search still uses
+        the identical state/history transitions and cache invalidation, without
+        constructing public response data it will not consume.
+        """
         state = self._require_state()
         if state.is_finished:
             raise ValueError("game is already over")
@@ -308,7 +314,6 @@ class GuanDanGame:
             raise ValueError("action_id is not in current legal_actions")
 
         selected = self._legal_action_map[action_id]
-        before_counts = _state_counts(state)
 
         players = state.players
         finish_order = state.finish_order
@@ -401,9 +406,15 @@ class GuanDanGame:
                     ),
                 )
 
-        after_state = self._require_state()
-        after_counts = _state_counts(after_state)
         self._invalidate_legal_actions_cache()
+        return selected, round_ended
+
+    def step(self, action_id: int) -> dict[str, object]:
+        state = self._require_state()
+        selected, round_ended = self._advance(action_id)
+        after_state = self._require_state()
+        before_counts = _state_counts(state)
+        after_counts = _state_counts(after_state)
         state_diff = {
             "current_player_before": state.current_player_id,
             "current_player_after": after_state.current_player_id,

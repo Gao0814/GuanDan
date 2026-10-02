@@ -464,7 +464,7 @@ def _copy_game(game: GuanDanGame) -> GuanDanGame:
     clone = GuanDanGame(current_level_rank=game._current_level_rank)
     clone._state = game._require_state()
     # The parent already generated these actions for this exact immutable
-    # state. step() validates against that same cache; its invalidation replaces
+    # state. The shared step core validates that cache; invalidation replaces
     # the containers rather than mutating them, so siblings remain isolated.
     if game._legal_actions_state is clone._state:
         clone._legal_actions_state = game._legal_actions_state
@@ -506,7 +506,7 @@ def _search_action_ids(game: GuanDanGame, context: _SearchContext) -> tuple[int,
     Pending responders, history and ranks of other players affect transitions,
     but not this player's generated actions. Keep the complete player, level
     and exact leading Action (including carrier/suit/wildcard declaration).
-    The original step still validates and advances each branch.
+    The shared step core still validates and advances each branch.
     """
     state = game._require_state()
     key = (
@@ -566,8 +566,8 @@ def _search_profile(
         if monotonic() > context.deadline:
             raise _SearchBudgetExceeded
         child = _copy_game(game)
-        result = child.step(action_id)
-        if bool(result["game_over"]):
+        child._advance(action_id)
+        if child._require_state().is_finished:
             value = _terminal_value(child, root_team)
             profile = _SearchProfile(value, (value,))
         else:
@@ -596,7 +596,7 @@ def analyze_public_endgame(
     max_nodes: int = PUBLIC_ENDGAME_MAX_NODES,
     max_seconds: float = PUBLIC_ENDGAME_MAX_SECONDS,
 ) -> PublicEndgameAnalysis:
-    """Search an exact public position using the real ``GuanDanGame.step``.
+    """Search an exact public position using step's shared validated core.
 
     Any ambiguity, inconsistent ledger, or exhausted budget returns without
     partial values. The API never accepts a hidden ``GameState`` from agents.
@@ -628,16 +628,16 @@ def analyze_public_endgame(
             if monotonic() > context.deadline:
                 raise _SearchBudgetExceeded
             branch = _copy_game(game)
-            result = branch.step(action_id)
-            if bool(result["game_over"]):
+            branch._advance(action_id)
+            if branch._require_state().is_finished:
                 value = _terminal_value(branch, root_team)
                 profile = _SearchProfile(value, (value,))
             else:
                 profile = _search_profile(branch, root_team, context)
             if profile.guaranteed_value == 1:
-                # _search_profile only returns after every legal continuation
-                # below this root action has been evaluated. A completed proof
-                # for this route cannot be invalidated by another root move.
+                # Both exact metrics below this root are fully determined,
+                # including any branches skipped only after dual saturation.
+                # Another root move cannot invalidate this completed proof.
                 return PublicEndgameAnalysis(
                     status="proven_win",
                     proven_action_id=action_id,

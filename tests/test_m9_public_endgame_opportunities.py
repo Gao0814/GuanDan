@@ -275,7 +275,7 @@ class M9PublicEndgameOpportunityTests(unittest.TestCase):
             ({1: ("3S",), 2: ("4S",), 3: ("5S",), 4: ("6S",)}, (), 1, False),
             ({3: ("3S", "4S"), 4: ("5S",)}, (1, 2), 3, False),
         )
-        original_step = GuanDanGame.step
+        original_advance = GuanDanGame._advance
         for hands, finish_order, seat, saves_branches in cases:
             with self.subTest(finish_order=finish_order, seat=seat):
                 game, observation, actions = _public_endgame_fixture(
@@ -284,12 +284,12 @@ class M9PublicEndgameOpportunityTests(unittest.TestCase):
                 )
                 calls = 0
 
-                def counted_step(candidate, action_id):
+                def counted_advance(candidate, action_id):
                     nonlocal calls
                     calls += 1
-                    return original_step(candidate, action_id)
+                    return original_advance(candidate, action_id)
 
-                with patch.object(GuanDanGame, "step", side_effect=counted_step, autospec=True):
+                with patch.object(GuanDanGame, "_advance", side_effect=counted_advance, autospec=True):
                     expected = _reference_profile(game, "team_13")
                     exhaustive_calls = calls
                     calls = 0
