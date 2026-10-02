@@ -28,6 +28,7 @@ from agents.action_structure import (
     CandidateStructure,
     FreeLeadResidualStructure,
     candidate_response_net_effect,
+    natural_reorganization_costs,
     representative_candidate_contrasts,
     select_candidate_structure_representatives,
     summarize_candidate_contrasts,
@@ -893,6 +894,37 @@ class DeepSeekClient:
             rendered_control_ranks=frozenset(rendered_control_ranks),
             rendered_wildcard_ranks=frozenset(rendered_wildcard_ranks),
         )
+
+    @staticmethod
+    def _reorganization_cost_text(observation: object, action: object) -> str:
+        try:
+            routes = natural_reorganization_costs(observation, action)
+        except Exception:
+            return ""
+        if not routes:
+            return ""
+        future = action['declared_pattern'] == 'bomb'
+        parts = []
+        for route in routes:
+            paid = []
+            for change in route.changes:
+                if change.natural_count_before == change.natural_count_after:
+                    continue
+                item = f"{change.rank}:{change.natural_count_before}→{change.natural_count_after}"
+                if change.lost_group_kinds:
+                    item += "失去" + '/'.join(_RESIDUAL_USE_LABELS[k] for k in change.lost_group_kinds)
+                if change.retained_group_kinds:
+                    item += "保留" + '/'.join(_RESIDUAL_USE_LABELS[k] for k in change.retained_group_kinds)
+                if change.loses_control_resource:
+                    item += "消耗控制实体"
+                paid.append(item)
+            cleared = '/'.join(route.cleared_ranks) or '无'
+            parts.append(f"{_PATTERN_FULL.get(route.pattern, route.pattern)}{'–'.join(route.ranks)}：出{route.cards_played}张，清完{len(route.cleared_ranks)}个点数组({cleared})；"
+                         + '、'.join(paid) + f"；余自然控制实体{route.remaining_control_cards}张(不证牌权)")
+        prefix = '残牌重组成本(未来结构，无新ID)：' if future else '本次组合实体支付：'
+        suffix = ('；须以后获得合法出牌机会才可兑现，非当前候选/连走保证；重叠窗口是替代路线，不能累加为资源。'
+                  if future else '；这是清牌张数/点数组变化，不是最少出牌手数；结构重叠不重复计资源。')
+        return prefix + '；'.join(parts) + suffix
 
     @staticmethod
     def _response_net_tradeoff_text(
@@ -2972,7 +3004,7 @@ class DeepSeekClient:
         return title, body
 
     @staticmethod
-    def _format_rag_hits(items: list[dict[str, object]]) -> list[str]:
+    def _format_rag_hits(items: list[dict[str, object]], *, body_budget: int | None = None) -> list[str]:
         if not items:
             return ["（无）"]
         lines: list[str] = []
@@ -2986,6 +3018,10 @@ class DeepSeekClient:
             title, body = DeepSeekClient._rag_title_and_body(item)
             topic_text = f"；topic={topic}" if topic else ""
             domain_text = f"；domain={domain}" if domain else ""
+            if body_budget is not None:
+                if len(body) > body_budget:
+                    continue  # Omit a whole entry rather than lose its conditions.
+                body_budget -= len(body)
             body_text = f"：{body}" if body else ""
             suffix_parts = (topic_text + domain_text).lstrip("；")
             suffix = f"（{suffix_parts}）" if suffix_parts else ""
@@ -3796,6 +3832,9 @@ class DeepSeekClient:
                 opening_cross_pattern_guidance_rendered = True
             lines.append("")
 
+        resource_tradeoff = any(c.kind in {'bomb_residual', 'sequence_structure_loss'} for c in visible_contrasts)
+        reorganization_rendered: set[int] = set()
+        reorganization_chars = 0
         if visible_contrasts:
             if (candidate_facts and any(
                     row['hand_count'] == 2 and not row['finished'] and row['team'] != my_info['team']
@@ -3910,6 +3949,19 @@ class DeepSeekClient:
                         + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id)
                         + "一次出完、公开紧急性、队友/对手协同、回手计划或更高价值结构均可改变取舍。"
                     )
+                    cost_texts = []
+                    for cost_id in (first_id, second_id):
+                        if cost_id in reorganization_rendered:
+                            continue
+                        raw = next((a for a in prompt_actions if a['action_id'] == cost_id), None)
+                        text = DeepSeekClient._reorganization_cost_text(prompt_observation, raw)
+                        if text:
+                            cost_texts.append((cost_id, text))
+                    if reorganization_chars + sum(len(t) for _, t in cost_texts) <= 1200:
+                        for cost_id, text in cost_texts:
+                            lines.append(f"action_id={cost_id} " + text)
+                            reorganization_rendered.add(cost_id)
+                            reorganization_chars += len(text)
                 elif contrast.kind == "natural_pair_single":
                     teammate_text = (
                         f"队友公开剩余{contrast.teammate_hand_count}张"
@@ -3946,6 +3998,15 @@ class DeepSeekClient:
                         f"action_id={second_id} 是该点数的自然整组候选；比较顺子清理、残余组数与后续组合，"
                         "不要只按当前张数下结论。立即出完、公开紧急性或更好的回手路线可以推翻局部保组倾向。"
                     )
+                    for cost_id in (first_id,):
+                        if cost_id in reorganization_rendered:
+                            continue
+                        raw = next((a for a in prompt_actions if a['action_id'] == cost_id), None)
+                        text = DeepSeekClient._reorganization_cost_text(prompt_observation, raw)
+                        if text and reorganization_chars + len(text) <= 1200:
+                            lines.append(f"action_id={cost_id} " + text)
+                            reorganization_rendered.add(cost_id)
+                            reorganization_chars += len(text)
                 elif contrast.kind == "triple_split_repartition":
                     lines.append(
                         f"三张拆分/三带二对照：action_id={first_id} 从自然三张中出单张，公开余牌留下另一对子并仍有两组三张，"
@@ -4237,6 +4298,7 @@ class DeepSeekClient:
             any(item.get('declared_pattern') == 'pair' for item in legal_actions)
             or any(f.pattern == 'pass' and f.residual_whole_hand_pattern
                    for f in candidate_facts or ())
+            or resource_tradeoff
         ):
             behavior_hits = DeepSeekClient._rag_items(rag_context, "behavior_experience_hits")
             if behavior_hits:
@@ -4248,7 +4310,7 @@ class DeepSeekClient:
 
         lines.append("【经验库依据】")
         lines.append("仅作为策略倾向参考，不是强制命令，不能覆盖规则或候选动作。")
-        lines.extend(DeepSeekClient._format_rag_hits(experience_hits))
+        lines.extend(DeepSeekClient._format_rag_hits(experience_hits, body_budget=300 if resource_tradeoff else None))
         lines.append("")
 
         lines.append("【输出格式】")

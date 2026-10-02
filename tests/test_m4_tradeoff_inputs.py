@@ -161,6 +161,25 @@ def _free_bomb_split_game() -> GuanDanGame:
     return game
 
 
+def _reorganization_game(*, offset: int = 0, scattered: bool = False) -> GuanDanGame:
+    middle = ['4S', '6S', '7S', '8S', '9S', '10S']
+    if not scattered:
+        middle += ['4C', '6C', '6D', '7C']
+    hands = _deal(own_tokens=['5S', '5S', '5H', '5C', '5D', *middle, 'BJ', 'BJ'],
+                  own_excluded_ranks={'2', '3', '4', '5', '6', '7', '8', '9', '10', 'BJ'},
+                  player_two_tokens=['AS', 'AH', 'AC', '3S', '3C'])
+    rotated = {((p - 1 + offset) % 4) + 1: cards for p, cards in hands.items()}
+    leader = ((2 - 1 + offset) % 4) + 1
+    game = GuanDanGame(current_level_rank='2', preset_hands=rotated, starting_player_id=leader)
+    game.reset()
+    _warm_free_leader(game, leader_id=leader, target_rank='A', rounds=7,
+                      protected_tokens={'AS', 'AH', 'AC', '3S', '3C'})
+    game.step(int(_action(game, lambda a: a['declared_pattern'] == 'triple_with_pair'
+                         and Counter(a['carrier_cards']) == Counter(['AS', 'AH', 'AC', '3S', '3C']))['action_id']))
+    _step_pass(game); _step_pass(game)
+    return game
+
+
 def _wildcard_bomb_game() -> GuanDanGame:
     game = GuanDanGame(
         current_level_rank="2",
@@ -544,6 +563,74 @@ class M4TradeoffInputTests(unittest.TestCase):
                          and a['carrier_cards'] == ['4C'])
         context, _, _ = self._factory_request(friend, action['action_id'])
         self.assertNotIn('两张对手取舍', context)
+
+    def test_reorganization_payments_are_bound_alternatives_and_preserve_model_ids(self) -> None:
+        from agents.action_structure import natural_reorganization_costs
+        for offset, scattered in ((0, False), (2, False), (0, True)):
+            game = _reorganization_game(offset=offset, scattered=scattered)
+            obs, actions = game.observe(), game.legal_actions()
+            original = deepcopy((obs, actions))
+            context = self.rag_advisor.get_rag_context(observation=obs, legal_actions=actions, top_k=1)
+            self.assertEqual(len(context['rule_hits']), 1)
+            self.assertEqual(len(context['experience_hits']), 1)
+            projected = context['behavior_experience_hits']
+            self.assertEqual(len(projected), 2)
+            self.assertEqual(len({h['source_id'] for h in projected}), 2)
+            bodies = [DeepSeekClient._rag_title_and_body(h)[1] for h in projected]
+            self.assertLessEqual(sum(map(len, bodies)), 300)
+            rendered = '\n'.join(DeepSeekClient._format_rag_hits(projected, body_budget=300))
+            self.assertTrue(all(body in rendered for body in bodies))
+            short = _action(game, lambda a: a['declared_pattern'] == 'bomb'
+                            and len(a['carrier_cards']) == 4 and a['declared_cards'][0] == '5')
+            long = _action(game, lambda a: a['declared_pattern'] == 'bomb'
+                           and len(a['carrier_cards']) == 5 and a['declared_cards'][0] == '5')
+            routes = natural_reorganization_costs(obs, short)
+            self.assertEqual(len(routes), 2)
+            self.assertEqual(routes[0].ranks, ('4', '5', '6', '7', '8'))
+            self.assertEqual(routes[0].cards_played, 5)
+            changes = {c.rank: c for c in routes[0].changes}
+            self.assertEqual(changes['5'].natural_count_after, 0)
+            if scattered:
+                self.assertEqual(len(routes[0].cleared_ranks), 5)
+                self.assertFalse(any(c.lost_group_kinds for c in routes[0].changes))
+                self.assertGreaterEqual(routes[0].remaining_control_cards, 2)
+            else:
+                self.assertEqual(len(routes[0].cleared_ranks), 2)
+                self.assertIn('pair', changes['4'].lost_group_kinds)
+                self.assertIn('triple', changes['6'].lost_group_kinds)
+                self.assertIn('pair', changes['7'].lost_group_kinds)
+            other = natural_reorganization_costs(obs, long)
+            self.assertEqual(len(other), 1)
+            self.assertNotIn('5', other[0].ranks)
+            for selected in (short['action_id'], long['action_id']):
+                prompt, _, _ = self._factory_request(game, selected)
+                self.assertIn('残牌重组成本(未来结构，无新ID)', prompt)
+                self.assertIn('重叠窗口是替代路线', prompt)
+                self.assertIn('不固定长度', prompt)
+            self.assertEqual((obs, actions), original)
+
+    def test_current_sequence_cost_and_ambiguous_routes_fail_closed(self) -> None:
+        from agents.action_structure import natural_reorganization_costs
+        game = _reorganization_game()
+        short = _action(game, lambda a: a['declared_pattern'] == 'bomb'
+                        and len(a['carrier_cards']) == 4 and a['declared_cards'][0] == '5')
+        game.step(short['action_id'])
+        _step_pass(game); _step_pass(game); _step_pass(game)
+        seq = _action(game, lambda a: a['declared_pattern'] == 'straight'
+                      and set(a['declared_cards']) == {'4', '5', '6', '7', '8'})
+        cost = natural_reorganization_costs(game.observe(), seq)
+        self.assertEqual(len(cost), 1)
+        self.assertEqual(cost[0].cards_played, 5)
+        prompt, _, _ = self._factory_request(game, seq['action_id'])
+        self.assertIn('本次组合实体支付', prompt)
+        self.assertIn('不是最少出牌手数', prompt)
+        malformed = deepcopy(seq); malformed['carrier_cards'] = ['BJ'] * 5
+        self.assertEqual(natural_reorganization_costs(game.observe(), malformed), ())
+        with patch('agents.deepseek_client.natural_reorganization_costs', side_effect=ValueError):
+            self.assertEqual(DeepSeekClient._reorganization_cost_text(game.observe(), seq), '')
+        wild = _wildcard_bomb_game()
+        action = _action(wild, lambda a: a['declared_pattern'] == 'bomb' and a['wildcard_count'] > 0)
+        self.assertEqual(natural_reorganization_costs(wild.observe(), action), ())
 
     @classmethod
     def setUpClass(cls) -> None:

@@ -608,6 +608,81 @@ def summarize_free_lead_residual_structures(
     return tuple(summaries)
 
 
+@dataclass(frozen=True, slots=True)
+class NaturalReorganizationCost:
+    """One bound physical route; no future action ID or valuation."""
+
+    pattern: str
+    ranks: tuple[str, ...]
+    cards_played: int
+    cleared_ranks: tuple[str, ...]
+    changes: tuple[RankResourceChange, ...]
+    remaining_control_cards: int
+
+
+def natural_reorganization_costs(observation: object, action: object) -> tuple[NaturalReorganizationCost, ...]:
+    """At most two natural straight examples after a bomb, or the current sequence.
+
+    Reuse engine windows/bindings, never enumerate a residual legal-action pool.
+    Wildcard/declaration ambiguity is omitted. This is only a conditional use
+    of the actual residual hand, not a new playable canonical action.
+    """
+    facts = summarize_candidate_structures(observation, [action])
+    if not facts or not isinstance(action, Mapping):
+        return ()
+    fact = facts[0]
+    if fact.pattern not in {'bomb', 'straight', 'pair_straight', 'steel_plate', 'straight_flush'}:
+        return ()
+    if fact.uses_wildcard or fact.residual_rank_uses is None:
+        return ()
+    info = observation['my_info']
+    level = observation['current_round']['current_level_rank']
+    hand = Counter(info['hand_cards'])
+    carrier = Counter(action['carrier_cards'])
+    future = fact.pattern == 'bomb'
+    if future:
+        hand.subtract(carrier)
+        hand = +hand
+        played_rank = _rank_of(action['carrier_cards'][0])
+        by_rank = {}
+        for token in sorted(hand):
+            if token != f'{level}H':
+                by_rank.setdefault(_rank_of(token), token)
+        windows = [w for w in STRAIGHT_WINDOWS if all(r in by_rank for r in w)]
+        # One route using the retained rank and one alternative; overlapping
+        # windows are alternatives, not independent spendable resources.
+        selected = []
+        for contains in (True, False):
+            window = next((w for w in windows if (played_rank in w) == contains), None)
+            if window is not None:
+                selected.append(tuple(by_rank[r] for r in window))
+    else:
+        selected = [tuple(action['carrier_cards'])]
+    engine = BaseRuleEngine()
+    results = []
+    for tokens in selected[:2]:
+        cards = tuple(Card(t) if t in {'SJ', 'BJ'} else Card(t[:-1], t[-1]) for t in tokens)
+        pattern = (engine.detect_pattern(cards).type if future else PatternType(fact.pattern))
+        if future and pattern not in {PatternType.STRAIGHT, PatternType.STRAIGHT_FLUSH}:
+            continue
+        declared = (cards if pattern == PatternType.STRAIGHT_FLUSH
+                    else tuple(Card(_rank_of(t)) for t in tokens))
+        if not engine.public_action_bindings(info['player_id'], pattern, declared, cards,
+                                              level, first_binding_only=True):
+            continue
+        after = hand.copy(); after.subtract(tokens); after = +after
+        ranks = tuple(dict.fromkeys(_rank_of(t) for t in tokens))
+        before_uses = _residual_use_facts(action={'declared_pattern': 'pass'}, residual_hand=hand,
+                                        level_rank=level, played_ranks=set())
+        after_uses = _residual_use_facts(action={'declared_pattern': 'pass'}, residual_hand=after,
+                                       level_rank=level, played_ranks=set())
+        physical_after = Counter(_rank_of(t) for t in after.elements())
+        results.append(NaturalReorganizationCost(pattern.value, ranks, len(tokens),
+            tuple(r for r in ranks if physical_after[r] == 0),
+            _rank_resource_changes(before_uses[3], after_uses[3]), after_uses[2]))
+    return tuple(results)
+
+
 def _whole_hand_pattern(hand: Counter[str], player_id: int, level: str) -> str | None:
     """Confirm a small physical hand's natural whole-group binding, not an ID.
 
@@ -782,6 +857,42 @@ def summarize_candidate_structures(
     return tuple(results)
 
 
+def _rank_resource_changes(before: tuple[ResidualRankResource, ...],
+                           after: tuple[ResidualRankResource, ...]) -> tuple[RankResourceChange, ...]:
+    before_by_rank = {item.rank: item for item in before}
+    after_by_rank = {item.rank: item for item in after}
+    all_ranks = set(before_by_rank) | set(after_by_rank)
+    rank_resource_changes = tuple(
+        RankResourceChange(
+            rank=rank,
+            natural_count_before=before_by_rank[rank].natural_count if rank in before_by_rank else 0,
+            natural_count_after=after_by_rank[rank].natural_count if rank in after_by_rank else 0,
+            natural_pattern_kinds_before=(
+                before_by_rank[rank].natural_pattern_kinds if rank in before_by_rank else ()
+            ),
+            natural_pattern_kinds_after=(
+                after_by_rank[rank].natural_pattern_kinds if rank in after_by_rank else ()
+            ),
+            wildcard_count_before=before_by_rank[rank].wildcard_count if rank in before_by_rank else 0,
+            wildcard_count_after=after_by_rank[rank].wildcard_count if rank in after_by_rank else 0,
+            is_control_rank=(
+                before_by_rank[rank].is_control_rank if rank in before_by_rank
+                else after_by_rank[rank].is_control_rank
+            ),
+        )
+        for rank in sorted(all_ranks, key=lambda item: _RANK_VALUES.get(item, 99))
+        if (
+            (before_by_rank[rank].natural_count if rank in before_by_rank else 0)
+            != (after_by_rank[rank].natural_count if rank in after_by_rank else 0)
+            or (before_by_rank[rank].wildcard_count if rank in before_by_rank else 0)
+            != (after_by_rank[rank].wildcard_count if rank in after_by_rank else 0)
+            or (before_by_rank[rank].natural_pattern_kinds if rank in before_by_rank else ())
+            != (after_by_rank[rank].natural_pattern_kinds if rank in after_by_rank else ())
+        )
+    )
+    return rank_resource_changes
+
+
 def candidate_response_net_effect(
     passing: CandidateStructure,
     response: CandidateStructure,
@@ -804,39 +915,10 @@ def candidate_response_net_effect(
             passing.residual_natural_control_resource_count
             - response.residual_natural_control_resource_count
         )
-    rank_resource_changes: tuple[RankResourceChange, ...] | None = None
-    if passing.residual_rank_resources is not None and response.residual_rank_resources is not None:
-        before_by_rank = {item.rank: item for item in passing.residual_rank_resources}
-        after_by_rank = {item.rank: item for item in response.residual_rank_resources}
-        all_ranks = set(before_by_rank) | set(after_by_rank)
-        rank_resource_changes = tuple(
-            RankResourceChange(
-                rank=rank,
-                natural_count_before=before_by_rank[rank].natural_count if rank in before_by_rank else 0,
-                natural_count_after=after_by_rank[rank].natural_count if rank in after_by_rank else 0,
-                natural_pattern_kinds_before=(
-                    before_by_rank[rank].natural_pattern_kinds if rank in before_by_rank else ()
-                ),
-                natural_pattern_kinds_after=(
-                    after_by_rank[rank].natural_pattern_kinds if rank in after_by_rank else ()
-                ),
-                wildcard_count_before=before_by_rank[rank].wildcard_count if rank in before_by_rank else 0,
-                wildcard_count_after=after_by_rank[rank].wildcard_count if rank in after_by_rank else 0,
-                is_control_rank=(
-                    before_by_rank[rank].is_control_rank if rank in before_by_rank
-                    else after_by_rank[rank].is_control_rank
-                ),
-            )
-            for rank in sorted(all_ranks, key=lambda item: _RANK_VALUES.get(item, 99))
-            if (
-                (before_by_rank[rank].natural_count if rank in before_by_rank else 0)
-                != (after_by_rank[rank].natural_count if rank in after_by_rank else 0)
-                or (before_by_rank[rank].wildcard_count if rank in before_by_rank else 0)
-                != (after_by_rank[rank].wildcard_count if rank in after_by_rank else 0)
-                or (before_by_rank[rank].natural_pattern_kinds if rank in before_by_rank else ())
-                != (after_by_rank[rank].natural_pattern_kinds if rank in after_by_rank else ())
-            )
-        )
+    rank_resource_changes = (
+        _rank_resource_changes(passing.residual_rank_resources, response.residual_rank_resources)
+        if passing.residual_rank_resources is not None and response.residual_rank_resources is not None else None
+    )
     return CandidateNetEffect(
         cards_played=response.carrier_count,
         finishes_hand=response.finishes_hand,

@@ -122,12 +122,13 @@
       "entry_id": "exp_bomb_wildcard_001",
       "source_tier": "C", "claim_type": "strategy", "author_or_institution": "唐人游转载，原作者未确认",
       "title": "掼蛋宝典－最权威的掼蛋技巧", "publication": "唐人游公开网页转载",
-      "url_or_bibliography": "https://guandan.uc55.com/Rule/Detail/201009_000206.html", "locator": "通常保留炸弹的定性段落；无统计方法",
+      "url_or_bibliography": "https://guandan.uc55.com/Rule/Detail/201009_000206.html", "locator": "通常保留炸弹的定性段落；无统计方法；本轮Planning直接核对边锋《掼蛋技巧探秘（四）》第1项慎拆及带走单张例外，重组实体净成本为项目推导，不是五炸必出五张；Coding未独立网页核验",
       "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response", "endgame"]},
       "corroborating_source_ids": [
         "source_guandanmaster_bomb_timing_001",
         "candidate_smzdm_strategy_100_001",
-        "source_user_supplied_strategy_100_001"
+        "source_user_supplied_strategy_100_001",
+        "source_gameabc_last_pair_competition_001"
       ], "evidence_status": "active"
     },
     {
@@ -330,6 +331,6 @@
       "evidence_status": "registry_only"
     },
     {"entry_id": "source_gameabc_control_shapes_001", "source_tier": "C", "claim_type": "strategy", "author_or_institution": "边锋；单篇个人作者/统计依据未核实", "title": "掼蛋打法之顶牌流、套牌流", "publication": "边锋定性策略网页", "url_or_bibliography": "https://wap.gameabc.com/project/201911/441.html", "locator": "Planning本轮公开检索可见有控制条件下出单/改变对手牌型，直接打开超时；Coding未独立网页核验；仅定性竞争路线，不采用概率或绝对结论", "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["endgame"]}, "evidence_status": "active"},
-    {"entry_id": "source_gameabc_last_pair_competition_001", "source_tier": "C", "claim_type": "strategy", "author_or_institution": "边锋；单篇个人作者/统计依据未核实", "title": "掼蛋技巧探秘（四）", "publication": "边锋定性策略网页", "url_or_bibliography": "https://www.gameabc.com/news/201706/3835.html", "locator": "Planning本轮直接正文核对第1项拆大牌慎重、第17项末对遇单尽早拆；Coding未独立网页核验；相反建议作为条件化竞争假设，项目不采用必拆/必保规则", "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["endgame"]}, "evidence_status": "active"}
+    {"entry_id": "source_gameabc_last_pair_competition_001", "source_tier": "C", "claim_type": "strategy", "author_or_institution": "边锋；单篇个人作者/统计依据未核实", "title": "掼蛋技巧探秘（四）", "publication": "边锋定性策略网页", "url_or_bibliography": "https://www.gameabc.com/news/201706/3835.html", "locator": "Planning本轮直接正文核对第1项慎拆炸弹/三张/对子及带走单张例外、第17项末对遇单尽早拆；Coding未独立网页核验；相反建议作为条件化竞争假设，项目不采用必拆/必保规则", "scope": {"game_scope": "single_game", "player_count": 4, "tribute": "none", "level_rank": "any", "scenes": ["lead", "follow_response", "endgame"]}, "evidence_status": "active"}
   ]
 }

@@ -567,6 +567,7 @@ class RAGAdvisor:
         candidate_applicability: dict[str, bool] | None,
         behavior_projection: list[RAGEvidence] | None = None,
         finish_tradeoff_projection: bool = False,
+        resource_projection: bool = False,
     ) -> tuple[RAGEvidence, ...]:
         if top_k <= 0:
             return ()
@@ -706,6 +707,13 @@ class RAGAdvisor:
             [projection_source] + [item for item in selected_candidates if item != projection_source][:top_k - 1]
             if behavior_projection is not None and projection_source is not None else []
         )
+        if resource_projection and layer == 'experience':
+            projected = projected or selected_candidates[:1]
+            companion = next((item for item in candidates
+                if 'bomb_wildcard_management' in self._metadata_values(item[3].metadata, 'strategy_domain')
+                and item not in projected), None)
+            if companion is not None:
+                projected = projected[:1] + [companion]
         evidence_by_index: dict[int, RAGEvidence] = {}
         for _, negative_score, index, doc, _, _ in selected_candidates + projected:
             if index in evidence_by_index:
@@ -869,6 +877,10 @@ class RAGAdvisor:
         except Exception:
             rule_evidence = ()
 
+        resource_projection = (
+            bool(set(relation_kinds or ()) & {'bomb_residual', 'sequence_structure_loss'})
+            and not any(terminal_pass_signal(event) for event in relevant_passes)
+        )
         behavior_evidence: list[RAGEvidence] = []
         try:
             experience_evidence = self._retrieve_tagged(
@@ -877,8 +889,9 @@ class RAGAdvisor:
                 query=query,
                 top_k=top_k,
                 candidate_applicability=candidate_applicability,
-                behavior_projection=behavior_evidence if carried_pair_behavior or finish_tradeoff else None,
+                behavior_projection=behavior_evidence if carried_pair_behavior or finish_tradeoff or resource_projection else None,
                 finish_tradeoff_projection=finish_tradeoff,
+                resource_projection=resource_projection,
             )
         except Exception:
             experience_evidence = ()
