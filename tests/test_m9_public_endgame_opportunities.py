@@ -263,6 +263,59 @@ def _factory_agent(captured: list[dict[str, object]]):
 
 
 class M9PublicEndgameOpportunityTests(unittest.TestCase):
+    def test_dual_metric_saturation_matches_exhaustive_engine(self) -> None:
+        from engine.public_endgame import _SearchContext, _search_profile
+
+        # Both head teams, rotated seats/ranks, and a not-yet-fixed head.
+        # The last case has an extremal child but a non-extremal parent:
+        # a minimax-only shortcut would lose a reachable outcome here.
+        cases = (
+            ({4: ("3S", "3C", "4D", "5S"), 3: ("6C", "7S")}, (1, 2), 4, True),
+            ({2: ("6D", "6C", "7S", "8C"), 1: ("9S", "10C")}, (4, 3), 2, True),
+            ({1: ("3S",), 2: ("4S",), 3: ("5S",), 4: ("6S",)}, (), 1, False),
+            ({3: ("3S", "4S"), 4: ("5S",)}, (1, 2), 3, False),
+        )
+        original_step = GuanDanGame.step
+        for hands, finish_order, seat, saves_branches in cases:
+            with self.subTest(finish_order=finish_order, seat=seat):
+                game, observation, actions = _public_endgame_fixture(
+                    current_hands=hands, finish_order=finish_order,
+                    current_player_id=seat,
+                )
+                calls = 0
+
+                def counted_step(candidate, action_id):
+                    nonlocal calls
+                    calls += 1
+                    return original_step(candidate, action_id)
+
+                with patch.object(GuanDanGame, "step", side_effect=counted_step, autospec=True):
+                    expected = _reference_profile(game, "team_13")
+                    exhaustive_calls = calls
+                    calls = 0
+                    actual = _search_profile(
+                        game, "team_13", _SearchContext(deadline=float("inf"), max_nodes=5000),
+                    )
+                self.assertEqual((actual.guaranteed_value, actual.reachable_values), expected)
+                if saves_branches:
+                    self.assertLess(calls, exhaustive_calls)
+                else:
+                    self.assertEqual(calls, exhaustive_calls)
+                if finish_order:
+                    root_values, root_reachable = _reference_root_profiles(game)
+                    with patch("engine.public_endgame.monotonic", return_value=0.0):
+                        analysis = analyze_public_endgame(
+                            observation, actions, exact_public_hand_assignment(observation),
+                        )
+                    first_win = next((i for i, value in root_values if value == 1), None)
+                    if first_win is not None:
+                        self.assertEqual(analysis.status, "proven_win")
+                        self.assertEqual(analysis.proven_action_id, first_win)
+                    else:
+                        self.assertEqual(analysis.status, "solved")
+                        self.assertEqual(analysis.action_values, root_values)
+                        self.assertEqual(analysis.action_reachable_values, root_reachable)
+
     def test_search_legal_cache_keys_exact_inputs_and_is_call_local(self) -> None:
         from engine.public_endgame import _SearchContext, _search_action_ids
 

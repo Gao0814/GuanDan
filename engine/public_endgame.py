@@ -551,6 +551,15 @@ def _search_profile(
     actions = _search_action_ids(game, context)
     if not actions:
         raise _InvalidPosition
+    # Once the head finisher is fixed, the rules allow only that team's win
+    # or a draw (head and last on the same team). Before that, all three
+    # outcomes remain possible. These are upper bounds, not claimed paths.
+    if state.finish_order:
+        head_team = "team_13" if state.finish_order[0] in {1, 3} else "team_24"
+        outcome_bounds = (0, 1) if head_team == root_team else (-1, 0)
+    else:
+        outcome_bounds = (-1, 0, 1)
+    extreme_guarantee = max(outcome_bounds) if maximizing else min(outcome_bounds)
     child_profiles: list[_SearchProfile] = []
     reachable_values: set[int] = set()
     for action_id in actions:
@@ -565,6 +574,12 @@ def _search_profile(
             profile = _search_profile(child, root_team, context)
         child_profiles.append(profile)
         reachable_values.update(profile.reachable_values)
+        # Unlike minimax-only pruning, stop only when BOTH exact metrics
+        # cannot change: an extremal guarantee and every possible outcome
+        # already reached through fully searched, legal continuations.
+        if (profile.guaranteed_value == extreme_guarantee
+                and reachable_values.issuperset(outcome_bounds)):
+            break
 
     guarantees = [profile.guaranteed_value for profile in child_profiles]
     guaranteed_value = max(guarantees) if maximizing else min(guarantees)
