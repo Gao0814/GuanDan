@@ -263,6 +263,60 @@ def _factory_agent(captured: list[dict[str, object]]):
 
 
 class M9PublicEndgameOpportunityTests(unittest.TestCase):
+    def test_search_legal_cache_keys_exact_inputs_and_is_call_local(self) -> None:
+        from engine.public_endgame import _SearchContext, _search_action_ids
+
+        game, _, _ = _public_endgame_fixture(
+            current_hands={3: ("2H", "9C", "10D"), 4: ("JS", "QC")},
+            finish_order=(1, 2), current_player_id=3,
+            leading_token="8S", leader_player_id=4,
+        )
+        context = _SearchContext(deadline=float("inf"), max_nodes=5)
+        first_ids = _search_action_ids(game, context)
+        same = _clone_game(game)
+        same._state = replace(same._state, step_no=same._state.step_no + 7,
+                              round_no=same._state.round_no + 2)
+        with patch.object(BaseRuleEngine, "generate_legal_actions",
+                          side_effect=AssertionError("identical rule inputs")):
+            self.assertEqual(_search_action_ids(same, context), first_ids)
+        self.assertEqual(same.legal_actions(), game.legal_actions())
+        reference = _clone_game(same)
+        self.assertEqual(same.step(first_ids[0]), reference.step(first_ids[0]))
+        self.assertEqual(same.observe(), reference.observe())
+
+        state = game._require_state()
+        lead = state.table_constraint.leading_action
+        variants = (
+            replace(state, current_level_rank="3"),
+            replace(state, current_player_id=4),
+            replace(state, players=tuple(
+                replace(p, hand_cards=p.hand_cards[:-1]) if p.player_id == 3 else p
+                for p in state.players)),
+            replace(state, table_constraint=replace(state.table_constraint,
+                leading_action=replace(lead, carrier_cards=(Card("8", "C"),)))),
+            replace(state, table_constraint=replace(state.table_constraint,
+                leading_action=replace(lead, declared_cards=(Card("9"),),
+                                       carrier_cards=(Card("9", "C"),)))),
+            replace(state, table_constraint=TableConstraint()),
+        )
+        original_generate = BaseRuleEngine.generate_legal_actions
+        for variant in variants:
+            candidate = _clone_game(game)
+            candidate._state = variant
+            with patch.object(BaseRuleEngine, "generate_legal_actions",
+                              autospec=True, side_effect=original_generate) as generate:
+                _search_action_ids(candidate, context)
+                generate.assert_called_once()
+            oracle = _clone_game(candidate)
+            self.assertEqual(candidate.legal_actions(), oracle.legal_actions())
+        fresh = _SearchContext(deadline=float("inf"), max_nodes=5)
+        self.assertEqual(fresh.legal_cache, {})
+        with patch.object(BaseRuleEngine, "generate_legal_actions", autospec=True,
+                          side_effect=original_generate) as generate:
+            self.assertEqual(_search_action_ids(_clone_game(game), fresh), first_ids)
+            generate.assert_called_once()
+        self.assertLessEqual(len(context.legal_cache), context.max_nodes + 1)
+
     def test_search_branch_reuses_only_current_cache_and_matches_engine_step(self) -> None:
         from engine.public_endgame import _copy_game
 

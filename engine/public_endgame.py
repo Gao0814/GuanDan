@@ -76,6 +76,9 @@ class _SearchContext:
     max_nodes: int
     nodes: int = 0
     cache: dict[tuple[object, ...], _SearchProfile] = field(default_factory=dict)
+    legal_cache: dict[
+        tuple[object, ...], tuple[tuple[int, Action], ...]
+    ] = field(default_factory=dict)
 
 
 def _card_from_token(value: object, *, declared: bool = False) -> Card:
@@ -497,6 +500,33 @@ def _position_key(game: GuanDanGame) -> tuple[object, ...]:
     )
 
 
+def _search_action_ids(game: GuanDanGame, context: _SearchContext) -> tuple[int, ...]:
+    """Reuse complete rule generation within this one confirmed search.
+
+    Pending responders, history and ranks of other players affect transitions,
+    but not this player's generated actions. Keep the complete player, level
+    and exact leading Action (including carrier/suit/wildcard declaration).
+    The original step still validates and advances each branch.
+    """
+    state = game._require_state()
+    key = (
+        state.get_player(state.current_player_id),
+        state.current_level_rank,
+        state.table_constraint.leading_action,
+    )
+    ordered = context.legal_cache.get(key)
+    if ordered is None:
+        ordered = game._build_action_cache(state)
+        # At most one entry per visited node plus the root; no cross-call cache.
+        if len(context.legal_cache) <= context.max_nodes:
+            context.legal_cache[key] = ordered
+    else:
+        game._legal_actions_state = state
+        game._ordered_legal_actions = ordered
+        game._legal_action_map = dict(ordered)
+    return tuple(action_id for action_id, _ in ordered)
+
+
 def _search_profile(
     game: GuanDanGame,
     root_team: str,
@@ -518,16 +548,16 @@ def _search_profile(
     context.nodes += 1
     current_team = "team_13" if state.current_player_id in {1, 3} else "team_24"
     maximizing = current_team == root_team
-    actions = game.legal_actions()
+    actions = _search_action_ids(game, context)
     if not actions:
         raise _InvalidPosition
     child_profiles: list[_SearchProfile] = []
     reachable_values: set[int] = set()
-    for action in actions:
+    for action_id in actions:
         if monotonic() > context.deadline:
             raise _SearchBudgetExceeded
         child = _copy_game(game)
-        result = child.step(int(action["action_id"]))
+        result = child.step(action_id)
         if bool(result["game_over"]):
             value = _terminal_value(child, root_team)
             profile = _SearchProfile(value, (value,))
@@ -579,17 +609,16 @@ def analyze_public_endgame(
         root_team = "team_13" if root_player_id in {1, 3} else "team_24"
         values: list[tuple[int, int]] = []
         reachable_values: list[tuple[int, tuple[int, ...]]] = []
-        for action in game.legal_actions():
+        for action_id in _search_action_ids(game, context):
             if monotonic() > context.deadline:
                 raise _SearchBudgetExceeded
             branch = _copy_game(game)
-            result = branch.step(int(action["action_id"]))
+            result = branch.step(action_id)
             if bool(result["game_over"]):
                 value = _terminal_value(branch, root_team)
                 profile = _SearchProfile(value, (value,))
             else:
                 profile = _search_profile(branch, root_team, context)
-            action_id = int(action["action_id"])
             if profile.guaranteed_value == 1:
                 # _search_profile only returns after every legal continuation
                 # below this root action has been evaluated. A completed proof

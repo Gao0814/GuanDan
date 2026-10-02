@@ -1336,7 +1336,7 @@ class BaseRuleEngine:
                 (PatternType.PAIR, 2),
                 (PatternType.TRIPLE, 3),
             ):
-                if counts[rank] + wildcards < count:
+                if len(hand_cards) < count or counts[rank] + wildcards < count:
                     continue
                 declared = _public_declared_cards_for_group(rank, count)
                 actions.extend(_materialize_declared_actions(
@@ -1348,7 +1348,7 @@ class BaseRuleEngine:
                     first_carrier_only=first_carrier_only,
                 ))
             for count in range(4, 11):
-                if counts[rank] + wildcards < count:
+                if len(hand_cards) < count or counts[rank] + wildcards < count:
                     continue
                 declared = _public_declared_cards_for_group(rank, count)
                 actions.extend(_materialize_declared_actions(
@@ -1361,6 +1361,9 @@ class BaseRuleEngine:
                 ))
 
         for joker_rank in (SMALL_JOKER_RANK, BIG_JOKER_RANK):
+            # Wildcards cannot supply jokers. Avoid binding an absent pair.
+            if counts[joker_rank] < 2:
+                continue
             declared = _public_declared_cards_for_group(joker_rank, 2)
             actions.extend(_materialize_declared_actions(
                 player_id=player_id,
@@ -1377,14 +1380,15 @@ class BaseRuleEngine:
             Card(rank=BIG_JOKER_RANK),
             Card(rank=BIG_JOKER_RANK),
         )
-        actions.extend(_materialize_declared_actions(
-            player_id=player_id,
-            pattern=PatternType.JOKER_BOMB,
-            declared_cards=joker_bomb,
-            hand_cards=hand_cards,
-            current_level_rank=current_level_rank,
-            first_carrier_only=first_carrier_only,
-        ))
+        if counts[SMALL_JOKER_RANK] >= 2 and counts[BIG_JOKER_RANK] >= 2:
+            actions.extend(_materialize_declared_actions(
+                player_id=player_id,
+                pattern=PatternType.JOKER_BOMB,
+                declared_cards=joker_bomb,
+                hand_cards=hand_cards,
+                current_level_rank=current_level_rank,
+                first_carrier_only=first_carrier_only,
+            ))
         return actions
 
     def _generate_triple_with_pair_actions(
@@ -1521,14 +1525,33 @@ class BaseRuleEngine:
         if player.is_finished:
             return ()
 
+        leading_action = state.table_constraint.leading_action
+        leading_pattern = (
+            leading_action.declared_pattern if leading_action is not None else None
+        )
+        hand_size = len(player.hand_cards)
         actions = []
-        actions.extend(self._generate_single_actions(player.player_id, player.hand_cards, state.current_level_rank))
-        actions.extend(self._generate_group_actions(player.player_id, player.hand_cards, state.current_level_rank))
-        actions.extend(self._generate_triple_with_pair_actions(player.player_id, player.hand_cards, state.current_level_rank))
-        actions.extend(self._generate_straight_actions(player.player_id, player.hand_cards, state.current_level_rank))
-        actions.extend(self._generate_pair_straight_actions(player.player_id, player.hand_cards, state.current_level_rank))
-        actions.extend(self._generate_steel_plate_actions(player.player_id, player.hand_cards, state.current_level_rank))
-        actions.extend(self._generate_straight_flush_actions(player.player_id, player.hand_cards, state.current_level_rank))
+        # A normal response must have the lead's family. Cross-family control
+        # routes remain generated and are checked by can_beat below. Minimum
+        # lengths cannot be supplied by declarations or wildcard substitution.
+        generators = (
+            (PatternType.SINGLE, 1, self._generate_single_actions),
+            (None, 2, self._generate_group_actions),
+            (PatternType.TRIPLE_WITH_PAIR, 5, self._generate_triple_with_pair_actions),
+            (PatternType.STRAIGHT, 5, self._generate_straight_actions),
+            (PatternType.PAIR_STRAIGHT, 6, self._generate_pair_straight_actions),
+            (PatternType.STEEL_PLATE, 6, self._generate_steel_plate_actions),
+            (PatternType.STRAIGHT_FLUSH, 5, self._generate_straight_flush_actions),
+        )
+        for family, minimum_size, generate in generators:
+            if hand_size < minimum_size:
+                continue
+            if (
+                leading_action is not None
+                and family not in {None, PatternType.STRAIGHT_FLUSH, leading_pattern}
+            ):
+                continue
+            actions.extend(generate(player.player_id, player.hand_cards, state.current_level_rank))
 
         deduped: dict[tuple[object, ...], Action] = {}
         for action in actions:
@@ -1543,7 +1566,6 @@ class BaseRuleEngine:
             if _carrier_is_payable(action, player.hand_cards)
         }
 
-        leading_action = state.table_constraint.leading_action
         if leading_action is None:
             return tuple(sorted(deduped.values(), key=_action_sort_key))
 

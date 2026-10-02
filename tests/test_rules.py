@@ -1,11 +1,12 @@
 import unittest
 from collections import Counter
+from unittest.mock import patch
 
 from engine.actions import Action, ActionType
 from engine.cards import BIG_JOKER_RANK, SMALL_JOKER_RANK, Card, build_double_deck
 from engine.game import GuanDanGame
 from engine.patterns import PatternType
-from engine.rules import BaseRuleEngine
+from engine.rules import BaseRuleEngine, _action_sort_key
 from engine.state import GameState, PlayerState, TableConstraint
 
 
@@ -66,6 +67,38 @@ def _pass_id(game: GuanDanGame) -> int:
 class TestRules(unittest.TestCase):
     def setUp(self) -> None:
         self.rules = BaseRuleEngine()
+
+    def test_follow_family_filter_keeps_all_canonical_control_routes(self) -> None:
+        hands = (
+            ("3S", "4S", "5S", "6S", "7S", "8C", "8D", "8H", "8S", "8C"),
+            ("7S", "7C", "8S", "8C", "9S", "9C", "2H", "2H"),
+            ("SJ", "SJ", "BJ", "BJ", "AS", "AC", "AD", "AH", "AS", "AC"),
+        )
+        checked = set()
+        for hand in hands:
+            free = self.rules.generate_legal_actions(_state(hand_tokens=hand))
+            # The full free-lead catalog supplies every response family,
+            # declaration and carrier, including dual-wildcard routes.
+            for lead in free:
+                expected = [a for a in free if self.rules.can_beat(a, lead, "2")]
+                expected.append(Action.make_pass(1))
+                expected = tuple(sorted(expected, key=_action_sort_key))
+                actual = self.rules.generate_legal_actions(
+                    _state(hand_tokens=hand, table_action=lead))
+                self.assertEqual(actual, expected)
+                checked.add(lead.declared_pattern)
+        self.assertEqual(checked, set(PatternType) - {PatternType.UNKNOWN, PatternType.PASS})
+
+    def test_short_follow_does_not_generate_impossible_families(self) -> None:
+        state = _state(hand_tokens=("7S", "2H"), table_action=_action(
+            2, PatternType.SINGLE, ("6",), ("6C",)))
+        with patch.object(self.rules, "_generate_straight_flush_actions",
+                          side_effect=AssertionError("five cards unavailable")), \
+                patch.object(self.rules, "_generate_triple_with_pair_actions",
+                             side_effect=AssertionError("wrong family")):
+            actions = self.rules.generate_legal_actions(state)
+        self.assertTrue(any(a.declared_pattern == PatternType.SINGLE for a in actions))
+        self.assertTrue(any(a.action_type == ActionType.PASS for a in actions))
 
     def test_same_carrier_cards_expand_into_multiple_canonical_declarations(self) -> None:
         state = _state(hand_tokens=("2H", "7S", "7C", "8S", "8C"))
