@@ -479,6 +479,95 @@ def _wildcard_bomb_follow_game() -> GuanDanGame:
 
 
 class M4TradeoffInputTests(unittest.TestCase):
+    def test_joint_triple_pair_ceilings_match_public_binding_reference(self) -> None:
+        from itertools import combinations
+        from time import monotonic
+        from agents.card_tracker import _public_triple_pair_ceilings, _RANKS
+        from engine.rules import BaseRuleEngine
+        from engine.patterns import PatternType
+        from engine.public_simulation import SimulationBudget
+
+        engine = BaseRuleEngine()
+        cases = (
+            (("2C", "2D", "2H", "2S", "AS", "4S"), 5, {True: "2"}),
+            (("8H", "JS", "8D", "2H", "8C", "8S"), 5, {True: "8"}),
+            (("QS", "QC", "KS", "2H", "2H"), 5, {True: "K"}),
+            (("9S", "9C", "9D", "6S", "6C", "AS", "AC", "2H"), 5,
+             {False: "9", True: "A"}),
+            (("KS", "KC", "KD", "AS", "QS"), 5, {}),
+            (("2C", "2D", "2H", "2S", "AS", "4S"), 4, {}),
+        )
+        for tokens, capacity, expected in cases:
+            for order in (tokens, tuple(reversed(tokens))):
+                with self.subTest(tokens=order, capacity=capacity):
+                    cards = tuple(_card(t) for t in order)
+                    # Independent exhaustive five-entity subsets, not the
+                    # production allocation choices or standalone first carriers.
+                    reference = {}
+                    if capacity >= 5:
+                        for carrier in combinations(cards, 5):
+                            for main in _RANKS:
+                                for kicker in _RANKS:
+                                    if main == kicker:
+                                        continue
+                                    for action in engine.public_action_bindings(
+                                        0, PatternType.TRIPLE_WITH_PAIR,
+                                        (Card(main),)*3 + (Card(kicker),)*2, carrier, "2",
+                                    ):
+                                        kind = bool(action.wildcard_count)
+                                        if kind not in reference or engine.can_beat(action, reference[kind], "2"):
+                                            reference[kind] = action
+                    actual = _public_triple_pair_ceilings(
+                        engine, cards, capacity, "2", SimulationBudget(monotonic()+0.25),
+                    )
+                    self.assertEqual({k: a.declared_cards[0].rank for k, a in reference.items()}, expected)
+                    self.assertEqual({bool(a.wildcard_count): a.declared_cards[0].rank for a in actual}, expected)
+                    for action in actual:
+                        self.assertFalse(Counter(action.carrier_cards) - Counter(cards))
+                        self.assertLessEqual(action.wildcard_count, 2)
+        split = engine.public_action_bindings(
+            0, PatternType.TRIPLE_WITH_PAIR, (Card("Q"),)*3 + (Card("K"),)*2,
+            tuple(_card(t) for t in ("QS", "QC", "KS", "2H", "2H")), "2",
+        )
+        self.assertTrue(any(a.wildcard_count == 2 for a in split))
+
+    def test_joint_triple_pair_ceiling_reaches_factory_without_changing_ids(self) -> None:
+        from agents.card_tracker import final_follow_tracking
+        from tests.test_m9_public_endgame_opportunities import _public_endgame_fixture
+        from tests.test_suit_resource_projection import _capture_default_factory_request
+
+        for seat, low in ((4, "6"), (2, "8")):
+            other = 2 if seat == 4 else 4
+            leader = 3 if seat == 4 else 1
+            finished = 1 if seat == 4 else 3
+            game, observation, actions = _public_endgame_fixture(
+                current_hands={other: ("AS",), leader: ("2C", "2D", "2H", "2S", "4S"),
+                               seat: (low+"S", low+"C", low+"D", "7S", "7C", "7D", "KS")},
+                finish_order=(finished,), current_player_id=seat, leader_player_id=leader,
+                leading_token=("5S", "5C", "5D", "3S", "3C"),
+            )
+            original = deepcopy((observation, actions))
+            desired_actions = [next(a for a in actions if a["declared_pattern"] == p)
+                               for p in ("pass", "triple_with_pair")]
+            shown = None
+            for desired in desired_actions:
+                chosen, agent, transport = _capture_default_factory_request(game, desired["action_id"])
+                self.assertEqual(chosen, desired["action_id"])
+                self.assertEqual(agent.last_decision_source, "model")
+                self.assertEqual((game.observe(), game.legal_actions()), original)
+                self.assertIn("外部三带二资源上限=自然无/含配2", transport.prompt)
+                self.assertLessEqual(len(final_follow_tracking(observation, actions, "prior")), 1350)
+                self.assertTrue(set(transport.candidate_ids) <= {a["action_id"] for a in actions})
+                self.assertTrue(set(int(i) for i in re.findall(r"action_id=(\d+)", transport.prompt)) <= set(transport.candidate_ids))
+                if shown is not None:
+                    self.assertEqual(transport.candidate_ids, shown)
+                shown = transport.candidate_ids
+            for exc in (TimeoutError("budget"), ValueError("invalid")):
+                with patch("agents.card_tracker._public_triple_pair_ceilings", side_effect=exc):
+                    self.assertEqual(final_follow_tracking(observation, actions, "prior"), "prior")
+            with patch("agents.card_tracker._TRACKING_LIMIT", 1):
+                self.assertEqual(final_follow_tracking(observation, actions, "prior"), "prior")
+
     def test_follow_group_control_reaches_factory_and_keeps_model_choice(self) -> None:
         from agents.card_tracker import final_follow_tracking
         from agents.action_structure import ordinary_follow_pairs

@@ -1662,6 +1662,44 @@ class CardTracker:
         return self._summary
 
 
+def _public_triple_pair_ceilings(engine, cards, capacity, level, budget):
+    """Joint payments, with one engine-bound maximum per wildcard class.
+
+    Non-wild cards of one rank are interchangeable for this group query only:
+    suits do not occur in its declaration. Red level cards are allocated jointly,
+    including their natural use, rather than borrowed from standalone groups.
+    """
+    if capacity < 5:
+        return ()
+    wild = tuple(c for c in cards if c.rank == level and c.suit == "H")
+    natural = {rank: tuple(c for c in cards if c.rank == rank and c not in wild)
+               for rank in _RANKS}
+    found = {}
+    for main in sorted(_RANKS, key=lambda r: _rank_strength(r, level), reverse=True):
+        for kicker in _RANKS:
+            if kicker == main:
+                continue
+            for triple_wild in range(min(2, len(wild), 3) + 1):
+                for pair_wild in range(min(2 - triple_wild, len(wild) - triple_wild, 2) + 1):
+                    budget.check()
+                    if len(natural[main]) < 3 - triple_wild or len(natural[kicker]) < 2 - pair_wild:
+                        continue
+                    carrier = (natural[main][:3-triple_wild] + wild[:triple_wild]
+                               + natural[kicker][:2-pair_wild]
+                               + wild[triple_wild:triple_wild+pair_wild])
+                    bindings = engine.public_action_bindings(
+                        0, PatternType.TRIPLE_WITH_PAIR,
+                        (Card(main),) * 3 + (Card(kicker),) * 2,
+                        carrier, level, first_binding_only=True,
+                    )
+                    if bindings:
+                        found.setdefault(bool(bindings[0].wildcard_count), bindings[0])
+                    # Both maxima are now proved by descending main strength.
+                    if len(found) == 2:
+                        return tuple(found.values())
+    return tuple(found.values())
+
+
 def final_follow_tracking(observation: dict, displayed: list[dict], previous: str | None,
                           *, decision_deadline=None) -> str | None:
     """Bounded displayed costs and rule-bound public group ceilings, no new IDs."""
@@ -1726,28 +1764,7 @@ def final_follow_tracking(observation: dict, displayed: list[dict], previous: st
                                 if bindings:
                                     routes.append(bindings[0])
                     if capacity >= 5 and table["declared_pattern"] == "triple_with_pair":
-                        triples = sorted((a for a in routes if a.declared_pattern == PatternType.TRIPLE),
-                                         key=lambda a: _rank_strength(a.declared_cards[0].rank, state.level), reverse=True)
-                        pairs = [a for a in routes if a.declared_pattern == PatternType.PAIR]
-                        available = Counter(cards)
-                        found = set()
-                        for triple in triples:
-                            for pair in pairs:
-                                budget.check()
-                                carrier = triple.carrier_cards + pair.carrier_cards
-                                if Counter(carrier) - available:
-                                    continue
-                                bindings = engine.public_action_bindings(
-                                    0, PatternType.TRIPLE_WITH_PAIR,
-                                    triple.declared_cards + pair.declared_cards, carrier, state.level,
-                                    first_binding_only=True)
-                                if bindings and bool(bindings[0].wildcard_count) not in found:
-                                    found.add(bool(bindings[0].wildcard_count))
-                                    routes.append(bindings[0])
-                                if len(found) == 2:
-                                    break
-                            if len(found) == 2:
-                                break
+                        routes.extend(_public_triple_pair_ceilings(engine, cards, capacity, state.level, budget))
                     kings = tuple(c for c in cards if c.rank in JOKER_RANKS)
                     if capacity >= 4 and Counter(c.rank for c in kings)["SJ"] >= 2 and Counter(c.rank for c in kings)["BJ"] >= 2:
                         carrier = tuple(c for rank in JOKER_RANKS for c in kings if c.rank == rank)[:4]
