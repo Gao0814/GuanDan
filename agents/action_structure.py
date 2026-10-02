@@ -2082,3 +2082,25 @@ def select_candidate_structure_representatives(
     for fact in ordered:
         add(fact)
     return tuple(chosen)
+
+
+def ordinary_follow_pairs(observation: dict, actions: list[dict]) -> tuple[tuple[int, int], ...]:
+    """Displayed-only relationships; never protect or add model candidates."""
+    table = observation.get("current_round", {}).get("table_action")
+    if not isinstance(table, dict) or table.get("declared_pattern") not in {"single", "pair", "triple_with_pair"}:
+        return ()
+    facts = summarize_candidate_structures(observation, actions)
+    if facts is None:
+        return ()
+    options = [f for f in facts if f.pattern == table["declared_pattern"]]
+    if len(options) < 2:
+        return ()
+    by_id = {a["action_id"]: a for a in actions}
+    level = observation["my_info"]["current_level_rank"]
+    def strength(fact):
+        counts = Counter(_declared_multiset_key(t, fact.pattern) for t in by_id[fact.action_id]["declared_cards"])
+        ranks = [rank for rank, count in counts.items()
+                 if fact.pattern != "triple_with_pair" or count == 3]
+        return tuple(sorted(16 if rank == level else _RANK_VALUES[rank] for rank in ranks)), fact.action_id
+    ordered = sorted(options, key=strength)
+    return ((ordered[0].action_id, ordered[-1].action_id),)

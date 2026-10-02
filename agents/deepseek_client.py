@@ -3142,7 +3142,7 @@ class DeepSeekClient:
         if candidate_action_ids is not None:
             filtered_lines = []
             for line in card_tracking_summary.splitlines():
-                if line.startswith("M3候选对照") or line.startswith("M3唯一归属核验"):
+                if line.startswith(("M3候选对照", "M3唯一归属核验", "action_id=")):
                     referenced = [int(value) for value in re.findall(r"action_id=(\d+)", line)]
                     if not referenced or not all(value in candidate_action_ids for value in referenced):
                         continue
@@ -3459,7 +3459,7 @@ class DeepSeekClient:
         card_tracking_summary = DeepSeekClient._remap_prompt_summary_ids(
             card_tracking_summary,
             initial_aliases,
-            prefixes=("M3候选对照", "M3唯一归属核验"),
+            prefixes=("M3候选对照", "M3唯一归属核验", "action_id="),
         )
         public_endgame_summary = DeepSeekClient._remap_prompt_summary_ids(
             public_endgame_summary,
@@ -3608,7 +3608,7 @@ class DeepSeekClient:
         card_tracking_summary = DeepSeekClient._remap_prompt_summary_ids(
             card_tracking_summary,
             prompt_aliases,
-            prefixes=("M3候选对照", "M3唯一归属核验"),
+            prefixes=("M3候选对照", "M3唯一归属核验", "action_id="),
         )
         public_endgame_summary = DeepSeekClient._remap_prompt_summary_ids(
             public_endgame_summary,
@@ -4600,6 +4600,16 @@ class DeepSeekClient:
                 protected_opening_action_ids=opening_route_ids,
             )
 
+        # Final displayed-only facts cannot alter candidate selection.
+        from agents.action_structure import ordinary_follow_pairs
+        from agents.card_tracker import final_follow_tracking
+        relation_groups = tuple(dict.fromkeys(
+            relation_groups + ordinary_follow_pairs(observation, pruned_actions)
+        ))
+        if card_tracking_summary:
+            card_tracking_summary = final_follow_tracking(
+                observation, pruned_actions, card_tracking_summary, decision_deadline=decision_deadline,
+            )
         self.last_bounded_continuation = None
 
         def continuation_builder(displayed_actions):

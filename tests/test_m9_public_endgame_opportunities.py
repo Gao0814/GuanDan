@@ -75,7 +75,7 @@ def _public_endgame_fixture(
     current_hands: dict[int, tuple[str, ...]],
     finish_order: tuple[int, int],
     current_player_id: int,
-    leading_token: str | None = None,
+    leading_token: str | tuple[str, ...] | None = None,
     leader_player_id: int | None = None,
 ) -> tuple[GuanDanGame, dict[str, object], list[dict[str, object]]]:
     deck = build_double_deck()
@@ -87,13 +87,17 @@ def _public_endgame_fixture(
         for card in cards:
             deck.remove(card)
 
-    lead_card = _card(leading_token) if leading_token is not None else None
+    lead_cards = tuple(_card(t) for t in leading_token) if isinstance(leading_token, tuple) else (
+        (_card(leading_token),) if leading_token is not None else ()
+    )
+    lead_card = lead_cards[0] if lead_cards else None
     played: dict[int, list[Card]] = {player_id: [] for player_id in range(1, 5)}
     if lead_card is not None:
         if leader_player_id not in played:
             raise AssertionError("a public lead needs its actual player")
-        deck.remove(lead_card)
-        played[int(leader_player_id)].append(lead_card)
+        for card in lead_cards:
+            deck.remove(card)
+            played[int(leader_player_id)].append(card)
 
     for player_id in range(1, 5):
         needed = 27 - len(hands[player_id]) - len(played[player_id])
@@ -109,7 +113,8 @@ def _public_endgame_fixture(
         cards = played[owner]
         if lead_card is not None and owner == leader_player_id:
             cards = list(cards)
-            cards.remove(lead_card)
+            for card in lead_cards:
+                cards.remove(card)
         by_rank: dict[str, list[Card]] = defaultdict(list)
         for card in cards:
             by_rank[card.rank].append(card)
@@ -138,10 +143,10 @@ def _public_endgame_fixture(
         action = Action(
             player_id=int(leader_player_id),
             action_type=ActionType.PLAY,
-            declared_pattern=PatternType.SINGLE,
-            declared_cards=(Card(lead_card.rank),),
-            carrier_cards=(lead_card,),
-            display_text=f"single:{lead_card.rank}",
+            declared_pattern=BaseRuleEngine().detect_pattern(lead_cards).type,
+            declared_cards=tuple(Card(card.rank) for card in lead_cards),
+            carrier_cards=lead_cards,
+            display_text=f"{BaseRuleEngine().detect_pattern(lead_cards).type.value}:{lead_card.rank}",
         )
         events.append(HistoryEntry(len(events) + 1, 1, int(leader_player_id), action))
 

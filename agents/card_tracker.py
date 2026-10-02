@@ -1660,3 +1660,182 @@ class CardTracker:
     def get_summary(self, my_hand: list[str]) -> str:
         del my_hand
         return self._summary
+
+
+def final_follow_tracking(observation: dict, displayed: list[dict], previous: str | None,
+                          *, decision_deadline=None) -> str | None:
+    """Bounded displayed costs and rule-bound public group ceilings, no new IDs."""
+    from time import monotonic
+    from engine.public_simulation import SimulationBudget
+    from agents.action_structure import summarize_candidate_structures, candidate_response_net_effect
+
+    table = observation.get("current_round", {}).get("table_action")
+    if not isinstance(table, dict) or table.get("declared_pattern") not in {"single", "pair", "triple_with_pair"}:
+        return previous
+    state = _validated_public_state(observation)
+    facts = summarize_candidate_structures(observation, displayed)
+    if (state is None or facts is None or not _history_clock_is_complete(observation)
+            or _exact_single_owner(state) is not None):
+        return previous
+    pass_fact = next((f for f in facts if f.pattern == "pass"), None)
+    responses = [f for f in facts if f.pattern == table["declared_pattern"]]
+    if pass_fact is None or not responses:
+        return previous
+    # Representative displayed routes; unexpanded actions are not worse.
+    from agents.action_structure import ordinary_follow_pairs
+    endpoints = {i for pair in ordinary_follow_pairs(observation, displayed) for i in pair}
+    selected = list(dict.fromkeys(
+        [f.action_id for f in responses[:2]] + [f.action_id for f in responses if f.action_id in endpoints]
+    ))
+    responses = [f for f in responses if f.action_id in selected]
+    engine = BaseRuleEngine()
+    constraints = {p.player_id: p for p in state.constraints.players}
+    allowance = min(0.25, decision_deadline.remaining(reserve_seconds=5.0)) if decision_deadline else 0.25
+    if allowance <= 0:
+        return previous
+    budget = SimulationBudget(monotonic() + allowance, max_work=45000,
+                              cancelled=(lambda: decision_deadline.cancelled) if decision_deadline else None)
+    catalogs = {}
+    player_catalogs = []
+    try:
+        with budget.scope():
+            for player in _active_external_order(state):
+                cards = _possible_cards_for_player(state, constraints[player.player_id].possible_tokens)
+                if cards is None:
+                    return previous
+                capacity = player.remaining_capacity
+                key = (cards, capacity)
+                if key not in catalogs:
+                    routes = []
+                    wild = tuple(c for c in cards if c.rank == state.level and c.suit == "H")
+                    for pattern, size in ((PatternType.SINGLE, 1), (PatternType.PAIR, 2),
+                                          (PatternType.TRIPLE, 3), *((PatternType.BOMB, n) for n in range(4, 11))):
+                        if size > capacity:
+                            continue
+                        for rank in _RANKS:
+                            natural = tuple(c for c in cards if c.rank == rank)
+                            for used in range(min(2, len(wild), size) + 1):
+                                budget.check()
+                                own = tuple(c for c in natural if not used or c not in wild)
+                                if len(own) < size - used:
+                                    continue
+                                carrier = own[:size-used] + wild[:used]
+                                bindings = engine.public_action_bindings(
+                                    0, pattern, (Card(rank),) * size, carrier, state.level,
+                                    first_binding_only=True)
+                                if bindings:
+                                    routes.append(bindings[0])
+                    if capacity >= 5 and table["declared_pattern"] == "triple_with_pair":
+                        triples = sorted((a for a in routes if a.declared_pattern == PatternType.TRIPLE),
+                                         key=lambda a: _rank_strength(a.declared_cards[0].rank, state.level), reverse=True)
+                        pairs = [a for a in routes if a.declared_pattern == PatternType.PAIR]
+                        available = Counter(cards)
+                        found = set()
+                        for triple in triples:
+                            for pair in pairs:
+                                budget.check()
+                                carrier = triple.carrier_cards + pair.carrier_cards
+                                if Counter(carrier) - available:
+                                    continue
+                                bindings = engine.public_action_bindings(
+                                    0, PatternType.TRIPLE_WITH_PAIR,
+                                    triple.declared_cards + pair.declared_cards, carrier, state.level,
+                                    first_binding_only=True)
+                                if bindings and bool(bindings[0].wildcard_count) not in found:
+                                    found.add(bool(bindings[0].wildcard_count))
+                                    routes.append(bindings[0])
+                                if len(found) == 2:
+                                    break
+                            if len(found) == 2:
+                                break
+                    kings = tuple(c for c in cards if c.rank in JOKER_RANKS)
+                    if capacity >= 4 and Counter(c.rank for c in kings)["SJ"] >= 2 and Counter(c.rank for c in kings)["BJ"] >= 2:
+                        carrier = tuple(c for rank in JOKER_RANKS for c in kings if c.rank == rank)[:4]
+                        binding = engine.public_action_bindings(0, PatternType.JOKER_BOMB,
+                                                               carrier, carrier, state.level,
+                                                               first_binding_only=True)
+                        routes.extend(binding)
+                    flushes = engine.public_straight_flush_resources(cards, state.level) if capacity >= 5 else ()
+                    catalogs[key] = (tuple(routes), flushes)
+                player_catalogs.append((player, catalogs[key]))
+    except (TimeoutError, TypeError, ValueError):
+        return previous
+
+    pool = Counter()
+    for token, count in state.belief.unseen_cards_by_token.items():
+        pool[_physical_rank(token)] += count
+    rank_text = "/".join(f"{rank}:{pool[rank]}" for rank in _RANKS if pool[rank])
+    zero_text = "/".join(rank for rank in _RANKS if not pool[rank])
+    lines = [f"外部点数实体={rank_text}；归零={zero_text or '无'}（已扣本家当前手牌及全部公开承载）。"]
+    all_routes = [a for _, (routes, _) in player_catalogs for a in routes]
+    for pattern in ("single", "pair", "triple", *(("triple_with_pair",) if table["declared_pattern"] == "triple_with_pair" else ())):
+        options = [a for a in all_routes if a.declared_pattern.value == pattern]
+        parts = []
+        for label, wildcard in (("自然", False), ("含配", True)):
+            eligible = [a for a in options if bool(a.wildcard_count) == wildcard]
+            rank = max((a.declared_cards[0].rank for a in eligible),
+                       key=lambda r: _rank_strength(r, state.level), default=None)
+            parts.append(label + (rank or "无"))
+        lines.append(f"外部{_SHORT_PATTERN[pattern]}资源上限=" + "/".join(parts))
+    bomb_declarations = sorted({a.declared_cards[0].rank + "×" + str(len(a.carrier_cards))
+                                + ("配" if a.wildcard_count else "自然")
+                                for a in all_routes if a.declared_pattern == PatternType.BOMB})
+    flush_declarations = sorted({f.suit + "".join(f.rank_window) + ("配" if f.wildcard_count else "自然")
+                                 for _, (_, flushes) in player_catalogs for f in flushes})
+    for label, declarations in (("炸弹", bomb_declarations), ("同花顺", flush_declarations)):
+        lines.append(label + ("完整声明路线=" if len(declarations) <= 4 else "代表声明路线=")
+                     + ("/".join(declarations[:4]) or "无") + ("（另有路线）" if len(declarations) > 4 else ""))
+    lines.append("王炸=" + ("公开可行" if any(a.declared_pattern == PatternType.JOKER_BOMB for a in all_routes) else "容量/实体排除"))
+    if table["declared_pattern"] == "triple_with_pair" and not any(
+        r.natural_count == 2 for r in pass_fact.residual_rank_resources or ()
+    ):
+        lines.append("本家无完整自然对子可携带，需比较拆同点组/通配成本，不能编造无损对子替代。")
+    future_triples = {}
+    for fact in responses:
+        effect = candidate_response_net_effect(pass_fact, fact)
+        if effect is None:
+            return previous
+        retained = [r for r in fact.residual_rank_resources or () if r.natural_count >= 2]
+        groups = "/".join(f"{r.rank}×{r.natural_count}" for r in retained) or "无自然同点组"
+        for resource in retained:
+            if resource.natural_count >= 3:
+                future_triples[resource.rank] = resource
+        delta = "/".join(
+            f"{r.rank}自然{r.natural_count_before}→{r.natural_count_after}"
+            + ("失" + "、".join(_SHORT_PATTERN.get(k, k) for k in r.lost_group_kinds) if r.lost_group_kinds else "")
+            for r in effect.rank_resource_changes or ()
+        )
+        if effect.uses_wildcard:
+            delta += "；支付逢人配"
+        lines.append(f"action_id={fact.action_id}清{effect.cards_played}余{fact.residual_card_count}；{delta}；保留组={groups}")
+    for rank in future_triples:
+        # A resource query without an executable action ID. Validate its own
+        # carrier from the original hand; do not put spent cards in the pool.
+        own = tuple(c for c in _cards_from_tokens(state.my_hand) if c.rank == rank and not (c.rank == state.level and c.suit == "H"))
+        lead = engine.public_action_bindings(0, PatternType.TRIPLE, (Card(rank),)*3,
+                                            own[:3], state.level, first_binding_only=True)
+        if not lead:
+            return previous
+        details = []
+        for player, (routes, _) in player_catalogs:
+            stronger = sorted({a.declared_cards[0].rank + ("配" if a.wildcard_count else "自然")
+                               for a in routes if a.declared_pattern == PatternType.TRIPLE
+                               and engine.can_beat(a, lead[0], state.level)})
+            details.append(f"P{player.player_id}:" + ("/".join(stronger[:3]) or "无更强三张")
+                           + ("（代表）" if len(stronger) > 3 else ""))
+        lines.append(f"保留三{rank}更强同型上界[" + "；".join(details) + "]")
+    lines.append(f"action_id={pass_fact.action_id}清0保留全部组；以上为有限显示代表，未展开不视为更差；高低应手共有的保炸/保结构不独自解释高牌优先，减张不等于守住牌权。"
+                 "上限按逐家实体域/容量核验，非实持或概率；组可重叠，三张资源不等于能带对子；跨型炸弹仍可争权，未来余组需再获合法机会。")
+    strong = [line for line in (previous or "").splitlines() if line.startswith(("历史软pass：", "应手取舍：", "历史携带软线索："))]
+    # Preserve the existing serialized M3 relationships used by the prompt's
+    # contrast projection. Compact only their repeated prose, never their IDs.
+    import re
+    displayed_ids = {a["action_id"] for a in displayed}
+    for line in (previous or "").splitlines():
+        if line.startswith("M3候选对照"):
+            ids = [int(i) for i in re.findall(r"action_id=(\d+)", line)]
+            if len(ids) == 2 and set(ids).issubset(displayed_ids):
+                strong.append(f"M3候选对照 action_id={ids[0]} vs action_id={ids[1]}。")
+    text = "【记牌信息】\n" + "\n".join(strong + lines)
+    # Never truncate an endpoint, governing limitation, or retained-group bound.
+    return text if len(text) <= _TRACKING_LIMIT else previous

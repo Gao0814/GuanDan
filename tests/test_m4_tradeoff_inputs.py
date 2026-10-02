@@ -479,6 +479,53 @@ def _wildcard_bomb_follow_game() -> GuanDanGame:
 
 
 class M4TradeoffInputTests(unittest.TestCase):
+    def test_follow_group_control_reaches_factory_and_keeps_model_choice(self) -> None:
+        from agents.card_tracker import final_follow_tracking
+        from agents.action_structure import ordinary_follow_pairs
+        from agents.bounded_continuation import representative_roots
+        from tests.test_m9_public_endgame_opportunities import _public_endgame_fixture
+        from tests.test_suit_resource_projection import _capture_default_factory_request
+
+        for low, high in (("6", "10"), ("7", "J")):
+            game, observation, actions = _public_endgame_fixture(
+                current_hands={2: ("QC",), 3: ("QS", "2H", "2S", "2C"),
+                               4: (low+"S", low+"C", low+"D", high+"S", high+"C", high+"D", "KS")},
+                finish_order=(1,), current_player_id=4,
+                leading_token=("5S", "5C"), leader_player_id=3,
+            )
+            original = deepcopy((observation, actions))
+            passing = next(a for a in actions if a["declared_pattern"] == "pass")
+            response = next(a for a in actions if a["declared_pattern"] == "pair")
+            for desired in (passing, response):
+                with self.subTest(low=low, desired=desired["action_id"]):
+                    chosen, agent, transport = _capture_default_factory_request(game, desired["action_id"])
+                    self.assertEqual(chosen, desired["action_id"])
+                    self.assertEqual(agent.last_decision_source, "model")
+                    self.assertEqual((game.observe(), game.legal_actions()), original)
+                    self.assertIn("外部点数实体=", transport.prompt)
+                    self.assertIn("自然2/含配Q", transport.prompt)
+                    self.assertIn("保留三"+low+"更强同型上界", transport.prompt)
+                    self.assertIn("保留三"+high+"更强同型上界", transport.prompt)
+                    self.assertIn("P2:无更强三张", transport.prompt)
+                    self.assertIn("非实持或概率", transport.prompt)
+                    self.assertTrue(set(int(i) for i in re.findall(r"action_id=(\d+)", transport.prompt)).issubset(transport.candidate_ids))
+                    displayed = [a for a in actions if a["action_id"] in transport.candidate_ids]
+                    pair = ordinary_follow_pairs(observation, displayed)[0]
+                    self.assertTrue(set(pair).issubset(representative_roots(displayed, relation_groups=(pair,))))
+            with patch("engine.rules.BaseRuleEngine.public_action_bindings", side_effect=ValueError("invalid")):
+                self.assertEqual(final_follow_tracking(observation, actions, "prior"), "prior")
+            with patch("engine.public_simulation.SimulationBudget.check", side_effect=TimeoutError("budget")):
+                self.assertEqual(final_follow_tracking(observation, actions, "prior"), "prior")
+            deadline = SimpleNamespace(remaining=lambda **kwargs: 0, cancelled=False)
+            self.assertEqual(final_follow_tracking(observation, actions, "prior", decision_deadline=deadline), "prior")
+            incomplete = deepcopy(observation)
+            incomplete["history"]["actions"] = []
+            self.assertEqual(final_follow_tracking(incomplete, actions, "prior"), "prior")
+        remapped = DeepSeekClient._remap_prompt_summary_ids(
+            "action_id=9清2余5", {9: 3}, prefixes=("action_id=",),
+        )
+        self.assertEqual(remapped, "action_id=3清2余5")
+
     def test_terminal_whole_group_and_public_counter_control_reach_factory(self) -> None:
         from agents.card_tracker import public_single_overcall_possible
 
