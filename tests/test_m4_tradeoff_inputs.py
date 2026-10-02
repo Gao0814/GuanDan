@@ -86,6 +86,44 @@ def _step_pass(game: GuanDanGame) -> None:
     game.step(int(_action(game, lambda item: item["declared_pattern"] == "pass")["action_id"]))
 
 
+def _terminal_group_game(tokens: tuple[str, str], *, offset: int = 0,
+                         opponent_two: bool = False, teammate_two: bool = False) -> GuanDanGame:
+    """Full deal and legal replay; no hypothetical hand is sent to an agent."""
+    if opponent_two or teammate_two:
+        kwargs = ({'player_three_tokens': [*tokens, '3S'],
+                   'player_three_excluded_ranks': {"2", "3", *(t[:-1] for t in tokens)}}
+                  if teammate_two else
+                  {'player_two_tokens': [*tokens, '3S'],
+                   'player_two_excluded_ranks': {"2", "3", *(t[:-1] for t in tokens)}})
+        hands = _deal(own_tokens=["4S", "4C"], own_excluded_ranks={"2", "4"}, **kwargs)
+        leader = 3 if teammate_two else 2
+    else:
+        ranks = {t[:-1] if t not in {"SJ", "BJ"} else t for t in tokens}
+        hands = _deal(own_tokens=[*tokens, "3S"], own_excluded_ranks={"2", "3", *ranks},
+                      player_two_tokens=["5C"], player_two_excluded_ranks={"5"})
+        leader = 1
+    rotated = {((p - 1 + offset) % 4) + 1: cards for p, cards in hands.items()}
+    leader = ((leader - 1 + offset) % 4) + 1
+    game = GuanDanGame(current_level_rank="2", preset_hands=rotated, starting_player_id=leader)
+    game.reset()
+    _warm_free_leader(game, leader_id=leader, target_rank="3", rounds=24,
+                      protected_tokens={*tokens, "3S"})
+    game.step(int(_action(game, lambda a: a['carrier_cards'] == ['3S']
+                         and a['declared_pattern'] == 'single')['action_id']))
+    if opponent_two or teammate_two:
+        _step_pass(game)
+        if opponent_two:
+            _step_pass(game)
+        game.step(int(_action(game, lambda a: a['carrier_cards'] == ['4S']
+                             and a['declared_pattern'] == 'single')['action_id']))
+        _step_pass(game); _step_pass(game); _step_pass(game)
+    else:
+        game.step(int(_action(game, lambda a: a['carrier_cards'] == ['5C']
+                             and a['declared_pattern'] == 'single')['action_id']))
+        _step_pass(game); _step_pass(game)
+    return game
+
+
 def _warm_free_leader(
     game: GuanDanGame,
     *,
@@ -422,6 +460,91 @@ def _wildcard_bomb_follow_game() -> GuanDanGame:
 
 
 class M4TradeoffInputTests(unittest.TestCase):
+    def test_terminal_whole_group_and_public_counter_control_reach_factory(self) -> None:
+        from agents.card_tracker import public_single_overcall_possible
+
+        for tokens, offset, counter in ((('QS', 'QC'), 0, True),
+                                        (('JS', 'JD'), 2, True),
+                                        (('2S', '2H'), 0, True),
+                                        (('BJ', 'BJ'), 0, False)):
+            game = _terminal_group_game(tokens, offset=offset)
+            observation, actions = game.observe(), game.legal_actions()
+            before = deepcopy((observation, actions))
+            facts = summarize_candidate_structures(observation, actions)
+            passing = next(f for f in facts if f.pattern == 'pass')
+            response = next(f for f in facts if f.pattern == 'single')
+            self.assertEqual(passing.residual_whole_hand_pattern, 'pair')
+            self.assertEqual(candidate_response_net_effect(passing, response).split_finish_pattern, 'pair')
+            action = next(a for a in actions if a['action_id'] == response.action_id)
+            self.assertIs(public_single_overcall_possible(observation, action), counter)
+            for selected in (passing.action_id, response.action_id):
+                prompt, _, _ = self._factory_request(game, selected)
+                self.assertIn('末组收尾', prompt)
+                self.assertIn('本次加至少一次残牌出牌', prompt)
+                self.assertIn('当前不新增候选', prompt)
+                self.assertIn('估组不保牌权', prompt)
+                self.assertNotIn('source_gameabc', prompt)
+                if counter:
+                    self.assertIn('公开牌域仍支持更强单张', prompt)
+                else:
+                    self.assertIn('公开牌域无更强单张', prompt)
+                    self.assertNotIn('倾向pass保组', prompt)
+            self.assertEqual((observation, actions), before)
+
+        # The same exact own-hand facts under public urgent-opponent context
+        # must leave the blocking exception, not prescribe preserving the pair.
+        from dataclasses import replace
+        contrast = next(c for c in summarize_candidate_contrasts(observation, actions)
+                        if c.kind == 'follow_response_net_tradeoff')
+        by_id = {f.action_id: replace(f, minimum_opponent_hand_count=1) for f in facts}
+        text = DeepSeekClient._response_net_tradeoff_text(contrast, by_id, single_overcall_possible=True)
+        self.assertNotIn('倾向pass保组', text)
+        self.assertIn('公开紧急阻断', text)
+
+    def test_two_singletons_forced_pass_and_direct_group_finish_remain_distinct(self) -> None:
+        from agents.deepseek_ai import DeepSeekAIAgent
+        from agents.card_tracker import public_single_overcall_possible
+
+        game = _terminal_group_game(('QS', 'JD'))
+        facts = summarize_candidate_structures(game.observe(), game.legal_actions())
+        passing = next(f for f in facts if f.pattern == 'pass')
+        response = next(f for f in facts if f.pattern == 'single')
+        self.assertIsNone(passing.residual_whole_hand_pattern)
+        self.assertIsNone(candidate_response_net_effect(passing, response).split_finish_pattern)
+        malformed = game.observe(); malformed['history']['actions'] = []
+        self.assertIsNone(public_single_overcall_possible(malformed, game.legal_actions()[0]))
+        invalid = deepcopy(game.legal_actions()[0])
+        invalid['declared_pattern'] = 'single'; invalid['declared_cards'] = ['BJ']
+        invalid['carrier_cards'] = ['QS']; invalid['wildcard_count'] = 0
+        self.assertIsNone(public_single_overcall_possible(game.observe(), invalid))
+        low = _terminal_group_game(('4S', '4C'))
+        self.assertEqual([a['declared_pattern'] for a in low.legal_actions()], ['pass'])
+        client = SimpleNamespace(suggest_action_id=lambda **kw: self.fail('local shortcut called model'))
+        agent = DeepSeekAIAgent(1, client)
+        self.assertEqual(agent.select_action(low.observe(), low.legal_actions()), low.legal_actions()[0]['action_id'])
+
+        game = _terminal_group_game(('BJ', 'BJ'))
+        _step_pass(game)
+        game.step(int(_action(game, lambda a: a['declared_pattern'] == 'pair')['action_id']))
+        _step_pass(game); _step_pass(game)
+        finish = _action(game, lambda a: len(a['carrier_cards']) == 2)
+        agent = DeepSeekAIAgent(1, client)
+        self.assertEqual(agent.select_action(game.observe(), game.legal_actions()), finish['action_id'])
+
+    def test_opponent_two_card_shapes_are_conditional_and_role_specific(self) -> None:
+        opponent = _terminal_group_game(('7S', '7C'), opponent_two=True)
+        action = _action(opponent, lambda a: a['declared_pattern'] == 'single'
+                         and a['carrier_cards'] == ['4C'])
+        prompt, _, _ = self._factory_request(opponent, action['action_id'])
+        self.assertIn('未被公开证据排除的对子/两单均需比较', prompt)
+        self.assertIn('确证与可行牌域优先', prompt)
+        self.assertIn('高单也可能喂出其一张', prompt)
+        friend = _terminal_group_game(('7S', '7C'), teammate_two=True)
+        action = _action(friend, lambda a: a['declared_pattern'] == 'single'
+                         and a['carrier_cards'] == ['4C'])
+        context, _, _ = self._factory_request(friend, action['action_id'])
+        self.assertNotIn('两张对手取舍', context)
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.rag_advisor = RAGAdvisor(
@@ -464,7 +587,7 @@ class M4TradeoffInputTests(unittest.TestCase):
             rag_factory=lambda: self.rag_advisor,
         )
         with patch("agents.deepseek_ai.AppConfig.from_env", return_value=config):
-            agent = factory(1)
+            agent = factory(int(observation['my_info']['player_id']))
             chosen = agent.select_action(observation, legal_actions)
 
         self.assertEqual(chosen_ids, [requested_action_id])

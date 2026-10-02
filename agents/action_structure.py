@@ -8,6 +8,9 @@ from dataclasses import dataclass
 
 from agents.game_phase import OPENING, classify_game_phase
 from engine.sequences import PAIR_STRAIGHT_WINDOWS, STEEL_PLATE_WINDOWS, STRAIGHT_WINDOWS
+from engine.cards import Card
+from engine.patterns import PatternType
+from engine.rules import BaseRuleEngine
 
 
 _NORMAL_RANKS = frozenset({"3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"})
@@ -123,6 +126,7 @@ class CandidateStructure:
     residual_natural_control_resource_count: int | None = None
     residual_card_count: int | None = None
     residual_rank_resources: tuple[ResidualRankResource, ...] | None = None
+    residual_whole_hand_pattern: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +171,7 @@ class CandidateNetEffect:
     control_resource_delta: int | None
     lost_natural_uses: tuple[str, ...]
     rank_resource_changes: tuple[RankResourceChange, ...] | None = None
+    split_finish_pattern: str | None = None
 
     @property
     def comparison_information(self) -> int:
@@ -603,6 +608,27 @@ def summarize_free_lead_residual_structures(
     return tuple(summaries)
 
 
+def _whole_hand_pattern(hand: Counter[str], player_id: int, level: str) -> str | None:
+    """Confirm a small physical hand's natural whole-group binding, not an ID.
+
+    This only establishes an unconstrained structure. It does not make that
+    group legal against the current table or promise a later opportunity.
+    Unknown/wildcard-only completions are omitted rather than approximated.
+    """
+    if not 2 <= sum(hand.values()) <= 8:
+        return None
+    cards = tuple(Card(token) if token in {"SJ", "BJ"}
+                  else Card(token[:-1], token[-1]) for token in hand.elements())
+    engine = BaseRuleEngine()
+    pattern = engine.detect_pattern(cards).type
+    if pattern == PatternType.UNKNOWN:
+        return None
+    declared = cards if pattern == PatternType.STRAIGHT_FLUSH else tuple(Card(c.rank) for c in cards)
+    bindings = engine.public_action_bindings(player_id, pattern, declared, cards, level,
+                                             first_binding_only=True)
+    return pattern.value if bindings else None
+
+
 def summarize_candidate_structures(
     observation: object,
     legal_actions: object,
@@ -716,6 +742,7 @@ def summarize_candidate_structures(
                 residual_uses[2] if residual_uses is not None else None,
                 sum(hand.values()),
                 residual_uses[3] if residual_uses is not None else None,
+                _whole_hand_pattern(hand, player_id, level_rank),
             ))
             seen.add(action_id)
             continue
@@ -827,6 +854,8 @@ def candidate_response_net_effect(
         control_resource_delta=control_delta,
         lost_natural_uses=tuple(sorted(pass_uses - response_uses)),
         rank_resource_changes=rank_resource_changes,
+        split_finish_pattern=(passing.residual_whole_hand_pattern
+                              if not response.finishes_hand else None),
     )
 
 

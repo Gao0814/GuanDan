@@ -1308,6 +1308,43 @@ def terminal_pass_signal(event: _PublicPassEvidence) -> bool:
             and event.cards_played_since == 0)
 
 
+def public_single_overcall_possible(observation: object, raw_action: object) -> bool | None:
+    """A bounded single-family feasibility check using the existing hard domains.
+
+    False rules out stronger singles only, never cross-family resources or
+    later loss of control. True does not identify a holder or a probability.
+    """
+    state = _validated_public_state(observation)
+    if state is None or not isinstance(raw_action, dict) or raw_action.get('declared_pattern') != 'single':
+        return None
+    record = _action_record(raw_action, Counter(state.my_hand))
+    lead = _pattern_action(record, state.my_player_id) if record is not None else None
+    if lead is None:
+        return None
+    engine = BaseRuleEngine()
+    if not engine.public_action_bindings(state.my_player_id, PatternType.SINGLE,
+            lead.declared_cards, lead.carrier_cards, state.level, first_binding_only=True):
+        return None
+    for player in state.constraints.players:
+        if player.remaining_capacity <= 0:
+            continue
+        cards = _possible_cards_for_player(state, player.possible_tokens)
+        if cards is None:
+            return None
+        # Suit cannot change ordinary single strength; one physical carrier per
+        # natural rank plus the actual wildcard suffices for this yes/no query.
+        by_rank = {card.rank: card for card in cards}
+        wildcard = next((c for c in cards if c == Card(state.level, 'H')), None)
+        for rank in _RANKS:
+            carriers = tuple(dict.fromkeys(c for c in (by_rank.get(rank), wildcard) if c is not None))
+            for carrier in carriers:
+                bindings = engine.public_action_bindings(state.my_player_id, PatternType.SINGLE,
+                    (Card(rank),), (carrier,), state.level, first_binding_only=True)
+                if any(engine.can_beat(action, lead, state.level) for action in bindings):
+                    return True
+    return False
+
+
 def _candidate_response_profiles(
     state: _ValidatedPublicState,
     candidates: tuple[dict[str, object], ...],

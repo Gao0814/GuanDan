@@ -35,6 +35,7 @@ from agents.action_structure import (
     summarize_free_lead_residual_structures,
 )
 from agents.game_phase import GamePhaseContext, classify_game_phase, is_endgame_phase
+from agents.card_tracker import public_single_overcall_possible
 from agents.opening_strategy import (
     MAX_OPENING_FORMULA_CONTRASTS,
     OPENING_FORMULA_BASIS_TEXT,
@@ -897,6 +898,8 @@ class DeepSeekClient:
     def _response_net_tradeoff_text(
         contrast: CandidateContrast,
         candidate_facts_by_id: dict[int, CandidateStructure],
+        *,
+        single_overcall_possible: bool | None = None,
     ) -> str:
         """Render the public cost and immediate effect of one response/pass pair."""
         pass_fact = candidate_facts_by_id.get(contrast.action_ids[0])
@@ -1017,13 +1020,29 @@ class DeepSeekClient:
             if urgent_opponent or effect.finishes_hand
             else ""
         )
+        finish_route = ""
+        if effect.split_finish_pattern:
+            group_name = _PATTERN_FULL.get(effect.split_finish_pattern, "整组")
+            finish_route = (
+                f"末组收尾：pass保留整手{group_name}的一次成组收尾可能，须将来合法领出/应手，当前不新增候选；"
+                f"本次拆出{effect.cards_played}张后余{response_fact.residual_card_count}张，"
+                "从整组一手改为本次加至少一次残牌出牌；首次应手不等于最终牌权，残牌仍须维持或重获机会。"
+            )
+            if single_overcall_possible is True:
+                finish_route += "公开牌域仍支持更强单张接住，但不证谁持有；"
+            elif single_overcall_possible is False:
+                finish_route += "公开牌域无更强单张，为控单续出提供条件，但跨型反压及后续机会仍须核对；"
+            if not urgent_opponent and single_overcall_possible is not False:
+                finish_route += "若无可核对连续收尾收益，倾向pass保组；保组也可能等不到所需牌型。"
+            else:
+                finish_route += "公开紧急阻断或可核对连续收尾可改变保组倾向，不机械让牌。"
         return (
             f"{relation_label}：action_id={contrast.action_ids[0]} 为pass，{retained}且保留当前可识别余手结构，"
             f"但放弃本家这次应手；action_id={contrast.action_ids[1]} 是当前合法{response_name}应手，"
             f"即时以本家这手替换当前桌面并清理{effect.cards_played}张{finish_text}。可见代价：{cost_text}。"
             f"{rank_delta_text + '。' if rank_delta_text else ''}"
             f"{bomb_cost}"
-            f"{teammate_route}{opponent_route}{urgency_route}pass不消耗这些资源，但其他行动者仍可能接牌；"
+            f"{finish_route}{teammate_route}{opponent_route}{urgency_route}pass不消耗这些资源，但其他行动者仍可能接牌；"
             "后续若有人要改写桌面，需出合法更强牌并消耗实体牌，是否持有未知；"
             "pass后本家是否再次行动、能否压回均不保证；清牌进度、争牌权与本局名次分别衡量。"
             "任何一侧都不保证最终控桌。"
@@ -3778,6 +3797,16 @@ class DeepSeekClient:
             lines.append("")
 
         if visible_contrasts:
+            if (candidate_facts and any(
+                    row['hand_count'] == 2 and not row['finished'] and row['team'] != my_info['team']
+                    for row in other_players)
+                    and {"single", "pair"} <= {f.pattern for f in candidate_facts}):
+                lines.append(
+                    "两张对手取舍：仅凭余张不确证形状；未被公开证据排除的对子/两单均需比较，确证与可行牌域优先；"
+                    "合法送对时可能让其整手接完，"
+                    "低成本单张可改变牌型/试探诱拆，但需本方后续控制与残牌出路支撑，高单也可能喂出其一张。"
+                    "不能凭pass断言持对或故意诱拆；队友两张的送牌是另一角色取舍。"
+                )
             lines.append("【公开关系对照】")
             if (
                 not opening_cross_pattern_guidance_rendered
@@ -3817,6 +3846,12 @@ class DeepSeekClient:
                     rendered_response_pairs.add(pair_key)
                     tradeoff_text = DeepSeekClient._response_net_tradeoff_text(
                         contrast, candidate_facts_by_id,
+                        single_overcall_possible=(
+                            public_single_overcall_possible(prompt_observation, next(
+                                (a for a in prompt_actions if a['action_id'] == second_id), None))
+                            if candidate_facts_by_id.get(first_id) is not None
+                            and candidate_facts_by_id[first_id].residual_whole_hand_pattern else None
+                        ),
                     )
                     if tradeoff_text:
                         lines.append(tradeoff_text)
@@ -4198,8 +4233,10 @@ class DeepSeekClient:
         experience_hits = DeepSeekClient._rag_items(rag_context, "experience_hits")
         # Behavior RAG changes this existing text slot only, after the same
         # canonical candidates and relation budgets have been established.
-        if len(legal_actions) >= 2 and any(
-            item.get('declared_pattern') == 'pair' for item in legal_actions
+        if len(legal_actions) >= 2 and (
+            any(item.get('declared_pattern') == 'pair' for item in legal_actions)
+            or any(f.pattern == 'pass' and f.residual_whole_hand_pattern
+                   for f in candidate_facts or ())
         ):
             behavior_hits = DeepSeekClient._rag_items(rag_context, "behavior_experience_hits")
             if behavior_hits:

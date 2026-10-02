@@ -566,6 +566,7 @@ class RAGAdvisor:
         top_k: int,
         candidate_applicability: dict[str, bool] | None,
         behavior_projection: list[RAGEvidence] | None = None,
+        finish_tradeoff_projection: bool = False,
     ) -> tuple[RAGEvidence, ...]:
         if top_k <= 0:
             return ()
@@ -696,9 +697,14 @@ class RAGAdvisor:
 
         # Reuse the same eligibility/ranking pass for a text-only projection;
         # the ordinary source IDs used by candidate selection stay unchanged.
+        projection_source = behavior
+        if finish_tradeoff_projection:
+            projection_source = next((item for item in candidates
+                if item[3].metadata.get('guidance_mode') == 'source_principle'
+                and 'endgame_planning' in self._metadata_values(item[3].metadata, 'strategy_domain')), None)
         projected = (
-            [behavior] + [item for item in selected_candidates if item != behavior][:top_k - 1]
-            if behavior_projection is not None and behavior is not None else []
+            [projection_source] + [item for item in selected_candidates if item != projection_source][:top_k - 1]
+            if behavior_projection is not None and projection_source is not None else []
         )
         evidence_by_index: dict[int, RAGEvidence] = {}
         for _, negative_score, index, doc, _, _ in selected_candidates + projected:
@@ -826,9 +832,21 @@ class RAGAdvisor:
         scene_tags = self._scene_tags(
             observation, legal_actions, hand_eval, phase_context, relation_kinds
         )
-        from agents.card_tracker import relevant_public_passes, relevant_public_carried_pairs
-        scene_tags['public_pass_behavior'] = bool(relevant_public_passes(observation))
+        from agents.card_tracker import relevant_public_passes, relevant_public_carried_pairs, terminal_pass_signal
+        relevant_passes = relevant_public_passes(observation)
+        scene_tags['public_pass_behavior'] = bool(relevant_passes)
         carried_pair_behavior = bool(relevant_public_carried_pairs(observation, legal_actions))
+        facts = summarize_candidate_structures(observation, legal_actions) or ()
+        patterns = {f.pattern for f in facts}
+        finish_tradeoff = (
+            not any(terminal_pass_signal(event) for event in relevant_passes)
+            and (
+                (any(f.pattern == 'pass' and f.residual_whole_hand_pattern for f in facts)
+                 and any(f.pattern != 'pass' and not f.finishes_hand for f in facts))
+                or (any(f.minimum_opponent_hand_count == 2 for f in facts)
+                    and {'single', 'pair'} <= patterns)
+            )
+        )
         candidate_applicability = self._candidate_applicability(observation, legal_actions)
         intent = getattr(strategy_context, "intent", None)
         if isinstance(intent, str) and intent in {"run_out", "control", "support_teammate", "block_opponent"}:
@@ -859,7 +877,8 @@ class RAGAdvisor:
                 query=query,
                 top_k=top_k,
                 candidate_applicability=candidate_applicability,
-                behavior_projection=behavior_evidence if carried_pair_behavior else None,
+                behavior_projection=behavior_evidence if carried_pair_behavior or finish_tradeoff else None,
+                finish_tradeoff_projection=finish_tradeoff,
             )
         except Exception:
             experience_evidence = ()
