@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -21,6 +22,7 @@ from integrations.botzone.manual_batch import (
     _CONNECTOR_COMMAND_LINE_PATTERN,
     _connector_probe_argv,
     _read_jsonl_results,
+    _game_evidence_error_category,
     run_batch,
 )
 
@@ -85,6 +87,51 @@ def _write_fake_evidence(
 
 
 class BotzoneManualBatchTests(unittest.TestCase):
+    def test_child_encoding_and_ascii_footer_keep_handler_and_evidence_failures_distinct(self) -> None:
+        for legacy_gbk, evidence_failure in ((False, False), (True, False), (False, True)):
+            with self.subTest(gbk=legacy_gbk, evidence=evidence_failure), TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                (base / 'workspace').mkdir()
+                def fake_process(argv, **kwargs):
+                    if argv[0] == 'powershell.exe':
+                        return subprocess.CompletedProcess(argv, 0, 'connector_absent\n', '')
+                    if '--preflight-only' in argv:
+                        return subprocess.CompletedProcess(argv, 0, 'preflight_ready\n', '')
+                    self.assertEqual(kwargs['env']['PYTHONIOENCODING'], 'utf-8')
+                    _write_fake_evidence(argv, kwargs['stdout'], results=('local_team_win',),
+                                         stop_reason='diagnostic_failure', exit_code=5)
+                    kwargs['stdout'].flush()
+                    # Real child writes to the descriptor, bypassing the
+                    # parent's UTF-8 TextIOWrapper, just as on Windows.
+                    code = ("import os; os.write(1, '中文输出\\n'.encode('gbk'))" if legacy_gbk
+                            else "print('中文输出')")
+                    child = subprocess.run([sys.executable, '-c', code], env=kwargs['env'],
+                                           stdout=kwargs['stdout'], stderr=kwargs['stderr'], check=False)
+                    self.assertEqual(child.returncode, 0)
+                    if evidence_failure:
+                        path = Path(kwargs['stdout'].name)
+                        data = path.read_bytes().replace(b'game_evidence=ok', b'game_evidence=failed')
+                        path.write_bytes(data + b'evidence_incomplete category=evidence_write_failed\n')
+                    return subprocess.CompletedProcess(argv, 5, '', '')
+                messages = []
+                outcome = run_batch(workspace_root=base / 'workspace', repository_root=base,
+                                    process_runner=fake_process, announce=messages.append)
+                self.assertEqual(outcome.category, 'diagnostic_failure')
+                self.assertEqual(outcome.exit_code, 5)
+                self.assertEqual(outcome.game_results_status, 'complete')
+                self.assertEqual(outcome.recorded_games, 1)
+                self.assertEqual(outcome.game_evidence_status, 'failed' if evidence_failure else 'ok')
+                self.assertEqual(outcome.game_evidence_error_category,
+                                 'evidence_write_failed' if evidence_failure else None)
+                if not legacy_gbk:
+                    (outcome.batch_directory / 'streams' / 'stdout.txt').read_text(encoding='utf-8')
+                self.assertNotIn('中文输出', '\n'.join(messages))
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'stdout.txt'
+            self.assertEqual(_game_evidence_error_category(path), 'stream_output_unavailable')
+            path.write_bytes(b'connector_finished \xff\n')
+            self.assertEqual(_game_evidence_error_category(path), 'stream_output_invalid')
+
     def test_process_probe_distinguishes_connector_and_batch_launcher_modules(self) -> None:
         probe = _connector_probe_argv(4321)[-1]
         self.assertIn("$launcherPid = 4321", probe)

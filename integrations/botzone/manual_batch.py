@@ -376,6 +376,20 @@ def _read_jsonl_results(path: Path) -> tuple[tuple[int, str], ...] | None:
     return tuple(rows)
 
 
+def _read_summary_output(path: Path) -> str:
+    """Read only the ASCII machine contract, independent of console encoding.
+
+    Human stdout is neither diagnostic evidence nor required for the footer.
+    A malformed contract line still fails; never replace undecodable bytes in it.
+    """
+    info = path.lstat()
+    if _is_reparse_point(info) or not stat.S_ISREG(info.st_mode):
+        raise OSError
+    prefixes = (b"connector_finished ", b"evidence_incomplete ", b"configuration_error")
+    return "\n".join(line.decode("ascii") for line in path.read_bytes().splitlines()
+                     if line.startswith(prefixes))
+
+
 def _inspect_batch(
     paths: BatchPaths,
     process_exit: int,
@@ -388,10 +402,7 @@ def _inspect_batch(
     recorded = 0 if rows is None else len(rows)
     row_counts = Counter(result for _, result in rows) if rows is not None else Counter()
     try:
-        stream_info = paths.stdout.lstat()
-        if _is_reparse_point(stream_info) or not stat.S_ISREG(stream_info.st_mode):
-            raise OSError
-        output = paths.stdout.read_text(encoding="utf-8")
+        output = _read_summary_output(paths.stdout)
     except (OSError, UnicodeError):
         output = ""
     output_lines = set(output.splitlines())
@@ -467,7 +478,7 @@ def _inspect_batch(
 
 def _game_evidence_status(path: Path) -> str:
     try:
-        output = path.read_text(encoding="utf-8")
+        output = _read_summary_output(path)
     except (OSError, UnicodeError):
         return "incomplete"
     summaries = list(_CONNECTOR_SUMMARY.finditer(output))
@@ -478,9 +489,11 @@ def _game_evidence_status(path: Path) -> str:
 
 def _game_evidence_error_category(path: Path) -> str | None:
     try:
-        output = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        return "evidence_write_failed"
+        output = _read_summary_output(path)
+    except OSError:
+        return "stream_output_unavailable"
+    except UnicodeError:
+        return "stream_output_invalid"
     match = _EVIDENCE_FAILURE.search(output)
     return match.group(1) if match is not None else None
 
@@ -507,6 +520,8 @@ def run_batch(
     executable = python_executable or sys.executable
     environment = os.environ.copy()
     environment["DEEPSEEK_MODEL"] = DEEPSEEK_MODEL
+    # Redirected file descriptors bypass the parent's TextIOWrapper encoding.
+    environment["PYTHONIOENCODING"] = "utf-8"
 
     try:
         process_probe = runner(

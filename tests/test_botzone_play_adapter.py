@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 from engine.actions import ActionType
 from engine.cards import Card
@@ -10,13 +13,16 @@ from engine.patterns import PatternType
 from integrations.botzone.cards import ALL_CARDS, card_from_id, card_id_for
 from integrations.botzone.models import ActionClaim, GlobalState, HistoryEntry, PlayRequest
 from integrations.botzone.play_adapter import (
+    AdapterError,
+    NoTributeRuleBasedHandler,
     _history_entry_to_action,
     botzone_id_to_engine_card,
     encode_action_claim,
     project_decision,
     team_for_engine_player,
 )
-from integrations.botzone.session import HandlerContext
+from integrations.botzone.session import HandlerContext, SessionStore, HandlerResult
+from integrations.botzone.models import DealRequest
 
 
 def _request(history: tuple[HistoryEntry, ...] = ()) -> PlayRequest:
@@ -47,6 +53,98 @@ def _context(hand: tuple[int, ...], history: tuple[HistoryEntry, ...] = (), *, l
 
 
 class BotzonePlayAdapterTests(unittest.TestCase):
+    def test_done_with_missing_public_carrier_degrades_without_inventing_history(self) -> None:
+        from agents.card_tracker import exact_public_hand_assignment, _validated_public_state, build_card_tracking_summary
+        for local, done in ((2, 0), (1, 3)):
+            with self.subTest(local=local):
+                history = tuple(HistoryEntry(done, ActionClaim((i,), (i,))) for i in range(26))
+                request = replace(_request(history[-4:]), done=(done,))
+                context = replace(_context(tuple(range(81, 108)), local=local),
+                                  request=request, history=history, latest_window=history[-4:])
+                projection = project_decision(context)
+                observation = dict(projection.observation)
+                finished = next(p for p in observation['other_players'] if p['finished'])
+                self.assertEqual(finished['hand_count'], 0)
+                self.assertFalse(observation['history']['complete'])
+                self.assertEqual(len(observation['history']['actions']), 26)
+                self.assertIsNone(_validated_public_state(observation))
+                self.assertIsNone(exact_public_hand_assignment(observation))
+                self.assertIn('证据级=E0', build_card_tracking_summary(observation, list(projection.legal_actions)))
+                # Missing old carriers do not change the actual latest table
+                # or the canonical actions generated from the local hand.
+                complete = history + (HistoryEntry(done, ActionClaim((26,), (26,))),)
+                full = replace(context, history=complete, latest_window=complete[-4:],
+                               request=replace(request, history=complete[-4:]))
+                self.assertNotIn('complete', project_decision(full).observation['history'])
+                without_done = replace(context, request=replace(request, done=()))
+                self.assertEqual(projection.legal_actions, project_decision(without_done).legal_actions)
+                # A fresh pass changes the window but cannot fill the missing
+                # carrier or authorize a finished player to take another turn.
+                shifted = history + (HistoryEntry((done + 1) % 4, ActionClaim.pass_action()),)
+                shifted_context = replace(context, history=shifted, latest_window=shifted[-4:],
+                                          request=replace(request, history=shifted[-4:]))
+                self.assertFalse(project_decision(shifted_context).observation['history']['complete'])
+                over_capacity = complete + (HistoryEntry(done, ActionClaim((27,), (27,))),)
+                for bad, category in (
+                    (replace(context, history=history + history[-1:], latest_window=history[-4:] + history[-1:],
+                             request=replace(request, history=history[-4:] + history[-1:])), 'duplicate_public_entity'),
+                    (replace(context, own_hand=context.own_hand[:-1]), 'local_hand_conservation_failed'),
+                    (replace(full, request=replace(full.request, done=())), 'unfinished_zero_capacity'),
+                    (replace(context, history=over_capacity, latest_window=over_capacity[-4:],
+                             request=replace(request, history=over_capacity[-4:])), 'public_capacity_invalid'),
+                    (replace(context, request=replace(request, done=(local,))), 'context_finished_mismatch'),
+                    (replace(context, request=replace(request, done=(done, (done + 2) % 4))), 'terminal_double_down_context'),
+                ):
+                    with self.assertRaisesRegex(AdapterError, category):
+                        project_decision(bad)
+
+    def test_degraded_done_projection_preserves_model_choice_and_ack(self) -> None:
+        history = tuple(HistoryEntry(0, ActionClaim((i,), (i,))) for i in range(26))
+        request = replace(_request(history[-4:]), done=(0,))
+        class Agent:
+            client = SimpleNamespace(last_outcome='success')
+            last_decision_source = 'model'
+            pattern = 'pass'
+            def select_action(self, observation, actions):
+                self.selected = next(a['action_id'] for a in actions if a['declared_pattern'] == self.pattern)
+                return self.selected
+        agent = Agent()
+        with TemporaryDirectory() as root:
+            store = SessionStore(root, decision_trace_enabled=True)
+            deal = DealRequest(tuple(range(81, 108)), 2, replace(request.global_state, resist=None))
+            record, _ = store.prepare('unit-gap', b'deal', deal)
+            store.complete_handler(store.reserve_handler(record), HandlerResult(b'[]'))
+            deliveries = store.pending_deliveries()
+            store.mark_inflight(deliveries); store.acknowledge(deliveries)
+            # Synthetic public declaration ledger; not a real rotation replay.
+            record = replace(store.load('unit-gap'), stage='play', global_state=request.global_state,
+                             history=history, latest_window=history[-4:])
+            store.save(record)
+            context = store.handler_context(record, request)
+            handler = NoTributeRuleBasedHandler(lambda _: agent, agent_mode='deepseek', decision_trace_enabled=True)
+            result = handler(context)
+            self.assertEqual(result.decision_trace.selected_action_id, agent.selected)
+            self.assertEqual(result.decision_trace.decision_source, 'model')
+            store.complete_handler(store.reserve_handler(record), result)
+            deliveries = store.pending_deliveries()
+            store.mark_inflight(deliveries); store.acknowledge(deliveries)
+            self.assertEqual(store.load('unit-gap').own_hand, context.own_hand)
+            self.assertIsNone(store.load('unit-gap').pending_response)
+            window = (history[-1], HistoryEntry(2, ActionClaim.pass_action()),
+                      HistoryEntry(3, ActionClaim.pass_action()), HistoryEntry(1, ActionClaim((27,), (27,))))
+            next_request = replace(request, history=window)
+            record, _ = store.prepare('unit-gap', b'next', next_request)
+            agent.pattern = 'single'
+            result = handler(store.handler_context(record, next_request))
+            self.assertEqual(result.decision_trace.selected_action_id, agent.selected)
+            self.assertEqual(result.decision_trace.decision_source, 'model')
+            self.assertTrue(result.effect.action)
+            store.complete_handler(store.reserve_handler(record), result)
+            deliveries = store.pending_deliveries()
+            store.mark_inflight(deliveries); store.acknowledge(deliveries)
+            self.assertEqual(store.load('unit-gap').own_hand,
+                             tuple(i for i in context.own_hand if i not in result.effect.action))
+
     def test_108_ids_and_teams_map_without_losing_card_faces(self) -> None:
         self.assertEqual(len(ALL_CARDS), 108)
         for source in ALL_CARDS:

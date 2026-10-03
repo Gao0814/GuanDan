@@ -504,14 +504,15 @@ def _public_observation(
 ) -> dict[str, object]:
     local = state.current_player_id
     played_counts = Counter(entry.player_id for entry in context.history for _ in entry.response.action)
+    history_incomplete = any(played_counts[player] != 27 for player in request.done)
     other_players: list[dict[str, object]] = []
     for botzone_player in range(4):
         engine_player = botzone_player_to_engine_player(botzone_player)
         if engine_player == local:
             continue
         finished = botzone_player in request.done
-        count = 27 - played_counts[botzone_player]
-        if count < 0 or (finished and count != 0):
+        count = 0 if finished else 27 - played_counts[botzone_player]
+        if count < 0:
             raise AdapterError("public_count_inconsistent")
         other_players.append(
             {
@@ -536,7 +537,7 @@ def _public_observation(
             }
         )
     hand_counts = Counter(card.rank for card in state.get_player(local).hand_cards)
-    return {
+    observation = {
         "my_info": {
             "player_id": local,
             "team": team_for_engine_player(local),
@@ -557,6 +558,15 @@ def _public_observation(
         "history": {"actions": history_actions, "finish_order": list(state.finish_order)},
         "legal_actions": [dict(action) for action in legal_actions],
     }
+    if history_incomplete:
+        # done is an authoritative empty hand, not evidence for the identity
+        # of missing carriers. Retain only observed actions; the incomplete
+        # 108-card ledger must not support exact inference or reconstruction.
+        observation["history"]["complete"] = False
+        for player in other_players:
+            if not player["finished"]:
+                player["hand_count_is_upper_bound"] = True
+    return observation
 
 
 def _canonical_declared_cards(cards: Sequence[Card], pattern: PatternType) -> tuple[Card, ...]:
@@ -684,7 +694,8 @@ def _validate_context(context: HandlerContext, request: DealRequest | PlayReques
         remaining = 27 - played_by_player[player_id]
         if not 0 <= remaining <= 27:
             raise AdapterError("public_capacity_invalid")
-        if player_id in request.done and remaining != 0:
-            raise AdapterError("done_capacity_invalid")
+        # A finished external hand can reveal a gap in the public windows.
+        # Its missing entities are unknown, not a fabricated history action.
+        # Own conservation and observed over-capacity remain strict above.
         if player_id not in request.done and remaining == 0:
             raise AdapterError("unfinished_zero_capacity")
