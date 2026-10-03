@@ -728,10 +728,16 @@ class DeepSeekClient:
         return "；".join(parts)
 
     @staticmethod
+    def _public_count_text(count: object, upper_bound: bool = False) -> str:
+        """Render supplied public counts without changing their routing value."""
+        return ("至多" if upper_bound and count != 0 else "") + f"{count}张"
+
+    @staticmethod
     def _residual_use_contrast_text(
         first_id: int,
         second_id: int,
         candidate_facts: dict[int, CandidateStructure],
+        upper_bound_roles: frozenset[str] = frozenset(),
     ) -> str:
         first_fact = candidate_facts.get(first_id)
         second_fact = candidate_facts.get(second_id)
@@ -756,23 +762,25 @@ class DeepSeekClient:
         public_context: list[str] = []
         teammate_count = first_fact.teammate_hand_count
         if first_fact.teammate_active and teammate_count is not None and teammate_count <= 2:
-            public_context.append(f"队友公开剩余{teammate_count}张")
+            public_context.append("队友公开剩余" + DeepSeekClient._public_count_text(teammate_count, 'teammate' in upper_bound_roles))
         opponent_count = first_fact.minimum_opponent_hand_count
         if opponent_count is not None and opponent_count <= 2:
-            public_context.append(f"对手公开最少剩余{opponent_count}张")
+            public_context.append(
+                "至少一名对手剩余" + DeepSeekClient._public_count_text(opponent_count, True)
+                if 'opponent' in upper_bound_roles else f"对手公开最少剩余{opponent_count}张")
         context_text = f"公开局势={'/'.join(public_context)}；" if public_context else ""
         return (
             f"留牌事实：{retained_text}候选{first_id}[{first}]；候选{second_id}[{second}]。{context_text}"
         )
 
     @staticmethod
-    def _follow_order_context(contrast: CandidateContrast) -> str:
+    def _follow_order_context(contrast: CandidateContrast, upper_bound_roles: frozenset[str] = frozenset()) -> str:
         """Format only the validated public leader and next-seat facts."""
         parts: list[str] = []
         if contrast.table_leader_relation in {"teammate", "opponent"}:
             relation = "队友" if contrast.table_leader_relation == "teammate" else "对手"
             count_text = (
-                f"公开余{contrast.table_leader_hand_count}张"
+                "公开余" + DeepSeekClient._public_count_text(contrast.table_leader_hand_count, contrast.table_leader_relation in upper_bound_roles)
                 if contrast.table_leader_hand_count is not None
                 else "公开余牌数未知"
             )
@@ -783,7 +791,7 @@ class DeepSeekClient:
         ):
             relation = "队友" if contrast.next_active_player_relation == "teammate" else "对手"
             count_text = (
-                f"公开余{contrast.next_active_player_hand_count}张"
+                "公开余" + DeepSeekClient._public_count_text(contrast.next_active_player_hand_count, contrast.next_active_player_relation in upper_bound_roles)
                 if contrast.next_active_player_hand_count is not None
                 else "公开余牌数未知"
             )
@@ -3693,6 +3701,10 @@ class DeepSeekClient:
                     f"桌面牌组：{ta_cards_text}"
                 )
         my_team = str(my_info.get("team", ""))
+        upper_bound_players = [p for p in other_players
+                               if p.get('hand_count_is_upper_bound') is True and not p.get('finished')]
+        upper_bound_roles = frozenset('teammate' if p.get('team') == my_team else 'opponent'
+                                     for p in upper_bound_players)
         player_parts: list[str] = []
         teammate_head_id: int | None = None
         finish_order = history.get("finish_order")
@@ -3720,9 +3732,15 @@ class DeepSeekClient:
                 ):
                     teammate_head_id = pid
             else:
-                player_parts.append(f"玩家{pid}（{relation}）剩余{hand_cnt}张")
+                player_parts.append(f"玩家{pid}（{relation}）剩余" + DeepSeekClient._public_count_text(
+                    hand_cnt, p.get('hand_count_is_upper_bound') is True))
         if player_parts:
             lines.append(f"队友/对手状态：{'；'.join(player_parts)}")
+        if upper_bound_players:
+            lines.append("余张口径：" + '、'.join(f"玩家{p['player_id']}" for p in upper_bound_players)
+                         + "的余张及后文相关余张/紧急性引用均按已观察历史给出上界，实际可能更少；"
+                         "上界≤2支持至多2张的紧迫性，上界较大不能排除紧急风险。"
+                         "本家余张与平台done空手/名次仍为确数；不据此补造缺失实体。")
         if teammate_head_id is not None:
             lines.append(
                 f"队友玩家{teammate_head_id}已为头游；本家成为下一位出完者可形成双下并立即结束。"
@@ -3845,7 +3863,8 @@ class DeepSeekClient:
                     for row in other_players)
                     and {"single", "pair"} <= {f.pattern for f in candidate_facts}):
                 lines.append(
-                    "两张对手取舍：仅凭余张不确证形状；未被公开证据排除的对子/两单均需比较，确证与可行牌域优先；"
+                    ("至多两张对手取舍：实际可能更少；若实际余两张，" if 'opponent' in upper_bound_roles else "两张对手取舍：")
+                    + "仅凭余张不确证形状；未被公开证据排除的对子/两单均需比较，确证与可行牌域优先；"
                     "合法送对时可能让其整手接完，"
                     "低成本单张可改变牌型/试探诱拆，但需本方后续控制与残牌出路支撑，高单也可能喂出其一张。"
                     "不能凭pass断言持对或故意诱拆；队友两张的送牌是另一角色取舍。"
@@ -3873,7 +3892,7 @@ class DeepSeekClient:
                 )
                 if context_key not in rendered_follow_contexts:
                     rendered_follow_contexts.add(context_key)
-                    lines.append(DeepSeekClient._follow_order_context(contrast))
+                    lines.append(DeepSeekClient._follow_order_context(contrast, upper_bound_roles))
 
             response_relation_kinds = {
                 "follow_response_net_tradeoff",
@@ -3904,7 +3923,7 @@ class DeepSeekClient:
                         f"自然炸弹强度/资源对照：action_id={first_id} 是较弱的自然炸弹，action_id={second_id} 是较强的自然炸弹；"
                         "比较少出留下的牌是否值得保留、炸弹强度/牌权机会与资源成本；不规定先出小炸或大炸。"
                         "一次出完、公开紧急性、队友/对手牌权和整体结构都可改变取舍。"
-                        + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id)
+                        + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id, upper_bound_roles)
                     )
                 elif contrast.kind == "triple_bomb_split":
                     triple_rank, kicker_rank = (
@@ -3920,7 +3939,7 @@ class DeepSeekClient:
                         f"action_id={second_id} 是同点数{triple_rank}的当前合法{length_text}自然炸弹，不消耗{kicker_rank}对子，"
                         "并以炸弹牌型获得高于普通三带二的即时压制层级。三带二留下的同点余牌按下面当前余手线索核对；"
                         "不能据此保证以后能走或取得牌权。炸弹多花同点实体牌，三带二消耗所带对子；一次出完、公开紧急阻断、队友控桌和余组结构都可推翻局部倾向。"
-                        + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id)
+                        + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id, upper_bound_roles)
                     )
                 elif contrast.kind == "bomb_wildcard_strength":
                     rank = contrast.rank_labels[0] if contrast.rank_labels else "目标点数"
@@ -3935,7 +3954,7 @@ class DeepSeekClient:
                         f"action_id={second_id} 为{rank}点{wildcard_length_text}炸弹，多用一张逢人配换取更长炸弹的较强即时压制；"
                         "前者保留逢人配的其他合法用途，后者消耗该通配资源。只比较当前压制层级与出后实体余牌，不假定未来必然牌权；"
                         "急需更强压制、公开危险对手或本次出完可以支持花配，队友已控桌、结构损失和其他后续资源也可推翻。"
-                        + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id)
+                        + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id, upper_bound_roles)
                     )
                 elif contrast.kind == "bomb_residual":
                     first_fact = candidate_facts_by_id.get(first_id)
@@ -3950,7 +3969,7 @@ class DeepSeekClient:
                     lines.append(
                         f"同点数自然炸弹残余用途对照：action_id={first_id} 与 action_id={second_id} 是不同长度的当前合法自然炸弹；"
                         f"较短侧{spend_text}；比较少出留下的牌是否值得保留，与多出牌的结构/资源成本及炸弹强度/牌权机会。"
-                        + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id)
+                        + DeepSeekClient._residual_use_contrast_text(first_id, second_id, candidate_facts_by_id, upper_bound_roles)
                         + "一次出完、公开紧急性、队友/对手协同、回手计划或更高价值结构均可改变取舍。"
                     )
                     cost_texts = []
@@ -3968,7 +3987,7 @@ class DeepSeekClient:
                             reorganization_chars += len(text)
                 elif contrast.kind == "natural_pair_single":
                     teammate_text = (
-                        f"队友公开剩余{contrast.teammate_hand_count}张"
+                        "队友公开剩余" + DeepSeekClient._public_count_text(contrast.teammate_hand_count, 'teammate' in upper_bound_roles)
                         if contrast.teammate_hand_count is not None
                         else "队友公开剩余张数未知"
                     )
@@ -3980,7 +3999,7 @@ class DeepSeekClient:
                     )
                 elif contrast.kind == "natural_group_single":
                     teammate_text = (
-                        f"队友公开剩余{contrast.teammate_hand_count}张"
+                        "队友公开剩余" + DeepSeekClient._public_count_text(contrast.teammate_hand_count, 'teammate' in upper_bound_roles)
                         if contrast.teammate_hand_count is not None
                         else "队友公开剩余张数未知"
                     )
@@ -4073,7 +4092,7 @@ class DeepSeekClient:
                         else ("普通单张", "控制单张")
                     )
                     leader_count = (
-                        f"对手领出后公开余{contrast.table_leader_hand_count}张"
+                        "对手领出后公开余" + DeepSeekClient._public_count_text(contrast.table_leader_hand_count, 'opponent' in upper_bound_roles)
                         if contrast.table_leader_hand_count is not None
                         else "对手领出后的公开余张未知"
                     )
@@ -4123,7 +4142,7 @@ class DeepSeekClient:
                 }:
                     lines.append(
                         DeepSeekClient._residual_use_contrast_text(
-                            first_id, second_id, candidate_facts_by_id,
+                            first_id, second_id, candidate_facts_by_id, upper_bound_roles,
                         )
                     )
             lines.append("边界：这些是公开条件下的可撤回比较，不是动作指令。")

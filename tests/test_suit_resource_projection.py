@@ -195,6 +195,78 @@ def _capture_default_factory_request(
 
 
 class SuitResourceProjectionTests(unittest.TestCase):
+    def test_upper_bound_counts_reach_factory_and_qualify_derived_references(self) -> None:
+        game = _complete_game(_no_flush_hand())
+        observation, actions = game.observe(), game.legal_actions()
+        original = deepcopy((observation, actions))
+        # Synthetic incomplete public payload, not a completed match replay.
+        observation['history'].update(complete=False, finish_order=[2])
+        for player in observation['other_players']:
+            if player['player_id'] == 2:
+                player.update(hand_count=0, finished=True, finish_rank=1)
+            else:
+                player.update(hand_count=2, hand_count_is_upper_bound=True)
+        proxy = SimpleNamespace(observe=lambda: deepcopy(observation), legal_actions=lambda: deepcopy(actions))
+        selected, agent, transport = _capture_default_factory_request(proxy, actions[0]['action_id'])
+        self.assertEqual(selected, actions[0]['action_id'])
+        self.assertEqual(agent.last_decision_source, 'model')
+        self.assertIn('玩家3（队友）剩余至多2张', transport.prompt)
+        self.assertIn('玩家4（对手）剩余至多2张', transport.prompt)
+        self.assertIn('玩家2（对手）已完赛-头游', transport.prompt)
+        self.assertIn('我的剩余手牌：27张', transport.prompt)
+        self.assertIn('实际可能更少', transport.prompt)
+        self.assertIn('上界较大不能排除紧急风险', transport.prompt)
+        self.assertIn('队友公开剩余至多2张', transport.prompt)
+        self.assertNotIn('队友公开剩余2张', transport.prompt)
+        self.assertNotIn('对手公开最少剩余2张', transport.prompt)
+        self.assertIn('至多两张对手取舍', transport.prompt)
+        self.assertIn('证据级=E0', transport.prompt)
+        self.assertNotIn('共同假设有界续局', transport.prompt)
+        self.assertEqual((game.observe(), game.legal_actions()), original)
+        # Numeric consumers/candidates are unchanged when only the semantic
+        # flag changes; no local strategy overrides the chosen raw ID.
+        exact = deepcopy(observation)
+        for player in exact['other_players']:
+            player.pop('hand_count_is_upper_bound', None)
+        exact_proxy = SimpleNamespace(observe=lambda: deepcopy(exact), legal_actions=lambda: deepcopy(actions))
+        _, _, baseline = _capture_default_factory_request(exact_proxy, actions[0]['action_id'])
+        self.assertEqual(transport.candidate_ids, baseline.candidate_ids)
+        # The introduction also mentions this heading; compare the actual
+        # final catalog, not that earlier mention and the intervening context.
+        self.assertEqual(transport.prompt.rsplit('【候选动作】', 1)[-1],
+                         baseline.prompt.rsplit('【候选动作】', 1)[-1])
+
+    def test_complete_prompt_unchanged_and_order_counts_qualified_for_both_roles(self) -> None:
+        from dataclasses import replace
+        from agents.action_structure import CandidateContrast, summarize_candidate_structures
+        game = _complete_game(_no_flush_hand())
+        observation, actions = game.observe(), game.legal_actions()
+        def prompt(payload):
+            return DeepSeekClient._build_structured_prompt(
+                my_info=payload['my_info'], current_round=payload['current_round'],
+                other_players=payload['other_players'], history=payload['history'], legal_actions=actions)
+        expected = prompt(observation)
+        for player in observation['other_players']:
+            player['hand_count_is_upper_bound'] = False
+        self.assertEqual(prompt(observation), expected)
+        for leader, next_role in (('teammate', 'opponent'), ('opponent', 'teammate')):
+            contrast = CandidateContrast('follow_response_net_tradeoff', (1, 2), 2,
+                table_leader_relation=leader, table_leader_hand_count=2,
+                next_active_player_id=4, next_active_player_relation=next_role, next_active_player_hand_count=20)
+            text = DeepSeekClient._follow_order_context(contrast, frozenset((leader, next_role)))
+            self.assertIn('公开余至多2张', text)
+            self.assertIn('公开余至多20张', text)
+        finished = CandidateContrast('follow_response_net_tradeoff', (1, 2), 0,
+                                    table_leader_relation='teammate', table_leader_hand_count=0)
+        self.assertIn('公开余0张', DeepSeekClient._follow_order_context(finished, frozenset(('teammate',))))
+        facts = tuple(replace(f, teammate_active=True, teammate_hand_count=2, minimum_opponent_hand_count=2)
+                      for f in summarize_candidate_structures(observation, actions[:2]))
+        text = DeepSeekClient._residual_use_contrast_text(
+            facts[0].action_id, facts[1].action_id, {f.action_id: f for f in facts}, frozenset(('teammate', 'opponent')))
+        self.assertIn('队友公开剩余至多2张', text)
+        self.assertIn('至少一名对手剩余至多2张', text)
+        self.assertNotIn('对手公开最少剩余2张', text)
+
     def test_teammate_head_double_down_context_reaches_request_without_changing_model_choice(self) -> None:
         from tests.test_m9_public_endgame_opportunities import _rollout_to_step
 
