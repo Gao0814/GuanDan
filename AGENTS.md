@@ -157,6 +157,8 @@ python -m unittest tests.test_cli_debug_output -q
 
 ## Codex 工作规则
 
+- 所有者2026-10-03明确授权本轮收尾接入同局条件计划：保持JSON action_id/reason两字段，可在既有最多120字符的短reason中包含条件化后续，并在上次实际执行已确认后以本局内存最多一条供下一prompt重估。该短reason作为固定workspace完整实际Request上下文属于已授权私有留证；不新增自由计划字段/文件、长思考、跨局记忆或个人/聚合日志。新事实与当前合法候选优先，缺确认、断历史、换局或晚到结果不得污染计划，不自动执行旧计划或复用旧ID。
+- 项目理解与结项文档Codex是独立分工：首次只读理解，之后按所有者明确材料任务默认维护docs/closeout/；不执行NEXT_PROMPT，不修改共享规划文档、AGENTS/Skills、业务或tests，不安排算法/现场/回收任务。Planning维护算法计划并独立复审，Coding实现业务；结项角色发现冲突交所有者转达，不主动向其他对话发消息。
 - 开始新任务先读取适用范围内的 `AGENTS.md`；根据已提供的Skill名称/description或目录元数据判断任务是否匹配，只有实际使用时才完整读取对应 `SKILL.md`。不得为了判断适用性先通读全部Skills，也不因换一轮消息重复读取已完整读过且未变更的Skill；上下文缺失或Skill变更时再读取。所有者可显式指定Skill，明确匹配的任务也可自动使用。AGENTS硬约束优先于Skill，当前任务的明确特殊要求只覆盖直接冲突的流程细节。
 - 项目Skill按任务分工：`botzone-game-audit`负责最近已留证游戏、可疑单次出牌、模型输入/选择/ACK与必要重放的分析；`botzone-manual-live`仅用于明确要求Codex实时托管单局；`botzone-workspace-recycle`仅用于单独回收已审计的固定workspace清单。普通代码复审、文档维护或技能维护不自动加载现场/清理Skill。
 - Coding Codex 负责业务源代码、tests 及任务直接相关文件的修改、验证和提交；项目规划 Codex 负责复审执行结果，并只提交其自己产生的 `AGENTS.md`、项目 Skills 和 docs 上下文修改。双方不得把用户、其他 Agent、来源不明或对方未完成的修改混入自己的 commit。
