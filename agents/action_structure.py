@@ -857,6 +857,82 @@ def summarize_candidate_structures(
     return tuple(results)
 
 
+def displayed_payment_summaries(observation: dict, actions: list[dict],
+                                facts: tuple[CandidateStructure, ...],
+                                *, max_chars: int = 1200, format_route=None) -> tuple[str, ...]:
+    """Bounded physical payments for final rows, independent of relation selection.
+
+    Suit/wildcard distinctions remain in the canonical rows and their existing
+    engine-bound suit-resource projection. Never group payments by rank alone.
+    Omit the entire projection if it cannot fit; omitted rows are not worse.
+    """
+    hand = Counter(observation.get('my_info', {}).get('hand_cards', ()))
+    before = Counter(_rank_of(token) for token in hand.elements())
+    level = observation.get('current_round', {}).get('current_level_rank', '2')
+    before_uses = _residual_use_facts(action={'declared_pattern': 'pass'}, residual_hand=hand,
+                                    level_rank=level, played_ranks=set())
+    by_id = {fact.action_id: fact for fact in facts}
+    rows = {}
+    try:
+        for action in actions:
+            fact = by_id[action['action_id']]
+            if fact.pattern == 'pass':
+                continue
+            used = Counter(action['carrier_cards'])
+            if used - hand:
+                return ()
+            after = Counter(_rank_of(token) for token in (hand - used).elements())
+            ranks = tuple(sorted({_rank_of(token) for token in used}, key=lambda r: _RANK_VALUES.get(r, 99)))
+            cleared = tuple(rank for rank in ranks if not after[rank])
+            delta = '/'.join(f'{rank}:{before[rank]}→{after[rank]}' for rank in ranks)
+            lost = []
+            resources = fact.residual_rank_resources
+            if resources is None:
+                after_uses = _residual_use_facts(action={'declared_pattern': 'pass'}, residual_hand=hand - used,
+                                               level_rank=level, played_ranks=set())
+                resources = after_uses[3] if after_uses is not None else None
+            if before_uses is not None and resources is not None:
+                for change in _rank_resource_changes(before_uses[3], resources):
+                    kinds = [k for k in change.lost_group_kinds if k in {'bomb', 'triple', 'pair'}]
+                    if kinds:
+                        lost.append(change.rank + '自然' + '/'.join(
+                            {'bomb': '炸', 'triple': '三张', 'pair': '对'}[k] for k in kinds))
+            # These are physical counts (red level included), not inferred
+            # natural bombs. The pre-existing natural/suit facts give that scope.
+            text = (f'清{fact.carrier_count}余{fact.residual_card_count}；'
+                        f'清完{len(cleared)}点({"/".join(cleared) or "无"})；实体{delta}'
+                        + ('；失' + '、'.join(lost) if lost else '')
+                        + (f'；用配{action["wildcard_count"]}' if fact.uses_wildcard else ''))
+            suit_text = getattr(action, 'suit_resource_text', '')
+            if suit_text:
+                text += '；花色=' + suit_text
+            retained_routes = getattr(action, 'suit_retained_routes', ())
+            if retained_routes and format_route is not None:
+                labels = tuple(dict.fromkeys(format_route(route) for route in retained_routes))
+                text += '；仍可付' + ','.join(labels[:2]) + ('等' if len(labels) > 2 else '')
+            # Equal rank payment is not suit-equivalence. Keep each existing
+            # engine-bound suit profile as a separate comparison possibility.
+            key = (text, fact.pattern, getattr(action, 'suit_resource_profile', None))
+            features = frozenset((('pattern', fact.pattern),
+                *((rank, before[rank], after[rank]) for rank in ranks),
+                *((r.rank, r.natural_count, r.wildcard_count) for r in resources or ()),
+                ('suit', getattr(action, 'suit_resource_profile', None))))
+            rows.setdefault(key, (fact.action_id, text, features))
+    except (KeyError, TypeError, ValueError):
+        return ()
+    # Greedy coverage of real payment/retention differences, not nominal rank
+    # endpoints or a preferred move. This changes prose only, never candidates.
+    remaining = list(rows.values()); selected = []; covered = set(); used_chars = 0
+    while remaining and len(selected) < 12:
+        best = max(remaining, key=lambda row: len(row[2] - covered))
+        remaining.remove(best)
+        text = f'id={best[0]} ' + best[1]
+        if used_chars + len(text) > max_chars:
+            return ()
+        selected.append(text); used_chars += len(text); covered.update(best[2])
+    return tuple(selected)
+
+
 def _rank_resource_changes(before: tuple[ResidualRankResource, ...],
                            after: tuple[ResidualRankResource, ...]) -> tuple[RankResourceChange, ...]:
     before_by_rank = {item.rank: item for item in before}

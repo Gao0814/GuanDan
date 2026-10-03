@@ -1732,13 +1732,13 @@ def final_follow_tracking(observation: dict, displayed: list[dict], previous: st
     responses = [f for f in facts if f.pattern == table["declared_pattern"]]
     if pass_fact is None or not responses:
         return previous
-    # Representative displayed routes; unexpanded actions are not worse.
-    from agents.action_structure import ordinary_follow_pairs
-    endpoints = {i for pair in ordinary_follow_pairs(observation, displayed) for i in pair}
-    selected = list(dict.fromkeys(
-        [f.action_id for f in responses[:2]] + [f.action_id for f in responses if f.action_id in endpoints]
-    ))
-    responses = [f for f in responses if f.action_id in selected]
+    # Costs are projected for final candidate rows by the shared structure
+    # formatter. Here retain thresholds, not arbitrary first/last cost samples.
+    visible = {}
+    for action in displayed:
+        key = getattr(action, 'prompt_signature', _response_signature(action))
+        visible.setdefault(key, action['action_id'])
+    responses = [f for f in responses if f.action_id in visible.values()]
     engine = BaseRuleEngine()
     constraints = {p.player_id: p for p in state.constraints.players}
     allowance = min(0.25, decision_deadline.remaining(reserve_seconds=5.0)) if decision_deadline else 0.25
@@ -1818,23 +1818,79 @@ def final_follow_tracking(observation: dict, displayed: list[dict], previous: st
     ):
         lines.append("本家无完整自然对子可携带，需比较拆同点组/通配成本，不能编造无损对子替代。")
     future_triples = {}
+    affected = {_physical_rank(t) for a in displayed if a.get('declared_pattern') == table['declared_pattern'] for t in a.get('carrier_cards', ())}
     for fact in responses:
-        effect = candidate_response_net_effect(pass_fact, fact)
-        if effect is None:
-            return previous
-        retained = [r for r in fact.residual_rank_resources or () if r.natural_count >= 2]
-        groups = "/".join(f"{r.rank}×{r.natural_count}" for r in retained) or "无自然同点组"
-        for resource in retained:
-            if resource.natural_count >= 3:
+        for resource in fact.residual_rank_resources or ():
+            if resource.natural_count >= 3 and resource.rank in affected:
                 future_triples[resource.rank] = resource
-        delta = "/".join(
-            f"{r.rank}自然{r.natural_count_before}→{r.natural_count_after}"
-            + ("失" + "、".join(_SHORT_PATTERN.get(k, k) for k in r.lost_group_kinds) if r.lost_group_kinds else "")
-            for r in effect.rank_resource_changes or ()
-        )
-        if effect.uses_wildcard:
-            delta += "；支付逢人配"
-        lines.append(f"action_id={fact.action_id}清{effect.cards_played}余{fact.residual_card_count}；{delta}；保留组={groups}")
+    # Reuse this call's exact public catalogs. Maxima suffice for existence of
+    # a stronger same-family response; cross-type routes keep engine comparison.
+    try:
+        with budget.scope():
+            leads = [(f.action_id, _pattern_action(next(a for a in displayed
+                      if a['action_id'] == f.action_id), state.my_player_id)) for f in responses]
+            table_lead = _pattern_action(table, state.my_player_id)
+            if any(lead is None for _, lead in leads) or table_lead is None:
+                return previous
+            leads.append((pass_fact.action_id, table_lead))
+            response_classes = {}
+            for player, (routes, flushes) in player_catalogs:
+                extra = []
+                for flush in flushes:
+                    extra.extend(engine.public_action_bindings(0, PatternType.STRAIGHT_FLUSH,
+                        tuple(Card(rank, flush.suit) for rank in flush.rank_window),
+                        flush.carrier_cards, state.level))
+                by_family = {}
+                for route in routes + tuple(extra):
+                    by_family.setdefault(route.declared_pattern.value, []).append(route)
+                response_classes[player.player_id] = by_family
+            grouped = {}
+            threshold_cache = []
+            for action_id, lead in leads:
+                equivalent = next((details for old, details in threshold_cache
+                    if old.declared_pattern == lead.declared_pattern
+                    and not engine.can_beat(old, lead, state.level)
+                    and not engine.can_beat(lead, old, state.level)), None)
+                if equivalent is not None:
+                    grouped.setdefault(equivalent, []).append(action_id)
+                    continue
+                details = []
+                for player, _ in player_catalogs:
+                    possible = set()
+                    same_ranks = {}
+                    families = (lead.declared_pattern.value, *_BOMB_PATTERNS)
+                    relevant_routes = (route for family in families
+                        for route in response_classes[player.player_id].get(family, ()))
+                    for route in relevant_routes:
+                        budget.check()
+                        if engine.can_beat(route, lead, state.level):
+                            kind = '配' if route.wildcard_count else '自然'
+                            if route.declared_pattern == lead.declared_pattern:
+                                same_ranks.setdefault(kind, set()).add(route.declared_cards[0].rank)
+                            else:
+                                possible.add(_SHORT_PATTERN[route.declared_pattern.value] + kind)
+                    for kind, ranks in same_ranks.items():
+                        ordered = sorted(ranks, key=lambda rank: _rank_strength(rank, state.level))
+                        # Three-with-pair catalogs contain proved maxima, not
+                        # every kicker/strength. Never imply a complete range.
+                        if lead.declared_pattern == PatternType.TRIPLE_WITH_PAIR:
+                            label = '上界' + ordered[-1]
+                        else:
+                            label = ordered[0] + ('至' + ordered[-1] if len(ordered) > 1 else '')
+                        possible.add('同型' + kind + '(' + label + ')')
+                    details.append((player.player_id, tuple(sorted(possible))))
+                threshold_cache.append((lead, tuple(details)))
+                grouped.setdefault(tuple(details), []).append(action_id)
+            order = '/'.join(('*' if player.player_id == _next_active_player(state) else '')
+                + f'P{player.player_id}' + ('友' if state.player_rows[player.player_id].get('team') == state.my_team else '敌')
+                + f'余{player.remaining_capacity}' for player, _ in player_catalogs)
+            lines.append('行动顺序=' + order + '（*下一活动家）；逐家即时应手按当前候选阈值：')
+            for details, ids in grouped.items():
+                lines.append('/'.join(f'action_id={i}' for i in ids[:2]) + ('同逐家可行类别代表' if len(ids) > 2 else '') + '[' + ';'.join(
+                    f'P{pid}:' + ('/'.join(possible) or '池/容量无可行应手')
+                    for pid, possible in details) + ']')
+    except (TimeoutError, TypeError, ValueError):
+        return previous
     for rank in future_triples:
         # A resource query without an executable action ID. Validate its own
         # carrier from the original hand; do not put spent cards in the pool.
@@ -1851,8 +1907,8 @@ def final_follow_tracking(observation: dict, displayed: list[dict], previous: st
             details.append(f"P{player.player_id}:" + ("/".join(stronger[:3]) or "无更强三张")
                            + ("（代表）" if len(stronger) > 3 else ""))
         lines.append(f"保留三{rank}更强同型上界[" + "；".join(details) + "]")
-    lines.append(f"action_id={pass_fact.action_id}清0保留全部组；以上为有限显示代表，未展开不视为更差；高低应手共有的保炸/保结构不独自解释高牌优先，减张不等于守住牌权。"
-                 "上限按逐家实体域/容量核验，非实持或概率；组可重叠，三张资源不等于能带对子；跨型炸弹仍可争权，未来余组需再获合法机会。")
+    lines.append('pass保持旧桌面，上述pass行不是本家出牌；上界非实持或概率，不能立即接不等于以后安全；'
+                 '共有保牌不独自解释高牌优先。组可重叠，三张不等于有携带对，未来余组需合法机会。')
     strong = [line for line in (previous or "").splitlines() if line.startswith(("历史软pass：", "应手取舍：", "历史携带软线索："))]
     # Preserve the existing serialized M3 relationships used by the prompt's
     # contrast projection. Compact only their repeated prose, never their IDs.
@@ -1864,5 +1920,9 @@ def final_follow_tracking(observation: dict, displayed: list[dict], previous: st
             if len(ids) == 2 and set(ids).issubset(displayed_ids):
                 strong.append(f"M3候选对照 action_id={ids[0]} vs action_id={ids[1]}。")
     text = "【记牌信息】\n" + "\n".join(strong + lines)
+    try:
+        budget.check()
+    except TimeoutError:
+        return previous
     # Never truncate an endpoint, governing limitation, or retained-group bound.
     return text if len(text) <= _TRACKING_LIMIT else previous

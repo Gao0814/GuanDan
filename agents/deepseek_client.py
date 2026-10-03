@@ -305,6 +305,7 @@ class _ProjectedPromptAction(dict[str, object]):
         "suit_resource_profile",
         "suit_resource_text",
         "suit_resource_row_text",
+        "suit_retained_routes",
     )
 
     def __init__(
@@ -317,6 +318,7 @@ class _ProjectedPromptAction(dict[str, object]):
         suit_resource_profile: tuple[object, ...],
         suit_resource_text: str,
         suit_resource_row_text: str = "",
+        suit_retained_routes: tuple[tuple[object, ...], ...] = (),
     ) -> None:
         super().__init__(action)
         self.prompt_signature = prompt_signature
@@ -325,6 +327,7 @@ class _ProjectedPromptAction(dict[str, object]):
         self.suit_resource_profile = suit_resource_profile
         self.suit_resource_text = suit_resource_text
         self.suit_resource_row_text = suit_resource_row_text
+        self.suit_retained_routes = suit_retained_routes
 
 
 class DeepSeekTransport(Protocol):
@@ -1381,6 +1384,7 @@ class DeepSeekClient:
                     suit_resource_base=base_signature,
                     suit_resource_profile=resource_profile,
                     suit_resource_text=resource_text,
+                    suit_retained_routes=route_keys,
                 ))
             candidates_by_base: dict[tuple[object, ...], list[_ProjectedPromptAction]] = {}
             for action in projected:
@@ -4203,8 +4207,13 @@ class DeepSeekClient:
             )
         )
         if candidate_facts is not None:
+            from agents.action_structure import displayed_payment_summaries
+            payments = displayed_payment_summaries(
+                prompt_observation, DeepSeekClient._unique_actions_by_signature(prompt_actions), candidate_facts,
+                format_route=DeepSeekClient._flush_resource_label,
+            )
             compact_facts: list[str] = []
-            for fact in candidate_representatives:
+            for fact in (() if payments else candidate_representatives):
                 if fact.pattern == "pass":
                     continue
                 parts = [f"id={fact.action_id}", f"张数={fact.carrier_count}", f"余组≈{fact.estimated_remaining_rank_groups}", f"孤张={fact.residual_singleton_rank_count}"]
@@ -4217,7 +4226,9 @@ class DeepSeekClient:
                 if fact.bomb_length is not None:
                     parts.append(f"炸弹长度={fact.bomb_length}")
                 compact_facts.append("；".join(parts))
-            if compact_facts:
+            if payments:
+                lines.append("候选公开支付（点数组数不是出牌手数；未展开不视为更差）：" + " | ".join(payments))
+            elif compact_facts:
                 lines.append("候选公开结构：" + " | ".join(compact_facts))
 
         visible_grouping_pairs = tuple(

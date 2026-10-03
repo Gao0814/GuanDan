@@ -479,6 +479,85 @@ def _wildcard_bomb_follow_game() -> GuanDanGame:
 
 
 class M4TradeoffInputTests(unittest.TestCase):
+    def test_final_payment_projection_covers_sequences_and_suit_differences(self) -> None:
+        from agents.action_structure import displayed_payment_summaries, summarize_candidate_structures
+        from tests.test_suit_resource_projection import _complete_game, _capture_default_factory_request
+
+        required = ['4S', '5S', '5C', '5D', '5H', '6S', '6C', '7S', '7C', '7D', '7H', '8S', '8C', '9S']
+        padding = [rank + suit for rank in ('2', '3', '10', 'J', 'Q', 'K', 'A') for suit in ('S', 'C')][:-1]
+        game = _complete_game(required, fill_hand_tokens=padding)
+        observation, actions = game.observe(), game.legal_actions()
+        target = next(a for a in actions if a['declared_pattern'] == 'straight'
+                      and set(a['carrier_cards']) == {'4S', '5C', '6C', '7D', '8C'})
+        alternate = next(a for a in actions if a['declared_pattern'] == 'straight'
+                         and set(a['carrier_cards']) == {'4S', '5S', '6C', '7D', '8C'})
+        projected = DeepSeekClient._project_prompt_actions(observation, [target, alternate])
+        self.assertNotEqual(projected[0].suit_resource_profile, projected[1].suit_resource_profile)
+        facts = summarize_candidate_structures(observation, projected)
+        rows = displayed_payment_summaries(observation, projected, facts,
+                                         format_route=DeepSeekClient._flush_resource_label)
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertIn('清5余22；清完1点(4)', row)
+            self.assertIn('5:4→3', row)
+            self.assertIn('7:4→3', row)
+            self.assertIn('8:2→1', row)
+            for resource in ('5自然炸', '7自然炸', '8自然对'):
+                self.assertIn(resource, row)
+        self.assertEqual(displayed_payment_summaries(observation, projected, facts, max_chars=1), ())
+        _, agent, transport = _capture_default_factory_request(game, actions[0]['action_id'])
+        self.assertEqual(agent.last_decision_source, 'model')
+        self.assertIn('候选公开支付', transport.prompt)
+        self.assertIn('5:4→3', transport.prompt)
+        self.assertIn('7:4→3', transport.prompt)
+        self.assertEqual((game.observe(), game.legal_actions()), (observation, actions))
+
+    def test_final_follow_thresholds_match_engine_and_keep_roles(self) -> None:
+        from agents.card_tracker import final_follow_tracking, _pattern_action, _cards_from_tokens
+        from engine.rules import BaseRuleEngine
+        from tests.test_m9_public_endgame_opportunities import _public_endgame_fixture
+
+        game, observation, actions = _public_endgame_fixture(
+            finish_order=(1,),
+            current_hands={2: ('AS',), 3: ('2C', '2D', '2H', '2S', '4S'),
+                           4: ('6S', '6C', '6D', '7S', '7C', '7D', 'KS')},
+            current_player_id=4, leader_player_id=3,
+            leading_token=('5S', '5C', '5D', '3S', '3C'))
+        response = next(a for a in actions if a['declared_pattern'] == 'triple_with_pair')
+        passing = next(a for a in actions if a['declared_pattern'] == 'pass')
+        engine = BaseRuleEngine()
+        summary = engine.public_beating_response_summaries(
+            _cards_from_tokens(('AS', '2C', '2D', '2H', '2S', '4S')),
+            (_pattern_action(response, 4),), '2', max_cards=5)[0]
+        self.assertTrue(any(r.pattern_type == 'triple_with_pair' and r.wildcard_count
+                            for r in summary.requirements))
+        text = final_follow_tracking(observation, [response, passing], 'prior')
+        self.assertIn('行动顺序=*P2友余1/P3敌余5', text)
+        self.assertIn('P2:池/容量无可行应手', text)
+        self.assertIn('同型配(上界2)', text)
+        self.assertIn('pass保持旧桌面', text)
+        self.assertIn('非实持或概率', text)
+        with patch('engine.public_simulation.SimulationBudget.check', side_effect=TimeoutError('budget')):
+            self.assertEqual(final_follow_tracking(observation, [response, passing], 'prior'), 'prior')
+        self.assertEqual((game.observe(), game.legal_actions()), (observation, actions))
+
+        # Current candidate thresholds differ even when both have a possible
+        # same-type response. The upper-bound inventory alone cannot show this.
+        _, observation, actions = _public_endgame_fixture(
+            finish_order=(1,), current_hands={2: ('AS',), 3: ('2C', '2H', 'SJ', 'BJ', '4S'),
+                                            4: ('9S', '2S', '6C')},
+            current_player_id=4, leader_player_id=3, leading_token=('8C',))
+        low = next(a for a in actions if a['carrier_cards'] == ['9S'])
+        high = next(a for a in actions if a['carrier_cards'] == ['2S'])
+        passing = next(a for a in actions if a['declared_pattern'] == 'pass')
+        text = final_follow_tracking(observation, [low, high, passing], 'prior')
+        self.assertIn('同型自然(A至BJ)', text)
+        self.assertIn('同型自然(SJ至BJ)', text)
+        from engine.patterns import PatternType
+        self.assertTrue(engine.public_action_bindings(
+            4, PatternType.SINGLE, (Card('10'),), (Card('2', 'H'),), '2'))
+        self.assertIn('同型配(10至2)', text)
+
     def test_joint_triple_pair_ceilings_match_public_binding_reference(self) -> None:
         from itertools import combinations
         from time import monotonic
