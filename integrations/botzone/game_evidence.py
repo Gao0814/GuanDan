@@ -225,7 +225,7 @@ def _valid_entry(entry: object) -> bool:
     return True
 
 
-def _validate_index(value: object) -> dict[str, object]:
+def _validate_index(value: object, *, allow_retired_bindings: bool = False) -> dict[str, object]:
     if not isinstance(value, dict) or set(value) != {
         "schema", "version", "capacity", "next_game_no", "entries", "bindings", "imports", "rotation_pending",
     }:
@@ -264,11 +264,22 @@ def _validate_index(value: object) -> dict[str, object]:
             not isinstance(binding, dict) or set(binding) != {"match_digest", "game_no"}
             or not isinstance(binding.get("match_digest"), str)
             or re.fullmatch(r"[0-9a-f]{64}", binding["match_digest"]) is None
-            or type(binding.get("game_no")) is not int or binding["game_no"] not in seen_numbers
+            or type(binding.get("game_no")) is not int or binding["game_no"] <= 0
             or binding["match_digest"] in seen_hashes
         ):
             raise GameEvidenceError("evidence_schema_invalid")
-        entry = next(item for item in entries if item["game_no"] == binding["game_no"])
+        entry = next((item for item in entries if item["game_no"] == binding["game_no"]), None)
+        if entry is None:
+            # Rotation removes an oldest prefix, never a middle/future row.
+            # Validate the binding before allowing this narrowly scoped repair.
+            if (
+                not allow_retired_bindings or not entries
+                or binding["game_no"] >= entries[0]["game_no"]
+                or any(item["match_digest"] == binding["match_digest"] for item in entries)
+            ):
+                raise GameEvidenceError("evidence_schema_invalid")
+            seen_hashes.add(binding["match_digest"])
+            continue
         if entry["kind"] != "full" or entry["match_digest"] != binding["match_digest"]:
             raise GameEvidenceError("evidence_schema_invalid")
         seen_hashes.add(binding["match_digest"])
@@ -613,11 +624,21 @@ def _new_index(capacity: int) -> dict[str, object]:
     }
 
 
-def _load_index(root: Path) -> dict[str, object]:
+def _retain_entry_bindings(state: dict[str, object]) -> None:
+    """Drop only bindings whose entry has been retired; preserve order/identity."""
+    retained = {entry["game_no"] for entry in state["entries"]}
+    state["bindings"] = [binding for binding in state["bindings"] if binding["game_no"] in retained]
+
+
+def _load_index(root: Path, *, repair_retired_bindings: bool = False) -> dict[str, object]:
     path = root / GAME_EVIDENCE_INDEX
     if not os.path.lexists(path):
         raise GameEvidenceError("evidence_schema_invalid")
-    return _validate_index(_read_json(path))
+    state = _validate_index(_read_json(path), allow_retired_bindings=repair_retired_bindings)
+    if repair_retired_bindings:
+        _retain_entry_bindings(state)
+        _validate_index(state)
+    return state
 
 
 def _safe_remove(root: Path, entry: Mapping[str, object]) -> None:
@@ -652,12 +673,14 @@ def _trim(root: Path, index_path: Path, state: dict[str, object]) -> None:
             raise GameEvidenceError("evidence_active_capacity")
         if oldest["kind"] == "summary_only":
             del entries[0]
+            _retain_entry_bindings(state)
             _index_write(index_path, state)
             continue
         state["rotation_pending"] = oldest["game_no"]
         _index_write(index_path, state)
         _safe_remove(root, oldest)
         del entries[0]
+        _retain_entry_bindings(state)
         state["rotation_pending"] = None
         _index_write(index_path, state)
 
@@ -674,6 +697,7 @@ def _recover_rotation(root: Path, index_path: Path, state: dict[str, object]) ->
     if entry["kind"] == "full" and os.path.lexists(root / str(entry["directory"])):
         _safe_remove(root, entry)
     state["entries"].remove(entry)
+    _retain_entry_bindings(state)
     state["rotation_pending"] = None
     _index_write(index_path, state)
 
@@ -706,9 +730,19 @@ def prepare_game_evidence(
             names = _root_children(root)
             index_path = root / GAME_EVIDENCE_INDEX
             if GAME_EVIDENCE_INDEX in names:
-                state = _load_index(root)
+                state = _load_index(root, repair_retired_bindings=True)
+                # No repair, recovery or capacity change is persisted until the
+                # whole existing store is checked. A pending deletion may
+                # already have removed exactly its own directory.
+                indexed = {entry["directory"] for entry in state["entries"] if entry["directory"] is not None}
+                present = {name for name in names if _GAME_NAME.fullmatch(name)}
+                pending_entry = next((entry for entry in state["entries"]
+                                      if entry["game_no"] == state["rotation_pending"]), None)
+                missing = {pending_entry["directory"]} if pending_entry is not None else set()
+                if present != indexed and present != indexed - missing:
+                    raise GameEvidenceError("evidence_unknown_entry")
                 for entry in state["entries"]:
-                    if entry["kind"] == "full" and entry["game_no"] != state["rotation_pending"]:
+                    if entry["kind"] == "full" and entry["directory"] in present:
                         _validate_game_tree(root, entry)
                 _recover_rotation(root, index_path, state)
                 recovered = False

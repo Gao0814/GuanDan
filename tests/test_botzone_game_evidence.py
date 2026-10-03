@@ -298,6 +298,126 @@ class BotzoneGameEvidenceTests(unittest.TestCase):
         self.assertIn("header_pending", event_names)
         self.assertIn("ack_confirmed", event_names)
 
+    def _closed_games(self, games: Path, capacity: int, count: int) -> None:
+        prepare_game_evidence(games, capacity)
+        for number in range(count):
+            recorder = ManualGameEvidenceRecorder(games)
+            recorder.begin_game(f"rotation-{number}", own_hand=(number,), player_id=number % 4,
+                                global_state=GlobalState("2", 0, None, None))
+            recorder.close("interrupted")
+            self.assertFalse(recorder.failed)
+
+    def test_rotation_bindings_survive_reload_and_capacity_changes(self) -> None:
+        from integrations.botzone.game_evidence import _load_index
+
+        with TemporaryDirectory() as temporary:
+            games = Path(temporary) / "games"
+            self._closed_games(games, 2, 3)
+            state = _load_index(games)
+            self.assertEqual([entry["game_no"] for entry in state["entries"]], [2, 3])
+            self.assertEqual([binding["game_no"] for binding in state["bindings"]], [2, 3])
+            survivor = state["bindings"][-1].copy()
+            self.assertEqual(prepare_game_evidence(games, 1), (3, 1))
+            self.assertEqual(_load_index(games)["bindings"], [survivor])
+            self.assertEqual(prepare_game_evidence(games, 4), (3, 1))
+            self.assertEqual(_load_index(games)["bindings"], [survivor])
+            resumed = ManualGameEvidenceRecorder(games)
+            resumed.begin_game("rotation-2", own_hand=(2,), player_id=2,
+                               global_state=GlobalState("2", 0, None, None))
+            self.assertFalse(resumed.failed)
+            self.assertEqual(_load_index(games)["next_game_no"], 3)
+            resumed.close()
+
+    def test_rotation_preserves_active_oldest_entry_and_bindings(self) -> None:
+        from integrations.botzone.game_evidence import _load_index, _trim
+
+        with TemporaryDirectory() as temporary:
+            games = Path(temporary) / "games"
+            prepare_game_evidence(games, 2)
+            recorder = ManualGameEvidenceRecorder(games)
+            for number in range(2):
+                recorder.begin_game(f"active-{number}", own_hand=(number,), player_id=number,
+                                    global_state=GlobalState("2", 0, None, None))
+            state = _load_index(games)
+            original_bindings = state["bindings"].copy()
+            state["capacity"] = 1
+            before = {str(path.relative_to(games)): path.read_bytes()
+                      for path in games.rglob("*") if path.is_file()}
+            with self.assertRaises(GameEvidenceError) as raised:
+                _trim(games, games / GAME_EVIDENCE_INDEX, state)
+            self.assertEqual(raised.exception.category, "evidence_active_capacity")
+            self.assertEqual(state["bindings"], original_bindings)
+            self.assertEqual(len(state["entries"]), 2)
+            self.assertEqual(before, {str(path.relative_to(games)): path.read_bytes()
+                                      for path in games.rglob("*") if path.is_file()})
+            recorder.close()
+
+    def test_rotation_pending_recovery_prunes_only_retired_bindings(self) -> None:
+        from integrations.botzone.game_evidence import _load_index, _safe_remove
+
+        for already_deleted in (False, True):
+            with self.subTest(already_deleted=already_deleted), TemporaryDirectory() as temporary:
+                games = Path(temporary) / "games"
+                self._closed_games(games, 3, 3)
+                state = _load_index(games)
+                state["capacity"] = 2
+                state["rotation_pending"] = state["entries"][0]["game_no"]
+                survivors = state["bindings"][1:]
+                (games / GAME_EVIDENCE_INDEX).write_text(json.dumps(state), encoding="utf-8")
+                if already_deleted:
+                    _safe_remove(games, state["entries"][0])
+                self.assertEqual(prepare_game_evidence(games, 2), (3, 2))
+                restored = _load_index(games)
+                self.assertIsNone(restored["rotation_pending"])
+                self.assertEqual(restored["bindings"], survivors)
+                self.assertEqual([entry["game_no"] for entry in restored["entries"]], [2, 3])
+                self.assertEqual(prepare_game_evidence(games, 2), (3, 2))
+
+    def test_retired_binding_repair_requires_otherwise_valid_store(self) -> None:
+        from integrations.botzone.game_evidence import _load_index
+
+        for damage in (None, "invalid_binding", "duplicate_binding", "future_binding", "retained_digest", "unknown_directory", "corrupt_manifest"):
+            with self.subTest(damage=damage), TemporaryDirectory() as temporary:
+                games = Path(temporary) / "games"
+                self._closed_games(games, 3, 3)
+                original = _load_index(games)
+                retired = original["bindings"][0].copy()
+                prepare_game_evidence(games, 2)
+                state = _load_index(games)
+                survivors = state["bindings"].copy()
+                state["bindings"].insert(0, retired)
+                if damage == "invalid_binding":
+                    state["bindings"][0]["match_digest"] = "invalid"
+                elif damage == "duplicate_binding":
+                    state["bindings"].append(retired.copy())
+                elif damage == "future_binding":
+                    state["bindings"][0]["game_no"] = state["next_game_no"] + 1
+                elif damage == "retained_digest":
+                    state["bindings"][0]["match_digest"] = state["entries"][0]["match_digest"]
+                elif damage == "unknown_directory":
+                    (games / original["entries"][0]["directory"]).mkdir()
+                elif damage == "corrupt_manifest":
+                    (games / state["entries"][0]["directory"] / "manifest.json").write_text("{}")
+                index = games / GAME_EVIDENCE_INDEX
+                index.write_text(json.dumps(state), encoding="utf-8")
+                before = {str(path.relative_to(games)): path.read_bytes()
+                          for path in games.rglob("*") if path.is_file()}
+                with self.assertRaises(GameEvidenceError):
+                    _load_index(games)  # Ordinary readers retain strict validation.
+                if damage is None:
+                    self.assertEqual(prepare_game_evidence(games, 2), (3, 2))
+                    self.assertEqual(_load_index(games)["bindings"], survivors)
+                    self.assertEqual(_load_index(games)["entries"], state["entries"])
+                    for name, raw in before.items():
+                        if name != GAME_EVIDENCE_INDEX:
+                            self.assertEqual((games / name).read_bytes(), raw)
+                else:
+                    with self.assertRaises(GameEvidenceError):
+                        prepare_game_evidence(games, 1)
+                    after = {str(path.relative_to(games)): path.read_bytes()
+                             for path in games.rglob("*") if path.is_file()}
+                    self.assertEqual(after, before)
+
     def test_same_second_names_use_a_monotonic_sequence_and_private_manifest(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
