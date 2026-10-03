@@ -17,7 +17,7 @@ Planning Codex负责算法计划与独立验收，Coding Codex负责业务和tes
 ## 首次初始化
 
 1. 读取实际根及适用AGENTS.md，按任务匹配Skills，仅实际使用时完整读取，不通读全部Skill。
-2. 读取README.md、CLAUDE.md、docs/PROJECT_STATUS.md顶部、docs/PLAN.md、docs/CLEAN_HANDOFF.md、docs/INVARIANTS.md、docs/CODING_BOUNDARY.md、docs/BOTZONE_RULE_ALIGNMENT.md、docs/RAG_KB.md、docs/TESTS.md、docs/MAINTENANCE_REPORT.md；当前NEXT_PROMPT只用于了解尚未完成的Coding范围。
+2. 读取README.md、CLAUDE.md、docs/PROJECT_STATUS.md顶部、docs/PLAN.md、docs/CLEAN_HANDOFF.md、docs/INVARIANTS.md、docs/CODING_BOUNDARY.md、docs/BOTZONE_RULE_ALIGNMENT.md、docs/RAG_KB.md、docs/TESTS.md、docs/MAINTENANCE_REPORT.md及docs/EVALUATION_20_GAME_RECORD.md；只有当前存在NEXT_PROMPT时才读取了解Coding范围，不从历史恢复执行。
 3. 检查Git status、HEAD、近期相关提交和10-3.v1。该标记指向394b91f79e2072a6043c2da1ee06d07e8951d19c，是收尾改动前恢复点；实际HEAD会变化，不能把新Prompt当已实现功能。
 4. 沿调用关系阅读必要源码：engine公开接口与规则、agents/deepseek_ai.py和deepseek_client.py、card_tracker、rag_advisor、public_endgame/known_endgame、bounded_continuation、Botzone runtime/handler/connector及现行启动器。按问题取必要文件，不自动完整算法审计、不重复已通过测试或默认全量。
 5. 区分代码确认的实现、报告中的验证声明、待验证假设和已关闭/搁置方向，不只凭文档断言能力已完成。
@@ -29,6 +29,7 @@ Planning Codex负责算法计划与独立验收，Coding Codex负责业务和tes
 - 当前仅Flash、四人、级牌2、无贡单局。引擎提供真值，AI读公开observe/legal_actions返回原合法ID；RAG为条件经验，M9为严格公开确证计算，M10为共同假设下有界推进，不能写成知道对手暗牌或保证最优。
 - 项目规则胜/平/负与Botzone正分分别说明。自然局比例、单次选择、禁网机制、搜索耗时和模型等待是不同证据；无对照不写显著提升胜率/减少推理时间，缺真实名次不编造。四版本比较未完成就写未完成，不把融合当完整实验。
 - 条件计划、去评分、短reason扩写以实际代码/验收为准，计划出现不代表已实现。Git恢复标签不包含.env/凭据、虚拟环境或私有现场证据。
+- 所有者当前明确20局使用10-3.v1，先完成实战/结项，合并优化暂缓、NEXT撤下。每10局由Planning审计维护EVALUATION_20_GAME_RECORD.md，你据其事实写实验章节，不并发改表；未完成只写计划。程序占席待核对，不预设双方混合组队或互为对手；若混合组队不拆为单程序独立收益。无前后对照不声称优化提高胜率。
 - 准确解释实现动机、局限与取舍，不把组合工程自动写成原创算法。引文须可核对原出处，不编造文献/实验/队友贡献；新增文献研究按具体需求做，不无限检索。
 - 个人心得以我实际经历为依据；可提炼已核对的困难/改进，缺个人分工经历就询问，不编造我亲自完成的工作或体验。队友代码/经验贡献按来源说明，不把融合全部归我。
 - 未经具体任务要求，不读取私有完整请求、手牌/shortreason。需要对局案例时按audit Skill做最小只读；正文/附件仅必要脱敏概念、合成示例或允许的聚合结果，不复制私有body/手牌/原模型文本/连接URL/凭据。
