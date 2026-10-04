@@ -2996,7 +2996,7 @@ class DeepSeekClient:
         return lines or ["（无）"]
 
     @staticmethod
-    def _rag_title_and_body(item: dict[str, object]) -> tuple[str, str]:
+    def _rag_title_and_body(item: dict[str, object], *, complete_body: bool = False) -> tuple[str, str]:
         snippet_lines = str(item.get("snippet", "")).splitlines()
         title = ""
         body_lines: list[str] = []
@@ -3009,7 +3009,9 @@ class DeepSeekClient:
                 continue
             body_lines.append(line)
         title = DeepSeekClient._bounded_text(title or "知识条目", PROMPT_MAX_RAG_TITLE_CHARS)
-        body = DeepSeekClient._bounded_text(" ".join(body_lines), PROMPT_MAX_RAG_BODY_CHARS)
+        body = " ".join(body_lines)
+        if not complete_body:
+            body = DeepSeekClient._bounded_text(body, PROMPT_MAX_RAG_BODY_CHARS)
         return title, body
 
     @staticmethod
@@ -3017,14 +3019,14 @@ class DeepSeekClient:
         if not items:
             return ["（无）"]
         lines: list[str] = []
-        for item in items[:PROMPT_MAX_RAG_HITS_PER_LAYER]:
+        for item in items[:2 if body_budget is not None else PROMPT_MAX_RAG_HITS_PER_LAYER]:
             metadata = item.get("metadata", {})
             if not isinstance(metadata, dict):
                 metadata = {}
             topic = str(metadata.get("topic", ""))
             domain = str(metadata.get("strategy_domain", ""))
             guidance_mode = str(metadata.get("guidance_mode", ""))
-            title, body = DeepSeekClient._rag_title_and_body(item)
+            title, body = DeepSeekClient._rag_title_and_body(item, complete_body=body_budget is not None)
             topic_text = f"；topic={topic}" if topic else ""
             domain_text = f"；domain={domain}" if domain else ""
             if body_budget is not None:
@@ -3447,6 +3449,7 @@ class DeepSeekClient:
         opening_formula_contrasts: tuple[CandidateContrast, ...] = (),
         opening_formula_recommendation: OpeningFormulaAnalysis | None = None,
         bounded_continuation_builder: Callable[[list[dict[str, object]]], str] | None = None,
+        confirmed_previous_reason: str | None = None,
     ) -> str:
         """Build the final Step-H structured prompt from public payloads."""
         lines: list[str] = []
@@ -3763,6 +3766,11 @@ class DeepSeekClient:
         lines.append("【我的剩余手牌】")
         lines.extend(DeepSeekClient._format_remaining_hand(my_info, current_level_rank, prompt_actions))
         lines.append("")
+
+        if confirmed_previous_reason is not None:
+            lines.append("【本局已执行意图重估】")
+            lines.append(confirmed_previous_reason)
+            lines.append("")
 
         lines.append("【记牌信息】")
         lines.extend(
@@ -4328,17 +4336,47 @@ class DeepSeekClient:
 
         rule_hits = DeepSeekClient._rag_items(rag_context, "rule_hits")
         experience_hits = DeepSeekClient._rag_items(rag_context, "experience_hits")
-        # Behavior RAG changes this existing text slot only, after the same
-        # canonical candidates and relation budgets have been established.
-        if len(legal_actions) >= 2 and (
-            any(item.get('declared_pattern') == 'pair' for item in legal_actions)
-            or any(f.pattern == 'pass' and f.residual_whole_hand_pattern
-                   for f in candidate_facts or ())
-            or resource_tradeoff
-        ):
-            behavior_hits = DeepSeekClient._rag_items(rag_context, "behavior_experience_hits")
-            if behavior_hits:
-                experience_hits = behavior_hits
+        # Relevance is a text projection over already eligible evidence, after
+        # display selection. It never changes source hits or canonical members.
+        facts = candidate_facts or ()
+        desired_domains = set()
+        if hand_count <= 8 or any(f.residual_whole_hand_pattern for f in facts):
+            desired_domains.add('endgame_planning')
+        if any(f.fragments_played_rank_group or f.consumes_control_resource or f.uses_wildcard for f in facts):
+            desired_domains.update(('hand_structure', 'control_return_resource', 'bomb_wildcard_management'))
+        if any(f.minimum_opponent_hand_count is not None and f.minimum_opponent_hand_count <= 2 for f in facts):
+            desired_domains.add('danger_opponent_block')
+        pool = DeepSeekClient._rag_items(rag_context, "behavior_experience_hits") + experience_hits
+        unique = []
+        seen = set()
+        for item in pool:
+            identity = item.get('source_id')
+            if identity not in seen:
+                seen.add(identity)
+                unique.append(item)
+        def relevance(item: dict[str, object]) -> int:
+            metadata = item.get('metadata', {})
+            domains = str(metadata.get('strategy_domain', '')).split(',') if isinstance(metadata, dict) else []
+            domains = {domain.strip() for domain in domains}
+            tags = rag_context.get('scene_tags', {}) if isinstance(rag_context, dict) else {}
+            strong_pass = isinstance(tags, dict) and tags.get('public_terminal_pass_behavior') is True
+            if strong_pass and 'uncertainty_probe' in domains and metadata.get('guidance_mode') == 'source_principle':
+                return 0
+            if 'endgame_planning' in desired_domains & domains:
+                return 1 if strong_pass else 0
+            if 'uncertainty_probe' in domains:
+                return 2
+            return 1 if domains & desired_domains else 3
+        ordered = sorted(unique, key=relevance)
+        experience_hits = []
+        remaining_budget = 300
+        for item in ordered:
+            _, body = DeepSeekClient._rag_title_and_body(item, complete_body=True)
+            if body and len(body) <= remaining_budget:
+                experience_hits.append(item)
+                remaining_budget -= len(body)
+            if len(experience_hits) == 2:
+                break
         lines.append("【规则库依据】")
         lines.append("仅用于解释本项目规则口径，不能替代 legal_actions 或扩展候选动作。")
         lines.extend(DeepSeekClient._format_rag_hits(rule_hits))
@@ -4346,12 +4384,13 @@ class DeepSeekClient:
 
         lines.append("【经验库依据】")
         lines.append("仅作为策略倾向参考，不是强制命令，不能覆盖规则或候选动作。")
-        lines.extend(DeepSeekClient._format_rag_hits(experience_hits, body_budget=300 if resource_tradeoff else None))
+        lines.extend(DeepSeekClient._format_rag_hits(experience_hits, body_budget=300))
         lines.append("")
 
         lines.append("【输出格式】")
         lines.append('只输出 JSON：{"action_id": <候选动作中的 action_id 原值>, "reason": "<建议100字符以内的简短理由>"}')
         lines.append("有实质取舍时，reason简述相对一个真实展示替代的新增收益、余手成本和必要未知条件；共有的保牌收益不能独自解释不同支付。无实质取舍不硬凑，不保证未来机会。")
+        lines.append("有用时可在reason附简短后续意图：若公开条件成立则考虑后续路线，否则重估；无有用计划可省略。它不是自动执行指令，仍须说明当前取舍。")
         lines.append("不要输出候选列表以外的 action_id。")
 
         return "\n".join(lines)
@@ -4467,6 +4506,7 @@ class DeepSeekClient:
         opening_formula_recommendation: OpeningFormulaAnalysis | None = None,
         decision_deadline: DecisionDeadline | None = None,
         request_evidence_observer: Callable[[bytes, dict[str, object]], None] | None = None,
+        confirmed_previous_reason: str | None = None,
     ) -> DeepSeekSuggestion:
         current_round = dict(observation.get("current_round", {}))
         step_no = self._coerce_int(current_round.get("step_no"), default=0)
@@ -4676,6 +4716,7 @@ class DeepSeekClient:
             opening_formula_contrasts=formula_contrasts,
             opening_formula_recommendation=validated_opening_recommendation,
             bounded_continuation_builder=continuation_builder if self.bounded_continuation_enabled else None,
+            confirmed_previous_reason=confirmed_previous_reason,
         )
 
         if verbose:

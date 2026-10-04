@@ -192,6 +192,135 @@ def _deepseek_handler(raw: _RawClient) -> NoTributeRuleBasedHandler:
 
 
 class BotzoneDeepSeekAgentRuntimeTests(unittest.TestCase):
+    def test_confirmed_reason_reaches_next_factory_request_only_after_public_execution(self) -> None:
+        from dataclasses import replace
+        from integrations.botzone.models import ActionClaim, HistoryEntry
+        from integrations.botzone.play_adapter import project_decision
+        from integrations.botzone.session import HandlerResult
+        from agents.deepseek_client import DeepSeekClient
+
+        first = _context()
+        from integrations.botzone.cards import card_from_id
+        kept = [card for card in first.own_hand if not (card_from_id(card).rank == '2' and card_from_id(card).suit == 'h')]
+        kept.extend(card for card in range(108) if card not in first.own_hand
+                    and card_from_id(card).rank == 'Q')
+        first = replace(first, own_hand=tuple(kept[:27]))
+        first_projection = project_decision(first)
+        desired = next(a['action_id'] for a in first_projection.legal_actions
+                       if a['declared_pattern'] == 'single' and a['carrier_cards'] == ['3H'])
+        prompts = []
+        answer = DeepSeekSuggestion(desired, None, reason='若无人反压则考虑余组，否则按新桌面重估。')
+        def transport(request, timeout):
+            import re
+            body = json.loads(request.data)
+            prompts.append(body['messages'][1]['content'])
+            visible = {int(value) for value in re.findall(r'#(\d+)\s+action_id=', prompts[-1])}
+            selected = answer.action_id
+            if len(prompts) == 1:
+                selected = next(a['action_id'] for a in first_projection.legal_actions
+                                if a['action_id'] in visible and a['declared_pattern'] == 'single'
+                                and a['declared_cards'] == ['3'])
+            self.assertIn(selected, visible)
+            content = json.dumps({'action_id': selected, 'reason': answer.reason}, ensure_ascii=False)
+            event = json.dumps({'choices': [{'delta': {'content': content}}]})
+            return 'data: ' + event + '\n\ndata: [DONE]\n'
+        config = _config()
+        with patch('agents.deepseek_ai.AppConfig.from_env', return_value=config), TemporaryDirectory() as root:
+            factory = build_agent_factory('deepseek', config_loader=lambda: config,
+                client_factory=lambda **kw: DeepSeekClient(**kw, transport=transport))
+            handler = NoTributeRuleBasedHandler(factory, cache_agents=True, agent_mode='deepseek',
+                                                game_evidence_recorder=object())
+            store = SessionStore(root)
+            from integrations.botzone.protocol import parse_stage_request
+            deal = parse_stage_request({'stage': 'deal', 'deliver': list(first.own_hand), 'your_id': 0, 'global': _global()})
+            record, _ = store.prepare(first.match_key, b'deal', deal)
+            store.complete_handler(store.reserve_handler(record), HandlerResult(b'[]'))
+            deliveries = store.pending_deliveries(); store.mark_inflight(deliveries); store.acknowledge(deliveries)
+            record, _ = store.prepare(first.match_key, b'first', first.request)
+            result = handler(store.handler_context(record, first.request))
+            store.complete_handler(store.reserve_handler(record), result)
+            self.assertNotIn('【本局已执行意图重估】', prompts[-1])
+            agent = handler._agents[(first.match_key, 1)]
+            self.assertEqual(agent.client.last_outcome, 'success')
+            pending = agent._pending_model_reason
+            self.assertIsNotNone(pending)
+            self.assertIsNone(agent._consume_confirmed_reason(dict(first_projection.observation)))
+            agent._pending_model_reason = pending
+            deliveries = store.pending_deliveries(); store.mark_inflight(deliveries); store.acknowledge(deliveries)
+            effect = result.effect
+            own = HistoryEntry(0, ActionClaim(effect.action, effect.claim))
+            counter_card = next(card_id_for('K', suit) for suit in ('s', 'c', 'd', 'h')
+                                if card_id_for('K', suit) not in first.own_hand)
+            counter = HistoryEntry(1, ActionClaim((counter_card,), (counter_card,)))
+            history = (own, counter, HistoryEntry(2, ActionClaim.pass_action()), HistoryEntry(3, ActionClaim.pass_action()))
+            request = replace(first.request, history=history)
+            record, _ = store.prepare(first.match_key, b'second', request)
+            context = store.handler_context(record, request)
+            projected = project_decision(context)
+            answer = DeepSeekSuggestion(next(a['action_id'] for a in projected.legal_actions if a['declared_pattern'] == 'pass'), None)
+            result = handler(context)
+            self.assertIn('【本局已执行意图重估】', prompts[-1])
+            self.assertIn('P2 single 声明K', prompts[-1])
+            self.assertIn('以当前事实/合法候选重估', prompts[-1])
+            self.assertEqual(result.effect.action, ())
+            self.assertIsNone(agent._pending_model_reason)
+            self.assertEqual(tuple(projected.legal_actions), project_decision(context).legal_actions)
+            # Unsafe projection releases the cached private state before any
+            # model call; a subsequent restart cannot revive its old reason.
+            agent._pending_model_reason = pending
+            with self.assertRaises(AdapterError):
+                handler(replace(context, own_hand=(999,)))
+            self.assertIsNone(agent._pending_model_reason)
+            self.assertEqual(handler._agents, {})
+            handler.release_match(first.match_key)
+            self.assertEqual(handler._agents, {})
+
+    def test_pending_reason_is_rejected_on_discontinuity_scope_failure_or_truncation(self) -> None:
+        from copy import deepcopy
+        from engine.cards import Card
+        from engine.game import GuanDanGame
+        game = GuanDanGame(preset_hands={1: (Card('3','S'), Card('4','C'), Card('6','D')),
+            2: (Card('5','S'), Card('7','C')), 3: (Card('8','S'), Card('9','C')),
+            4: (Card('10','S'), Card('J','C'))})
+        game.reset()
+        obs, actions = game.observe(), game.legal_actions()
+        choice = next(a for a in actions if a['carrier_cards'] == ['3S'])
+        answer = DeepSeekSuggestion(choice['action_id'], None, reason='若桌面改变则重估。')
+        with patch('agents.deepseek_ai.AppConfig.from_env', return_value=_config()):
+            agent = DeepSeekAIAgent(1, _StrictDeepSeekClient(SimpleNamespace(suggest_action_id=lambda **_: answer)))
+            agent.set_continuation_scope(('unit', 1))
+            agent.select_action(obs, actions)
+            pending = agent._pending_model_reason
+            game.step(choice['action_id'])
+            while game.observe()['my_info']['player_id'] != 1:
+                game.step(next(a['action_id'] for a in game.legal_actions() if a['declared_pattern'] == 'pass'))
+            next_obs = game.observe()
+            variants = []
+            incomplete = deepcopy(next_obs); incomplete['history']['complete'] = False; variants.append(incomplete)
+            changed = deepcopy(next_obs); changed['history']['actions'][0]['carrier_cards'] = ['4C']; variants.append(changed)
+            wrong_hand = deepcopy(next_obs); wrong_hand['my_info']['hand_cards'].append('3S'); variants.append(wrong_hand)
+            reset = deepcopy(next_obs); reset['history']['actions'] = []; variants.append(reset)
+            for bad in variants:
+                agent._pending_model_reason = pending
+                self.assertIsNone(agent._consume_confirmed_reason(bad))
+                self.assertIsNone(agent._pending_model_reason)
+            agent._pending_model_reason = pending
+            agent.set_continuation_scope(('other', 1)); self.assertIsNone(agent._pending_model_reason)
+            agent._pending_model_reason = pending
+            agent.set_continuation_scope(('other', 2)); self.assertIsNone(agent._pending_model_reason)
+            answer = DeepSeekSuggestion(None, None)
+            agent._pending_model_reason = pending
+            self.assertIn(agent.select_action(obs, actions), {a['action_id'] for a in actions})
+            self.assertIsNone(agent._pending_model_reason)
+            agent._pending_model_reason = pending
+            only_pass = dict(actions[0], declared_pattern='pass', declared_cards=[], carrier_cards=[])
+            self.assertEqual(agent.select_action(obs, [only_pass]), only_pass['action_id'])
+            self.assertIsNone(agent._pending_model_reason)
+            for reason, truncated in ((None, False), (' ', False), ('若条件' * 41, False), ('若条件', True)):
+                answer = DeepSeekSuggestion(choice['action_id'], None, reason=reason, reason_truncated=truncated)
+                self.assertEqual(agent.select_action(obs, actions), choice['action_id'])
+                self.assertIsNone(agent._pending_model_reason)
+
     def test_rule_mode_never_loads_deepseek_configuration_or_factory(self) -> None:
         calls: list[str] = []
 

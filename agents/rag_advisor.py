@@ -411,7 +411,10 @@ class RAGAdvisor:
 
     @staticmethod
     def build_query(scene_tags: dict[str, object]) -> str:
-        parts = [f"{key}:{value}" for key, value in scene_tags.items()]
+        # This flag only orders final model text. It must not alter retrieval
+        # scores, source hits, recommendations, or candidate retention.
+        parts = [f"{key}:{value}" for key, value in scene_tags.items()
+                 if key != 'public_terminal_pass_behavior']
         zh_terms = ["掼蛋", "单局", "当前规则", "合法动作", "经验"]
         if scene_tags.get("scene") in {"lead_opening", "lead"}:
             zh_terms.extend(["首出", "开局", "自由出牌"])
@@ -698,22 +701,26 @@ class RAGAdvisor:
 
         # Reuse the same eligibility/ranking pass for a text-only projection;
         # the ordinary source IDs used by candidate selection stay unchanged.
-        projection_source = behavior
-        if finish_tradeoff_projection:
-            projection_source = next((item for item in candidates
-                if item[3].metadata.get('guidance_mode') == 'source_principle'
-                and 'endgame_planning' in self._metadata_values(item[3].metadata, 'strategy_domain')), None)
-        projected = (
-            [projection_source] + [item for item in selected_candidates if item != projection_source][:top_k - 1]
-            if behavior_projection is not None and projection_source is not None else []
-        )
-        if resource_projection and layer == 'experience':
-            projected = projected or selected_candidates[:1]
-            companion = next((item for item in candidates
-                if 'bomb_wildcard_management' in self._metadata_values(item[3].metadata, 'strategy_domain')
-                and item not in projected), None)
-            if companion is not None:
-                projected = projected[:1] + [companion]
+        projected = []
+        if behavior_projection is not None and layer == 'experience':
+            # Text-only eligible pool, using the very same rank and conditions.
+            # Final displayed payments choose its relevance; source hits and
+            # candidate retention above are intentionally unchanged.
+            domains = {'endgame_planning', 'hand_structure', 'control_return_resource',
+                       'follow_control', 'danger_opponent_block', 'bomb_wildcard_management'}
+            eligible = [item for item in candidates if
+                        self._metadata_values(item[3].metadata, 'strategy_domain') & domains]
+            def text_relevance(item: tuple) -> int:
+                item_domains = self._metadata_values(item[3].metadata, 'strategy_domain')
+                if (scene_tags.get('public_terminal_pass_behavior') and 'uncertainty_probe' in item_domains
+                        and item[3].metadata.get('guidance_mode') == 'source_principle'):
+                    return 0
+                if (finish_tradeoff_projection or scene_tags.get('phase') == 'endgame') and 'endgame_planning' in item_domains:
+                    return 1 if scene_tags.get('public_terminal_pass_behavior') else 0
+                if 'uncertainty_probe' in item_domains:
+                    return 2
+                return 1
+            projected = sorted(eligible, key=text_relevance)[:2]
         evidence_by_index: dict[int, RAGEvidence] = {}
         for _, negative_score, index, doc, _, _ in selected_candidates + projected:
             if index in evidence_by_index:
@@ -843,6 +850,7 @@ class RAGAdvisor:
         from agents.card_tracker import relevant_public_passes, relevant_public_carried_pairs, terminal_pass_signal
         relevant_passes = relevant_public_passes(observation)
         scene_tags['public_pass_behavior'] = bool(relevant_passes)
+        scene_tags['public_terminal_pass_behavior'] = any(terminal_pass_signal(event) for event in relevant_passes)
         carried_pair_behavior = bool(relevant_public_carried_pairs(observation, legal_actions))
         facts = summarize_candidate_structures(observation, legal_actions) or ()
         patterns = {f.pattern for f in facts}
@@ -879,7 +887,7 @@ class RAGAdvisor:
 
         resource_projection = (
             bool(set(relation_kinds or ()) & {'bomb_residual', 'sequence_structure_loss'})
-            and not any(terminal_pass_signal(event) for event in relevant_passes)
+            or any(f.fragments_played_rank_group or f.consumes_control_resource or f.uses_wildcard for f in facts)
         )
         behavior_evidence: list[RAGEvidence] = []
         try:
@@ -889,7 +897,7 @@ class RAGAdvisor:
                 query=query,
                 top_k=top_k,
                 candidate_applicability=candidate_applicability,
-                behavior_projection=behavior_evidence if carried_pair_behavior or finish_tradeoff or resource_projection else None,
+                behavior_projection=behavior_evidence if carried_pair_behavior or finish_tradeoff or resource_projection or scene_tags.get('phase') == 'endgame' else None,
                 finish_tradeoff_projection=finish_tradeoff,
                 resource_projection=resource_projection,
             )

@@ -479,6 +479,43 @@ def _wildcard_bomb_follow_game() -> GuanDanGame:
 
 
 class M4TradeoffInputTests(unittest.TestCase):
+    def test_final_experience_projection_preserves_whole_endgame_conditions_without_candidate_changes(self) -> None:
+        game = _terminal_group_game(('QS', 'QC'))
+        observation, actions = game.observe(), game.legal_actions()
+        context = self.rag_advisor.get_rag_context(observation=observation, legal_actions=actions, top_k=1)
+        frozen_hits = deepcopy(context['experience_hits'])
+        context['scene_tags']['public_pass_behavior'] = True
+        tagged = dict(context['scene_tags'], public_terminal_pass_behavior=True)
+        untagged = {key: value for key, value in tagged.items() if key != 'public_terminal_pass_behavior'}
+        self.assertEqual(self.rag_advisor.build_query(tagged), self.rag_advisor.build_query(untagged))
+        memory = next(doc for doc in self.rag_advisor._retriever.documents
+                      if 'uncertainty_probe' in doc.metadata.get('strategy_domain', '')
+                      and doc.metadata.get('guidance_mode') == 'source_principle')
+        context['experience_hits'] = [{'source_id': memory.doc_id, 'snippet': memory.content, 'metadata': memory.metadata}]
+        selected = next(a for a in actions if a['declared_pattern'] == 'pass')
+        prompt = DeepSeekClient._build_structured_prompt(my_info=observation['my_info'],
+            current_round=observation['current_round'], other_players=observation['other_players'],
+            history=observation['history'], legal_actions=actions, rag_context=context)
+        ending = next(item for item in context['behavior_experience_hits']
+                      if 'endgame_planning' in item['metadata']['strategy_domain'])
+        _, complete = DeepSeekClient._rag_title_and_body(ending, complete_body=True)
+        self.assertIn(complete, prompt)
+        self.assertIn('估组不保牌权', prompt)
+        for private in ('source_url', 'source_grade', 'locator', 'verified_by'):
+            self.assertNotIn(private, prompt)
+        actual, ids, returned = self._factory_request(game, selected['action_id'])
+        self.assertIn(complete, actual)
+        self.assertEqual(returned, selected['action_id'])
+        self.assertIn(returned, ids)
+        self.assertEqual(context['experience_hits'][0]['source_id'], memory.doc_id)
+        self.assertEqual(frozen_hits, self.rag_advisor.get_rag_context(observation=observation, legal_actions=actions, top_k=1)['experience_hits'])
+        # Oversized knowledge is omitted as a whole; a fitting complete entry
+        # keeps its exceptions, with no truncated first half competing for room.
+        oversized = dict(ending, snippet='# Long\n' + '条件' * 160 + '反例')
+        rendered = '\n'.join(DeepSeekClient._format_rag_hits([oversized, ending], body_budget=300))
+        self.assertIn(complete, rendered)
+        self.assertNotIn('Long', rendered)
+
     def test_final_payment_projection_covers_sequences_and_suit_differences(self) -> None:
         from agents.action_structure import displayed_payment_summaries, summarize_candidate_structures
         from tests.test_suit_resource_projection import _complete_game, _capture_default_factory_request

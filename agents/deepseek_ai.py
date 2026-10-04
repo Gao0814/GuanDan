@@ -504,6 +504,70 @@ class DeepSeekAIAgent(BaseAgent):
         repr=False,
     )
     last_strategy_recommendation: object | None = field(default=None, init=False, repr=False)
+    _continuation_scope: tuple[str, int] | None = field(default=None, init=False, repr=False)
+    _pending_model_reason: object | None = field(default=None, init=False, repr=False)
+
+    def set_continuation_scope(self, scope: tuple[str, int] | None) -> None:
+        """Opt in only from the match-isolated private batch handler."""
+        if scope != self._continuation_scope:
+            self._pending_model_reason = None
+        self._continuation_scope = scope
+
+    @staticmethod
+    def _continuation_history(observation: dict[str, object]) -> tuple | None:
+        history = observation.get("history", {})
+        if not isinstance(history, dict) or history.get("complete") is False:
+            return None
+        rows = history.get("actions")
+        if not isinstance(rows, list):
+            return None
+        result = []
+        for step, row in enumerate(rows, 1):
+            if not isinstance(row, dict) or row.get("step_no") != step:
+                return None
+            if not isinstance(row.get("declared_cards"), list) or not isinstance(row.get("carrier_cards"), list):
+                return None
+            if any(type(token) is not str for token in row["declared_cards"] + row["carrier_cards"]):
+                return None
+            result.append((step, row.get("round_no"), row.get("player_id"),
+                           row.get("declared_pattern"), tuple(sorted(row["declared_cards"])),
+                           tuple(sorted(row["carrier_cards"]))))
+        if observation.get("current_round", {}).get("step_no") != len(result):
+            return None
+        return tuple(result)
+
+    def _consume_confirmed_reason(self, observation: dict[str, object]) -> str | None:
+        pending, self._pending_model_reason = self._pending_model_reason, None
+        if pending is None or self._continuation_scope is None:
+            return None
+        scope, before, hand, action, reason = pending
+        current = self._continuation_history(observation)
+        if scope != self._continuation_scope or current is None or len(current) <= len(before):
+            return None
+        if current[:len(before)] != before:
+            return None
+        tail = current[len(before):]
+        player = scope[1]
+        # Exactly the expected next own action, with identical declarations
+        # and physical payment. Other players may legally counter it.
+        expected = (player, action["declared_pattern"], tuple(sorted(action["declared_cards"])),
+                    tuple(sorted(action["carrier_cards"])))
+        if tail[0][2:] != expected or any(row[2] == player for row in tail[1:]):
+            return None
+        remaining = Counter(hand)
+        remaining.subtract(action["carrier_cards"])
+        my_info = observation.get("my_info", {})
+        if min(remaining.values(), default=0) < 0 or +remaining != Counter(my_info.get("hand_cards", [])):
+            return None
+        if my_info.get("player_id") != player:
+            return None
+        changes = "; ".join(f"P{row[2]} {row[3]} 声明{'/'.join(row[4]) or 'pass'}"
+                            for row in tail[1:4])
+        return ("上次已执行动作：" + action["declared_pattern"] + "，声明="
+                + "/".join(action["declared_cards"]) + "，实体支付=" + "/".join(action["carrier_cards"])
+                + "。同次短自述：" + reason + "。此后公开行动：" + (changes or "无")
+                + ("；其余变化见当前公开历史" if len(tail) > 4 else "")
+                + "。这是旧意图（可能仅含当时理由，并非已有后续计划）；必须以当前事实/合法候选重估，可放弃，不复用旧ID，不保证未来牌权。")
 
     def __post_init__(self) -> None:
         if not isinstance(self.card_confidence_shadow_enabled, bool):
@@ -534,6 +598,7 @@ class DeepSeekAIAgent(BaseAgent):
         observation: dict[str, object],
         legal_actions: list[dict[str, object]],
     ) -> int:
+        confirmed_reason = self._consume_confirmed_reason(observation)
         self.last_card_confidence = None
         self.last_card_confidence_prompt = None
         self.last_strategy_intent = None
@@ -972,6 +1037,8 @@ class DeepSeekAIAgent(BaseAgent):
             }
             if public_endgame_summary is not None:
                 suggestion_kwargs["public_endgame_summary"] = public_endgame_summary
+            if confirmed_reason is not None:
+                suggestion_kwargs["confirmed_previous_reason"] = confirmed_reason
             if request_evidence_observer is not None:
                 suggestion_kwargs["request_evidence_observer"] = request_evidence_observer
             if card_confidence_prompt is not None:
@@ -1014,6 +1081,15 @@ class DeepSeekAIAgent(BaseAgent):
                     short = DeepSeekSuggestion(chosen, None,
                                               reason=getattr(suggestion, "reason", None),
                                               reason_truncated=getattr(suggestion, "reason_truncated", False))
+                    history = self._continuation_history(observation) if self._continuation_scope is not None else None
+                    if self._continuation_scope is not None and history is not None and short.reason and not short.reason_truncated:
+                        action = _action_by_id(legal_actions, chosen)
+                        if action is not None:
+                            self._pending_model_reason = (self._continuation_scope, history,
+                                tuple(my_info.get("hand_cards", [])),
+                                {"declared_pattern": action["declared_pattern"],
+                                 "declared_cards": tuple(action["declared_cards"]),
+                                 "carrier_cards": tuple(action["carrier_cards"])}, short.reason)
                     self._emit_evidence("model_complete", {
                         "outcome": "success", "selected_action_id": chosen,
                         "reason": short.reason, "reason_truncated": short.reason_truncated,

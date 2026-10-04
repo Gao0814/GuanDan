@@ -155,6 +155,9 @@ class NoTributeRuleBasedHandler:
 
         for key in tuple(self._agents):
             if key[0] == match_key:
+                scope_setter = getattr(self._agents[key], "set_continuation_scope", None)
+                if callable(scope_setter):
+                    scope_setter(None)
                 del self._agents[key]
 
     def observability_snapshot(self) -> AgentObservabilitySnapshot:
@@ -163,11 +166,16 @@ class NoTributeRuleBasedHandler:
         return self._observability.snapshot(self._agent_mode)
 
     def __call__(self, context: HandlerContext) -> HandlerResult:
-        request = require_no_tribute_context(context)
-        _validate_context(context, request)
-        if isinstance(request, DealRequest):
-            return HandlerResult(b"[]")
-        projection = project_decision(context)
+        try:
+            request = require_no_tribute_context(context)
+            _validate_context(context, request)
+            if isinstance(request, DealRequest):
+                self.release_match(context.match_key)
+                return HandlerResult(b"[]")
+            projection = project_decision(context)
+        except Exception:
+            self.release_match(context.match_key)
+            raise
         # Preserve an immutable-by-convention pre-call public snapshot.  The
         # Agent receives independent recursive copies and may not alter the
         # canonical evidence or provenance input by mutating nested payloads.
@@ -187,6 +195,9 @@ class NoTributeRuleBasedHandler:
                     agent = self._agent_factory(engine_player)
                     if self._cache_agents:
                         self._agents[cache_key] = agent
+                scope_setter = getattr(agent, "set_continuation_scope", None)
+                if callable(scope_setter):
+                    scope_setter(cache_key if self._cache_agents and self._game_evidence_recorder is not None else None)
                 if self._game_evidence_recorder is not None:
                     begin_decision = getattr(self._game_evidence_recorder, "begin_decision", None)
                     evidence_sink = getattr(self._game_evidence_recorder, "agent_sink", None)
@@ -203,10 +214,10 @@ class NoTributeRuleBasedHandler:
                         deadline_setter(context.decision_deadline)
                 selected = agent.select_action(agent_observation, agent_actions)
             except Exception as exc:
+                adapter_fallback = True
                 if not self._fallback_to_rule:
                     raise AdapterError("agent_failure") from exc
                 self._record_model_outcome(agent)
-                adapter_fallback = True
                 selected_id = _fallback_action_id(
                     engine_player,
                     trace_observation,
@@ -245,6 +256,10 @@ class NoTributeRuleBasedHandler:
         finally:
             if deadline_setter is not None:
                 deadline_setter(None)
+            if adapter_fallback:
+                scope_setter = getattr(agent, "set_continuation_scope", None)
+                if callable(scope_setter):
+                    scope_setter(None)
         action = projection.provenance.get(selected_id)
         if action is None:
             raise AdapterError("missing_provenance")
