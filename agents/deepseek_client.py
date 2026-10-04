@@ -3010,6 +3010,9 @@ class DeepSeekClient:
             body_lines.append(line)
         title = DeepSeekClient._bounded_text(title or "知识条目", PROMPT_MAX_RAG_TITLE_CHARS)
         body = " ".join(body_lines)
+        if complete_body and body.endswith("…"):
+            # A legacy packed snippet is not a complete conditional principle.
+            return title, ""
         if not complete_body:
             body = DeepSeekClient._bounded_text(body, PROMPT_MAX_RAG_BODY_CHARS)
         return title, body
@@ -3030,7 +3033,7 @@ class DeepSeekClient:
             topic_text = f"；topic={topic}" if topic else ""
             domain_text = f"；domain={domain}" if domain else ""
             if body_budget is not None:
-                if len(body) > body_budget:
+                if not body or len(body) > body_budget:
                     continue  # Omit a whole entry rather than lose its conditions.
                 body_budget -= len(body)
             body_text = f"：{body}" if body else ""

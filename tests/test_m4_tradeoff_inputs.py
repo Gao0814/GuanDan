@@ -479,6 +479,54 @@ def _wildcard_bomb_follow_game() -> GuanDanGame:
 
 
 class M4TradeoffInputTests(unittest.TestCase):
+    def test_long_opening_principles_reach_factory_with_complete_exceptions(self) -> None:
+        from tests.test_suit_resource_projection import _complete_game
+        opening = GuanDanGame(seed=0)
+        opening.reset()
+        grouped = _complete_game([rank + suit for rank in ('3', '5', '7', '9', 'J', 'K')
+                                  for suit in ('S', 'C', 'D', 'H')] + ['AS', 'SJ', 'BJ'])
+        for game, source in ((opening, 'exp_lead_opening_shape_001'),
+                             (grouped, 'exp_lead_opening_weak_001')):
+            with self.subTest(source=source):
+                doc = next(doc for doc in self.rag_advisor._retriever.documents if doc.doc_id == source)
+                _, expected = DeepSeekClient._rag_title_and_body({'snippet': doc.content}, complete_body=True)
+                self.assertGreater(len(doc.content), 240)
+                self.assertLessEqual(len(expected), 300)
+                context = self.rag_advisor.get_rag_context(observation=game.observe(),
+                    legal_actions=game.legal_actions(), top_k=1)
+                hit = next(item for item in context['experience_hits'] if item['source_id'] == source)
+                self.assertEqual(hit['snippet'], self.rag_advisor._clip(doc.content))
+                self.assertTrue(hit['snippet'].endswith('…'))
+                full = next(item for item in context['behavior_experience_hits'] if item['source_id'] == source)
+                self.assertEqual(full['snippet'], doc.content.strip())
+                action_id = game.legal_actions()[0]['action_id']
+                prompt, visible, _ = self._factory_request(game, action_id)
+                experience = prompt.split('【经验库依据】', 1)[1].split('【输出格式】', 1)[0]
+                self.assertIn(expected, experience)
+                self.assertIn(expected.split('反例与调整：')[1], experience)
+                self.assertNotIn('…', experience)
+                self.assertIn(action_id, visible)
+
+    def test_complete_text_packing_ignores_title_length_and_omits_whole_over_budget_entries(self) -> None:
+        from agents.rag_advisor import RAGEvidence
+        bodies = ('适用条件：' + '公开结构' * 55 + '。反例与调整：紧急阻断可改变判断。',
+                  '适用条件：' + '真实支付' * 76 + '。反例与调整：不可保证回手。')
+        for title in ('短标题', '长标题' * 90):
+            evidence = tuple(RAGEvidence(str(index), 'experience', '# ' + title + '\n\n' + body,
+                                        {'status': 'accepted'}) for index, body in enumerate(bodies))
+            clipped = self.rag_advisor._accepted(evidence)
+            complete = self.rag_advisor._accepted(evidence, complete_snippet=True)
+            self.assertTrue(all(len(item['snippet']) <= 240 for item in clipped))
+            for item, body in zip(complete, bodies):
+                self.assertEqual(DeepSeekClient._rag_title_and_body(item, complete_body=True)[1], body)
+            small = {'snippet': '# Next\n适用条件：合法选择。反例与调整：新事实优先。'}
+            rendered = '\n'.join(DeepSeekClient._format_rag_hits([complete[1], small], body_budget=300))
+            self.assertNotIn(bodies[1], rendered)
+            self.assertIn('新事实优先', rendered)
+            rendered = '\n'.join(DeepSeekClient._format_rag_hits([complete[0], complete[0]], body_budget=300))
+            self.assertEqual(rendered.count(bodies[0]), 1)
+            self.assertEqual(DeepSeekClient._format_rag_hits([clipped[0]], body_budget=300), [])
+
     def test_final_experience_projection_preserves_whole_endgame_conditions_without_candidate_changes(self) -> None:
         game = _terminal_group_game(('QS', 'QC'))
         observation, actions = game.observe(), game.legal_actions()

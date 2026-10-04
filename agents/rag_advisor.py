@@ -736,7 +736,7 @@ class RAGAdvisor:
         return tuple(evidence_by_index[item[2]] for item in selected_candidates)
 
     @staticmethod
-    def _pack(evidence: RAGEvidence) -> dict[str, object]:
+    def _pack(evidence: RAGEvidence, *, complete_snippet: bool = False) -> dict[str, object]:
         metadata = {
             key: value
             for key, value in evidence.metadata.items()
@@ -745,14 +745,14 @@ class RAGAdvisor:
         return {
             "source_id": evidence.source_id,
             "layer": evidence.layer,
-            "snippet": RAGAdvisor._clip(evidence.snippet),
+            "snippet": evidence.snippet.strip() if complete_snippet else RAGAdvisor._clip(evidence.snippet),
             "metadata": metadata,
         }
 
     @staticmethod
-    def _accepted(evidence: tuple[RAGEvidence, ...]) -> list[dict[str, object]]:
+    def _accepted(evidence: tuple[RAGEvidence, ...], *, complete_snippet: bool = False) -> list[dict[str, object]]:
         return [
-            RAGAdvisor._pack(item)
+            RAGAdvisor._pack(item, complete_snippet=complete_snippet)
             for item in evidence
             if item.metadata.get("status") == "accepted"
         ]
@@ -908,6 +908,10 @@ class RAGAdvisor:
             "scene_tags": scene_tags,
             "rule_hits": self._accepted(rule_evidence),
             "experience_hits": self._accepted(experience_evidence),
-            "behavior_experience_hits": self._accepted(tuple(behavior_evidence)),
+            # Final text also needs the ordinary selected entries in full,
+            # including opening principles outside the behavior projection.
+            # Keep the clipped source-hit contract above unchanged.
+            "behavior_experience_hits": self._accepted(
+                tuple(behavior_evidence) + experience_evidence, complete_snippet=True),
             "query": query,
         }
