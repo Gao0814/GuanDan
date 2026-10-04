@@ -166,7 +166,7 @@ class TestHandEvaluator(unittest.TestCase):
         self.assertEqual(result["label"], "极弱")
         self.assertIn("散牌", str(result["comment"]))
 
-    def test_prompt_includes_hand_score_line_when_provided(self) -> None:
+    def test_prompt_replaces_score_projection_with_physical_hand_facts(self) -> None:
         observation = _observation(
             hand_cards=["BJ", "SJ", "2H", "3S", "4S", "5S", "6S", "7S", "8H"],
             remaining_single_card_count=5,
@@ -210,9 +210,9 @@ class TestHandEvaluator(unittest.TestCase):
         )
 
         self.assertIn("【当前局面】", prompt)
-        self.assertIn("【手牌评估】", prompt)
-        self.assertIn(f"total_score={hand_evaluation['total_score']}", prompt)
-        self.assertIn(f"label={hand_evaluation['label']}", prompt)
+        self.assertIn("【我的剩余手牌】", prompt)
+        self.assertNotIn("total_score=", prompt)
+        self.assertNotIn("label=", prompt)
         self.assertIn("大王", prompt)
         self.assertIn("小王", prompt)
         self.assertIn("♥2(逢人配)", prompt)

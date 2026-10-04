@@ -195,6 +195,34 @@ def _capture_default_factory_request(
 
 
 class SuitResourceProjectionTests(unittest.TestCase):
+    def test_fact_prompt_keeps_high_control_or_pass_model_choice_and_proven_continuation(self) -> None:
+        from tests.test_m9_public_endgame_opportunities import _public_endgame_fixture, _clone_game
+
+        game, observation, actions = _public_endgame_fixture(
+            current_hands={3: ("BJ", "9S", "9C", "9D"),
+                           4: ("3S", "4C", "5D", "6H", "7S", "8C", "10D", "JH", "QS")},
+            finish_order=(1, 2), current_player_id=3, leading_token="SJ", leader_player_id=4)
+        high = next(action["action_id"] for action in actions if action["carrier_cards"] == ["BJ"])
+        oracle = _clone_game(game)
+        oracle.step(high)
+        self.assertTrue(all(action["declared_pattern"] == "pass" for action in oracle.legal_actions()))
+        oracle.step(oracle.legal_actions()[0]["action_id"])
+        finish = next(action for action in oracle.legal_actions() if action["declared_pattern"] == "triple")
+        self.assertTrue(oracle.step(finish["action_id"])["game_over"])
+        frozen = deepcopy(observation), deepcopy(actions)
+        for desired in (high, next(action["action_id"] for action in actions if action["declared_pattern"] == "pass")):
+            selected, agent, transport = _capture_default_factory_request(game, desired)
+            self.assertEqual((selected, agent.last_decision_source), (desired, "model"))
+            self.assertIsNotNone(agent.last_strategy_intent)
+            self.assertIsNotNone(agent.last_strategy_intent_prompt)
+            self.assertIn("点数计数：9×3、大王×1；合计4张", transport.prompt)
+            for forbidden in ("total_score", "control_score", "hand_strength:", "strategy_intent:",
+                              "strategy_domains:", "【手牌评估】", "【策略意图】", "手牌控制力稳定"):
+                self.assertNotIn(forbidden, transport.prompt)
+            self.assertEqual(set(transport.candidate_ids), {action["action_id"] for action in actions})
+            self.assertIn("建议100字符以内", transport.prompt)
+        self.assertEqual((game.observe(), game.legal_actions()), frozen)
+
     def test_upper_bound_counts_reach_factory_and_qualify_derived_references(self) -> None:
         game = _complete_game(_no_flush_hand())
         observation, actions = game.observe(), game.legal_actions()

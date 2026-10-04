@@ -217,7 +217,6 @@ PROMPT_MAX_PUBLIC_CONFIRMED_HANDS_CHARS = 720
 _SCENE_TAG_ORDER = (
     "scene",
     "phase",
-    "hand_strength",
     "action_context",
     "has_bomb",
     "has_wildcard",
@@ -225,8 +224,6 @@ _SCENE_TAG_ORDER = (
     "can_play_out_all",
     "can_bomb_response",
     "wildcard_action_present",
-    "strategy_intent",
-    "strategy_domains",
     "candidate_relation_kinds",
 )
 
@@ -3119,29 +3116,42 @@ class DeepSeekClient:
         )
 
     @staticmethod
-    def _format_hand_evaluation(hand_evaluation: dict[str, object] | None) -> list[str]:
-        if not isinstance(hand_evaluation, dict):
-            return ["（无）"]
-        ordered_fields = (
-            "total_score",
-            "structure_score",
-            "control_score",
-            "potential_score",
-            "label",
-        )
-        parts = [
-            f"{key}={hand_evaluation[key]}"
-            for key in ordered_fields
-            if key in hand_evaluation and hand_evaluation[key] not in (None, "")
-        ]
-        lines = [", ".join(parts)] if parts else []
-        comment = hand_evaluation.get("comment")
-        if comment not in (None, ""):
-            lines.append(
-                "comment="
-                + DeepSeekClient._bounded_text(str(comment), PROMPT_MAX_ACTION_DISPLAY_CHARS)
-            )
-        return lines or ["（无）"]
+    def _format_remaining_hand(
+        my_info: dict[str, object],
+        current_level_rank: str,
+        actions: list[dict[str, object]],
+    ) -> list[str]:
+        """Render physical hand facts, reusing already validated suit resources."""
+        tokens = [str(token) for token in my_info.get("hand_cards", [])]
+        counts = Counter(_rank_of(token) for token in tokens)
+        names = {SMALL_JOKER_RANK: "小王", BIG_JOKER_RANK: "大王"}
+        parts = [f"{names.get(rank, rank)}×{counts[rank]}"
+                 for rank in sorted(counts, key=lambda rank: (_RANK_ORDER.get(rank, 99), rank))]
+        lines = ["点数计数：" + ("、".join(parts) or "空手") + f"；合计{len(tokens)}张"]
+        if my_info.get("hand_count") != len(tokens):
+            lines.append("公开手牌列表与所报余张不一致，仅按列表计数，不补造实体。")
+        wildcard = f"{current_level_rank}H"
+        lines.append(f"♥{current_level_rank}(逢人配)×{tokens.count(wildcard)}；"
+                     f"已计入{current_level_rank}点，不额外加张；可作自然级牌，支付以canonical声明为准。")
+        # Reconstruct the existing before-resource carriers from validated
+        # projection metadata. Do not run another hand/resource query here.
+        suited_tokens: set[str] = set()
+        for action in actions:
+            if isinstance(action, _ProjectedPromptAction):
+                lost, gained = action.suit_resource_profile[:2]
+                before_keys = set(lost) | (set(action.suit_retained_routes) - set(gained))
+                for key in before_keys:
+                    suited_tokens.update(f"{rank}{suit or ''}" for rank, suit in key[2])
+            elif action.get("declared_pattern") == "straight_flush":
+                suited_tokens.update(str(token) for token in action.get("carrier_cards", []))
+        physical = Counter(tokens)
+        relevant = [token for token in suited_tokens if token in physical]
+        if relevant:
+            relevant.sort(key=lambda token: (_RANK_ORDER.get(_rank_of(token), 99), token))
+            lines.append("已核验同花顺资源涉及的本家实体：" + "、".join(
+                f"{_SUIT_DISPLAY.get(token[-1], '')}{_rank_of(token)}×{physical[token]}"
+                for token in relevant) + "；路线与重叠成本见候选资源对照，不保证以后牌权。")
+        return lines
 
     @staticmethod
     def _format_card_tracking_summary(
@@ -3672,7 +3682,9 @@ class DeepSeekClient:
         lines.append("【任务与硬约束】")
         lines.append("- legal_actions 是唯一合法动作来源，只能从【候选动作】中选择一个 action_id。")
         lines.append("- 不得构造新动作、修改牌型、补充未知牌或假设隐藏信息。")
-        lines.append("- 规则库只解释本项目规则口径，经验库只提供策略参考，均不能替代 legal_actions。")
+        lines.append("- 证据顺序：公开事实与完整确证结果优先；可能应手、有限假设续局与经验须保留各自边界，可被新事实撤回。")
+        lines.append("- 比较相对真实展示替代的本次收益、实体支付和余手出路：剩下的牌仍须怎样取得合法出牌机会？压过桌面不等于稳定牌权，少余牌或少分组不等于必胜。")
+        lines.append("- 高牌、拆组和pass均可取舍；立即出完、可核对的连续收尾或公开紧急阻断可支持支付资源，不预设保牌或争权优先。")
         lines.append("")
 
         lines.append("【当前局面】")
@@ -3748,8 +3760,8 @@ class DeepSeekClient:
             )
         lines.append("")
 
-        lines.append("【手牌评估】")
-        lines.extend(DeepSeekClient._format_hand_evaluation(hand_evaluation))
+        lines.append("【我的剩余手牌】")
+        lines.extend(DeepSeekClient._format_remaining_hand(my_info, current_level_rank, prompt_actions))
         lines.append("")
 
         lines.append("【记牌信息】")
@@ -4181,14 +4193,8 @@ class DeepSeekClient:
             )
             lines.append("")
 
-        validated_strategy_intent = DeepSeekClient._validated_strategy_intent_prompt(
-            strategy_intent_prompt,
-        )
-        if validated_strategy_intent is not None:
-            lines.append("【策略意图】")
-            lines.append(validated_strategy_intent.text)
-            lines.append("")
-
+        # Formula-driven intent remains an internal routing/RAG input. It
+        # supplies neither a control guarantee nor a model-facing preference.
         lines.append("【场景标签】")
         lines.extend(DeepSeekClient._format_scene_tags(rag_context))
         lines.append("")
@@ -4344,8 +4350,8 @@ class DeepSeekClient:
         lines.append("")
 
         lines.append("【输出格式】")
-        lines.append('只输出 JSON：{"action_id": <候选动作中的 action_id 原值>, "reason": "<20字以内理由>"}')
-        lines.append('示例：{"action_id": 123, "reason": "保留控制牌并减少手数"}')
+        lines.append('只输出 JSON：{"action_id": <候选动作中的 action_id 原值>, "reason": "<建议100字符以内的简短理由>"}')
+        lines.append("有实质取舍时，reason简述相对一个真实展示替代的新增收益、余手成本和必要未知条件；共有的保牌收益不能独自解释不同支付。无实质取舍不硬凑，不保证未来机会。")
         lines.append("不要输出候选列表以外的 action_id。")
 
         return "\n".join(lines)

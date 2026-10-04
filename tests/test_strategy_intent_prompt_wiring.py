@@ -311,7 +311,7 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
         self.assertEqual(malformed.last_strategy_intent_prompt.status, "omitted")
         self.assertNotIn("strategy_intent_prompt", malformed.client.calls[0])
 
-    def test_client_validates_exact_payload_and_insertion_order(self) -> None:
+    def test_client_keeps_validated_intent_internal_without_projection(self) -> None:
         observation = _observation()
         kwargs = {
             "my_info": observation["my_info"],
@@ -325,10 +325,9 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
         baseline = DeepSeekClient._build_structured_prompt(**kwargs)
         self.assertEqual(baseline, DeepSeekClient._build_structured_prompt(**kwargs, strategy_intent_prompt=None))
         prompt = DeepSeekClient._build_structured_prompt(**kwargs, strategy_intent_prompt=payload)
-        self.assertEqual(prompt.count("【策略意图】"), 1)
-        self.assertEqual(prompt.count(payload.text), 1)
-        self.assertLess(prompt.index("【记牌信息】"), prompt.index("【策略意图】"))
-        self.assertLess(prompt.index("【策略意图】"), prompt.index("【场景标签】"))
+        self.assertIs(DeepSeekClient._validated_strategy_intent_prompt(payload), payload)
+        self.assertEqual(prompt, baseline)
+        self.assertNotIn("【策略意图】", prompt)
 
         short_endgame = build_strategy_intent_prompt_payload(
             replace(
@@ -343,8 +342,8 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
             **kwargs,
             strategy_intent_prompt=short_endgame,
         )
-        self.assertIn("最少剩余分组", short_prompt)
-        self.assertIn("避免无谓拆散已有组合", short_prompt)
+        self.assertIs(DeepSeekClient._validated_strategy_intent_prompt(short_endgame), short_endgame)
+        self.assertEqual(short_prompt, baseline)
 
         malformed = (
             object(),
@@ -365,6 +364,7 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
         )
         for invalid in malformed:
             with self.subTest(invalid=invalid):
+                self.assertIsNone(DeepSeekClient._validated_strategy_intent_prompt(invalid))
                 self.assertEqual(
                     DeepSeekClient._build_structured_prompt(**kwargs, strategy_intent_prompt=invalid),
                     baseline,
@@ -379,8 +379,8 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
             **kwargs,
             strategy_intent_prompt=relation_payload,
         )
-        self.assertIn(relation_payload.text, relation_prompt)
-        self.assertIn("自然对子/三张与普通单张的清理和余组取舍", relation_prompt)
+        self.assertIs(DeepSeekClient._validated_strategy_intent_prompt(relation_payload), relation_payload)
+        self.assertEqual(relation_prompt, baseline)
         for invalid in (
             replace(relation_payload, candidate_relation_kinds=()),
             replace(relation_payload, text=relation_payload.text.replace("普通单张", "任意动作")),
@@ -388,12 +388,13 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
             replace(relation_payload, candidate_relation_kinds=([],)),  # type: ignore[arg-type]
         ):
             with self.subTest(relation_payload=invalid):
+                self.assertIsNone(DeepSeekClient._validated_strategy_intent_prompt(invalid))
                 self.assertEqual(
                     DeepSeekClient._build_structured_prompt(**kwargs, strategy_intent_prompt=invalid),
                     baseline,
                 )
 
-    def test_confidence_and_strategy_sections_coexist_in_fixed_order(self) -> None:
+    def test_confidence_stays_visible_while_strategy_intent_stays_internal(self) -> None:
         observation = _observation()
         confidence_text = "范围：critical_endgame_policy_diverse_v1\n说明：固定 confidence 测试文本"
         confidence = CardConfidencePromptPayload(
@@ -415,10 +416,9 @@ class TestStrategyIntentPromptWiring(unittest.TestCase):
             strategy_intent_prompt=strategy,
         )
         self.assertEqual(prompt.count("【残局牌面信念】"), 1)
-        self.assertEqual(prompt.count("【策略意图】"), 1)
+        self.assertNotIn("【策略意图】", prompt)
         self.assertLess(prompt.index("【记牌信息】"), prompt.index("【残局牌面信念】"))
-        self.assertLess(prompt.index("【残局牌面信念】"), prompt.index("【策略意图】"))
-        self.assertLess(prompt.index("【策略意图】"), prompt.index("【场景标签】"))
+        self.assertLess(prompt.index("【残局牌面信念】"), prompt.index("【场景标签】"))
 
 
 if __name__ == "__main__":

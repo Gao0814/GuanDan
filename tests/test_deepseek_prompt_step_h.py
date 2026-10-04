@@ -186,7 +186,7 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
         sections = (
             "【任务与硬约束】",
             "【当前局面】",
-            "【手牌评估】",
+            "【我的剩余手牌】",
             "【记牌信息】",
             "【场景标签】",
             "【候选动作】",
@@ -200,6 +200,55 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
         self.assertEqual([prompt_lines.index(section) for section in sections], sorted(prompt_lines.index(section) for section in sections))
         self.assertNotIn("【任务】", prompt)
         self.assertNotIn("【硬性规则】", prompt)
+
+    def test_remaining_hand_counts_wildcards_once_and_uses_existing_suit_resources(self) -> None:
+        from engine.rules import BaseRuleEngine
+        from engine.cards import Card
+
+        for wildcard_count in (0, 1, 2):
+            with self.subTest(wildcard_count=wildcard_count):
+                tokens = ["3S", "4S", "5S", "6S", "7S", "SJ", "BJ"] + ["2H"] * wildcard_count
+                observation = _observation(hand_count=len(tokens))
+                observation["my_info"]["hand_cards"] = tokens
+                cards = tuple(Card(token) if token in ("SJ", "BJ") else Card(token[:-1], token[-1]) for token in tokens)
+                from engine.game import GuanDanGame
+                game = GuanDanGame(current_level_rank="2", preset_hands={1: cards,
+                    2: (Card("8", "C"),), 3: (Card("9", "D"),), 4: (Card("10", "H"),)})
+                game.reset()
+                actions = game.legal_actions()
+                projected = DeepSeekClient._project_prompt_actions(observation, actions)
+                with mock.patch.object(BaseRuleEngine, "public_straight_flush_resources", side_effect=AssertionError("no_new_query")):
+                    text = "\n".join(DeepSeekClient._format_remaining_hand(observation["my_info"], "2", projected))
+                self.assertIn(f"合计{len(tokens)}张", text)
+                self.assertIn("小王×1、大王×1", text)
+                self.assertIn(f"♥2(逢人配)×{wildcard_count}", text)
+                self.assertIn("不额外加张", text)
+                self.assertIn("♠3×1", text)
+                if wildcard_count:
+                    self.assertIn(f"2×{wildcard_count}", text.splitlines()[0])
+
+    def test_formula_scores_and_intents_never_reach_prompt_or_change_candidates(self) -> None:
+        from tests.test_strategy_intent_prompt_wiring import _intent
+        from agents.strategy_intent_prompt import build_strategy_intent_prompt_payload
+
+        observation = _observation()
+        actions = [_action(1, "single", ["3"], ["3S"])]
+        context = _rag_context()
+        context["scene_tags"].update(hand_strength="strong", strategy_intent="control", strategy_domains="control")
+        kwargs = dict(my_info=observation["my_info"], current_round=observation["current_round"],
+                      other_players=observation["other_players"], history=observation["history"],
+                      legal_actions=actions, rag_context=context)
+        baseline = DeepSeekClient._build_structured_prompt(**kwargs)
+        scored = DeepSeekClient._build_structured_prompt(**kwargs,
+            hand_evaluation={"total_score": 99, "control_score": 29, "label": "极强", "comment": "控制稳定"},
+            strategy_intent_prompt=build_strategy_intent_prompt_payload(_intent()))
+        self.assertEqual(scored, baseline)
+        for forbidden in ("total_score", "control_score", "hand_strength:", "strategy_intent:",
+                          "strategy_domains:", "【手牌评估】", "【策略意图】", "手牌控制力稳定"):
+            self.assertNotIn(forbidden, scored)
+        self.assertIn("建议100字符以内", scored)
+        self.assertIn("真实展示替代", scored)
+        self.assertNotIn("保留控制牌并减少手数", scored)
 
     def test_prompt_uses_scene_tags_rule_hits_and_experience_hits(self) -> None:
         prompt = DeepSeekClient._build_structured_prompt(
@@ -452,7 +501,7 @@ class TestDeepSeekPromptStepH(unittest.TestCase):
             card_tracking_summary=None,
         )
 
-        self.assertIn("【手牌评估】\n（无）", prompt)
+        self.assertIn("【我的剩余手牌】\n点数计数：3×20；合计20张", prompt)
         self.assertIn("【记牌信息】\n（无）", prompt)
         self.assertIn("【规则库依据】", prompt)
 
